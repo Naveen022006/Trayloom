@@ -23,6 +23,8 @@ public sealed class VolumeMixerFeature : IFeature
 {
     private IFeatureContext? _ctx;
     private DeviceWatcher? _watcher;
+    private AppMemoryWatcher? _memory;
+    private DispatcherTimer? _memoryTimer;
     private IDisposable? _keys;
     private Osd? _osd;
     private DispatcherTimer? _guardTimer;
@@ -43,7 +45,7 @@ public sealed class VolumeMixerFeature : IFeature
         context.App.Changed += OnSetting;
         try
         {
-            _watcher = new DeviceWatcher((_, _) => { }, OnState);
+            _watcher = new DeviceWatcher(OnDevice, OnState);
         }
         catch (Exception ex)
         {
@@ -54,6 +56,29 @@ public sealed class VolumeMixerFeature : IFeature
         _guardTimer.Tick += (_, _) => ApplyGuard();
         RememberHeadphones();
         ApplyKeys();
+
+        // Per-app volume, mute and output: give each app back what the user chose, now and whenever its audio session appears again.
+        _memory = new AppMemoryWatcher(context.App, context.Log);
+        _memoryTimer = new DispatcherTimer(DispatcherPriority.Background, context.Ui) { Interval = TimeSpan.FromMilliseconds(600) };
+        _memoryTimer.Tick += (_, _) =>
+        {
+            _memoryTimer?.Stop();
+            _memory?.Attach();
+        };
+        _memoryTimer.Start();
+    }
+
+    private void OnDevice(DeviceChange change, string id)
+    {
+        // COM thread. Outputs that come and go change which sessions exist; re-attach once things settle.
+        if (change is DeviceChange.Added or DeviceChange.Removed or DeviceChange.StateChanged or DeviceChange.DefaultChanged)
+        {
+            _ctx?.Ui.BeginInvoke(() =>
+            {
+                _memoryTimer?.Stop();
+                _memoryTimer?.Start();
+            });
+        }
     }
 
     public void Stop()
@@ -65,6 +90,10 @@ public sealed class VolumeMixerFeature : IFeature
 
         _guardTimer?.Stop();
         _guardTimer = null;
+        _memoryTimer?.Stop();
+        _memoryTimer = null;
+        _memory?.Dispose();
+        _memory = null;
         _watcher?.Dispose();
         _watcher = null;
         _keys?.Dispose();

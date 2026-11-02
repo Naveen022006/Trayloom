@@ -722,11 +722,7 @@ internal sealed class MixerView
         var combo = Bits.MiniCombo(items, index, i =>
         {
             string? id = i == 0 || i - 1 >= outs.Count ? null : outs[i - 1].Id;
-            foreach (var pid in state.App.ProcessIds)
-            {
-                AppRouting.Set(pid, id);
-            }
-
+            _source?.SetRoute(state.App, id);
             _needRefresh = true;
         }, 112, 10.5);
         combo.ToolTip = Strings.Mixer.ChooseOutputTip;

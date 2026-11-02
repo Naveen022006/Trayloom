@@ -243,6 +243,7 @@ internal sealed class MixerSource : IDisposable
         }
 
         app.Volume = volume;
+        AppMemory.SaveVolume(_app, app.Key, volume);
     }
 
     public void SetMute(MixerApp app, bool mute)
@@ -259,6 +260,19 @@ internal sealed class MixerSource : IDisposable
         }
 
         app.Muted = mute;
+        AppMemory.SaveMuted(_app, app.Key, mute);
+    }
+
+    /// <summary>Pins the app's playback to <paramref name="endpointId"/> (null = follow the default output) and remembers the choice.</summary>
+    public void SetRoute(MixerApp app, string? endpointId)
+    {
+        foreach (var pid in app.ProcessIds)
+        {
+            AppRouting.Set(pid, endpointId);
+        }
+
+        app.RouteId = endpointId;
+        AppMemory.SaveRoute(_app, app.Key, endpointId);
     }
 
     public void Dispose()

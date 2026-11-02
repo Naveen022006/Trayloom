@@ -48,6 +48,31 @@ internal static class AppIdentity
         return (key, info.Name, info.Icon);
     }
 
+    /// <summary>The same key as <see cref="Resolve"/> without loading the name or icon (cheap, any thread); null when the process is gone.</summary>
+    public static string? KeyOf(uint processId, bool isSystemSounds)
+    {
+        if (isSystemSounds || processId == 0)
+        {
+            return SystemSoundsKey;
+        }
+
+        var path = PathOf(processId);
+        if (path is not null)
+        {
+            return Path.GetFileName(path).ToLowerInvariant();
+        }
+
+        try
+        {
+            using var process = Process.GetProcessById((int)processId);
+            return $"{process.ProcessName.ToLowerInvariant()}.exe";
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     private static string Describe(string path)
     {
         try

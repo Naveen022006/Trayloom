@@ -7,12 +7,14 @@ namespace WinKnife.Features.SystemTools;
 
 /// <summary>
 /// Per-app output routing through the undocumented <c>IAudioPolicyConfigFactory</c> (the same call Settings > Sound > Volume mixer makes,
-/// and the technique EarTrumpet uses). Only the interface layout of Windows 11 21H2 - 24H2 (builds 21390 - 26200) is implemented; on any other build
-/// <see cref="IsSupported"/> is false and the row picker is hidden.
+/// and the technique EarTrumpet uses). The interface layout is the "21H2" variant EarTrumpet still ships; it was re-verified by disassembling
+/// AudioSes.dll on build 26300 (slot 25 takes pid, flow, role, HSTRING and forwards to the implementation at +0xC8, slot 26 the same with an
+/// out HSTRING at +0xD0, slot 27 takes no argument at +0xD8). Builds older than 21390 use another layout, so <see cref="IsSupported"/> is false
+/// there and the row picker is hidden.
 /// </summary>
 internal static class AppRouting
 {
-    private const string RenderSuffix = "#{e6327cad-dcec-4949-ae8a-991e976a79d4}";
+    private const string RenderSuffix = "#{e6327cad-dcec-4949-ae8a-991e976a79d2}";
     private const string Prefix = @"\\?\SWD#MMDEVAPI#";
     private static readonly Guid FactoryIid = new("ab3d4648-e242-459f-b02f-541c70306324");
 
@@ -152,10 +154,9 @@ internal static class AppRouting
             _initialised = true;
             try
             {
-                // The vtable layout is verified for Windows 11 21H2 .. 24H2 (builds 21390-26200). Newer pre-release builds changed it
-                // (calls crash or fail), so routing is switched off there instead of risking a fault.
+                // Verified layout: Windows 11 21H2 and every later build checked so far, including the 26300 Insider build (see the class summary).
                 var build = Environment.OSVersion.Version.Build;
-                if (build < 21390 || build > 26200)
+                if (build < 21390)
                 {
                     return;
                 }
