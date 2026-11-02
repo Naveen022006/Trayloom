@@ -62,7 +62,30 @@ internal static class AboutPage
         link.SetResourceReference(Control.ForegroundProperty, ThemeKeys.Accent);
         buttons.Children.Add(link);
         col.Children.Add(buttons);
-        var copy = UiKit.Text(AppInfo.Copyright, 11, FontWeights.Normal, ThemeKeys.TextTertiary);
+        var help = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 8, 0, 0) };
+        help.Children.Add(UiKit.Button("Report a problem", ButtonKind.Bordered, 13, onClick: () => s.Shell.ReportProblem()));
+        if (!InstallManager.IsInstalledCopy && !InstallManager.IsDevelopmentBuild)
+        {
+            var install = UiKit.Button("Install WinKnife…", ButtonKind.Bordered, 13, onClick: () => s.Shell.ShowInstallOffer());
+            install.Margin = new Thickness(10, 0, 0, 0);
+            help.Children.Add(install);
+        }
+
+        col.Children.Add(help);
+        var sac = SmartAppControl.GetState();
+        if (sac is SmartAppControlState.Enforcing or SmartAppControlState.Evaluation)
+        {
+            var note = UiKit.Text(sac == SmartAppControlState.Enforcing
+                ? "Smart App Control is on. It may slow the first start or block unsigned parts of WinKnife; WinKnife explains it if that happens."
+                : "Smart App Control is in evaluation mode. It may slow the first start.", 11, FontWeights.Normal, ThemeKeys.TextTertiary, wrap: true);
+            note.TextAlignment = TextAlignment.Center;
+            note.MaxWidth = 420;
+            note.HorizontalAlignment = HorizontalAlignment.Center;
+            note.Margin = new Thickness(0, 12, 0, 0);
+            col.Children.Add(note);
+        }
+
+        var copy =UiKit.Text(AppInfo.Copyright, 11, FontWeights.Normal, ThemeKeys.TextTertiary);
         copy.HorizontalAlignment = HorizontalAlignment.Center;
         copy.Margin = new Thickness(0, 14, 0, 0);
         col.Children.Add(copy);

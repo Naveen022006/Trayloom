@@ -305,6 +305,8 @@ internal sealed class TrayPanel : Window
                 Child = UiKit.Icon(tab.Glyph, 13.5, selected ? ThemeKeys.Accent : ThemeKeys.TabIdle, FontWeights.SemiBold),
             };
             System.Windows.Automation.AutomationProperties.SetName(cell, tab.Title);
+            ToolTipService.SetInitialShowDelay(cell, 250);
+            ToolTipService.SetPlacement(cell, System.Windows.Controls.Primitives.PlacementMode.Top);
             if (selected)
             {
                 cell.SetResourceReference(Border.BackgroundProperty, ThemeKeys.TabSelectedFill);
@@ -359,9 +361,48 @@ internal sealed class TrayPanel : Window
         }
     }
 
-    private UIElement EmptyState()
+    /// <summary>The whole panel has nothing to show (no tab has content): a friendly "Add features" card.</summary>
+    private UIElement EmptyState() => AddFeaturesCard(empty: true);
+
+    /// <summary>Panels with this many features or fewer installed get the "Add features" card at the end of every tab.</summary>
+    private const int FewFeatures = 14;
+
+    private bool ShowAddFeaturesNudge => _s.Runtime.AvailableCount <= FewFeatures;
+
+    /// <summary>
+    /// "Add features" card (panel never looks empty): explains that the panel is built from the installed features and opens the
+    /// Features hub. <paramref name="empty"/> is the big variant used when a tab or the whole panel has nothing to show.
+    /// </summary>
+    private UIElement AddFeaturesCard(bool empty = false, string? message = null)
     {
-        var card = new PanelCard(UiKit.Text("Install features in Settings to fill this panel.", 12, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true), 14);
+        var installed = _s.Runtime.AvailableCount;
+        var total = _s.Runtime.InstallableCount;
+        var stack = new StackPanel();
+        var head = new Grid();
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var tile = UiKit.IconTile(Glyphs.Add, empty ? 34 : 28, empty ? 15 : 13, 9);
+        tile.VerticalAlignment = VerticalAlignment.Top;
+        head.Children.Add(tile);
+        var text = new StackPanel { Margin = new Thickness(11, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        text.Children.Add(UiKit.Text("Add features", empty ? 14 : 12.5, FontWeights.SemiBold, ThemeKeys.TextPrimary));
+        var caption = message ?? (empty
+            ? "Nothing to show yet. This panel is built from the features you install: monitors, a volume mixer, window tools and more."
+            : $"{installed} of {total} features installed. The panel grows with every feature you add.");
+        text.Children.Add(UiKit.Text(caption, empty ? 12 : 11, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true).Also(t => t.Margin = new Thickness(0, 2, 0, 0)));
+        Grid.SetColumn(text, 1);
+        head.Children.Add(text);
+        stack.Children.Add(head);
+        var button = UiKit.Button("Open the Features hub", ButtonKind.Prominent, 12, Glyphs.Add, () =>
+        {
+            ClosePanel();
+            _s.Shell.OpenFeatures();
+        });
+        button.HorizontalAlignment = HorizontalAlignment.Stretch;
+        button.Margin = new Thickness(0, 10, 0, 0);
+        stack.Children.Add(button);
+        var card = new PanelCard(stack, 12) { Cursor = Cursors.Arrow };
+        System.Windows.Automation.AutomationProperties.SetName(card, "Add features");
         return card;
     }
 
@@ -442,6 +483,20 @@ internal sealed class TrayPanel : Window
                 }
 
                 stack.Children.Add(Spaced(view, 10));
+            }
+        }
+
+        // A tab whose features produced nothing, or a panel with only a few features installed, points at the Features hub.
+        if (!_editing)
+        {
+            var hasContent = stack.Children.Count > 1;
+            if (!hasContent)
+            {
+                stack.Children.Add(Spaced(AddFeaturesCard(empty: true, message: $"Nothing to show in {tab.Title} yet. Install a feature that belongs here, or hide this tab in Settings."), 10));
+            }
+            else if (ShowAddFeaturesNudge)
+            {
+                stack.Children.Add(Spaced(AddFeaturesCard(), 12));
             }
         }
 
@@ -576,7 +631,8 @@ internal sealed class TrayPanel : Window
 
         if (host.Children.Count == 0)
         {
-            return new StackPanel();
+            // Everything is hidden (or nothing installed): say so instead of leaving a blank tab.
+            return new PanelCard(UiKit.Text("Every utility is hidden. Click the pencil to show some again, or add more features.", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true), 12);
         }
 
         var card = new PanelCard(host, 0);
@@ -800,7 +856,7 @@ internal sealed class TrayPanel : Window
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var settings = FooterButton("Settings", Glyphs.Settings, () => _s.Shell.OpenSettings(_hostedSettings ?? SettingsPages.General));
+        var settings = FooterButton("Settings", Glyphs.Settings, () => _s.Shell.OpenSettings(_hostedSettings ?? SettingsPages.Last));
         var quit = FooterButton("Quit", Glyphs.Power, () => _s.Shell.Quit());
         Grid.SetColumn(quit, 2);
         grid.Children.Add(settings);

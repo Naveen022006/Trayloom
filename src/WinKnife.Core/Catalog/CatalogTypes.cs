@@ -124,6 +124,10 @@ public sealed record FeaturePreset(string Id, string Name, string Description, s
 public static class SettingsPages
 {
     public const string General = "general";
+
+    /// <summary>Pseudo destination: "the page that was open last" (the host resolves it before routing; falls back to General).</summary>
+    public const string Last = "last";
+
     public const string Features = "features";
     public const string Island = "island";
     public const string Monitor = "monitor";

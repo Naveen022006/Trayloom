@@ -114,6 +114,12 @@ public sealed class FeatureRegistry : IActionCatalog, IDisposable
     /// <inheritdoc />
     public event Action? Changed;
 
+    /// <summary>
+    /// Raised on the UI thread when a feature or a feature assembly could not be loaded or started (the host collects them and
+    /// shows one clear dialog, including the Smart App Control explanation when that is the cause).
+    /// </summary>
+    public event Action<StartupProblem>? ProblemReported;
+
     /// <summary>All discovered feature classes in catalog order.</summary>
     public IReadOnlyList<IFeature> Features => [.. _entries.Select(e => e.Feature)];
 
@@ -197,6 +203,7 @@ public sealed class FeatureRegistry : IActionCatalog, IDisposable
                     catch (Exception ex)
                     {
                         _log.Error($"Could not create feature {type.FullName}", ex);
+                        Report(type.Name, ex);
                     }
                 }
             }
@@ -319,7 +326,15 @@ public sealed class FeatureRegistry : IActionCatalog, IDisposable
             entry.Error = ex.Message;
             TryStop(feature);
             ReleaseScopes(entry);
-            _notifier.Show("WinKnife", $"{FeatureCatalog.Get(entry.CatalogId)?.Title ?? feature.Id} could not be started: {ex.Message}", NotificationLevel.Error);
+            var title = FeatureCatalog.Get(entry.CatalogId)?.Title ?? feature.Id;
+            if (ProblemReported is not null)
+            {
+                Report(title, ex);
+            }
+            else
+            {
+                _notifier.Show("WinKnife", $"{title} could not be started: {ex.Message}", NotificationLevel.Error);
+            }
         }
 
         FeatureStateChanged?.Invoke(feature);
@@ -409,11 +424,12 @@ public sealed class FeatureRegistry : IActionCatalog, IDisposable
             catch (Exception ex)
             {
                 _log.Error($"Could not load {file}", ex);
+                Report(Path.GetFileName(file), ex);
             }
         }
     }
 
-    private static IEnumerable<Type> SafeGetTypes(Assembly assembly)
+    private IEnumerable<Type> SafeGetTypes(Assembly assembly)
     {
         try
         {
@@ -421,7 +437,25 @@ public sealed class FeatureRegistry : IActionCatalog, IDisposable
         }
         catch (ReflectionTypeLoadException ex)
         {
+            _log.Error($"Some types of {assembly.GetName().Name} could not be loaded: {string.Join("; ", ex.LoaderExceptions.Where(e => e is not null).Select(e => e!.Message).Distinct())}", ex);
+            Report(assembly.GetName().Name + ".dll", ex);
             return ex.Types.Where(t => t is not null)!;
+        }
+    }
+
+    private void Report(string subject, Exception exception)
+    {
+        var blocked = SmartAppControl.LooksBlocked(exception);
+        var message = exception is ReflectionTypeLoadException rtl
+            ? rtl.LoaderExceptions.FirstOrDefault(e => e is not null)?.Message ?? exception.Message
+            : exception.Message;
+        try
+        {
+            ProblemReported?.Invoke(new StartupProblem(subject, message, exception, blocked));
+        }
+        catch (Exception ex)
+        {
+            _log.Warn("Problem handler failed: " + ex.Message);
         }
     }
 

@@ -40,6 +40,9 @@ internal sealed class TrayController : IDisposable
     /// <summary>Right click; argument = cursor position in physical pixels.</summary>
     public event Action<Point>? RightClick;
 
+    /// <summary>The user clicked a balloon / toast raised by <see cref="ShowBalloon"/>.</summary>
+    public event Action? BalloonClicked;
+
     /// <summary>The configured glyph hex code (empty = brand mark).</summary>
     public string GlyphCode
     {
@@ -144,6 +147,7 @@ internal sealed class TrayController : IDisposable
     private void Create()
     {
         _icon = new Forms.NotifyIcon { Text = _tooltip, Visible = _visible };
+        _icon.BalloonTipClicked += (_, _) => BalloonClicked?.Invoke();
         _icon.MouseUp += (_, e) =>
         {
             var p = Screens.CursorPosition();

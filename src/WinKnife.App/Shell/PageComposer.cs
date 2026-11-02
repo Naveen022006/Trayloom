@@ -10,7 +10,7 @@ using WinKnife.Core.Ui;
 namespace WinKnife.App;
 
 /// <summary>One "Search settings" result.</summary>
-internal sealed record SearchEntry(string Title, string Glyph, string Destination, string? FeatureId, bool IsPage, bool Dimmed, string Page, int Rank);
+internal sealed record SearchEntry(string Title, string Glyph, string Destination, string? FeatureId, bool IsPage, bool Dimmed, string Page, int Rank, string? Description = null, bool CanInstall = false);
 
 /// <summary>The settings search index and matcher (spec 02-settings 1.4).</summary>
 internal static class SettingsSearch
@@ -61,7 +61,7 @@ internal static class SettingsSearch
                 continue;
             }
 
-            all.Add(new SearchEntry(e.Title, e.Glyph, e.Destination, e.Id, false, !installed, installed ? e.Page : SettingsPages.Features, rank));
+            all.Add(new SearchEntry(e.Title, e.Glyph, e.Destination, e.Id, false, !installed, installed ? e.Page : SettingsPages.Features, rank, e.Description, !installed && e.CanInstall));
         }
 
         // (c) contributed sections

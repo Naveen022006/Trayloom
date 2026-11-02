@@ -45,11 +45,15 @@ internal sealed class AppShell : IShell
 
     public Func<string?> RelaunchArguments { get; set; } = () => null;
 
+    /// <summary>Set by the application: shows the "Install WinKnife" offer (the argument is true when the user asked for it).</summary>
+    public Action<bool>? InstallOffer { get; set; }
+
     public void Start()
     {
         _tray = new TrayController(_host.Log) { GlyphCode = _s.App.Get<string>(AppKeys.MenuBarIconSymbol) };
         _tray.LeftClick += TogglePanel;
         _tray.RightClick += ShowMenu;
+        _tray.BalloonClicked += () => Application.Current.Dispatcher.BeginInvoke(ShowPanelAtTray);
         _host.Notifier.Sink = _tray.ShowBalloon;
         _s.App.Changed += key =>
         {
@@ -80,6 +84,24 @@ internal sealed class AppShell : IShell
     public void OpenSettings(string destination, string? targetFeature = null)
     {
         Application.Current.Dispatcher.BeginInvoke(() => ShowSettings(destination, targetFeature));
+    }
+
+    /// <summary>"Settings": the page that was open last (General the first time, or when that page is gone).</summary>
+    private string ResolveDestination(string destination)
+    {
+        if (destination != SettingsPages.Last)
+        {
+            return destination;
+        }
+
+        var saved = _s.App.Get<string>(AppKeys.SettingsLastPage);
+        if (string.IsNullOrEmpty(saved))
+        {
+            return SettingsPages.General;
+        }
+
+        var (page, anchor) = SettingsPages.Split(saved);
+        return SidebarModel.IsPageVisible(_s.Runtime, new Visit(page, anchor, null)) ? saved : SettingsPages.General;
     }
 
     public void OpenFeatures(string? featureId = null) => OpenSettings(SettingsPages.Features, featureId);
@@ -180,11 +202,15 @@ internal sealed class AppShell : IShell
         _onboarding.Activate();
     }
 
-    /// <summary>Second launch / reopen: the user must always be able to get back in (spec 8.3).</summary>
+    /// <summary>
+    /// Second launch / reopen (the Start menu shortcut while WinKnife runs): the user must always be able to get back in (spec 8.3).
+    /// Brings forward whatever is open; otherwise opens Settings on the last page and points at the tray icon.
+    /// </summary>
     public void Recover()
     {
         if (_onboarding is not null)
         {
+            _onboarding.WindowState = WindowState.Normal;
             _onboarding.Activate();
             return;
         }
@@ -197,8 +223,34 @@ internal sealed class AppShell : IShell
         }
 
         _tray?.Recreate();
-        ShowSettings(SettingsPages.General, null);
+        UpdateTrayState();
+        ShowSettings(SettingsPages.Last, null);
+        _tray?.ShowBalloon("WinKnife is already running", "Settings is open. The WinKnife icon is next to the clock (click the ^ arrow if it is hidden).", NotificationLevel.Info);
     }
+
+    /// <summary>Opens the flyout next to the tray corner (where the icon lives), as if the icon had been clicked.</summary>
+    public void ShowPanelAtTray()
+    {
+        Application.Current.Dispatcher.BeginInvoke(() =>
+        {
+            var area = Screens.Primary().WorkArea;
+            OpenPanelAt(new Point(area.Right - 120, area.Bottom + 10));
+        });
+    }
+
+    /// <summary>The one-time "WinKnife is running" toast (balloon) that points at the tray icon.</summary>
+    public void ShowRunningToast(bool justInstalled)
+    {
+        var title = justInstalled ? "WinKnife is installed and running" : "WinKnife is running";
+        _tray?.ShowBalloon(title, "Click the icon by the clock to open it. If you cannot see it, click the ^ arrow next to the clock.", NotificationLevel.Info);
+        _s.App.Set(AppKeys.FirstRunToastShown, true);
+    }
+
+    /// <summary>Install WinKnife… (tray menu, General): shows the install offer even if it was dismissed before.</summary>
+    public void ShowInstallOffer() => Application.Current.Dispatcher.BeginInvoke(() => InstallOffer?.Invoke(true));
+
+    /// <summary>"Report a problem": opens the folder with the log file.</summary>
+    public void ReportProblem() => UiParts.OpenLogFolder();
 
     // ------------------------------------------------------------------------------------------------ panel / settings
 
@@ -236,6 +288,7 @@ internal sealed class AppShell : IShell
 
     private void ShowSettings(string destination, string? targetFeature)
     {
+        destination = ResolveDestination(destination);
         if (_settings is null)
         {
             _settings = new SettingsWindow(_s);
@@ -481,7 +534,8 @@ internal sealed class AppShell : IShell
             menu.Items.Add(new Separator());
         }
 
-        menu.Items.Add(Item("Settings…", () => OpenSettings(SettingsPages.General), "Ctrl+,"));
+        menu.Items.Add(Item("Settings…", () => OpenSettings(SettingsPages.Last), "Ctrl+,"));
+        menu.Items.Add(Item("Add features…", () => OpenFeatures()));
         menu.Items.Add(Item("About WinKnife", () => OpenSettings(SettingsPages.About)));
         if (rt.IsAvailable("uninstaller"))
         {
@@ -504,6 +558,12 @@ internal sealed class AppShell : IShell
         }
 
         menu.Items.Add(Item("Check for updates…", () => OpenSettings(SettingsPages.About)));
+        menu.Items.Add(Item("Report a problem…", ReportProblem));
+        if (!InstallManager.IsInstalledCopy && !InstallManager.IsDevelopmentBuild)
+        {
+            menu.Items.Add(Item("Install WinKnife…", () => InstallOffer?.Invoke(true)));
+        }
+
         menu.Items.Add(new Separator());
         menu.Items.Add(Item("Quit WinKnife", Quit, "Ctrl+Q"));
         return menu;

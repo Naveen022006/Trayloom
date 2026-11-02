@@ -25,10 +25,56 @@ internal static class GeneralPage
     public static FrameworkElement Build(ShellServices s, Action rebuild)
     {
         var stack = new StackPanel();
+        if (!s.App.Get<bool>(AppKeys.GettingStartedDismissed))
+        {
+            stack.AddSpaced(GettingStartedCard(s, rebuild), 20);
+        }
+
         stack.AddSpaced(LaunchCard(s, rebuild), 20);
         stack.AddSpaced(AppearanceCard(s, rebuild), 20);
         // The Feedback card is contributed by the Tools project (it owns the feedback window).
         return stack;
+    }
+
+    /// <summary>"Getting started": where the tray icon is, how to pin it, how to add features, install, report a problem.</summary>
+    private static UIElement GettingStartedCard(ShellServices s, Action rebuild)
+    {
+        var card = new SettingsCard();
+        var head = new Grid();
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        head.Children.Add(UiKit.Text("Getting started", 14, FontWeights.SemiBold, ThemeKeys.TextPrimary));
+        var hide = UiKit.Button("Hide", ButtonKind.Plain, 12, onClick: () =>
+        {
+            s.App.Set(AppKeys.GettingStartedDismissed, true);
+            rebuild();
+        });
+        hide.ToolTip = "Hide this card. “Review introduction” in About brings the tour back.";
+        Grid.SetColumn(hide, 1);
+        head.Children.Add(hide);
+        card.Add(head);
+
+        card.Add(new SettingsRow(Glyphs.Search, "Find the WinKnife icon", "It sits next to the clock; click it for the panel, right-click it for the menu. If it is hidden, click the ^ arrow first.",
+            UiKit.Button("Pin it next to the clock", ButtonKind.Bordered, 12, onClick: () => UiKit.OpenUrl("ms-settings:taskbar"))));
+        card.AddDivider();
+        var installed = s.Runtime.AvailableCount;
+        var total = s.Runtime.InstallableCount;
+        card.Add(new SettingsRow(Glyphs.Add, "Add features", $"{installed} of {total} features installed. Install only what you use; the panel and Settings grow with them.",
+            UiKit.Button("Open Features", ButtonKind.Prominent, 12, onClick: () => s.Shell.OpenFeatures())));
+        if (!InstallManager.IsInstalledCopy && !InstallManager.IsDevelopmentBuild)
+        {
+            card.AddDivider();
+            card.Add(new SettingsRow("", "Install WinKnife", "Add it to the Start menu and keep it if you delete the download. No administrator password needed.",
+                UiKit.Button("Install…", ButtonKind.Bordered, 12, onClick: () => s.Shell.ShowInstallOffer())));
+        }
+
+        card.AddDivider();
+        card.Add(new SettingsRow(Glyphs.Info, "Take the tour again", "The short introduction: bundles, start with Windows, where the icon is.",
+            UiKit.Button("Review introduction", ButtonKind.Bordered, 12, onClick: () => s.Shell.ShowOnboarding())));
+        card.AddDivider();
+        card.Add(new SettingsRow(Glyphs.Warning, "Something not working?", "Opens the folder with WinKnife’s log file, to read or send along.",
+            UiKit.Button("Report a problem", ButtonKind.Bordered, 12, onClick: () => s.Shell.ReportProblem())));
+        return card;
     }
 
     private static UIElement LaunchCard(ShellServices s, Action rebuild)

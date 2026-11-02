@@ -306,6 +306,12 @@ internal sealed class SettingsWindow : Window
 
     private void OnNavigated()
     {
+        // Remember the page so "Settings" (tray menu, panel footer, Start menu shortcut) reopens where the user left off.
+        if (_router.Current is { } visited)
+        {
+            _s.App.Set(AppKeys.SettingsLastPage, visited.Destination);
+        }
+
         if (_search.Text.Length > 0)
         {
             _search.Text = string.Empty;
@@ -507,6 +513,14 @@ internal sealed class SettingsWindow : Window
             var none = UiKit.Text("No results", 12, FontWeights.Normal, ThemeKeys.TextSecondary);
             none.Margin = new Thickness(8, 10, 8, 0);
             _resultsList.Children.Add(none);
+            var browse = UiKit.Button("Browse all features", ButtonKind.Bordered, 11.5, onClick: () =>
+            {
+                _search.Text = string.Empty;
+                Navigate(SettingsPages.Features);
+            });
+            browse.HorizontalAlignment = HorizontalAlignment.Left;
+            browse.Margin = new Thickness(8, 8, 8, 0);
+            _resultsList.Children.Add(browse);
             return;
         }
 
@@ -515,11 +529,37 @@ internal sealed class SettingsWindow : Window
             var entry = _results[i];
             var index = i;
             var selected = i == _selectedResult;
-            var row = new StackPanel { Orientation = Orientation.Horizontal };
-            row.Children.Add(UiKit.Icon(entry.Glyph, 13, selected ? ThemeKeys.Accent : ThemeKeys.Accent));
-            var label = UiKit.Text(entry.Title, 13, entry.IsPage ? FontWeights.SemiBold : FontWeights.Normal, selected ? ThemeKeys.Accent : (entry.Dimmed ? ThemeKeys.TextSecondary : ThemeKeys.TextPrimary));
-            label.Margin = new Thickness(8, 0, 0, 0);
-            row.Children.Add(label);
+            var row = new Grid();
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(21) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var icon = UiKit.Icon(entry.Glyph, 13, ThemeKeys.Accent);
+            icon.VerticalAlignment = VerticalAlignment.Top;
+            icon.Margin = new Thickness(0, 2, 0, 0);
+            row.Children.Add(icon);
+            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            text.Children.Add(UiKit.Text(entry.Title, 13, entry.IsPage ? FontWeights.SemiBold : FontWeights.Normal, selected ? ThemeKeys.Accent : (entry.Dimmed ? ThemeKeys.TextSecondary : ThemeKeys.TextPrimary), trimming: TextTrimming.CharacterEllipsis));
+            if (!entry.IsPage && entry.Description is { Length: > 0 } description)
+            {
+                var sub = UiKit.Text(description, 10.5, FontWeights.Normal, ThemeKeys.TextTertiary, trimming: TextTrimming.CharacterEllipsis);
+                sub.ToolTip = description;
+                text.Children.Add(sub);
+            }
+
+            Grid.SetColumn(text, 1);
+            row.Children.Add(text);
+            if (entry.CanInstall && entry.FeatureId is { } installId)
+            {
+                // Not installed yet: install straight from the result.
+                var install = UiKit.Button("Install", ButtonKind.Bordered, 11, onClick: () => InstallFromResult(installId));
+                install.Padding = new Thickness(8, 2, 8, 2);
+                install.MinHeight = 0;
+                install.Margin = new Thickness(0, 5, 0, 1);
+                install.HorizontalAlignment = HorizontalAlignment.Left;
+                install.ToolTip = "Install " + entry.Title;
+                text.Children.Add(install);
+            }
+
             var border = new Border
             {
                 CornerRadius = new CornerRadius(8),
@@ -528,14 +568,48 @@ internal sealed class SettingsWindow : Window
                 Child = row,
                 Cursor = Cursors.Hand,
                 Background = Brushes.Transparent,
+                ToolTip = entry.Description,
             };
             if (selected)
             {
                 border.SetResourceReference(Border.BackgroundProperty, ThemeKeys.AccentFill18);
             }
 
-            border.MouseLeftButtonUp += (_, _) => OpenResult(_results[index]);
+            border.MouseLeftButtonUp += (_, e) =>
+            {
+                if (e.OriginalSource is DependencyObject source && FindAncestor<Button>(source) is not null)
+                {
+                    return;
+                }
+
+                OpenResult(_results[index]);
+            };
             _resultsList.Children.Add(border);
+        }
+    }
+
+    private static T? FindAncestor<T>(DependencyObject node) where T : DependencyObject
+    {
+        for (var current = node; current is not null; current = current is Visual or System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(current) : LogicalTreeHelper.GetParent(current))
+        {
+            if (current is T match)
+            {
+                return match;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>"Install" button of a search result: installs the feature, then opens its settings.</summary>
+    private void InstallFromResult(string featureId)
+    {
+        _s.Runtime.SetAvailable([featureId], true);
+        var entry = FeatureCatalog.Get(featureId);
+        _search.Text = string.Empty;
+        if (entry is not null)
+        {
+            Navigate(entry.Destination, sidebarFeature: entry.Id);
         }
     }
 

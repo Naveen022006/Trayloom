@@ -15,7 +15,8 @@ project and is **not affiliated with or endorsed by Vorssaint**; the Vorssaint n
   Everything else is one click away in the Features hub (Install all, bundles, or one by one).
 * Every feature undoes its side effects when uninstalled or when WinKnife quits (mouse acceleration, hooks, hotkeys,
   wake locks, windows). Uninstalling *Mute microphone* while muted unmutes the microphone.
-* `WinKnife.exe --quit` asks the running instance to shut down gracefully; a second launch brings Settings forward.
+* `WinKnife.exe --quit` asks the running instance to shut down gracefully; a second launch (the Start menu shortcut) brings
+  Settings forward on the page you used last.
 
 ## What is in it
 
@@ -31,6 +32,45 @@ Catalog groups, as in the Features hub (Windows availability noted where it diff
 | Tools | Quick panel, Quick toggles, Quit apps, Color picker, Copy text from screen, Cleaning Mode, Media, Cleaner, Uninstaller, Packages (winget), App updates, Screenshot (editor, scrolling capture, pins), Screen recording (Windows.Graphics.Capture + Media Foundation), Camera preview, Radial menu, Scratchpad, Command Bar, Wallpaper, Kill Process, Port Manager. |
 | Dynamic Island | The island itself plus Calendar, Notifications, Gestures, Timer, Accessory alerts, Lyrics (online lookup is **off** by default), Up next, Bars follow the music, Downloads, **AI Agents** (Claude Code, Codex, OpenCode, Copilot usage and limits, read locally), Watch, Companion. Installing the island switches it on. |
 | Monitor | CPU, GPU, Memory, Network, Disks, Power, Connected devices, shown in the tray panel and as a strip next to the tray icon. *Unavailable:* Fan control. |
+
+## Install and first start
+
+WinKnife is a tray app: after it starts you will find its icon **next to the clock** (Windows often hides new tray icons
+behind the **^** arrow). There is no installer program; the installer is `WinKnife.exe` itself.
+
+1. Unzip `WinKnife-win-x64.zip` anywhere (or use `dist\WinKnife`) and double-click `WinKnife.exe`
+   (or `WinKnife-Setup.cmd`, which starts the same thing).
+2. WinKnife offers **Install WinKnife** (or **Update WinKnife** when an older copy is installed):
+   * **Install** copies the app to `%LOCALAPPDATA%\Programs\WinKnife` for your account only (no administrator password),
+     adds a Start menu shortcut, an optional Desktop shortcut and an optional "start when I sign in" entry, and registers
+     an entry in **Settings > Apps > Installed apps** whose Uninstall runs `WinKnife.exe --uninstall`. It then starts the
+     installed copy and you can delete the download.
+   * **Just run it** runs from where it is (tick "Don't ask again" to stop the offer). **Install WinKnife...** stays in the
+     tray menu and in Settings > General > Getting started.
+3. On a fresh profile a short introduction opens: what WinKnife is, a bundle (**Essentials** is preselected, or
+   Windows / Battery and quiet, or pick features one by one), Launch at login, and a picture of where the tray icon is.
+   A toast says "WinKnife is running" once.
+4. Windows does not let apps pin their own icon. To keep it visible: Settings > Personalization > Taskbar > **Other system
+   tray icons** > switch WinKnife on (the introduction and Settings > General have a button that opens that page,
+   `ms-settings:taskbar`), or drag the icon out of the **^** overflow next to the clock.
+5. Start it again from the Start menu while it runs: Settings opens on the page you used last, so you can always get back in.
+6. Uninstall: Settings > Apps > Installed apps > WinKnife > Uninstall (or `WinKnife.exe --uninstall`). It quits WinKnife,
+   removes the files, shortcuts, the Apps & features entry and the start-at-sign-in entry, and asks whether to delete your
+   settings too.
+
+If something does not start, right-click the tray icon > **Report a problem...** opens the folder with the log. A start
+that takes longer than 2 s shows a "Starting WinKnife..." toast (the first start after copying new DLLs can take ~10 s).
+If Windows **Smart App Control** blocks a file, WinKnife shows one dialog that explains it in plain words and lists the
+options (below); it only reads that setting, it never changes it.
+
+`scripts\package.ps1` publishes the self-contained build, adds `WinKnife-Setup.cmd` and writes `dist\WinKnife-win-x64.zip`.
+(A self-extracting `Setup.exe` built with Windows IExpress was tried and is silently blocked on a Smart App Control PC, so
+`WinKnife-Setup.cmd` is the Setup equivalent.)
+
+Testing the install flow without touching your real Start menu or registry: set `WINKNIFE_INSTALL_ROOT`,
+`WINKNIFE_STARTMENU_DIR`, `WINKNIFE_DESKTOP_DIR`, `WINKNIFE_UNINSTALL_KEY` (an HKCU sub key) and `WINKNIFE_RUN_KEY`
+(an HKCU sub key) to scratch locations, plus `WINKNIFE_DATA` for the settings. `WINKNIFE_NO_INSTALL_PROMPT=1` hides the
+install offer; builds run from `bin\Debug` / `bin\Release` never show it.
 
 ## Hotkeys
 
@@ -100,7 +140,9 @@ DLLs); later starts take about a second.
 Developer flags (a second launch hands them to the running copy): `--open-settings <page#anchor>`,
 `--open-panel [tab]`, `--open-menu`, `--search <text>`, `--action <feature> <action>`, `--dev-install <id>`,
 `--dev-uninstall <id>`, `--close-panel`, `--dump-info <file>` (features, actions, panel utilities, shortcut defaults,
-duplicate checks). With `WINKNIFE_DEV=1` the island also exposes one action per page.
+duplicate checks), `--open-onboarding [step]`, `--open-install`, `--show-toast`, `--simulate-problem sac|crash`,
+`--dev-key escape` (raises a key event inside the app), `--slow-start <ms>`, `--shot <png> [window title]` (saves a
+picture of one of WinKnife's own windows), `--install`, `--uninstall [--quiet]`, `--no-onboarding`. With `WINKNIFE_DEV=1` the island also exposes one action per page.
 
 `ARCHITECTURE_V2.md` and `specs/CONTRACTS.md` describe the solution layout and the contracts feature projects code
 against; `specs/R3_NOTES.md` is the integration checklist this release worked through.

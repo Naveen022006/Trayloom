@@ -39,10 +39,42 @@ public partial class App : Application
     private CoreHost? _host;
     private AppShell? _shell;
     private DispatcherTimer? _healthyTimer;
+    private ProblemReporter? _problems;
+    private InstallWindow? _installWindow;
+
+    public App()
+    {
+        // The first start after copying new files can take ~10 s (Windows scans every DLL): show "Starting WinKnife…" after 2 s.
+        StartupSplash.Arm(TimeSpan.FromSeconds(2));
+    }
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        try
+        {
+            Start(e);
+        }
+        finally
+        {
+            StartupSplash.Disarm();
+        }
+    }
+
+    private void Start(StartupEventArgs e)
+    {
+        if (e.Args.Any(a => string.Equals(a, "--uninstall", StringComparison.OrdinalIgnoreCase)))
+        {
+            RunUninstaller(e.Args);
+            return;
+        }
+
+        // Developer flag: pretend start-up is slow (to see the "Starting WinKnife…" toast): --slow-start <milliseconds>.
+        var slowIndex = Array.FindIndex(e.Args, a => a == "--slow-start");
+        if (slowIndex >= 0 && slowIndex + 1 < e.Args.Length && int.TryParse(e.Args[slowIndex + 1], out var slowMs))
+        {
+            Thread.Sleep(Math.Clamp(slowMs, 0, 30_000));
+        }
 
         var quitRequested = e.Args.Any(a => string.Equals(a, "--quit", StringComparison.OrdinalIgnoreCase));
         var relaunchIndex = Array.FindIndex(e.Args, a => string.Equals(a, "--relaunch", StringComparison.OrdinalIgnoreCase));
@@ -149,19 +181,227 @@ public partial class App : Application
         };
         _healthyTimer.Start();
 
-        LoadFeatureAssemblies(log);
-        _shell = new AppShell(_host);
+        _problems = new ProblemReporter(log);
+        _host.Features.ProblemReported += _problems.Add;
+        log.Info(SmartAppControl.Describe(SmartAppControl.GetState()));
+        LoadFeatureAssemblies(log, _problems);
+        _shell = new AppShell(_host) { InstallOffer = manual => OfferInstall(manual, null) };
         _host.Contributions.Discover();
         _host.Runtime.Initialize();
         MigratePanelKeys();
         _shell.Start();
-        if (!_host.App.Get<bool>(AppKeys.HasOnboarded) && !previousStartFailed)
-        {
-            Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => _shell.ShowOnboarding());
-        }
+
+        var justInstalled = e.Args.Any(a => string.Equals(a, "--just-installed", StringComparison.OrdinalIgnoreCase));
+        var forceInstall = e.Args.Any(a => string.Equals(a, "--install", StringComparison.OrdinalIgnoreCase));
+        Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => AfterStartup(previousStartFailed, justInstalled, forceInstall, e.Args));
 
         RunDevFlags(e.Args, startup: true);
         ScheduleMemoryTrim();
+    }
+
+    /// <summary>
+    /// First thing the user sees once the tray icon exists: the install offer (when running from outside the install folder),
+    /// then onboarding on a fresh profile, and the one-time "WinKnife is running" toast pointing at the icon.
+    /// </summary>
+    private void AfterStartup(bool previousStartFailed, bool justInstalled, bool forceInstall, string[] args)
+    {
+        var shell = _shell!;
+        var host = _host!;
+        void Continue()
+        {
+            if (!host.App.Get<bool>(AppKeys.HasOnboarded) && !previousStartFailed && !args.Contains("--no-onboarding"))
+            {
+                shell.ShowOnboarding();
+            }
+
+            if (justInstalled || !host.App.Get<bool>(AppKeys.FirstRunToastShown))
+            {
+                // A moment later so the tray icon is registered with the shell first.
+                var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.2) };
+                timer.Tick += (_, _) =>
+                {
+                    timer.Stop();
+                    shell.ShowRunningToast(justInstalled);
+                };
+                timer.Start();
+            }
+        }
+
+        var offer = (forceInstall || (!previousStartFailed && ShouldOfferInstall(host))) && !InstallManager.IsInstalledCopy;
+        if (offer)
+        {
+            OfferInstall(manual: forceInstall, Continue);
+        }
+        else
+        {
+            Continue();
+        }
+    }
+
+    private static bool ShouldOfferInstall(CoreHost host) =>
+        !InstallManager.IsInstalledCopy
+        && !InstallManager.IsDevelopmentBuild
+        && !host.App.Get<bool>(AppKeys.InstallPromptDismissed)
+        && Environment.GetEnvironmentVariable("WINKNIFE_NO_INSTALL_PROMPT") != "1";
+
+    /// <summary>Shows the "Install WinKnife" window; <paramref name="done"/> runs when the user chose "Just run it" or closed it.</summary>
+    private void OfferInstall(bool manual, Action? done)
+    {
+        if (_installWindow is not null)
+        {
+            _installWindow.Activate();
+            return;
+        }
+
+        if (InstallManager.IsInstalledCopy)
+        {
+            if (manual)
+            {
+                Dialogs.Show(null, "WinKnife is installed", "This copy already runs from " + InstallManager.InstallRoot + ".", ["OK"]);
+            }
+
+            done?.Invoke();
+            return;
+        }
+
+        var host = _host!;
+        var window = new InstallWindow(host.Log);
+        _installWindow = window;
+        window.Closed += (_, _) =>
+        {
+            _installWindow = null;
+            switch (window.Choice)
+            {
+                case InstallChoice.Installed:
+                    LaunchInstalledCopy(window);
+                    return;
+                case InstallChoice.JustRun:
+                    if (window.DontAskAgain)
+                    {
+                        host.App.Set(AppKeys.InstallPromptDismissed, true);
+                    }
+
+                    break;
+            }
+
+            done?.Invoke();
+        };
+        window.Show();
+        window.Activate();
+    }
+
+    /// <summary>Starts the installed copy (it waits for this process to exit) and quits this one.</summary>
+    private void LaunchInstalledCopy(InstallWindow window)
+    {
+        var host = _host!;
+        try
+        {
+            host.App.Set(AppKeys.LaunchAtLoginWanted, AutoStart.IsEnabled);
+            host.Store.Flush();
+            var exe = window.InstalledExe!;
+            host.Log.Info("Starting the installed copy " + exe);
+            Process.Start(new ProcessStartInfo(exe, $"--relaunch {Environment.ProcessId} --just-installed") { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe)! });
+        }
+        catch (Exception ex)
+        {
+            host.Log.Error("Could not start the installed copy", ex);
+            Dialogs.Show(null, "WinKnife was installed", "It could not be started automatically. Open it from the Start menu, or run " + window.InstalledExe + ".", ["OK"]);
+            return;
+        }
+
+        Dispatcher.BeginInvoke(() => Shutdown());
+    }
+
+    // ------------------------------------------------------------------------------------------------ uninstall
+
+    /// <summary><c>WinKnife.exe --uninstall</c> (Apps &amp; features): confirm, stop the running instance, remove everything.</summary>
+    private void RunUninstaller(string[] args)
+    {
+        var quiet = args.Any(a => string.Equals(a, "--quiet", StringComparison.OrdinalIgnoreCase));
+        ThemeManager.Initialize(this, AppAppearance.System);
+        var log = new FileLog();
+        var options = new UninstallOptions(false);
+        if (!quiet)
+        {
+            var window = new UninstallWindow();
+            window.ShowDialog();
+            if (!window.Confirmed)
+            {
+                Shutdown();
+                return;
+            }
+
+            options = window.Options;
+        }
+
+        StopRunningInstance(log);
+        List<string> later;
+        try
+        {
+            later = InstallManager.Uninstall(options, log);
+        }
+        catch (Exception ex)
+        {
+            log.Error("Uninstall failed", ex);
+            Dialogs.Show(null, "Uninstall stopped", ex.Message, ["OK"]);
+            Shutdown();
+            return;
+        }
+
+        if (!quiet)
+        {
+            Dialogs.Show(null, "WinKnife was uninstalled", options.RemoveSettings
+                ? "The program files, shortcuts and your settings are being removed."
+                : "The program files and shortcuts are being removed. Your settings were kept, so a later install picks up where you left off.", ["OK"]);
+        }
+
+        InstallManager.ScheduleDeletion(later, log);
+        Shutdown();
+    }
+
+    /// <summary>Asks a running WinKnife to quit and waits for it (the single-instance mutex is free again).</summary>
+    private static void StopRunningInstance(ILog log)
+    {
+        try
+        {
+            using var quit = EventWaitHandle.OpenExisting(QuitEventName);
+            quit.Set();
+        }
+        catch (Exception)
+        {
+            return; // nothing is running
+        }
+
+        try
+        {
+            using var mutex = new Mutex(false, MutexName);
+            var got = false;
+            try
+            {
+                got = mutex.WaitOne(15_000);
+            }
+            catch (AbandonedMutexException)
+            {
+                got = true;
+            }
+
+            if (got)
+            {
+                mutex.ReleaseMutex();
+            }
+            else
+            {
+                log.Warn("The running WinKnife did not quit in time; closing it");
+                foreach (var process in Process.GetProcessesByName("WinKnife").Where(p => p.Id != Environment.ProcessId))
+                {
+                    process.Kill();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            log.Warn("Stopping the running instance failed: " + ex.Message);
+        }
     }
 
     /// <summary>
@@ -257,6 +497,54 @@ public partial class App : Application
             Dispatcher.BeginInvoke(priority, () => shell.ShowMenuForDevelopment());
         }
 
+        if (Arg("--open-onboarding") is { } stepText || args.Contains("--open-onboarding"))
+        {
+            // --open-onboarding [step]: jump to a step of the introduction (screenshots).
+            Dispatcher.BeginInvoke(priority, () =>
+            {
+                if (int.TryParse(Arg("--open-onboarding"), out var step))
+                {
+                    _host!.App.Set(AppKeys.OnboardingStep, Math.Clamp(step, 0, 4));
+                }
+
+                shell.ShowOnboarding();
+            });
+        }
+
+        if (args.Contains("--open-install"))
+        {
+            Dispatcher.BeginInvoke(priority, () => OfferInstall(manual: true, null));
+        }
+
+        if (args.Contains("--show-toast"))
+        {
+            Dispatcher.BeginInvoke(priority, () => shell.ShowRunningToast(false));
+        }
+
+        if (Arg("--simulate-problem") is { } kind)
+        {
+            Dispatcher.BeginInvoke(priority, () =>
+            {
+                var blocked = new FileLoadException("Could not load file or assembly 'WinKnife.Features.Input, Version=0.1.0.0'. An Application Control policy has blocked this file. (0x800711C7)", "WinKnife.Features.Input.dll") { HResult = unchecked((int)0x800711C7) };
+                var crash = new InvalidOperationException("The audio service did not answer.");
+                _problems?.Add(kind == "sac"
+                    ? new StartupProblem("WinKnife.Features.Input.dll", blocked.Message, blocked, true)
+                    : new StartupProblem("Volume mixer", crash.Message, crash, false));
+            });
+        }
+
+        if (Arg("--shot") is { } shotFile)
+        {
+            var titlePart = Arg("--shot", 2) is { } t && !t.StartsWith("--", StringComparison.Ordinal) ? t : null;
+            Dispatcher.BeginInvoke(priority, () => DevShot.Take(shotFile, titlePart));
+        }
+
+        if (Arg("--dev-key") is { } keyName)
+        {
+            // Raises a key event inside this process (no synthesized system keystroke): used to check Esc handling.
+            Dispatcher.BeginInvoke(priority, () => RaiseKey(keyName));
+        }
+
         var panelIndex = Array.FindIndex(args, a => a == "--open-panel");
         if (panelIndex >= 0)
         {
@@ -265,7 +553,30 @@ public partial class App : Application
         }
     }
 
-    private static readonly string[] DevFlags = ["--open-settings", "--open-panel", "--open-menu", "--search", "--dev-uninstall", "--dev-install", "--action", "--dump-info", "--close-panel"];
+    private static readonly string[] DevFlags = ["--open-settings", "--open-panel", "--open-menu", "--search", "--dev-uninstall", "--dev-install", "--action", "--dump-info", "--close-panel", "--open-onboarding", "--open-install", "--show-toast", "--simulate-problem", "--dev-key", "--shot"];
+
+    /// <summary>Raises a PreviewKeyDown for <paramref name="name"/> (e.g. "escape") on the active window, as if it had been typed there.</summary>
+    private void RaiseKey(string name)
+    {
+        if (!Enum.TryParse<System.Windows.Input.Key>(name, ignoreCase: true, out var key))
+        {
+            return;
+        }
+
+        var window = Windows.OfType<Window>().FirstOrDefault(w => w.IsActive) ?? Windows.OfType<Window>().LastOrDefault(w => w.IsVisible);
+        if (window is null)
+        {
+            return;
+        }
+
+        var source = PresentationSource.FromVisual(window);
+        var target = System.Windows.Input.Keyboard.FocusedElement as UIElement ?? window;
+        var args = new System.Windows.Input.KeyEventArgs(System.Windows.Input.Keyboard.PrimaryDevice, source, Environment.TickCount, key)
+        {
+            RoutedEvent = System.Windows.Input.Keyboard.PreviewKeyDownEvent,
+        };
+        target.RaiseEvent(args);
+    }
 
     /// <summary>Activation request: a pending developer command wins over "recover" (show the panel / Settings).</summary>
     private void OnActivateRequested()
@@ -445,7 +756,7 @@ public partial class App : Application
         File.WriteAllText(path, sb.ToString());
     }
 
-    private static void LoadFeatureAssemblies(ILog log)
+    private static void LoadFeatureAssemblies(ILog log, ProblemReporter problems)
     {
         foreach (var name in FeatureAssemblies)
         {
@@ -456,6 +767,7 @@ public partial class App : Application
             catch (Exception ex)
             {
                 log.Error($"Could not load feature assembly {name}", ex);
+                problems.Add(new StartupProblem(name + ".dll", ex.Message, ex, SmartAppControl.LooksBlocked(ex)));
             }
         }
     }

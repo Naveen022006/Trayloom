@@ -5,12 +5,16 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using WinKnife.Core;
 using WinKnife.Core.Ui;
 
 namespace WinKnife.App;
 
-/// <summary>First-run introduction (spec 02-settings section 7): welcome, purpose, permissions, done. 540 x 600.</summary>
+/// <summary>
+/// First-run introduction (spec 02-settings section 7), 540 x 600: welcome, purpose (bundles / features), start with Windows,
+/// permissions, done (where the tray icon is and how to pin it next to the clock).
+/// </summary>
 internal sealed class OnboardingWindow : Window
 {
     private readonly ShellServices _s;
@@ -21,7 +25,9 @@ internal sealed class OnboardingWindow : Window
     private readonly HashSet<string> _selection = new(StringComparer.Ordinal);
     private string? _presetId;
     private IReadOnlyList<string> _presetKeys = [];
+    private const int LastStep = 4;
     private int _step;
+    private bool _login;
 
     public OnboardingWindow(ShellServices services)
     {
@@ -41,8 +47,12 @@ internal sealed class OnboardingWindow : Window
             _selection.Add(e.Id);
         }
 
-        _presetId = FeatureCatalog.Presets[0].Id;
-        _step = Math.Clamp(_s.App.Get<int>(AppKeys.OnboardingStep), 0, 3);
+        // Essentials is preselected on a fresh run (its features are what a clean install starts with).
+        _presetId = FeatureCatalog.Presets.FirstOrDefault(p => p.Features.Count == _selection.Count && p.Features.All(_selection.Contains))?.Id;
+        _presetKeys = FeatureCatalog.Presets.FirstOrDefault(p => p.Id == _presetId)?.EnableKeys ?? [];
+        _step = Math.Clamp(_s.App.Get<int>(AppKeys.OnboardingStep), 0, LastStep);
+        // Launch at login defaults to on for an installed copy (never overrides a choice the user already made).
+        _login = SafeLoginEnabled() || (InstallManager.IsInstalledCopy && !_s.App.IsSet(AppKeys.LaunchAtLoginWanted));
         _back = UiKit.Button("Back", ButtonKind.Bordered, 13, onClick: () => Go(_step - 1));
         _next = UiKit.Button("Continue", ButtonKind.Prominent, 14, onClick: Advance);
         _next.Padding = new Thickness(18, 7, 18, 7);
@@ -73,12 +83,12 @@ internal sealed class OnboardingWindow : Window
 
     private void Go(int step)
     {
-        _step = Math.Clamp(step, 0, 3);
+        _step = Math.Clamp(step, 0, LastStep);
         _s.App.Set(AppKeys.OnboardingStep, _step);
         _back.IsEnabled = _step > 0;
-        _next.Content = _step == 3 ? "Open WinKnife" : "Continue";
+        _next.Content = _step == LastStep ? "Open WinKnife" : "Continue";
         _dots.Children.Clear();
-        for (var i = 0; i < 4; i++)
+        for (var i = 0; i <= LastStep; i++)
         {
             var dot = new Border { Height = 7, Width = i == _step ? 18 : 7, CornerRadius = new CornerRadius(4), Margin = new Thickness(3, 0, 3, 0) };
             dot.SetResourceReference(Border.BackgroundProperty, i == _step ? ThemeKeys.Accent : ThemeKeys.Track);
@@ -89,7 +99,8 @@ internal sealed class OnboardingWindow : Window
         {
             0 => Welcome(),
             1 => Purpose(),
-            2 => Permissions(),
+            2 => Startup(),
+            3 => Permissions(),
             _ => Done(),
         };
         _body.ScrollToTop();
@@ -103,11 +114,18 @@ internal sealed class OnboardingWindow : Window
             _s.Runtime.ReplaceAvailable(_selection, _presetKeys);
         }
 
-        if (_step == 3)
+        if (_step == 2)
+        {
+            ApplyLogin();
+        }
+
+        if (_step == LastStep)
         {
             _s.App.Set(AppKeys.HasOnboarded, true);
             _s.App.Set(AppKeys.OnboardingStep, 0);
             Close();
+            // Show where the flyout lives: pop it up next to the clock.
+            _s.Shell.ShowPanelAtTray();
             return;
         }
 
@@ -116,44 +134,19 @@ internal sealed class OnboardingWindow : Window
 
     // ------------------------------------------------------------------------------------------------ steps
 
-    private static Border Hero(double height, double logo, string? title, string? subtitle)
-    {
-        var hero = new Border
-        {
-            Height = height,
-            Background = new LinearGradientBrush(
-            [
-                new GradientStop(Color.FromRgb(0x30, 0x30, 0x36), 0),
-                new GradientStop(Color.FromRgb(0x12, 0x12, 0x15), 0.45),
-                new GradientStop(Colors.Black, 1),
-            ], new Point(0, 0), new Point(1, 1)),
-        };
-        var col = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
-        col.Children.Add(BrandMark.Create(logo, ThemeKeys.OnAccent));
-        if (title is not null)
-        {
-            var t = new TextBlock { Text = title, FontSize = 26, FontWeight = FontWeights.Bold, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 14, 0, 0) };
-            col.Children.Add(t);
-        }
-
-        if (subtitle is not null)
-        {
-            var sub = new TextBlock { Text = subtitle, FontSize = 12, Foreground = new SolidColorBrush(Color.FromArgb(0xD9, 255, 255, 255)), TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, MaxWidth = 400, Margin = new Thickness(0, 6, 0, 0) };
-            col.Children.Add(sub);
-        }
-
-        hero.Child = col;
-        return hero;
-    }
+    private static Border Hero(double height, double logo, string? title, string? subtitle) => UiParts.Hero(height, logo, title, subtitle);
 
     private UIElement Welcome()
     {
         var stack = new StackPanel();
         stack.Children.Add(Hero(220, 130, "WinKnife", "A discreet tray utility that makes everyday Windows more practical."));
         var content = new StackPanel { Margin = new Thickness(24) };
-        content.Children.Add(FeatureLine("", "Energy under control", "Keep the PC awake for as long as you want, even with the lid closed."));
-        content.Children.Add(FeatureLine("", "A clear view of the system", "CPU, GPU and battery usage, memory pressure and network speed in real time."));
-        content.Children.Add(FeatureLine("", "Mouse and windows, your way", "Reversed mouse scrolling and a window switcher with thumbnails."));
+        var what = UiKit.Text("WinKnife is a set of small tools for your PC that lives in the tray, next to the clock. Everything is optional: on the next page you choose what to install.", 12.5, FontWeights.Normal, ThemeKeys.TextPrimary, wrap: true);
+        what.Margin = new Thickness(0, 0, 0, 18);
+        content.Children.Add(what);
+        content.Children.Add(FeatureLine("\uE945", "Energy under control", "Keep the PC awake for as long as you want, even with the lid closed."));
+        content.Children.Add(FeatureLine("\uE9D9", "A clear view of the system", "CPU, GPU and battery usage, memory pressure and network speed in real time."));
+        content.Children.Add(FeatureLine("\uE7C4", "Mouse and windows, your way", "Reversed mouse scrolling and a window switcher with thumbnails."));
         stack.Children.Add(content);
         return stack;
     }
@@ -185,7 +178,7 @@ internal sealed class OnboardingWindow : Window
     private UIElement Purpose()
     {
         var stack = new StackPanel { Margin = new Thickness(24, 22, 24, 18) };
-        var head = UiKit.Icon("", 26, ThemeKeys.Accent);
+        var head = UiKit.Icon("\uE8A9", 26, ThemeKeys.Accent);
         stack.Children.Add(head);
         var title = UiKit.Text("What brought you here?", 21, FontWeights.Bold, ThemeKeys.TextPrimary);
         title.HorizontalAlignment = HorizontalAlignment.Center;
@@ -212,7 +205,7 @@ internal sealed class OnboardingWindow : Window
             row.Children.Add(col);
             if (selected)
             {
-                var check = UiKit.Icon("", 16, ThemeKeys.Accent);
+                var check = UiKit.Icon("\uE930", 16, ThemeKeys.Accent);
                 Grid.SetColumn(check, 2);
                 row.Children.Add(check);
             }
@@ -290,7 +283,7 @@ internal sealed class OnboardingWindow : Window
         col.Children.Add(UiKit.Text(entry.Description, 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true, trimming: TextTrimming.CharacterEllipsis).Also(t => t.MaxHeight = 32));
         Grid.SetColumn(col, 2);
         row.Children.Add(col);
-        var check = UiKit.Icon(selected ? "" : "", 16, selected ? ThemeKeys.Accent : ThemeKeys.TextTertiary);
+        var check = UiKit.Icon(selected ? "\uE930" : "\uEA3A", 16, selected ? ThemeKeys.Accent : ThemeKeys.TextTertiary);
         Grid.SetColumn(check, 3);
         row.Children.Add(check);
         var card = new Border { CornerRadius = new CornerRadius(10), Padding = new Thickness(10, 8, 12, 8), Margin = new Thickness(0, 0, 0, 6), Child = row, Cursor = blocked ? Cursors.Arrow : Cursors.Hand };
@@ -340,7 +333,7 @@ internal sealed class OnboardingWindow : Window
     private UIElement Permissions()
     {
         var stack = new StackPanel { Margin = new Thickness(24, 22, 24, 18) };
-        var head = UiKit.Icon("", 26, ThemeKeys.Accent);
+        var head = UiKit.Icon("\uE8D7", 26, ThemeKeys.Accent);
         stack.Children.Add(head);
         var title = UiKit.Text("Permissions", 21, FontWeights.Bold, ThemeKeys.TextPrimary);
         title.HorizontalAlignment = HorizontalAlignment.Center;
@@ -357,7 +350,7 @@ internal sealed class OnboardingWindow : Window
         if (selectedPerms.Count == 0)
         {
             var line = new StackPanel { Orientation = Orientation.Horizontal };
-            line.Children.Add(UiKit.Icon("", 14, ThemeKeys.Green));
+            line.Children.Add(UiKit.Icon("\uE930", 14, ThemeKeys.Green));
             var t = UiKit.Text("You do not need to grant any permission to finish setup.", 12.5, FontWeights.Normal, ThemeKeys.TextPrimary, wrap: true);
             t.Margin = new Thickness(8, 0, 0, 0);
             line.Children.Add(t);
@@ -370,7 +363,7 @@ internal sealed class OnboardingWindow : Window
                 var status = PermissionService.Check(p);
                 var row = new StackPanel();
                 var h = new StackPanel { Orientation = Orientation.Horizontal };
-                h.Children.Add(UiKit.Icon(status.State == PermissionState.Granted ? "" : "", 14, status.State == PermissionState.Granted ? ThemeKeys.Green : ThemeKeys.Orange));
+                h.Children.Add(UiKit.Icon(status.State == PermissionState.Granted ? "\uE930" : "\uE7BA", 14, status.State == PermissionState.Granted ? ThemeKeys.Green : ThemeKeys.Orange));
                 var n = UiKit.Text(PermissionService.Name(p), 13, FontWeights.SemiBold, ThemeKeys.TextPrimary);
                 n.Margin = new Thickness(8, 0, 0, 0);
                 h.Children.Add(n);
@@ -418,22 +411,177 @@ internal sealed class OnboardingWindow : Window
         return stack;
     }
 
+    // ------------------------------------------------------------------------------------------------ start with Windows
+
+    private static bool SafeLoginEnabled()
+    {
+        try
+        {
+            return AutoStart.IsEnabled;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private void ApplyLogin()
+    {
+        try
+        {
+            if (_login != SafeLoginEnabled())
+            {
+                AutoStart.SetEnabled(_login);
+            }
+
+            _s.App.Set(AppKeys.LaunchAtLoginWanted, _login);
+        }
+        catch (Exception ex)
+        {
+            _s.Log.Error("Changing launch at login failed", ex);
+        }
+    }
+
+    private UIElement Startup()
+    {
+        var stack = new StackPanel { Margin = new Thickness(24, 22, 24, 18) };
+        var head = UiKit.Icon("", 26, ThemeKeys.Accent);
+        stack.Children.Add(head);
+        var title = UiKit.Text("Start with Windows", 21, FontWeights.Bold, ThemeKeys.TextPrimary);
+        title.HorizontalAlignment = HorizontalAlignment.Center;
+        title.Margin = new Thickness(0, 8, 0, 0);
+        stack.Children.Add(title);
+        var sub = UiKit.Text("WinKnife lives in the tray, so it is most useful when it is already there after you sign in.", 13, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+        sub.HorizontalAlignment = HorizontalAlignment.Center;
+        sub.TextAlignment = TextAlignment.Center;
+        sub.Margin = new Thickness(0, 4, 0, 16);
+        stack.Children.Add(sub);
+
+        var card = new SettingsCard();
+        card.Add(new SettingsRow("", "Launch at login", "Opens by itself every time you turn on your PC.", new MacSwitch(_login, SwitchSize.Regular, on => _login = on)));
+        if (!InstallManager.IsInstalledCopy && !InstallManager.IsDevelopmentBuild)
+        {
+            card.AddDivider();
+            card.Add(new SettingsRow("", "WinKnife is not installed yet", "It is running from " + InstallManager.CurrentDirectory + ". Install it so the Start menu and the login entry keep working if you move or delete that folder.",
+                UiKit.Button("Install…", ButtonKind.Bordered, 12, onClick: () => _s.Shell.ShowInstallOffer())));
+        }
+
+        stack.Children.Add(card);
+
+        var ways = new SettingsCard("Ways to open WinKnife");
+        ways.Add(new SettingsRow("", "The tray icon", "Click the WinKnife icon next to the clock for the panel; right-click it for the menu."));
+        ways.AddDivider();
+        ways.Add(new SettingsRow("", "The Start menu", "Press the Windows key, type “WinKnife” and press Enter. This opens Settings if it is already running."));
+        stack.AddSpaced(ways, 16);
+        return stack;
+    }
+
+    // ------------------------------------------------------------------------------------------------ done
+
     private UIElement Done()
     {
         var stack = new StackPanel();
-        stack.Children.Add(Hero(300, 150, "All set!", "WinKnife is already looking after your PC."));
-        var hint = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 28, 0, 0) };
-        var icon = UiKit.Icon("", 26, ThemeKeys.Accent);
-        icon.HorizontalAlignment = HorizontalAlignment.Center;
-        hint.Children.Add(icon);
-        var text = UiKit.Text("Look for the WinKnife icon in the system tray (click the ^ if it’s hidden).", 13, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
-        text.TextAlignment = TextAlignment.Center;
-        text.MaxWidth = 340;
-        text.Margin = new Thickness(0, 10, 0, 0);
-        hint.Children.Add(text);
-        stack.Children.Add(hint);
+        stack.Children.Add(Hero(150, 76, "All set!", "WinKnife is running and looking after your PC."));
+        var body = new StackPanel { Margin = new Thickness(24, 18, 24, 16) };
+        var look = UiKit.Text("Your WinKnife icon is next to the clock", 15, FontWeights.SemiBold, ThemeKeys.TextPrimary);
+        look.HorizontalAlignment = HorizontalAlignment.Center;
+        body.Children.Add(look);
+        var hint = UiKit.Text("Click it to open the panel. If you do not see it, click the ^ arrow to show hidden icons.", 12.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+        hint.TextAlignment = TextAlignment.Center;
+        hint.Margin = new Thickness(0, 4, 0, 12);
+        body.Children.Add(hint);
+        var illustration = TrayIllustration.Build();
+        illustration.HorizontalAlignment = HorizontalAlignment.Center;
+        body.Children.Add(illustration);
+
+        var pin = new SettingsCard();
+        pin.Add(new SettingsRow("", "Pin the icon to the taskbar corner",
+            "Windows does not let apps pin themselves. Open Taskbar settings, expand “Other system tray icons” and switch WinKnife on.",
+            UiKit.Button("Open Taskbar settings", ButtonKind.Bordered, 12, onClick: () => UiKit.OpenUrl("ms-settings:taskbar"))));
+        body.AddSpaced(pin, 14);
+        stack.Children.Add(body);
         return stack;
     }
+}
+
+/// <summary>A small drawing of the taskbar corner with the WinKnife icon highlighted and an arrow pointing at it.</summary>
+internal static class TrayIllustration
+{
+    public static FrameworkElement Build()
+    {
+        const double W = 440;
+        const double H = 124;
+        var canvas = new Canvas { Width = W, Height = H };
+
+        // Taskbar strip (fixed dark colours: it depicts Windows, not our theme).
+        var strip = new Border { Width = W, Height = 46, CornerRadius = new CornerRadius(10), Background = new SolidColorBrush(Color.FromRgb(0x20, 0x20, 0x26)), BorderBrush = new SolidColorBrush(Color.FromArgb(0x30, 255, 255, 255)), BorderThickness = new Thickness(1) };
+        Canvas.SetTop(strip, H - 46);
+        canvas.Children.Add(strip);
+
+        // App icons on the left of the taskbar.
+        var xs = new[] { 150.0, 182.0, 214.0, 246.0 };
+        for (var i = 0; i < xs.Length; i++)
+        {
+            var app = new Border { Width = 22, Height = 22, CornerRadius = new CornerRadius(6), Background = new SolidColorBrush(Color.FromArgb(i == 0 ? (byte)0xB0 : (byte)0x50, 255, 255, 255)) };
+            Canvas.SetLeft(app, xs[i]);
+            Canvas.SetTop(app, H - 46 + 12);
+            canvas.Children.Add(app);
+        }
+
+        // Tray: chevron, WinKnife (highlighted), network, volume, clock.
+        var chevron = Glyph("", 11, Colors.White, 0.85);
+        Canvas.SetLeft(chevron, 286);
+        Canvas.SetTop(chevron, H - 46 + 15);
+        canvas.Children.Add(chevron);
+
+        var iconX = 316.0;
+        var ring = new Border { Width = 34, Height = 30, CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(2), BorderBrush = new SolidColorBrush(Color.FromRgb(0x4D, 0xA3, 0xFF)), Background = new SolidColorBrush(Color.FromArgb(0x33, 0x4D, 0xA3, 0xFF)) };
+        Canvas.SetLeft(ring, iconX - 4);
+        Canvas.SetTop(ring, H - 46 + 8);
+        canvas.Children.Add(ring);
+        ring.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(1, 0.45, TimeSpan.FromMilliseconds(900)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever });
+        var mark = new System.Windows.Shapes.Path { Data = BrandMark.Geometry, Stretch = Stretch.Uniform, Width = 22, Height = 22 * BrandMark.Height / BrandMark.Width, Fill = Brushes.White };
+        Canvas.SetLeft(mark, iconX + 1);
+        Canvas.SetTop(mark, H - 46 + 16);
+        canvas.Children.Add(mark);
+
+        var wifi = Glyph("", 12, Colors.White, 0.85);
+        Canvas.SetLeft(wifi, 356);
+        Canvas.SetTop(wifi, H - 46 + 15);
+        canvas.Children.Add(wifi);
+        var volume = Glyph("", 12, Colors.White, 0.85);
+        Canvas.SetLeft(volume, 378);
+        Canvas.SetTop(volume, H - 46 + 15);
+        canvas.Children.Add(volume);
+        var clock = new TextBlock { Text = "9:41", FontSize = 11, Foreground = new SolidColorBrush(Color.FromArgb(0xE6, 255, 255, 255)), FontFamily = UiKit.TextFont };
+        Canvas.SetLeft(clock, 403);
+        Canvas.SetTop(clock, H - 46 + 15);
+        canvas.Children.Add(clock);
+
+        // Callout pill + arrow pointing at the icon.
+        var pill = new Border { CornerRadius = new CornerRadius(10), Padding = new Thickness(10, 4, 10, 5), Background = new SolidColorBrush(Color.FromRgb(0x4D, 0xA3, 0xFF)) };
+        pill.Child = new TextBlock { Text = "WinKnife", FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = Brushes.White, FontFamily = UiKit.TextFont };
+        Canvas.SetLeft(pill, iconX + 13 - 36);
+        Canvas.SetTop(pill, 6);
+        canvas.Children.Add(pill);
+        var arrow = new System.Windows.Shapes.Path
+        {
+            Data = Geometry.Parse("M 0,0 L 0,24 M -6,17 L 0,25 L 6,17"),
+            Stroke = new SolidColorBrush(Color.FromRgb(0x4D, 0xA3, 0xFF)),
+            StrokeThickness = 2.5,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            StrokeLineJoin = PenLineJoin.Round,
+        };
+        Canvas.SetLeft(arrow, iconX + 13);
+        Canvas.SetTop(arrow, 36);
+        canvas.Children.Add(arrow);
+
+        return new Border { Child = canvas, Padding = new Thickness(0), Width = W, Height = H };
+    }
+
+    private static TextBlock Glyph(string glyph, double size, Color color, double opacity) =>
+        new() { Text = glyph, FontFamily = UiKit.IconFont, FontSize = size, Foreground = new SolidColorBrush(color), Opacity = opacity };
 }
 
 internal static class UiExtensions

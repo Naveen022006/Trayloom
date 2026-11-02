@@ -183,6 +183,18 @@ public static class AppKeys
     public const string FeaturesTabSelected = "featuresPageTab";
     public const string TrayTipShown = "trayOverflowTipShown";
 
+    /// <summary>Destination (<c>page#anchor</c>) of the Settings page that was open last; reopened by "Settings".</summary>
+    public const string SettingsLastPage = "settingsLastPage";
+
+    /// <summary>The one-time "WinKnife is running - click the icon by the clock" toast was shown.</summary>
+    public const string FirstRunToastShown = "firstRunToastShown";
+
+    /// <summary>The user chose "Don't ask again" on the install offer.</summary>
+    public const string InstallPromptDismissed = "installPromptDismissed";
+
+    /// <summary>The user hid the "Getting started" card on the General page.</summary>
+    public const string GettingStartedDismissed = "gettingStartedDismissed";
+
     /// <summary>The key that stores install state for a catalog entry: <c>featureAvailable.&lt;RawId&gt;</c>.</summary>
     public static string Available(FeatureCatalogEntry entry) => "featureAvailable." + entry.RawId;
 
@@ -237,6 +249,10 @@ public static class AppKeys
             [BrightnessControlEnabled] = false,
             [FeaturesTabSelected] = 0,
             [TrayTipShown] = false,
+            [SettingsLastPage] = string.Empty,
+            [FirstRunToastShown] = false,
+            [InstallPromptDismissed] = false,
+            [GettingStartedDismissed] = false,
             ["panelShowKeepAwake"] = true,
             ["panelShowBrightness"] = true,
             ["panelShowUtilities"] = true,
