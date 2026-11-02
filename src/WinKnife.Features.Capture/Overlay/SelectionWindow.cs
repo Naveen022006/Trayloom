@@ -40,6 +40,14 @@ internal sealed class SelectionWindow : Window
     {
         _session = session;
         Monitor = monitor;
+        // Closed by something else (Alt+F4, a task manager): end the session so the next capture can start.
+        Closed += (_, _) =>
+        {
+            if (!_closing)
+            {
+                _session.WindowClosedExternally();
+            }
+        };
         Title = string.Empty;
         WindowStyle = WindowStyle.None;
         ResizeMode = ResizeMode.NoResize;

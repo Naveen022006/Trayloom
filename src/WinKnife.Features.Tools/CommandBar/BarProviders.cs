@@ -487,64 +487,18 @@ internal static class BarProviders
 
     // ------------------------------------------------------------------ clipboard history / snippets
 
-    private static List<BarClipItem> _clips = [];
-    private static DateTime _clipsStamp = DateTime.MinValue;
+    /// <summary>The service hub of the running Command Bar (clipboard history, snippets, kill process...).</summary>
+    public static IServiceHub? Hub { get; set; }
 
-    private sealed class ClipDto
-    {
-        public string Id { get; set; } = "";
-
-        public string Kind { get; set; } = "text";
-
-        public string Text { get; set; } = "";
-
-        public List<string> FilePaths { get; set; } = [];
-
-        public string? ImageFile { get; set; }
-
-        public DateTime CopiedAt { get; set; }
-
-        public DateTime? PinnedAt { get; set; }
-    }
-
-    private static string ClipboardRoot()
-    {
-        var data = Environment.GetEnvironmentVariable("WINKNIFE_DATA");
-        return string.IsNullOrWhiteSpace(data)
-            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinKnife")
-            : Path.Combine(data, "local");
-    }
-
-    /// <summary>Clipboard history entries (read from the Clipboard feature's index file), newest first.</summary>
+    /// <summary>Clipboard history entries from the Clipboard feature's service, pinned first then newest first (empty when it is not installed).</summary>
     public static IReadOnlyList<BarClipItem> Clips()
     {
-        try
+        if (Hub?.Get<IClipboardHistoryService>() is not { } service)
         {
-            var path = Path.Combine(ClipboardRoot(), "clipboard.json");
-            if (!File.Exists(path))
-            {
-                return [];
-            }
-
-            var stamp = File.GetLastWriteTimeUtc(path);
-            if (stamp != _clipsStamp)
-            {
-                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-                var dtos = JsonSerializer.Deserialize<List<ClipDto>>(stream, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
-                var images = Path.Combine(ClipboardRoot(), "Clipboard");
-                _clips =
-                [
-                    .. dtos.OrderByDescending(d => d.CopiedAt).Select(d => new BarClipItem(d.Id, d.Kind, d.Text, d.FilePaths, d.ImageFile is null ? null : Path.Combine(images, d.ImageFile), d.CopiedAt, d.PinnedAt is not null)),
-                ];
-                _clipsStamp = stamp;
-            }
-        }
-        catch
-        {
-            // keep the previous list
+            return [];
         }
 
-        return _clips;
+        return [.. service.Items.Select(c => new BarClipItem(c.Id, c.Kind, c.IsFiles ? string.Empty : c.Text, [.. c.Files], c.ImagePath, c.CopiedAt, c.Pinned))];
     }
 
     public static List<BarSnippet> Snippets(IAppSettings app)

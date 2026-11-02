@@ -9,7 +9,7 @@ using WinKnife.Core.Ui;
 namespace WinKnife.Features.Tools;
 
 /// <summary>Floating pad for short-lived notes with up to 12 tabs (Vorssaint scratchpad).</summary>
-public sealed class ScratchpadFeature : ToolsFeatureBase
+public sealed class ScratchpadFeature : ToolsFeatureBase, IScratchpadService
 {
     private PadStore? _store;
     private ScratchpadWindow? _window;
@@ -34,10 +34,59 @@ public sealed class ScratchpadFeature : ToolsFeatureBase
         PadServices.Ctx = Ctx;
         _store = new PadStore(Ctx.Ui, Path.Combine(AppPaths.Root, "Scratchpad.json"), Path.Combine(Ctx.DataDirectory, "notes.json"), () => App.Get<string>("scratchpadRetention"));
         BindRole("scratchpad", Toggle);
+        _store.DocumentChanged += OnDocumentChanged;
+        Ctx.Services.Provide<IScratchpadService>(this);
     }
+
+    // ---------------------------------------------------------------------------------------------- IScratchpadService
+
+    private event Action? ServiceChanged;
+
+    event Action? IScratchpadService.Changed
+    {
+        add => ServiceChanged += value;
+        remove => ServiceChanged -= value;
+    }
+
+    private void OnDocumentChanged() => ServiceChanged?.Invoke();
+
+    private PadDocument? Document => _store is null ? null : _store.Doc ?? (_store.Load() ? _store.Doc : null);
+
+    IReadOnlyList<ScratchpadPadInfo> IScratchpadService.Pads =>
+        Document is { } doc ? [.. doc.Pads.Select(p => new ScratchpadPadInfo(p.Id, p.Name, p.Text, p.ModifiedAt is { } m ? PadRules.FromReference(m) : DateTime.Now))] : [];
+
+    string? IScratchpadService.SelectedId => Document?.SelectedId;
+
+    void IScratchpadService.Select(string id) => _store?.Select(id);
+
+    void IScratchpadService.SetText(string id, string text)
+    {
+        if (Document is { } doc && doc.Pads.Any(p => p.Id == id))
+        {
+            _store!.Replace([.. doc.Pads.Select(p => (p.Id, p.Name, p.Id == id ? text : p.Text))], doc.SelectedId);
+        }
+    }
+
+    string IScratchpadService.AddPad() => _store?.Add()?.Id ?? string.Empty;
+
+    void IScratchpadService.Replace(IReadOnlyList<ScratchpadPadInfo> pads, string? selectedId)
+    {
+        if (Document is not null)
+        {
+            _store!.Replace([.. pads.Select(p => (p.Id, p.Name, p.Text))], selectedId);
+        }
+    }
+
+    void IScratchpadService.Open() => Safe(Toggle);
 
     protected override void OnStop()
     {
+        Ctx.Services.Withdraw<IScratchpadService>(this);
+        if (_store is not null)
+        {
+            _store.DocumentChanged -= OnDocumentChanged;
+        }
+
         _store?.Flush();
         if (_window is not null)
         {

@@ -162,7 +162,7 @@ public sealed class ShelfPanelSection : IPanelSection
 
     public string? Category => PanelTabs.CategoryFiles;
 
-    public (int Enabled, int Total) CategoryCounts => (Hub.Settings?.Get<bool>("shelfEnabled") == true ? 1 : 0, 1);
+    public (int Enabled, int Total) GetCategoryCounts(IPanelContext context) => (context.App.Get<bool>("shelfEnabled") ? 1 : 0, 1);
 
     public int Order => 20;
 

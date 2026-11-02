@@ -41,6 +41,7 @@ internal sealed class QuickPanelWindow : GlassWindow
     private bool _presented;
     private IKeepAwakeService? _keepAwake;
     private IMicMuteState? _mic;
+    private IRecordingState? _recording;
 
     public QuickPanelWindow(IContributionServices ctx, Func<string> shortcutText)
         : base(22)
@@ -122,6 +123,12 @@ internal sealed class QuickPanelWindow : GlassWindow
         };
         _keepAwake = _ctx.Services.Get<IKeepAwakeService>();
         _mic = _ctx.Services.Get<IMicMuteState>();
+        _recording = _ctx.Services.Get<IRecordingState>();
+        if (_recording is not null)
+        {
+            _recording.Changed += OnStateChanged;
+        }
+
         if (_keepAwake is not null)
         {
             _keepAwake.Changed += OnStateChanged;
@@ -146,6 +153,12 @@ internal sealed class QuickPanelWindow : GlassWindow
         _foreground?.Dispose();
         _outside = null;
         _foreground = null;
+        if (_recording is not null)
+        {
+            _recording.Changed -= OnStateChanged;
+            _recording = null;
+        }
+
         if (_keepAwake is not null)
         {
             _keepAwake.Changed -= OnStateChanged;
@@ -228,12 +241,14 @@ internal sealed class QuickPanelWindow : GlassWindow
     {
         "keepAwake" => _keepAwake?.IsActive ?? _ctx.Services.Get<IKeepAwakeService>()?.IsActive ?? false,
         "micMute" => (_mic ?? _ctx.Services.Get<IMicMuteState>())?.IsMuted ?? false,
+        "screenRecorder" => (_recording ?? _ctx.Services.Get<IRecordingState>())?.IsRecording ?? false,
         _ => false,
     };
 
     private string TitleOf(QuickItem item) => item.Id switch
     {
         "micMute" when IsActiveItem(item) => "Unmute microphone",
+        "screenRecorder" when IsActiveItem(item) => "Stop recording",
         _ => item.Title,
     };
 

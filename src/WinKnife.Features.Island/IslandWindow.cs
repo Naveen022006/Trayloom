@@ -56,7 +56,6 @@ internal sealed partial class IslandWindow : OverlayWindow
 
     private IslandMode _mode = IslandMode.Closed;
     private bool _suppressed;
-    private bool _concealed;
     private bool _disposed;
     private int _holds;
     private bool _pinned;
@@ -65,7 +64,6 @@ internal sealed partial class IslandWindow : OverlayWindow
     private bool _exploring;
     private string _module = "controls";
     private IslandPage? _page;
-    private string? _detail;
     private DateTime _lastChange = DateTime.MinValue;
 
     public IslandWindow(IslandCore core)
@@ -126,9 +124,7 @@ internal sealed partial class IslandWindow : OverlayWindow
 
     internal double ScreenHeightDip => _area.Bounds.Height / Math.Max(0.5, _scale);
 
-    private bool GuttersWanted => _mode == IslandMode.Open && _core.IslandOn && !_exploringHidesQuick;
-
-    private bool _exploringHidesQuick;
+    private bool GuttersWanted => _mode == IslandMode.Open && _core.IslandOn && true;
 
     private QuickAccessLayout _layout = QuickAccessLayout.Initial();
 
@@ -334,7 +330,7 @@ internal sealed partial class IslandWindow : OverlayWindow
 
     private void PublishPill()
     {
-        if (_suppressed || _concealed || !_core.IslandOn)
+        if (_suppressed || !_core.IslandOn)
         {
             IslandRects.Pill = null;
             return;

@@ -42,7 +42,7 @@ public sealed class PackagesSettingsSection : ISettingsSection
     }
 }
 
-/// <summary>Utilities row "winget": the hosted package manager panel.</summary>
+/// <summary>Utilities row "Packages": the hosted winget package manager panel.</summary>
 public sealed class PackagesUtility : IPanelUtility
 {
     public string? FeatureId => "homebrew";
@@ -51,7 +51,7 @@ public sealed class PackagesUtility : IPanelUtility
 
     public string Id => "homebrew";
 
-    public string Title => "winget";
+    public string Title => "Packages";
 
     public string Glyph => G.Package;
 

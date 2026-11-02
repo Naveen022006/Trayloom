@@ -655,7 +655,7 @@ internal sealed class AgentHeatmap : FrameworkElement
 
     private double Cell() => Math.Max(1, Math.Min((ActualHeight - Spacing * 6) / 7, (ActualWidth - Spacing * Math.Max(0, _columns.Count - 1)) / Math.Max(1, _columns.Count)));
 
-    private double Opacity(double value)
+    private new double Opacity(double value)
     {
         if (value <= 0)
         {

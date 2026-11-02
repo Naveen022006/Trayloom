@@ -20,7 +20,6 @@ internal sealed class RecentCapturesView : StackPanel
     private readonly bool _palette;
     private readonly Action? _afterAction;
     private readonly Action _close;
-    private readonly Func<bool>? _confirmHost;
 
     public RecentCapturesView(bool palette, Action? afterAction = null, Action? close = null)
     {
@@ -30,7 +29,6 @@ internal sealed class RecentCapturesView : StackPanel
         Rebuild();
         Loaded += (_, _) => RecentCaptureService.Instance.Changed += OnChanged;
         Unloaded += (_, _) => RecentCaptureService.Instance.Changed -= OnChanged;
-        _confirmHost = null;
     }
 
     private void OnChanged() => Dispatcher.BeginInvoke(Rebuild);

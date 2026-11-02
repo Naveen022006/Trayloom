@@ -41,7 +41,7 @@ internal static class ShortcutRows
             var message = error ?? state.Problem;
             problem.Text = message ?? string.Empty;
             problem.Visibility = string.IsNullOrEmpty(message) ? Visibility.Collapsed : Visibility.Visible;
-            reset.Visibility = c.Shortcuts.IsDefault(roleId) ? Visibility.Collapsed : Visibility.Visible;
+            reset!.Visibility = c.Shortcuts.IsDefault(roleId) ? Visibility.Collapsed : Visibility.Visible;
         }
 
         recorder.HotkeyChanged += (_, hotkey) =>

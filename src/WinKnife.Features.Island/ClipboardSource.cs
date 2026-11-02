@@ -55,12 +55,10 @@ internal sealed class ClipboardSource : IDisposable
 
     private readonly IslandCore _core;
     private HwndSource? _source;
-    private FileSystemWatcher? _watcher;
     private DispatcherTimer? _debounce;
+    private IClipboardHistoryService? _service;
     private DateTime _lastNotice = DateTime.MinValue;
     private string _lastText = "";
-    private string _file = "";
-    private string _imageDir = "";
 
     public ClipboardSource(IslandCore core) => _core = core;
 
@@ -70,32 +68,40 @@ internal sealed class ClipboardSource : IDisposable
 
     public event Action? Changed;
 
-    public bool HistoryOn => _core.App.Get<bool>(K.ClipboardHistoryEnabled);
+    /// <summary>True while the Clipboard history feature is installed and recording.</summary>
+    public bool HistoryOn => _service?.IsRecording ?? _core.App.Get<bool>(K.ClipboardHistoryEnabled);
 
     public void Start()
     {
-        try
-        {
-            var root = Path.GetDirectoryName(_core.Ctx.DataDirectory.TrimEnd('\\', '/')) ?? _core.Ctx.DataDirectory;
-            var dir = Path.Combine(root, "clipboard-history");
-            _file = Path.Combine(dir, "history.json");
-            _imageDir = Path.Combine(dir, "images");
-            Reload();
-            if (Directory.Exists(dir))
-            {
-                _watcher = new FileSystemWatcher(dir, "history.json") { NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName, EnableRaisingEvents = true };
-                _watcher.Changed += (_, _) => Schedule();
-                _watcher.Created += (_, _) => Schedule();
-            }
-        }
-        catch
-        {
-        }
-
+        _core.Ctx.Services.Changed += Rehook;
+        Rehook();
         var parms = new HwndSourceParameters("WinKnifeIslandClip") { ParentWindow = new nint(-3), Width = 0, Height = 0, WindowStyle = 0 };
         _source = new HwndSource(parms);
         _source.AddHook(Hook);
         AddClipboardFormatListener(_source.Handle);
+    }
+
+    /// <summary>Follows the published service (Files starts independently of the island and can be installed later).</summary>
+    private void Rehook()
+    {
+        var service = _core.Ctx.Services.Get<IClipboardHistoryService>();
+        if (ReferenceEquals(service, _service))
+        {
+            return;
+        }
+
+        if (_service is not null)
+        {
+            _service.Changed -= Schedule;
+        }
+
+        _service = service;
+        if (service is not null)
+        {
+            service.Changed += Schedule;
+        }
+
+        Schedule();
     }
 
     private void Schedule()
@@ -119,39 +125,27 @@ internal sealed class ClipboardSource : IDisposable
     public void Reload()
     {
         var list = new List<ClipItem>();
-        try
+        if (_service is { } service)
         {
-            if (File.Exists(_file))
+            foreach (var e in service.Items)
             {
-                using var fs = new FileStream(_file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-                using var doc = JsonDocument.Parse(fs);
-                foreach (var e in doc.RootElement.EnumerateArray())
+                list.Add(new ClipItem
                 {
-                    string Str(string n) => e.TryGetProperty(n, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
-                    int Int(string n) => e.TryGetProperty(n, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : 0;
-                    var img = Str("ImageFile");
-                    var thumb = Str("ThumbFile");
-                    list.Add(new ClipItem
-                    {
-                        Id = Str("Id"),
-                        Kind = Str("Kind") is { Length: > 0 } k ? k : "text",
-                        Text = Str("Text"),
-                        ImagePath = img.Length > 0 ? Path.Combine(_imageDir, img) : null,
-                        ThumbPath = thumb.Length > 0 ? Path.Combine(_imageDir, thumb) : (img.Length > 0 ? Path.Combine(_imageDir, img) : null),
-                        Created = DateTime.TryParse(Str("CreatedUtc"), null, System.Globalization.DateTimeStyles.RoundtripKind, out var d) ? d.ToLocalTime() : DateTime.Now,
-                        Pinned = e.TryGetProperty("Pinned", out var p) && p.ValueKind == JsonValueKind.True,
-                        Source = Str("Source") is { Length: > 0 } s ? s : null,
-                        Width = Int("Width"),
-                        Height = Int("Height"),
-                    });
-                }
+                    Id = e.Id,
+                    Kind = e.Kind,
+                    Text = e.IsFiles ? string.Join(Environment.NewLine, e.Files.Select(Path.GetFileName)) : e.Text,
+                    ImagePath = e.ImagePath,
+                    ThumbPath = e.ImagePath,
+                    Created = e.CopiedAt,
+                    Pinned = e.Pinned,
+                    Source = e.SourceExe,
+                    Width = e.Width,
+                    Height = e.Height,
+                });
             }
         }
-        catch
-        {
-        }
 
-        Items = [.. list.OrderByDescending(i => i.Pinned).ThenByDescending(i => i.Created)];
+        Items = list;
         Changed?.Invoke();
     }
 
@@ -167,7 +161,7 @@ internal sealed class ClipboardSource : IDisposable
 
     private void OnClipboard()
     {
-        if (!_core.IslandOn || !_core.Ctx.Runtime.IsAvailable("clipboard-history") || !HistoryOn)
+        if (!_core.IslandOn || _service is null || !HistoryOn)
         {
             return;
         }
@@ -200,26 +194,13 @@ internal sealed class ClipboardSource : IDisposable
 
     public void Copy(ClipItem item)
     {
-        try
-        {
-            if (item.IsImage && item.ImagePath is not null && File.Exists(item.ImagePath))
-            {
-                var bmp = new BitmapImage();
-                bmp.BeginInit();
-                bmp.CacheOption = BitmapCacheOption.OnLoad;
-                bmp.UriSource = new Uri(item.ImagePath);
-                bmp.EndInit();
-                System.Windows.Clipboard.SetImage(bmp);
-            }
-            else
-            {
-                System.Windows.Clipboard.SetText(item.Text);
-            }
-        }
-        catch
+        if (_service is null)
         {
             System.Media.SystemSounds.Beep.Play();
+            return;
         }
+
+        _service.Copy(item.Id);
     }
 
     public void Paste(ClipItem item)
@@ -239,7 +220,12 @@ internal sealed class ClipboardSource : IDisposable
 
     public void Dispose()
     {
-        _watcher?.Dispose();
+        _core.Ctx.Services.Changed -= Rehook;
+        if (_service is not null)
+        {
+            _service.Changed -= Schedule;
+        }
+
         _debounce?.Stop();
         if (_source is not null)
         {

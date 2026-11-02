@@ -206,6 +206,7 @@ public sealed class CleaningModeFeature : ToolsFeatureBase, ICleaningModeService
     private readonly object _hookGate = new();
     private readonly List<CleaningOverlayWindow> _overlays = [];
     private IDisposable? _keyboard;
+    private IDisposable? _pause;
     private IDisposable? _mouse;
     private DispatcherTimer? _topmost;
     private DispatcherTimer? _releaseDeadline;
@@ -247,6 +248,8 @@ public sealed class CleaningModeFeature : ToolsFeatureBase, ICleaningModeService
             _gate.InvalidateTrackedPresses();
         }
 
+        // Every other hook-based feature (debounce, scroll inversion, snippets, gestures) sleeps while the keyboard is locked.
+        _pause = Ctx.Hooks.PauseOthers();
         _keyboard = Ctx.Hooks.SubscribeKeyboard(OnKey, int.MaxValue);
         _mouse = Ctx.Hooks.SubscribeMouse(OnMouse, int.MaxValue);
         _active = true;
@@ -432,7 +435,8 @@ public sealed class CleaningModeFeature : ToolsFeatureBase, ICleaningModeService
         SystemEvents.SessionSwitch -= OnSession;
         _keyboard?.Dispose();
         _mouse?.Dispose();
-        _keyboard = _mouse = null;
+        _pause?.Dispose();
+        _keyboard = _mouse = _pause = null;
         _topmost?.Stop();
         _releaseDeadline?.Stop();
         _topmost = _releaseDeadline = null;

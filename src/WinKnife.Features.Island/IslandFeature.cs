@@ -29,8 +29,13 @@ public sealed class IslandFeature : IFeature
             }
 
             var core = _core;
+            // Developer aid (WINKNIFE_DEV=1): one action per page, so screenshots can open every page without synthesized input.
+            var dev = Environment.GetEnvironmentVariable("WINKNIFE_DEV") == "1"
+                ? IslandCatalog.Modules.Select(m => new FeatureAction("dev-open-" + m.Id, "Island page: " + m.Title, () => _window?.Open(m.Id), G.Controls)).ToList()
+                : [];
             return
             [
+                .. dev,
                 new FeatureAction("toggle", "Open or close Dynamic Island", () => _window?.Toggle(), G.Controls),
                 new FeatureAction("explore", "Explore the island sections", () => _window?.Open("explore"), G.Explore),
                 new FeatureAction("play-pause", "Play or pause music", () => core.Playback.TogglePlayPause(), G.Play),

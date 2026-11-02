@@ -207,7 +207,6 @@ internal sealed class WasapiCapture : IDisposable
     }
 
     private double _resamplePos;
-    private float _lastL, _lastR;
 
     /// <summary>Linear resample of interleaved stereo floats to 48 kHz.</summary>
     private float[] Resample(float[] stereo, int rate)

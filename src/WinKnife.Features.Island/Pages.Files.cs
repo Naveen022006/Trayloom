@@ -11,12 +11,17 @@ using WinKnife.Core;
 
 namespace WinKnife.Features.Island;
 
-/// <summary>The files parked in the island (persisted in the island's data folder).</summary>
+/// <summary>
+/// The files parked in the island: the island is a second window onto the Shelf feature (<see cref="IShelfService"/>);
+/// without the shelf installed it shows an empty page and nothing is kept.
+/// </summary>
 internal static class IslandShelf
 {
-    private static readonly List<string> Paths = [];
-    private static bool _loaded;
-    private static string _file = "";
+    private static IShelfService? _hooked;
+
+    private static IShelfService? Service => IslandCore.Current?.Ctx.Services.Get<IShelfService>();
+
+    public static bool Available => Service is not null;
 
     public static event Action? Changed;
 
@@ -24,79 +29,32 @@ internal static class IslandShelf
     {
         get
         {
-            Load();
-            return Paths;
-        }
-    }
-
-    private static void Load()
-    {
-        if (_loaded)
-        {
-            return;
-        }
-
-        _loaded = true;
-        try
-        {
-            var dir = IslandCore.Current?.Ctx.DataDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WinKnife", "island");
-            Directory.CreateDirectory(dir);
-            _file = Path.Combine(dir, "shelf.json");
-            if (File.Exists(_file))
+            var service = Service;
+            if (!ReferenceEquals(service, _hooked))
             {
-                Paths.AddRange(JsonSerializer.Deserialize<List<string>>(File.ReadAllText(_file)) ?? []);
-                Paths.RemoveAll(p => !File.Exists(p) && !Directory.Exists(p));
+                if (_hooked is not null)
+                {
+                    _hooked.Changed -= Forward;
+                }
+
+                _hooked = service;
+                if (service is not null)
+                {
+                    service.Changed += Forward;
+                }
             }
-        }
-        catch
-        {
+
+            return service?.Paths ?? [];
         }
     }
 
-    private static void Save()
-    {
-        try
-        {
-            File.WriteAllText(_file, JsonSerializer.Serialize(Paths));
-        }
-        catch
-        {
-        }
+    private static void Forward() => Changed?.Invoke();
 
-        Changed?.Invoke();
-    }
+    public static void Add(IEnumerable<string> files) => Service?.Add(files);
 
-    public static void Add(IEnumerable<string> files)
-    {
-        Load();
-        foreach (var f in files)
-        {
-            if ((File.Exists(f) || Directory.Exists(f)) && !Paths.Contains(f))
-            {
-                Paths.Add(f);
-            }
-        }
+    public static void Remove(IEnumerable<string> files) => Service?.Remove(files);
 
-        Save();
-    }
-
-    public static void Remove(IEnumerable<string> files)
-    {
-        Load();
-        foreach (var f in files.ToList())
-        {
-            Paths.Remove(f);
-        }
-
-        Save();
-    }
-
-    public static void Clear()
-    {
-        Load();
-        Paths.Clear();
-        Save();
-    }
+    public static void Clear() => Service?.Clear();
 }
 
 internal sealed class FilesPage : IslandPage
@@ -168,8 +126,13 @@ internal sealed class FilesPage : IslandPage
 
         if (items.Count > 0)
         {
-            var media = D.IconButton("", "Media", () => { }, size: 28);
-            media.IsEnabled = false;
+            var mediaService = Core.Ctx.Services.Get<IMediaToolsService>();
+            var media = D.IconButton("", "Media", () =>
+            {
+                var chosen = _selected.Count > 0 ? _selected.ToList() : IslandShelf.Items.ToList();
+                mediaService?.OpenWith(chosen);
+            }, size: 28);
+            media.IsEnabled = mediaService is not null;
             media.Visibility = Core.Ctx.Runtime.IsAvailable("media-tools") ? Visibility.Visible : Visibility.Collapsed;
             _trailing.Children.Add(media);
             HoverButton? zip = null;

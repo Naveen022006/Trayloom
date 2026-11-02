@@ -68,20 +68,11 @@ public sealed class InputControlsPanelSection : IPanelSection
 
     public string? Category => PanelTabs.CategoryInput;
 
-    public (int Enabled, int Total) CategoryCounts
+    public (int Enabled, int Total) GetCategoryCounts(IPanelContext c)
     {
-        get
-        {
-            var app = InputHost.App;
-            var runtime = InputHost.Runtime;
-            if (app is null || runtime is null)
-            {
-                return (0, 0);
-            }
-
-            var rows = Items.Where(i => runtime.IsAvailable(i.FeatureId) && app.Get<bool>(i.VisibleKey, true)).ToList();
-            return (rows.Count(i => i.IsOn(app)), rows.Count);
-        }
+        K.RegisterDefaults(c.App);
+        var rows = Items.Where(i => c.Runtime.IsAvailable(i.FeatureId) && c.App.Get<bool>(i.VisibleKey, true)).ToList();
+        return (rows.Count(i => i.IsOn(c.App)), rows.Count);
     }
 
     public FrameworkElement CreateView(IPanelContext c)
@@ -89,7 +80,8 @@ public sealed class InputControlsPanelSection : IPanelSection
         K.RegisterDefaults(c.App);
         var app = c.App;
         var group = new PanelRowGroup();
-        foreach (var item in Items)
+        var order = (app.Get<string>(PanelKeys.ControlOrder) ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        foreach (var item in Items.OrderBy(i => order.IndexOf(i.Id) is var at && at >= 0 ? at : int.MaxValue))
         {
             if (!c.Runtime.IsAvailable(item.FeatureId))
             {

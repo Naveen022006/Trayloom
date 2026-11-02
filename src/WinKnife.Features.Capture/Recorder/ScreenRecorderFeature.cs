@@ -9,6 +9,8 @@ namespace WinKnife.Features.Capture;
 public sealed class ScreenRecorderFeature : IFeature
 {
     private RecorderService? _service;
+    private IContributionServices? _context;
+    private RecordingStateAdapter? _state;
 
     public string Id => "screen-recorder";
 
@@ -20,9 +22,11 @@ public sealed class ScreenRecorderFeature : IFeature
     public void Start(IFeatureContext context)
     {
         CaptureHost.Attach(context);
-        context.App.Register("panelUtilityShow.recentCaptures", false);
+        _context = context;
         _service = new RecorderService(context);
         CaptureHost.Recorder = _service;
+        _state = new RecordingStateAdapter(_service);
+        context.Services.Provide<IRecordingState>(_state);
         context.Shortcuts.Bind("screenRecorder", () => _service?.ShortcutPressed());
         if (!context.Runtime.IsAvailable("screenshot"))
         {
@@ -32,6 +36,13 @@ public sealed class ScreenRecorderFeature : IFeature
 
     public void Stop()
     {
+        if (_state is not null)
+        {
+            _context?.Services.Withdraw<IRecordingState>(_state);
+            _state.Dispose();
+            _state = null;
+        }
+
         _service?.Shutdown();
         if (ReferenceEquals(CaptureHost.Recorder, _service))
         {
@@ -39,5 +50,30 @@ public sealed class ScreenRecorderFeature : IFeature
         }
 
         _service = null;
+        _context = null;
     }
+}
+
+/// <summary>Publishes the recorder's state to other projects (Quick panel recording tile).</summary>
+internal sealed class RecordingStateAdapter : IRecordingState, IDisposable
+{
+    private readonly RecorderService _service;
+
+    public RecordingStateAdapter(RecorderService service)
+    {
+        _service = service;
+        _service.StateChanged += Forward;
+    }
+
+    public bool IsRecording => _service.IsRecording;
+
+    public TimeSpan Elapsed => TimeSpan.FromSeconds(_service.ElapsedSeconds);
+
+    public event Action? Changed;
+
+    public void Toggle() => _service.Toggle();
+
+    public void Dispose() => _service.StateChanged -= Forward;
+
+    private void Forward() => Changed?.Invoke();
 }

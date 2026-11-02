@@ -119,6 +119,9 @@ internal sealed class CaptureSession
 
     public static void CancelCurrent() => _current?.Finish(new CancelledOutcome());
 
+    /// <summary>An overlay window was closed from outside the session: cancel it (a stale session would block every later capture).</summary>
+    public void WindowClosedExternally() => Finish(new CancelledOutcome());
+
     private bool NeedsFreeze(CaptureTool tool) => tool != CaptureTool.Screenshot || _s.App.Get<bool>(K.Freeze);
 
     private void Open()

@@ -81,6 +81,9 @@ internal static class PadRules
 
     public static double Now() => ToReference(DateTime.UtcNow);
 
+    /// <summary>Local time of a stored reference-date timestamp.</summary>
+    public static DateTime FromReference(double seconds) => Reference.AddSeconds(seconds).ToLocalTime();
+
     /// <summary>Collapses whitespace and cuts to 40 characters.</summary>
     public static string CleanName(string name)
     {
@@ -215,6 +218,46 @@ internal sealed class PadStore
 
     public PadItem Selected => Doc!.Pads.First(p => p.Id == Doc.SelectedId);
 
+    /// <summary>Raised after the document changed through <see cref="Replace"/> / <see cref="Touch"/> / <see cref="SaveNow"/>.</summary>
+    public event Action? DocumentChanged;
+
+    /// <summary>Replaces the pads from outside (Dynamic Island): ids are kept, 1 to 12 pads, saved immediately.</summary>
+    public void Replace(IReadOnlyList<(string Id, string Name, string Text)> pads, string? selectedId)
+    {
+        if (Doc is null || pads.Count == 0)
+        {
+            return;
+        }
+
+        var existing = Doc.Pads.ToDictionary(p => p.Id);
+        var list = new List<PadItem>();
+        foreach (var (id, name, text) in pads.Take(PadRules.MaxPads))
+        {
+            var clean = PadRules.CleanName(name);
+            var normalized = text.Replace("\r\n", "\n");
+            if (existing.TryGetValue(id, out var pad))
+            {
+                if (pad.Text != normalized)
+                {
+                    pad.Text = normalized;
+                    pad.ModifiedAt = normalized.Length == 0 ? null : PadRules.Now();
+                }
+
+                pad.Name = clean.Length == 0 ? pad.Name : clean;
+            }
+            else
+            {
+                pad = new PadItem { Id = id, Name = clean.Length == 0 ? PadRules.NextName(PadRules.DefaultName, list.Select(p => p.Name).ToList()) : clean, Text = normalized, ModifiedAt = normalized.Length == 0 ? null : PadRules.Now() };
+            }
+
+            list.Add(pad);
+        }
+
+        Doc.Pads = list;
+        Doc.SelectedId = list.Any(p => p.Id == selectedId) ? selectedId! : list[0].Id;
+        SaveNow();
+    }
+
     /// <summary>Loads (or reuses) the document; false when the file could not be read (nothing is saved afterwards).</summary>
     public bool Load()
     {
@@ -302,6 +345,7 @@ internal sealed class PadStore
         _dirty = true;
         _timer.Stop();
         _timer.Start();
+        DocumentChanged?.Invoke();
     }
 
     /// <summary>Updates the selected pad's text (only when it changed).</summary>
@@ -384,6 +428,7 @@ internal sealed class PadStore
     {
         _dirty = true;
         Flush();
+        DocumentChanged?.Invoke();
     }
 
     /// <summary>Writes the document when it changed.</summary>

@@ -109,7 +109,7 @@ public sealed class ClaudeAccountProfile : IEquatable<ClaudeAccountProfile>
         var owner = info is DirectoryInfo d
             ? d.GetAccessControl().GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier
             : ((FileInfo)info).GetAccessControl().GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
-        return owner is not null && (owner.Equals(current) || owner.IsWellKnown(WellKnownSidType.BuiltinAdministratorsSid));
+        return owner is not null && ((current is not null && owner.Equals(current)) || owner.IsWellKnown(WellKnownSidType.BuiltinAdministratorsSid));
     }
 
     /// <summary>Whether the DACL grants write access to Everyone, Users or Authenticated Users.</summary>

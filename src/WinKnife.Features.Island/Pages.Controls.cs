@@ -277,26 +277,6 @@ internal sealed class ControlsPage : IslandPage
     {
         _view.Children.Clear();
         var stack = new StackPanel();
-        if (false)
-        {
-            var row = new Grid { Height = 28 };
-            for (var i = 0; i < _levels.Count; i++)
-            {
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 76 });
-                FrameworkElement level = _levels[i] switch
-                {
-                    "volume" => new VolumeLevel(Core, () => HasWindow ? Window.HoldOpen() : null, HasWindow && Core.ModuleVisible("mixer") ? () => Window.ShowModule("mixer") : null),
-                    "brightness" => new BrightnessLevel(),
-                    _ => new Border(),
-                };
-                level.Margin = new Thickness(i == 0 ? 0 : 6, 0, i == _levels.Count - 1 ? 0 : 6, 0);
-                Grid.SetColumn(level, i);
-                row.Children.Add(level);
-            }
-
-            stack.Children.Add(row);
-        }
-
         if (_showMusic)
         {
             var card = new MusicCard(Core, HasWindow ? Window : null, _cardHeight, IsPreview) { Margin = new Thickness(0, 0, 0, 0) };

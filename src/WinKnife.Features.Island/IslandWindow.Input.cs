@@ -194,7 +194,18 @@ internal sealed partial class IslandWindow
         FollowPointerDisplay(cursor, now);
         var inside = IsPointerInside();
         var rest = new Rect(_area.Bounds.X + ((_area.Bounds.Width - (BareWidth * _scale)) / 2) - 6, _area.Bounds.Y, (BareWidth * _scale) + 12, (BodyHeight + SurfaceTop + 2) * _scale);
-        if (_suppressed || _concealed)
+
+        // Idle economy: poll fast only while the pointer is near the island (or something is going on); otherwise 150 ms.
+        var wake = rest;
+        wake.Inflate(220 * _scale, 160 * _scale);
+        var busy = _mode != IslandMode.Closed || inside || _lmbDown || _core.Mascot.Enabled || wake.Contains(cursor);
+        var wanted = TimeSpan.FromMilliseconds(busy ? 40 : 150);
+        if (_poll is { } poll && poll.Interval != wanted)
+        {
+            poll.Interval = wanted;
+        }
+
+        if (_suppressed)
         {
             if (_core.App.Get<bool>(K.HoverInFullscreen) && _core.App.Get<bool>(K.HideInFullscreen) && rest.Contains(cursor))
             {
@@ -416,8 +427,6 @@ internal sealed partial class IslandWindow
     }
 
     // ---------------------------------------------------------------- display handling
-
-    private DateTime _lastDisplay;
 
     public void ApplyDisplay()
     {
@@ -1048,7 +1057,6 @@ internal sealed partial class IslandWindow
             case "panel":
                 if (_core.App.Get<bool>(K.AppPanel))
                 {
-                    _detail = "panel";
                 }
 
                 Collapse();

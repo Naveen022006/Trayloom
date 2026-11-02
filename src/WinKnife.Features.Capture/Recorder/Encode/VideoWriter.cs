@@ -32,7 +32,6 @@ internal sealed class VideoWriter
     private readonly string _path;
     private readonly bool _withAudio;
     private TimeSpan _frameDuration;
-    private TimeSpan _lastAudioEnd;
     private volatile bool _cancelled;
 
     public VideoWriter(string path, int width, int height, int fps, int bitrate, bool withAudio)

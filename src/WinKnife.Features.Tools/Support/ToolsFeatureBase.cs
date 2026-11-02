@@ -191,7 +191,11 @@ internal static class ShortcutText
     }
 
     /// <summary>The configured shortcut text regardless of activation (footers print it).</summary>
-    public static string Configured(IContributionServices ctx, string roleId) => ctx.Shortcuts.GetHotkey(roleId)?.ToString() ?? string.Empty;
+    public static string Configured(IContributionServices ctx, string roleId)
+    {
+        var state = ctx.Shortcuts.GetState(roleId);
+        return (state.Effective ?? state.Configured)?.ToString() ?? string.Empty;
+    }
 }
 
 /// <summary>Registers every default of the flat keys the Tools project owns (Vorssaint values).</summary>

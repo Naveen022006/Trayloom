@@ -131,7 +131,7 @@ internal static class Keys
             [EdgeSnapDisabledZones] = string.Empty,
             [EdgeSnapZoneActions] = string.Empty,
             [GestureEnabled] = false,
-            [GestureModifiers] = "control+command",
+            [GestureModifiers] = "control+option",
             [GestureRaise] = false,
             [LayoutIgnored] = new List<string>(),
             [WindowGap] = 0,

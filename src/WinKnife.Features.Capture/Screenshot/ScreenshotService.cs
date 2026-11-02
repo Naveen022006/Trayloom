@@ -171,6 +171,7 @@ internal sealed class ScreenshotService
                 CaptureHost.Beep();
             }
 
+            ShelfAdd(capture, null);
             OpenEditor(capture, false);
             return;
         }
@@ -190,6 +191,8 @@ internal sealed class ScreenshotService
             copied = Output.CopyImage(outImage, outScale, imageOnly);
             copyFailed = !copied;
         }
+
+        ShelfAdd(capture, savedPath);
 
         if (action.Length > 0)
         {
@@ -229,6 +232,33 @@ internal sealed class ScreenshotService
         {
             ShowPreview(capture, savedPath, copied, 12, recovery: true);
         }
+    }
+
+    /// <summary>"Add to the shelf automatically": hands the capture (the saved file, or a cached PNG) to the shelf while it is on.</summary>
+    private void ShelfAdd(Capture capture, string? savedPath)
+    {
+        if (!App.Get<bool>(K.AddToShelf) || !App.Get<bool>("shelfEnabled") || CaptureHost.Services.Services.Get<IShelfService>() is not { } shelf)
+        {
+            return;
+        }
+
+        var path = savedPath;
+        if (path is null)
+        {
+            try
+            {
+                Directory.CreateDirectory(CacheDir);
+                path = Path.Combine(CacheDir, $"capture-{DateTime.Now:yyyyMMdd-HHmmss}.png");
+                File.WriteAllBytes(path, Output.ToPng(capture.Image, capture.Scale));
+            }
+            catch (Exception ex)
+            {
+                CaptureHost.Log("adding the capture to the shelf failed", ex);
+                return;
+            }
+        }
+
+        shelf.Add([path]);
     }
 
     private static int ValidDuration(int v) => v is 1 or 2 or 3 or 5 or 10 or 0 ? v : 3;

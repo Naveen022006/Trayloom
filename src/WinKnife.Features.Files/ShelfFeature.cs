@@ -61,6 +61,40 @@ public sealed class ShelfFeature : IFeature, IShelfHost, IShelfService
 
     public int ItemCount => _store?.LeafCount ?? 0;
 
+    /// <inheritdoc />
+    public event Action? Changed;
+
+    /// <inheritdoc />
+    public IReadOnlyList<string> Paths =>
+        _store is null ? [] : [.. _store.Items.SelectMany(i => i.Leaves()).Where(l => l.Kind == ShelfKinds.File && l.Path is not null).Select(l => l.Path!)];
+
+    /// <inheritdoc />
+    public int Add(IEnumerable<string> paths)
+    {
+        var added = _store?.AddFiles(paths) ?? 0;
+        if (added > 0 && Enabled)
+        {
+            RefreshDocked();
+        }
+
+        return added;
+    }
+
+    /// <inheritdoc />
+    public void Remove(IEnumerable<string> paths)
+    {
+        if (_store is null)
+        {
+            return;
+        }
+
+        var set = paths.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        _store.Remove(_store.Items.SelectMany(i => i.Leaves()).Where(l => l.Kind == ShelfKinds.File && l.Path is not null && set.Contains(l.Path)).Select(l => l.Id).ToList());
+    }
+
+    /// <inheritdoc />
+    public void Clear() => _store?.ClearAll();
+
     public bool Pinned { get; set; }
 
     internal static void RegisterDefaults(IAppSettings app)
@@ -138,7 +172,11 @@ public sealed class ShelfFeature : IFeature, IShelfHost, IShelfService
         }
     }
 
-    private void OnStoreChanged() => RefreshDocked();
+    private void OnStoreChanged()
+    {
+        RefreshDocked();
+        Changed?.Invoke();
+    }
 
     public void FloatingHidden() => RefreshDocked();
 

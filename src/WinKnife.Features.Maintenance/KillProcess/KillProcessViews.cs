@@ -379,15 +379,25 @@ public sealed class KillProcessFeature : IFeature
         new FeatureAction("browse", "Kill Process", () => _context?.Shell.OpenSettings(SettingsPages.KillProcess), G.CancelCircle),
     ];
 
+    private IProcessKillService? _service;
+
     public void Start(IFeatureContext context)
     {
         _context = context;
         Host.Attach(context);
         KillService.Shared.GroupRelated = context.App.Get<bool>("killProcessGroupRelated");
+        _service = new ProcessKillServiceImpl();
+        context.Services.Provide(_service);
     }
 
     public void Stop()
     {
+        if (_service is not null)
+        {
+            _context?.Services.Withdraw(_service);
+            _service = null;
+        }
+
         _context = null;
     }
 }

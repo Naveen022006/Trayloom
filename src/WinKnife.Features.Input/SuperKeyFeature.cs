@@ -76,6 +76,15 @@ public sealed class SuperKeyFeature : InputFeatureBase
         _pausePoll = new System.Threading.Timer(_ => PollPause(), null, 0, 1500);
         _watchdog = new System.Threading.Timer(_ => Watchdog(), null, 2000, 2000);
         SuperKeyStatus.Set(SuperKeyState.Working);
+        var hooks = Context!.Hooks;
+        _ = Task.Delay(500).ContinueWith(_ =>
+        {
+            // The hook is installed on its own thread; if Windows refused it the settings page shows the error row.
+            if (IsEngaged && !hooks.KeyboardHookInstalled)
+            {
+                SuperKeyStatus.Set(SuperKeyState.HookFailed);
+            }
+        });
     }
 
     protected override void Disengage()

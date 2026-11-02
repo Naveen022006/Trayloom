@@ -234,16 +234,16 @@ internal sealed class PortManagerView : StackPanel
             return;
         }
 
+        // The Settings page already draws the "Port Manager" heading: only the tools row here.
         var title = new Grid { Margin = new Thickness(0, 0, 0, 8) };
         title.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         title.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var label = V.Label(G.Network, "Port Manager", 15, FontWeights.SemiBold, ThemeKeys.Accent, ThemeKeys.TextPrimary);
-        title.Children.Add(label);
+        title.Children.Add(search);
         var tools = V.Row(6, _spinner, refresh);
+        tools.Margin = new Thickness(8, 0, 0, 0);
         Grid.SetColumn(tools, 1);
         title.Children.Add(tools);
         Children.Add(title);
-        Children.Add(search);
         var card = new Border { CornerRadius = new CornerRadius(12), Margin = new Thickness(0, 12, 0, 0), Padding = new Thickness(6) };
         card.SetResourceReference(Border.BackgroundProperty, ThemeKeys.SettingsCard);
         card.Child = _body;

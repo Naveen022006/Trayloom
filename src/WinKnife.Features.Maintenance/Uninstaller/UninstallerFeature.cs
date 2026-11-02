@@ -18,14 +18,24 @@ public sealed class UninstallerFeature : IFeature
         new FeatureAction("open", "Uninstall an app…", () => _context?.Shell.OpenSettings(SettingsPages.Uninstaller), G.Trash),
     ];
 
+    private IUninstallService? _service;
+
     public void Start(IFeatureContext context)
     {
         _context = context;
         Host.Attach(context);
+        _service = new UninstallServiceImpl();
+        context.Services.Provide(_service);
     }
 
     public void Stop()
     {
+        if (_service is not null)
+        {
+            _context?.Services.Withdraw(_service);
+            _service = null;
+        }
+
         UninstallerModel.Shared.Cancel();
         _context = null;
     }

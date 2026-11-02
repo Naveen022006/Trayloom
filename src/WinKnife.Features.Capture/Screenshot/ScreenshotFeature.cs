@@ -9,6 +9,8 @@ namespace WinKnife.Features.Capture;
 public sealed class ScreenshotFeature : IFeature
 {
     private ScreenshotService? _service;
+    private IContributionServices? _context;
+    private EditorAdapter? _editor;
 
     public string Id => "screenshot";
 
@@ -27,7 +29,9 @@ public sealed class ScreenshotFeature : IFeature
         CaptureHost.Attach(context);
         _service = new ScreenshotService(context);
         CaptureHost.Screenshot = _service;
-        context.App.Register("panelUtilityShow.recentCaptures", false);
+        _context = context;
+        _editor = new EditorAdapter(_service);
+        context.Services.Provide<IScreenshotEditorService>(_editor);
         context.Shortcuts.Bind("screenshot", () => _service?.CaptureNow(true));
         context.Shortcuts.Bind("screenshotFullScreen", () => _service?.CaptureFullScreen());
         context.Shortcuts.Bind("screenshotLastCapture", () => _service?.EditLatest());
@@ -38,6 +42,13 @@ public sealed class ScreenshotFeature : IFeature
 
     public void Stop()
     {
+        if (_editor is not null)
+        {
+            _context?.Services.Withdraw<IScreenshotEditorService>(_editor);
+            _editor = null;
+        }
+
+        _context = null;
         _service?.Stop();
         if (ReferenceEquals(CaptureHost.Screenshot, _service))
         {
@@ -45,6 +56,13 @@ public sealed class ScreenshotFeature : IFeature
         }
 
         _service = null;
+    }
+
+    private sealed class EditorAdapter(ScreenshotService service) : IScreenshotEditorService
+    {
+        public void EditClipboardImage() => service.EditClipboard();
+
+        public void EditFile(string path) => service.EditFile(path);
     }
 
     private static void PurgeOldTemp()

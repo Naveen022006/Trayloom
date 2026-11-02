@@ -229,8 +229,6 @@ internal sealed class MusicPage : IslandPage
 
     private void OnLyrics() => _view.Dispatcher.BeginInvoke(() => _lyrics?.Refresh());
 
-    private DateTime _lastChange;
-
     private void OnChanged()
     {
         _view.Dispatcher.BeginInvoke(() =>

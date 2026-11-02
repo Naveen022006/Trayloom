@@ -97,7 +97,7 @@ public abstract class InputFeatureBase : IFeature
         Reevaluate();
     }
 
-    public void Stop()
+    public virtual void Stop()
     {
         var context = Context;
         if (context is not null)

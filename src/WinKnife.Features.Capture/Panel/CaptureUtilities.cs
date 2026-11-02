@@ -41,6 +41,8 @@ public sealed class RecentCapturesUtility : IPanelUtility
 {
     public IReadOnlyList<string> FeatureIds => ["screenshot", "screen-recorder"];
 
+    public bool HostedOnly => true;
+
     public int Order => 1;
 
     public string Id => "recentCaptures";

@@ -12,7 +12,7 @@ namespace WinKnife.Features.WindowTools;
 /// <summary>Modifier set of the move gesture (<c>windowGestureModifiers</c>, tokens joined by '+': control, option, shift, command).</summary>
 internal static class GestureModifiers
 {
-    public const string Default = "control+command";
+    public const string Default = "control+option";
 
     public static HashSet<string> Parse(string? value)
     {

@@ -20,7 +20,7 @@ namespace WinKnife.Features.SystemTools;
 /// The tray metrics (spec 01 2.5 / 2.10): the pinned metrics are drawn as blocks in a strip docked next to the notification area, or - with
 /// "Separate metrics into their own items" - as one tray icon per group. Samples only while a metric is pinned.
 /// </summary>
-internal sealed class MetricTray
+internal sealed class MetricTray : ITrayMetricsState
 {
     private readonly IFeatureContext _ctx;
     private readonly IAppSettings _app;
@@ -29,6 +29,22 @@ internal sealed class MetricTray
     private StripWindow? _strip;
     private readonly Dictionary<string, MetricIcon> _icons = [];
     private bool _started;
+    private bool _hasMetrics;
+
+    /// <inheritdoc />
+    public bool HasMetrics => _hasMetrics;
+
+    /// <inheritdoc />
+    public event Action? Changed;
+
+    private void SetHasMetrics(bool value)
+    {
+        if (_hasMetrics != value)
+        {
+            _hasMetrics = value;
+            Changed?.Invoke();
+        }
+    }
 
     public MetricTray(IFeatureContext ctx)
     {
@@ -42,6 +58,7 @@ internal sealed class MetricTray
     public void Start()
     {
         _started = true;
+        _ctx.Services.Provide<ITrayMetricsState>(this);
         _app.Changed += OnSetting;
         _runtime.Changed += Refresh;
         MonitorService.Updated += OnUpdated;
@@ -62,6 +79,8 @@ internal sealed class MetricTray
         MonitorService.SetBackground("tray", Needs.None);
         CloseStrip();
         CloseIcons();
+        SetHasMetrics(false);
+        _ctx.Services.Withdraw<ITrayMetricsState>(this);
     }
 
     public void Refresh()
@@ -80,6 +99,7 @@ internal sealed class MetricTray
         {
             CloseStrip();
             CloseIcons();
+            SetHasMetrics(false);
         }
     }
 
@@ -114,6 +134,7 @@ internal sealed class MetricTray
     private void Render(MonitorSnapshot s)
     {
         var blocks = MetricBlocks.Build(_app, _runtime, s);
+        SetHasMetrics(blocks.Count > 0);
         if (blocks.Count == 0)
         {
             CloseStrip();

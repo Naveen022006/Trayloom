@@ -440,7 +440,7 @@ internal sealed class PackagesPageView : StackPanel
 
     private static FrameworkElement Header()
     {
-        var label = V.Label(G.Package, "winget", 14, FontWeights.SemiBold, ThemeKeys.TextPrimary, ThemeKeys.TextPrimary);
+        var label = V.Label(G.Package, "Packages", 14, FontWeights.SemiBold, ThemeKeys.TextPrimary, ThemeKeys.TextPrimary);
         label.Margin = new Thickness(16, 12, 16, 12);
         return label;
     }

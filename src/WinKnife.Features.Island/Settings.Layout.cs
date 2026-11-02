@@ -215,7 +215,7 @@ internal sealed class LayoutEditor : Grid
             }
             else
             {
-                Drop(b, p);
+                DropButton(b, p);
             }
 
             e.Handled = true;
@@ -223,7 +223,7 @@ internal sealed class LayoutEditor : Grid
         _canvas.Children.Add(el);
     }
 
-    private void Drop(QuickButton b, Point p)
+    private void DropButton(QuickButton b, Point p)
     {
         var zones = new (QuickSide Side, Rect Rect)[]
         {

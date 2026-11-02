@@ -35,7 +35,7 @@ public abstract class WindowControlRow : IPanelSection
 
     protected abstract string ToggleKey { get; }
 
-    public (int Enabled, int Total) CategoryCounts => (Ambient.App is { } app && app.Get<bool>(ToggleKey) ? 1 : 0, 1);
+    public (int Enabled, int Total) GetCategoryCounts(IPanelContext context) => (context.App.Get<bool>(ToggleKey) ? 1 : 0, 1);
 
     /// <summary>Called after the switch changed (exclusive rows turn the other one off).</summary>
     protected virtual void Toggled(IPanelContext context, bool on)

@@ -111,9 +111,8 @@ public sealed class ClipboardSettingsSection : ISettingsSection
         };
 
         // H5 -------------------------------------------------------------------------------------------------------
-        // The tray host reads panelUtilityShow.<id>; Vorssaint's own key is kept in step with it.
-        var panelShown = app.IsSet("panelUtilityShow.clipboard") ? app.Get<bool>("panelUtilityShow.clipboard") : app.Get<bool>("panelUtilityClipboard");
-        var h5 = SettingsKit.Toggle(app, "panelUtilityClipboard", Strings.Clipboard.ShowInPanel, null, on => app.Set("panelUtilityShow.clipboard", on), panelShown);
+        // The tray reads the same Vorssaint key (panelUtilityClipboard): one source of truth.
+        var h5 = SettingsKit.Toggle(app, "panelUtilityClipboard", Strings.Clipboard.ShowInPanel, null, null, app.Get<bool>("panelUtilityClipboard"));
 
         // H6 -------------------------------------------------------------------------------------------------------
         var delayOn = app.Get<bool>("clipboardAutoClearOnDelay");

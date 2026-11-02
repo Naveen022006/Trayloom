@@ -19,7 +19,7 @@ namespace WinKnife.Features.Input;
 /// The second part of the feature is the Quick snippet menu (<see cref="SnippetLibraryWindow"/>), opened by the
 /// <c>snippetLibrary</c> shortcut role.
 /// </summary>
-public sealed class TextSnippetsFeature : InputFeatureBase
+public sealed class TextSnippetsFeature : InputFeatureBase, ISnippetsService
 {
     private const int BufferSize = 64;
 
@@ -46,6 +46,32 @@ public sealed class TextSnippetsFeature : InputFeatureBase
     private readonly record struct Job(int Backspaces, string Text, string? Trailing, bool Expansion);
 
     public override string Id => "text-snippets";
+
+    // ---------------------------------------------------------------------------------------------- ISnippetsService
+
+    IReadOnlyList<SnippetInfo> ISnippetsService.Snippets =>
+        Context is null ? [] : [.. SnippetStore.Load(App).Where(s => s.Enabled && !string.IsNullOrWhiteSpace(s.DisplayTitle)).Select(s => new SnippetInfo(s.Id, s.DisplayTitle, s.Replacement))];
+
+    bool ISnippetsService.Insert(string id)
+    {
+        var context = Context;
+        if (context is null || SnippetStore.Load(App).FirstOrDefault(s => s.Id == id) is not { } snippet)
+        {
+            return false;
+        }
+
+        var text = SnippetVariables.Expand(snippet.Replacement, () => SnippetTyper.ClipboardText(context.Ui));
+        SnippetTyper.Insert(text, context.Ui, context.Log);
+        return true;
+    }
+
+    protected override void OnInstalled() => Context?.Services.Provide<ISnippetsService>(this);
+
+    public override void Stop()
+    {
+        Context?.Services.Withdraw<ISnippetsService>(this);
+        base.Stop();
+    }
 
     protected override bool IsEnabled() => App.Get<bool>(K.SnippetsEnabled) || App.Get<bool>(K.LibraryEnabled);
 

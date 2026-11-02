@@ -45,6 +45,7 @@ public sealed class BarFeature : ToolsFeatureBase
     protected override void OnStart()
     {
         BarHost.Feature = this;
+        BarProviders.Hub = Ctx.Services;
         _service = new BarService(Ctx);
         _service.RowShortcutAssigned += (_, _) => SyncRowShortcuts();
         _service.CaptureStarted += capturing =>
@@ -82,6 +83,7 @@ public sealed class BarFeature : ToolsFeatureBase
 
         _window = null;
         _service = null;
+        BarProviders.Hub = null;
         BarHost.Feature = null;
     }
 

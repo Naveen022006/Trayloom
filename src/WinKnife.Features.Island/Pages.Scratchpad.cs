@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Island;
 
@@ -60,6 +61,28 @@ internal sealed class ScratchDocument
 
     public string Save() => JsonSerializer.Serialize(this);
 
+    /// <summary>A snapshot of the Scratchpad feature's document (the island edits it and pushes it back with <see cref="Push"/>).</summary>
+    public static ScratchDocument FromService(IScratchpadService service)
+    {
+        var doc = new ScratchDocument { SelectedPadId = service.SelectedId };
+        foreach (var p in service.Pads)
+        {
+            doc.Pads.Add(new ScratchPad { Id = p.Id, Name = p.Name, Text = p.Text, Updated = p.Updated });
+        }
+
+        if (doc.Pads.Count == 0)
+        {
+            doc.Pads.Add(new ScratchPad { Name = "Scratchpad 1" });
+        }
+
+        doc.SelectedPadId ??= doc.Pads[0].Id;
+        return doc;
+    }
+
+    /// <summary>Writes the snapshot back to the Scratchpad feature (one storage for the island and the floating pad).</summary>
+    public void Push(IScratchpadService service) =>
+        service.Replace([.. Pads.Select(p => new ScratchpadPadInfo(p.Id, p.Name, p.Text, p.Updated))], SelectedPadId);
+
     public ScratchPad Selected => Pads.FirstOrDefault(p => p.Id == SelectedPadId) ?? Pads[0];
 
     public string NextName()
@@ -91,7 +114,7 @@ internal sealed class ScratchpadPage : IslandPage
     public ScratchpadPage(IslandCore core, IslandWindow? window)
         : base(core, window)
     {
-        _doc = ScratchDocument.Load(core.App.Get<string>(K.ScratchpadDocument));
+        _doc = LoadDocument();
         _save.Tick += (_, _) => Commit();
         _editor.AcceptsReturn = true;
         _editor.AcceptsTab = true;
@@ -128,8 +151,20 @@ internal sealed class ScratchpadPage : IslandPage
         return budget;
     }
 
+    private IScratchpadService? Service => Core.Ctx.Services.Get<IScratchpadService>();
+
+    private ScratchDocument LoadDocument() =>
+        Core.Ctx.Services.Get<IScratchpadService>() is { } service ? ScratchDocument.FromService(service) : ScratchDocument.Load(Core.App.Get<string>(K.ScratchpadDocument));
+
     public override void Shown()
     {
+        if (Service is not null)
+        {
+            // The floating pad may have edited the document meanwhile: always start from its current state.
+            _doc = LoadDocument();
+            _view.Dispatcher.BeginInvoke(Build);
+        }
+
         if (HasWindow && !IsPreview)
         {
             Window.EnsureKeyboard();
@@ -142,6 +177,12 @@ internal sealed class ScratchpadPage : IslandPage
     private void Commit()
     {
         _save.Stop();
+        if (Service is { } service)
+        {
+            _doc.Push(service);
+            return;
+        }
+
         Core.App.Set(K.ScratchpadDocument, _doc.Save());
     }
 

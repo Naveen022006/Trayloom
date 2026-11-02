@@ -267,14 +267,25 @@ internal sealed class OutsideClickMonitor : IDisposable
     {
         _subscription = hooks.SubscribeMouse(e =>
         {
-            if (e.Kind is MouseEventKind.LeftDown or MouseEventKind.RightDown or MouseEventKind.MiddleDown or MouseEventKind.XButtonDown && (active?.Invoke() ?? true))
+            if (e.Kind is MouseEventKind.LeftDown or MouseEventKind.RightDown or MouseEventKind.MiddleDown or MouseEventKind.XButtonDown)
             {
-                var frame = framePhysical();
-                frame.Inflate(2, 2);
-                if (!frame.Contains(new Point(e.X, e.Y)) && !IsKeyboardWindow(e.X, e.Y))
+                // The frame / active callbacks read WPF windows: never on the hook thread. Decide on the UI thread.
+                var x = e.X;
+                var y = e.Y;
+                ui.BeginInvoke(() =>
                 {
-                    ui.BeginInvoke(onOutside);
-                }
+                    if (!(active?.Invoke() ?? true))
+                    {
+                        return;
+                    }
+
+                    var frame = framePhysical();
+                    frame.Inflate(2, 2);
+                    if (!frame.Contains(new Point(x, y)) && !IsKeyboardWindow(x, y))
+                    {
+                        onOutside();
+                    }
+                });
             }
 
             return false;

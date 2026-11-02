@@ -623,8 +623,9 @@ internal static class BarCatalog
         foreach (var entry in FeatureCatalog.All.Where(f => f.CanInstall && f.HasSettingsPage && ctx.Runtime.IsAvailable(f.Id)))
         {
             var e = entry;
-            if (covered.Contains(entry.Page))
+            if (covered.Contains(entry.Page) || string.Equals(SettingsPages.TitleOf(entry.Page), entry.Title, StringComparison.OrdinalIgnoreCase))
             {
+                // Its page row above already says the same thing (a second "Quick panel" row would be a duplicate).
                 continue;
             }
 
@@ -658,7 +659,15 @@ internal static class BarCatalog
                     Keywords = sn.Trigger + " " + sn.Folder,
                     Glyph = G(0xE8D2),
                     BeatMs = 100,
-                    Run = _ => BarProviders.TypeAtCaret(s.Ui, s.Target, () => InputSender.SendText(sn.Replacement)),
+                    Run = _ => BarProviders.TypeAtCaret(s.Ui, s.Target, () =>
+                    {
+                        if (BarProviders.Hub?.Get<ISnippetsService>() is { } snippets && snippets.Insert(sn.Id))
+                        {
+                            return;
+                        }
+
+                        InputSender.SendText(sn.Replacement);
+                    }),
                 });
             }
         }
@@ -989,6 +998,36 @@ internal static class BarCatalog
     public static List<BarEntry> KillEntries()
     {
         var result = new List<BarEntry>();
+        if (BarProviders.Hub?.Get<IProcessKillService>() is { } kill)
+        {
+            // Kill Process owns the list (protected processes are never offered) and the identity-verified kill.
+            foreach (var e in kill.Browse(string.Empty, 400))
+            {
+                var pid = e.Pid;
+                result.Add(new BarEntry
+                {
+                    Id = "kill." + pid,
+                    Title = e.Name,
+                    EnglishTitle = e.Name,
+                    Subtitle = $"PID {pid}",
+                    Keywords = "",
+                    Glyph = "",
+                    CountsUsage = false,
+                    ConfirmPrompt = $"Kill {e.Name}?",
+                    Destructive = true,
+                    Run = _ =>
+                    {
+                        if (!kill.Kill(pid))
+                        {
+                            System.Media.SystemSounds.Beep.Play();
+                        }
+                    },
+                });
+            }
+
+            return [.. result.OrderBy(r => r.Title, StringComparer.CurrentCultureIgnoreCase)];
+        }
+
         foreach (var p in Process.GetProcesses())
         {
             try

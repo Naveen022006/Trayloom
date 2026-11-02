@@ -228,7 +228,7 @@ public sealed class BluetoothSleepSettingsSection : ISettingsSection
                     await Task.Delay(150);
                 }
 
-                c.Ui.BeginInvoke(c.RequestRebuild);
+                _ = c.Ui.BeginInvoke(c.RequestRebuild);
             });
         }
 

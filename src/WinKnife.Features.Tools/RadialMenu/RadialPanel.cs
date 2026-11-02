@@ -28,7 +28,7 @@ public sealed class RadialMenuPanelSection : IPanelSection
     public int Order => 180;
 
     /// <inheritdoc />
-    public (int Enabled, int Total) CategoryCounts => (RadialState.Ctx?.App.Get<bool>("radialMenuEnabled") == true ? 1 : 0, 1);
+    public (int Enabled, int Total) GetCategoryCounts(IPanelContext context) => (context.App.Get<bool>("radialMenuEnabled") ? 1 : 0, 1);
 
     /// <inheritdoc />
     public FrameworkElement CreateView(IPanelContext context)

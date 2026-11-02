@@ -53,7 +53,7 @@ internal interface IClipboardHost
 }
 
 /// <summary>Remembers copied text, images and files locally and brings them back from a searchable quick window.</summary>
-public sealed class ClipboardHistoryFeature : IFeature, IClipboardHost
+public sealed class ClipboardHistoryFeature : IFeature, IClipboardHost, IClipboardHistoryService
 {
     private static readonly int[] AllowedLimits = [20, 50, 100, 250, 500, 1000, 10000, 0];
     private static readonly int[] AllowedRetention = [1, 7, 30, 90, 365, 0];
@@ -124,7 +124,62 @@ public sealed class ClipboardHistoryFeature : IFeature, IClipboardHost
 
     public string? EditingEntryId { get; set; }
 
-    public bool CanEditImages => FindScreenshotAction("clipboard image") is not null || FindScreenshotAction("edit") is not null;
+    public bool CanEditImages => _context?.Services.Get<IScreenshotEditorService>() is not null || FindScreenshotAction("clipboard image") is not null || FindScreenshotAction("edit") is not null;
+
+    // ---------------------------------------------------------------------------------------------- IClipboardHistoryService
+
+    bool IClipboardHistoryService.IsRecording => _capturing;
+
+    IReadOnlyList<ClipboardHistoryItem> IClipboardHistoryService.Items
+    {
+        get
+        {
+            var store = _store;
+            if (store is null)
+            {
+                return [];
+            }
+
+            ClipboardHistoryItem Map(ClipEntry e) => new(
+                e.Id,
+                e.Kind,
+                e.Text,
+                e.FilePaths,
+                e.ImageFile is null ? null : store.ImagePath(e),
+                e.CopiedAt.ToLocalTime(),
+                e.IsPinned,
+                e.SourceExe,
+                e.ImageWidth,
+                e.ImageHeight);
+            return [.. store.Pinned.Select(Map), .. store.Recent.OrderByDescending(e => e.CopiedAt).Select(Map)];
+        }
+    }
+
+    event Action? IClipboardHistoryService.Changed
+    {
+        add => StateChanged += value;
+        remove => StateChanged -= value;
+    }
+
+    void IClipboardHistoryService.Copy(string id)
+    {
+        if (_store?.Find(id) is { } entry)
+        {
+            ((IClipboardHost)this).PasteEntries([entry], paste: false);
+        }
+    }
+
+    void IClipboardHistoryService.Open() => ShowWindow();
+
+    void IClipboardHistoryService.ClearUnpinned() => _store?.ClearUnpinned();
+
+    void IClipboardHistoryService.EditImage(string id)
+    {
+        if (_store?.Find(id) is { IsImage: true } entry)
+        {
+            ((IClipboardHost)this).EditImage(entry);
+        }
+    }
 
     /// <summary>Registers the defaults of every key the clipboard page and panel read.</summary>
     internal static void RegisterDefaults(IAppSettings app)
@@ -173,6 +228,7 @@ public sealed class ClipboardHistoryFeature : IFeature, IClipboardHost
         _pill = new ClipboardTrayPill(this);
         _subscription = ClipboardMonitor.Subscribe(OnClipboardChanged);
         context.Shortcuts.Bind("clipboardHistory", () => ToggleWindow());
+        context.Services.Provide<IClipboardHistoryService>(this);
         context.App.Changed += OnSettingChanged;
         StateChanged += ClipboardUtility.Raise;
         Hub.Clipboard = this;
@@ -189,6 +245,7 @@ public sealed class ClipboardHistoryFeature : IFeature, IClipboardHost
         }
 
         StateChanged -= ClipboardUtility.Raise;
+        _context?.Services.Withdraw<IClipboardHistoryService>(this);
         if (ReferenceEquals(Hub.Clipboard, this))
         {
             Hub.Clipboard = null;
@@ -726,15 +783,26 @@ public sealed class ClipboardHistoryFeature : IFeature, IClipboardHost
 
     void IClipboardHost.EditImage(ClipEntry entry)
     {
-        var action = FindScreenshotAction("clipboard image") ?? FindScreenshotAction("edit");
+        var editor = _context?.Services.Get<IScreenshotEditorService>();
+        var action = editor is null ? FindScreenshotAction("clipboard image") ?? FindScreenshotAction("edit") : null;
         var path = _store is null ? null : _store.ImagePath(entry);
-        if (action is null || path is null || !File.Exists(path) || !ClipboardIO.WriteImage(File.ReadAllBytes(path)))
+        if ((editor is null && action is null) || path is null || !File.Exists(path) || !ClipboardIO.WriteImage(File.ReadAllBytes(path)))
         {
             return;
         }
 
         HideWindow();
-        _context?.Ui.BeginInvoke(() => action.Invoke(), DispatcherPriority.Background);
+        _context?.Ui.BeginInvoke(() =>
+        {
+            if (editor is not null)
+            {
+                editor.EditClipboardImage();
+            }
+            else
+            {
+                action!.Invoke();
+            }
+        }, DispatcherPriority.Background);
     }
 
     async Task<bool> IClipboardHost.CopyImageText(ClipEntry entry)

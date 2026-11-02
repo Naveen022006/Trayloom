@@ -597,7 +597,6 @@ internal sealed partial class IslandWindow
         _pinned = false;
         _openedByHover = false;
         _exploring = false;
-        _detail = null;
         _placeholder = false;
         _picker = false;
         _leaveAt = null;
@@ -752,7 +751,7 @@ internal sealed partial class IslandWindow
             budget = page.ModuleId is "mixer" or "calendar" or "clipboard" or "captures" or "files" or "notifications" or "downloads" or "camera" or "scratchpad" or "watch" or "explore" ? budget : Math.Max(budget, 264);
         }
 
-        if (page.GrowsBeyondBudget && preset != "custom")
+        if (page is not null && page.GrowsBeyondBudget && preset != "custom")
         {
             budget = cap - chrome;
         }

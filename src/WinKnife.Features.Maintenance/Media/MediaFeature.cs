@@ -11,13 +11,26 @@ public sealed class MediaToolsFeature : IFeature
 {
     public string Id => "media-tools";
 
+    private IContributionServices? _context;
+    private IMediaToolsService? _service;
+
     public void Start(IFeatureContext context)
     {
         Host.Attach(context);
+        _context = context;
+        _service = new MediaToolsServiceImpl();
+        context.Services.Provide(_service);
     }
 
     public void Stop()
     {
+        if (_service is not null)
+        {
+            _context?.Services.Withdraw(_service);
+            _service = null;
+        }
+
+        _context = null;
         MediaService.Shared.Cancel();
     }
 

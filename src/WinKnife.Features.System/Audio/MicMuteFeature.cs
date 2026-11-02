@@ -70,6 +70,22 @@ public sealed class MicMuteFeature : IFeature, IMicMuteState
 
     public void Stop()
     {
+        // Uninstalling the feature must never leave the microphone muted (the mute only survives an app relaunch).
+        if (_ctx is { } ctx && !ctx.Runtime.IsAvailable("mic-mute") && (_muted || ctx.App.Get<bool>("micMuteActive")))
+        {
+            try
+            {
+                Apply(false);
+            }
+            catch (Exception ex)
+            {
+                ctx.Log.Warn("Unmuting after uninstall failed: " + ex.Message);
+            }
+
+            _muted = false;
+            ctx.App.Set("micMuteActive", false);
+        }
+
         _shortcut?.Dispose();
         _shortcut = null;
         _watcher?.Dispose();

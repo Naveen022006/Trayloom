@@ -37,7 +37,26 @@ internal sealed class WindowLayoutService
     public event Action? ResultChanged;
 
     /// <summary>Runs an action on the active window (called from the page's "try it" buttons, the panel and the Command Bar).</summary>
-    public LayoutResult Run(LayoutAction action) => Engine.Apply(action);
+    public LayoutResult Run(LayoutAction action) => Engine.Apply(action, DevTarget());
+
+    /// <summary>Developer aid (WINKNIFE_DEV=1 only): a window handle in <c>layout-target.txt</c> is used instead of the foreground window, so tests never touch other windows.</summary>
+    private static nint DevTarget()
+    {
+        if (Environment.GetEnvironmentVariable("WINKNIFE_DEV") != "1")
+        {
+            return 0;
+        }
+
+        try
+        {
+            var file = System.IO.Path.Combine(AppPaths.Root, "layout-target.txt");
+            return System.IO.File.Exists(file) && long.TryParse(System.IO.File.ReadAllText(file).Trim(), out var value) ? (nint)value : 0;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
 }
 
 /// <summary>

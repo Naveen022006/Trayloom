@@ -95,7 +95,7 @@ internal sealed class WgcCapture : IDisposable
         try
         {
             var iid = IidDxgiDevice;
-            Marshal.ThrowExceptionForHR(Marshal.QueryInterface(device, ref iid, out var dxgi));
+            Marshal.ThrowExceptionForHR(Marshal.QueryInterface(device, in iid, out var dxgi));
             try
             {
                 Marshal.ThrowExceptionForHR(CreateDirect3D11DeviceFromDXGIDevice(dxgi, out var inspectable));
