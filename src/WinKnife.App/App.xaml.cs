@@ -161,6 +161,33 @@ public partial class App : Application
         }
 
         RunDevFlags(e.Args, startup: true);
+        ScheduleMemoryTrim();
+    }
+
+    /// <summary>
+    /// Start-up work (feature scans, the AI Agents history, thumbnails) leaves a lot of garbage behind; compact the heap once things
+    /// have settled and once more a few minutes later so an idle tray app does not sit on hundreds of megabytes.
+    /// </summary>
+    private void ScheduleMemoryTrim()
+    {
+        foreach (var delay in new[] { TimeSpan.FromSeconds(40), TimeSpan.FromMinutes(4) })
+        {
+            var timer = new DispatcherTimer(DispatcherPriority.ApplicationIdle) { Interval = delay };
+            timer.Tick += (_, _) =>
+            {
+                timer.Stop();
+                try
+                {
+                    System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
+                    GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+                }
+                catch (Exception)
+                {
+                    // best effort
+                }
+            };
+            timer.Start();
+        }
     }
 
     private static string DevCommandFile => Path.Combine(AppPaths.Root, "devcmd.txt");

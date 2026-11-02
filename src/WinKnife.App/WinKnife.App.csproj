@@ -7,6 +7,10 @@
     <NoWarn>$(NoWarn);WFO0003</NoWarn>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\winknife.ico</ApplicationIcon>
+    <!-- A tray app: workstation, non-concurrent GC keeps the idle footprint and thread count down. -->
+    <ServerGarbageCollector>false</ServerGarbageCollector>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <TieredPGO>false</TieredPGO>
   </PropertyGroup>
   <ItemGroup>
     <Resource Include="Assets\winknife.ico" />
