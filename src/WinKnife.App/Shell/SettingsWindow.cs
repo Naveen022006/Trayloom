@@ -116,6 +116,8 @@ internal sealed class SettingsWindow : Window
         Closed += (_, _) => ThemeManager.ThemeChanged -= OnThemeChanged;
     }
 
+    public void SetSearchForDevelopment(string query) => _search.Text = query;
+
     public void Navigate(string destination, string? targetFeature = null, string? sidebarFeature = null)
     {
         _router.Request(destination, targetFeature, sidebarFeature);

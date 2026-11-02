@@ -93,6 +93,13 @@ internal sealed class AppShell : IShell
 
     public void ClosePanel() => _panel?.ClosePanel();
 
+    /// <summary>Developer flag: types a query into the Settings search box.</summary>
+    public void SearchForDevelopment(string query)
+    {
+        ShowSettings(SettingsPages.General, null);
+        _settings?.SetSearchForDevelopment(query);
+    }
+
     /// <summary>Developer flag: shows the tray context menu at the cursor.</summary>
     public void ShowMenuForDevelopment() => ShowMenu(Screens.CursorPosition());
 

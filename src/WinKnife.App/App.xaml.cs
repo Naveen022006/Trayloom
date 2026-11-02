@@ -168,6 +168,20 @@ public partial class App : Application
             Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => _shell.OpenSettings(destination));
         }
 
+        var searchIndex = Array.FindIndex(e.Args, a => a == "--search");
+        if (searchIndex >= 0 && searchIndex + 1 < e.Args.Length)
+        {
+            var query = e.Args[searchIndex + 1];
+            Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => _shell.SearchForDevelopment(query));
+        }
+
+        var uninstallIndex = Array.FindIndex(e.Args, a => a == "--dev-uninstall");
+        if (uninstallIndex >= 0 && uninstallIndex + 1 < e.Args.Length)
+        {
+            var id = e.Args[uninstallIndex + 1];
+            Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => _host!.Runtime.SetAvailable([id], false));
+        }
+
         if (e.Args.Contains("--open-menu"))
         {
             Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => _shell.ShowMenuForDevelopment());

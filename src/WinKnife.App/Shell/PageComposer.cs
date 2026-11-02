@@ -73,6 +73,11 @@ internal static class SettingsSearch
             }
 
             var rank = Rank(query, title, section.Keywords);
+            if (all.Any(x => x.Title == title && x.FeatureId == section.FeatureId))
+            {
+                continue;
+            }
+
             if (rank >= 0 && seen.Add($"s:{section.PageId}#{section.Anchor}:{title}"))
             {
                 all.Add(new SearchEntry(title, "", SettingsPages.Join(section.PageId, section.Anchor), section.FeatureId, false, false, section.PageId, rank));
