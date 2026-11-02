@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // WinKnife — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
 
+using System.Diagnostics;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Threading;
@@ -9,7 +10,7 @@ using WinKnife.Core.Ui;
 
 namespace WinKnife.App;
 
-/// <summary>Application entry: single instance, service composition, tray icon and window management.</summary>
+/// <summary>Application entry: single instance, service composition, startup guard and the shells.</summary>
 public partial class App : Application
 {
     private const string MutexName = @"Local\WinKnife.SingleInstance";
@@ -24,6 +25,8 @@ public partial class App : Application
         "WinKnife.Features.System",
         "WinKnife.Features.Tools",
         "WinKnife.Features.Island",
+        "WinKnife.Features.Capture",
+        "WinKnife.Features.Agents",
     ];
 
     private Mutex? _mutex;
@@ -32,15 +35,28 @@ public partial class App : Application
     private EventWaitHandle? _quitEvent;
     private RegisteredWaitHandle? _quitWait;
     private CoreHost? _host;
-    private TrayController? _tray;
-    private FeaturesWindow? _featuresWindow;
-    private QuickPanelWindow? _quickPanel;
+    private AppShell? _shell;
+    private DispatcherTimer? _healthyTimer;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
 
         var quitRequested = e.Args.Any(a => string.Equals(a, "--quit", StringComparison.OrdinalIgnoreCase));
+        var relaunchIndex = Array.FindIndex(e.Args, a => string.Equals(a, "--relaunch", StringComparison.OrdinalIgnoreCase));
+        if (relaunchIndex >= 0 && relaunchIndex + 1 < e.Args.Length && int.TryParse(e.Args[relaunchIndex + 1], out var oldPid))
+        {
+            // Started by "Restart now": wait (<= 20 s) for the previous process to exit before taking the single-instance lock.
+            try
+            {
+                Process.GetProcessById(oldPid).WaitForExit(20_000);
+            }
+            catch (Exception)
+            {
+                // already gone
+            }
+        }
+
         _mutex = new Mutex(initiallyOwned: true, MutexName, out var isFirstInstance);
         if (quitRequested && isFirstInstance)
         {
@@ -54,7 +70,7 @@ public partial class App : Application
 
         if (!isFirstInstance)
         {
-            // Ask the running instance to quit (--quit) or to show its Features window, then leave.
+            // Ask the running instance to quit (--quit) or to recover (show the panel / Settings), then leave.
             try
             {
                 using var existing = EventWaitHandle.OpenExisting(quitRequested ? QuitEventName : ActivateEventName);
@@ -71,14 +87,12 @@ public partial class App : Application
             return;
         }
 
-        var firstRun = !File.Exists(AppPaths.SettingsFile);
-
         // Created before the (possibly slow, cold-disk) feature loading so --quit / activation requests from a second
         // process are never lost; the handlers are queued on the dispatcher until startup has finished.
         _activateEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ActivateEventName);
         _activateWait = ThreadPool.RegisterWaitForSingleObject(
             _activateEvent,
-            (_, _) => Dispatcher.BeginInvoke(ShowFeatures),
+            (_, _) => Dispatcher.BeginInvoke(() => _shell?.Recover()),
             null,
             Timeout.Infinite,
             executeOnlyOnce: false);
@@ -92,10 +106,16 @@ public partial class App : Application
             Timeout.Infinite,
             executeOnlyOnce: true);
 
-        ThemeManager.Initialize(this);
         _host = new CoreHost(Dispatcher);
         var log = _host.Log;
-        log.Info($"WinKnife {Assembly.GetExecutingAssembly().GetName().Version} starting");
+        log.Info($"WinKnife {AppInfo.Version} starting");
+        var appearance = _host.App.Get<string>(AppKeys.AppAppearance) switch
+        {
+            "light" => AppAppearance.Light,
+            "dark" => AppAppearance.Dark,
+            _ => AppAppearance.System,
+        };
+        ThemeManager.Initialize(this, appearance);
 
         DispatcherUnhandledException += (_, args) =>
         {
@@ -110,19 +130,54 @@ public partial class App : Application
             args.SetObserved();
         };
 
-        LoadFeatureAssemblies(log);
-        _host.Features.Discover();
-        _host.Features.StartInstalled();
-
-        _tray = new TrayController(log);
-        _tray.QuickPanelRequested += ToggleQuickPanel;
-        _tray.FeaturesRequested += ShowFeatures;
-        _tray.QuitRequested += () => Shutdown();
-        _host.Notifier.Sink = _tray.ShowBalloon;
-
-        if (firstRun)
+        // Startup watch: if the previous start never finished, skip every optional startup window this time.
+        var previousStartFailed = _host.App.Get<bool>(AppKeys.StartupDidNotFinish);
+        _host.App.Set(AppKeys.StartupDidNotFinish, true);
+        _healthyTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(20) };
+        _healthyTimer.Tick += (_, _) =>
         {
-            ShowFeatures();
+            _healthyTimer.Stop();
+            _host?.App.Set(AppKeys.StartupDidNotFinish, false);
+        };
+        _healthyTimer.Start();
+
+        LoadFeatureAssemblies(log);
+        _shell = new AppShell(_host);
+        _host.Contributions.Discover();
+        _host.Runtime.Initialize();
+        foreach (var feature in _host.Features.Features)
+        {
+            if (FeatureCatalog.Get(feature.CatalogId) is not null)
+            {
+                // TEMPORARY: show v1 settings views until the feature project contributes real sections.
+                _host.Contributions.AddProvider(new LegacySettingsSection(feature, _host.Features));
+            }
+        }
+
+        _shell.Start();
+        if (!_host.App.Get<bool>(AppKeys.HasOnboarded) && !previousStartFailed)
+        {
+            Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => _shell.ShowOnboarding());
+        }
+
+        // Developer flags used by the screenshot scripts: --open-settings <page#anchor>, --open-panel [tab].
+        var settingsIndex = Array.FindIndex(e.Args, a => a == "--open-settings");
+        if (settingsIndex >= 0 && settingsIndex + 1 < e.Args.Length)
+        {
+            var destination = e.Args[settingsIndex + 1];
+            Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => _shell.OpenSettings(destination));
+        }
+
+        if (e.Args.Contains("--open-menu"))
+        {
+            Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => _shell.ShowMenuForDevelopment());
+        }
+
+        var panelIndex = Array.FindIndex(e.Args, a => a == "--open-panel");
+        if (panelIndex >= 0)
+        {
+            var tab = panelIndex + 1 < e.Args.Length && !e.Args[panelIndex + 1].StartsWith("--", StringComparison.Ordinal) ? e.Args[panelIndex + 1] : null;
+            Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => _shell.OpenPanelForDevelopment(tab));
         }
     }
 
@@ -132,22 +187,37 @@ public partial class App : Application
         _activateEvent?.Dispose();
         _quitWait?.Unregister(null);
         _quitEvent?.Dispose();
+        _healthyTimer?.Stop();
 
-        _quickPanel?.Close();
-        _featuresWindow?.Close();
+        foreach (var window in Windows.OfType<Window>().ToList())
+        {
+            window.Close();
+        }
 
         // Stops every feature (restoring system state), then releases hooks, hotkeys and flushes settings.
         try
         {
             _host?.Log.Info("WinKnife shutting down");
+            _host?.App.Set(AppKeys.StartupDidNotFinish, false);
+            _shell?.Dispose();
             _host?.Dispose();
+            if (_shell?.DeleteDataOnExit == true)
+            {
+                try
+                {
+                    Directory.Delete(AppPaths.Root, recursive: true);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine(ex);
+                }
+            }
         }
         catch (Exception ex)
         {
             _host?.Log.Error("Shutdown failed", ex);
         }
 
-        _tray?.Dispose();
         if (_mutex is not null)
         {
             _mutex.ReleaseMutex();
@@ -170,51 +240,5 @@ public partial class App : Application
                 log.Error($"Could not load feature assembly {name}", ex);
             }
         }
-    }
-
-    private void ShowFeatures()
-    {
-        if (_host is null)
-        {
-            return;
-        }
-
-        if (_featuresWindow is null)
-        {
-            _featuresWindow = new FeaturesWindow(_host.Features, _host.Log);
-            _featuresWindow.Closed += (_, _) => _featuresWindow = null;
-            _featuresWindow.Show();
-        }
-
-        if (_featuresWindow.WindowState == WindowState.Minimized)
-        {
-            _featuresWindow.WindowState = WindowState.Normal;
-        }
-
-        _featuresWindow.Activate();
-    }
-
-    private void ToggleQuickPanel()
-    {
-        if (_host is null)
-        {
-            return;
-        }
-
-        if (_quickPanel is not null)
-        {
-            _quickPanel.Close();
-            return;
-        }
-
-        // Clicking the tray icon deactivates (and closes) an open panel before this runs; treat that as a toggle.
-        if (Environment.TickCount64 - QuickPanelWindow.LastClosedTick < 300)
-        {
-            return;
-        }
-
-        _quickPanel = new QuickPanelWindow(_host.Features, ShowFeatures, Screens.CursorPosition());
-        _quickPanel.Closed += (_, _) => _quickPanel = null;
-        _quickPanel.Show();
     }
 }

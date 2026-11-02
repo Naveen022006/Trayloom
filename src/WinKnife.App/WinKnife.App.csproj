@@ -18,5 +18,7 @@
     <ProjectReference Include="..\WinKnife.Features.System\WinKnife.Features.System.csproj" />
     <ProjectReference Include="..\WinKnife.Features.Tools\WinKnife.Features.Tools.csproj" />
     <ProjectReference Include="..\WinKnife.Features.Island\WinKnife.Features.Island.csproj" />
+    <ProjectReference Include="..\WinKnife.Features.Capture\WinKnife.Features.Capture.csproj" />
+    <ProjectReference Include="..\WinKnife.Features.Agents\WinKnife.Features.Agents.csproj" />
   </ItemGroup>
 </Project>

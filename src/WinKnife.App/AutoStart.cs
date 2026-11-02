@@ -20,6 +20,16 @@ internal static class AutoStart
         }
     }
 
+    /// <summary>True when the user switched the entry off in Task Manager / Settings > Apps > Startup.</summary>
+    public static bool IsDisabledByUser
+    {
+        get
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run");
+            return key?.GetValue(ValueName) is byte[] { Length: > 0 } data && (data[0] & 1) == 1;
+        }
+    }
+
     public static void SetEnabled(bool enabled)
     {
         using var key = Registry.CurrentUser.CreateSubKey(RunKey);
