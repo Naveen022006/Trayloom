@@ -94,6 +94,37 @@ internal static class Host
             new("cleanerScreenshotAgeDays", 30),
             new("panelUtilityCleaner", true),
 
+            // Cleaner: WhatsApp downloads cleanup (confirmed WhatsApp files in the top level of Downloads)
+            new("whatsAppDownloadsEnabled", false),
+            new("whatsAppDownloadsAutomaticEnabled", false),
+            new("whatsAppDownloadsCategories", "image,video,audio"),
+            new("whatsAppDownloadsRetentionDays", 7),
+            new("whatsAppDownloadsNotify", true),
+            new("whatsAppDownloadsIncludeExisting", false),
+            new("whatsAppDownloadsAutomaticStartDate", 0.0),
+            new("whatsAppDownloadsLastAutoRun", 0.0),
+            new("whatsAppDownloadsLastCleanup", 0.0),
+            new("whatsAppDownloadsLastCleanupCount", 0),
+            new("whatsAppDownloadsLastCleanupBytes", 0),
+            new("whatsAppDownloadsLastCleanupFailed", 0),
+            new("whatsAppDownloadsLastCleanupAutomatic", false),
+            new("whatsAppDownloadsExclusions", new List<string>()),
+            new("whatsAppDownloadsAccessConfirmed", false),
+
+            // Cleaner: experimental WhatsApp organizer (records and the undo transaction are JSON text)
+            new("whatsAppOrganizerEnabled", false),
+            new("whatsAppOrganizerDestinationPath", string.Empty),
+            new("whatsAppOrganizerDelayMinutes", 5),
+            new("whatsAppOrganizerCategories", "image,video,audio,document,archive,other"),
+            new("whatsAppOrganizerLayout", "flat"),
+            new("whatsAppOrganizerDuplicateAction", "trashNew"),
+            new("whatsAppOrganizerRecords", string.Empty),
+            new("whatsAppOrganizerUndoTransaction", string.Empty),
+            new("whatsAppOrganizerLastRun", 0.0),
+            new("whatsAppOrganizerLastMoved", 0),
+            new("whatsAppOrganizerLastDuplicates", 0),
+            new("whatsAppOrganizerLastFailed", 0),
+
             // Uninstaller
             new("uninstallerCommandBarEnabled", false),
             new("uninstallerSilent", false),
@@ -232,6 +263,54 @@ internal static class Dialogs
             body.Children.Add(ok);
             window.Content = body;
             window.ShowDialog();
+        }
+        finally
+        {
+            keepOpen?.Invoke(false);
+        }
+    }
+
+    /// <summary>
+    /// Alert with several choices (the first in <paramref name="choices"/> is the default) and a Cancel button.
+    /// Returns the chosen index, or -1 when cancelled.
+    /// </summary>
+    public static int Choose(string title, string message, IReadOnlyList<string> choices, string cancelText = "Cancel", Action<bool>? keepOpen = null)
+    {
+        keepOpen?.Invoke(true);
+        try
+        {
+            var picked = -1;
+            var window = NewWindow(title);
+            var body = new StackPanel { Margin = new Thickness(22, 20, 22, 18) };
+            body.Children.Add(UiKit.Text(title, 14, FontWeights.SemiBold, ThemeKeys.TextPrimary, wrap: true));
+            if (!string.IsNullOrEmpty(message))
+            {
+                var text = UiKit.Text(message, 12, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+                text.Margin = new Thickness(0, 8, 0, 0);
+                body.Children.Add(text);
+            }
+
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 18, 0, 0) };
+            var cancel = UiKit.Button(cancelText, ButtonKind.Bordered, 12, null, () => window.Close());
+            cancel.IsCancel = true;
+            buttons.Children.Add(cancel);
+            for (var i = 0; i < choices.Count; i++)
+            {
+                var index = i;
+                var button = UiKit.Button(choices[i], i == 0 ? ButtonKind.Prominent : ButtonKind.Bordered, 12, null, () =>
+                {
+                    picked = index;
+                    window.Close();
+                });
+                button.Margin = new Thickness(8, 0, 0, 0);
+                button.IsDefault = i == 0;
+                buttons.Children.Add(button);
+            }
+
+            body.Children.Add(buttons);
+            window.Content = body;
+            window.ShowDialog();
+            return picked;
         }
         finally
         {

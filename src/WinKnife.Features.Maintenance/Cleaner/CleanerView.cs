@@ -115,6 +115,17 @@ internal sealed class CleanerView : ContentControl
         schedule.HorizontalAlignment = HorizontalAlignment.Stretch;
         column.AddSpaced(schedule, _compact ? 12 : 18);
         column.AddSpaced(ScreenshotsCard(), _compact ? 12 : 18);
+        if (!_compact && !Host.App.Get<bool>("whatsAppDownloadsEnabled"))
+        {
+            column.AddSpaced(WaCards.OptIn(), 18);
+        }
+
+        // The Settings page has its own full tool for these downloads; the panel gets this one-line home.
+        if (_compact && Host.App.Get<bool>("whatsAppDownloadsEnabled"))
+        {
+            column.AddSpaced(WaCards.Panel(Rebuild), 12);
+        }
+
         if (!FileOps.IsElevated)
         {
             column.AddSpaced(AdminNote(_compact), _compact ? 12 : 18);

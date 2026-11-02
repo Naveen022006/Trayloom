@@ -49,7 +49,7 @@ internal static class Win32
     [DllImport("iphlpapi.dll", SetLastError = true)]
     public static extern uint GetExtendedTcpTable(nint table, ref int size, bool order, int family, int tableClass, uint reserved);
 
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Sequential, Pack = 4)]
     public struct BY_HANDLE_FILE_INFORMATION
     {
         public uint FileAttributes;
