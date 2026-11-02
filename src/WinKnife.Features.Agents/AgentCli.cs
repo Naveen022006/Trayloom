@@ -298,7 +298,7 @@ public enum ClaudeFailure
 }
 
 /// <summary>A Claude Code answer for the account.</summary>
-internal sealed record ClaudeSummary(AgentLimits Limits, ClaudeAccountProfile.Identity? Identity);
+internal sealed record ClaudeSummary(AgentLimits Limits, ClaudeAccountProfile.Identity? Identity, List<string>? Raw = null);
 
 /// <summary>
 /// Reads the same account-wide data as /usage through Claude Code's structured control protocol. Claude handles authentication itself.
@@ -309,9 +309,9 @@ internal static class ClaudeServer
     public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(25);
 
     /// <summary>While the AI page is on screen a reading this old is asked again.</summary>
-    public static readonly TimeSpan PageFreshness = TimeSpan.FromSeconds(60);
+    public static readonly TimeSpan PageFreshness = TimeSpan.FromMinutes(3);
 
-    public static readonly TimeSpan BackgroundFreshness = TimeSpan.FromMinutes(5);
+    public static readonly TimeSpan BackgroundFreshness = TimeSpan.FromMinutes(10);
 
     public static readonly TimeSpan RetryAfter = TimeSpan.FromMinutes(5);
 
@@ -443,13 +443,72 @@ internal static class ClaudeServer
         ("seven_day_sonnet", "sn", LimitKind.Weekly, 10_080, "Sonnet"),
     ];
 
-    /// <summary>The <c>rate_limits</c> object of a control answer (or <c>cachedUsageUtilization.utilization</c>) as limit windows.</summary>
-    public static AgentLimits? Limits(JsonElement rateLimits, DateTime observed)
+    /// <summary>
+    /// The <c>rate_limits</c> object of a control answer (or <c>cachedUsageUtilization.utilization</c>) as limit windows. The
+    /// <c>limits</c> array is read first (it carries severity and whether a window is running); the older per-window keys fill
+    /// whatever it leaves out. Nothing is invented: a window with no reset time keeps none.
+    /// </summary>
+    public static AgentLimits? Limits(JsonElement rateLimits, DateTime observed, string origin = LimitOrigins.ClaudeCli)
     {
         var windows = new List<LimitWindow>();
+        var have = new HashSet<string>();
+        foreach (var item in rateLimits.Prop("limits").Items())
+        {
+            if (item.Prop("percent").Num() is not { } percent)
+            {
+                continue;
+            }
+
+            var kind = item.Str("kind") ?? "";
+            var group = item.Str("group") ?? "";
+            DateTime? end = null;
+            var resets = item.Prop("resets_at");
+            if (resets is { ValueKind: not JsonValueKind.Null })
+            {
+                end = resets.Str() is { } text ? AgentTime.Parse(text) : null;
+                if (end is not { } e || e <= observed)
+                {
+                    continue;
+                }
+            }
+
+            string id;
+            LimitKind limitKind;
+            int? minutes;
+            string? scope = item.Str("scope");
+            string? label = null;
+            if (kind == "session" || group == "session")
+            {
+                (id, limitKind, minutes) = ("claude.fh", LimitKind.Session, 300);
+            }
+            else if (kind.StartsWith("weekly", StringComparison.Ordinal) || group == "weekly")
+            {
+                var suffix = kind.StartsWith("weekly_", StringComparison.Ordinal) ? kind[7..] : "";
+                (id, limitKind, minutes) = (suffix switch { "all" or "" => "claude.sd", "opus" => "claude.so", "sonnet" => "claude.sn", _ => "claude." + kind }, LimitKind.Weekly, 10_080);
+                scope ??= suffix switch { "all" or "" => null, "opus" => "Opus", "sonnet" => "Sonnet", _ => Pretty(suffix) };
+            }
+            else
+            {
+                (id, limitKind, minutes) = ("claude." + (kind.Length == 0 ? "other" : kind), LimitKind.Other, null);
+                label = Pretty(kind);
+            }
+
+            if (!have.Add(id))
+            {
+                continue;
+            }
+
+            windows.Add(new LimitWindow(id, limitKind, minutes, scope, Math.Min(100, Math.Max(0, percent)), end)
+            {
+                Severity = item.Str("severity"),
+                Active = item.Prop("is_active").Bool() ?? (end is not null ? true : null),
+                Label = label,
+            });
+        }
+
         foreach (var m in Mapped)
         {
-            if (rateLimits.Prop(m.Key) is not { ValueKind: JsonValueKind.Object } window || window.Prop("utilization").Num() is not { } percent)
+            if (have.Contains("claude." + m.Id) || rateLimits.Prop(m.Key) is not { ValueKind: JsonValueKind.Object } window || window.Prop("utilization").Num() is not { } percent)
             {
                 continue;
             }
@@ -466,11 +525,62 @@ internal static class ClaudeServer
                 }
             }
 
-            windows.Add(new LimitWindow("claude." + m.Id, m.Kind, m.Minutes, m.Scope, Math.Min(100, Math.Max(0, percent)), end));
+            windows.Add(new LimitWindow("claude." + m.Id, m.Kind, m.Minutes, m.Scope, Math.Min(100, Math.Max(0, percent)), end) { Active = end is not null });
         }
 
-        return windows.Count == 0 ? null : new AgentLimits(AgentProvider.Claude, windows, observed, LimitSource.Account);
+        List<LimitShare>? breakdown = null;
+        DateTime? asOf = null;
+        if (rateLimits.Prop("seven_day_breakdown") is { ValueKind: JsonValueKind.Object } b)
+        {
+            asOf = b.Str("as_of") is { } s ? AgentTime.Parse(s) : null;
+            breakdown = [];
+            foreach (var row in b.Prop("rows").Items())
+            {
+                if (row.Prop("percent").Num() is { } p)
+                {
+                    var key = row.Str("key") ?? "";
+                    breakdown.Add(new LimitShare(key, row.Str("display_name") ?? Pretty(key), Math.Min(100, Math.Max(0, p))));
+                }
+            }
+
+            if (breakdown.Count == 0)
+            {
+                breakdown = null;
+            }
+        }
+
+        windows = windows.OrderBy(w => w.Kind).ThenBy(w => w.Scope is not null).ToList();
+        return windows.Count == 0 ? null : new AgentLimits(AgentProvider.Claude, windows, observed, LimitSource.Account) { Origin = origin, Breakdown = breakdown, BreakdownAsOf = asOf };
     }
+
+    private static string Pretty(string key) => key.Length == 0 ? "Other" : char.ToUpperInvariant(key[0]) + key[1..].Replace('_', ' ');
+
+    /// <summary>The figures of an answer exactly as the source gave them, one line each (the diagnostics list).</summary>
+    public static List<string> Describe(JsonElement rateLimits)
+    {
+        var lines = new List<string>();
+        foreach (var m in Mapped)
+        {
+            if (rateLimits.Prop(m.Key) is { ValueKind: JsonValueKind.Object } w)
+            {
+                lines.Add($"{m.Key}: utilization {Raw(w.Prop("utilization"))}, resets_at {Raw(w.Prop("resets_at"))}");
+            }
+        }
+
+        foreach (var item in rateLimits.Prop("limits").Items())
+        {
+            lines.Add($"limits[] {item.Str("kind")}: percent {Raw(item.Prop("percent"))}, severity {item.Str("severity") ?? "-"}, is_active {Raw(item.Prop("is_active"))}, resets_at {Raw(item.Prop("resets_at"))}");
+        }
+
+        if (rateLimits.Prop("seven_day_breakdown") is { ValueKind: JsonValueKind.Object } b)
+        {
+            lines.Add("seven_day_breakdown (as of " + (b.Str("as_of") ?? "?") + "): " + string.Join(", ", b.Prop("rows").Items().Select(r => (r.Str("display_name") ?? r.Str("key")) + " " + Raw(r.Prop("percent")) + "%")));
+        }
+
+        return lines;
+    }
+
+    private static string Raw(JsonElement? e) => e is { } x ? (x.ValueKind == JsonValueKind.String ? x.GetString() ?? "" : x.GetRawText()) : "absent";
 
     /// <summary>Expires each window without inventing zero usage after a reset.</summary>
     public static AgentLimits? Current(AgentLimits? reading, DateTime now)
@@ -488,7 +598,7 @@ internal static class ClaudeServer
                 return resets > now;
             }
 
-            return age < (w.Kind == LimitKind.Session ? TimeSpan.FromMinutes(w.Minutes ?? 300) : TimeSpan.FromHours(24));
+            return age < (w.Kind == LimitKind.Session && w.Active != false ? TimeSpan.FromMinutes(w.Minutes ?? 300) : TimeSpan.FromHours(24));
         }).ToList();
         return windows.Count == 0 ? null : reading with { Windows = windows };
     }
@@ -598,8 +708,9 @@ internal static class ClaudeServer
                     observed = at;
                 }
 
+                var raw = result.Prop("rate_limits") is { ValueKind: JsonValueKind.Object } rl ? Describe(rl) : [];
                 var reading = result.Prop("rate_limits") is { ValueKind: JsonValueKind.Object } limits ? Limits(limits, observed) : null;
-                return reading is null ? (null, ClaudeFailure.Unreachable) : (new ClaudeSummary(reading, identity), null);
+                return reading is null ? (null, ClaudeFailure.Unreachable) : (new ClaudeSummary(reading, identity, raw), null);
             }
             finally
             {

@@ -31,6 +31,8 @@ public static class AgentStrings
     public const string WaitingForLimits = "Limits appear after the next reply";
     public const string NoSession = "No session running";
     public const string ApiValue = "API value";
+    public const string ApiEquivalent = "API-equivalent value";
+    public const string NotWhatYouPay = "not what you pay";
     public const string Idle = "Idle";
     public const string NoActivity = "Nothing in this period";
     public const string Empty = "No usage from Claude Code, Codex, OpenCode or GitHub Copilot yet. It appears here as soon as any of them works on this PC.";
@@ -144,6 +146,18 @@ public static class AgentStrings
     public static string ClaudeLimitsStale(string v) => "The Claude app last checked them " + v + ".";
     public static string PricesFrom(string v) => "Price list of " + v;
     public static string ResetsExpiry(string v) => "Next expires " + v;
+
+    /// <summary>The span a spending figure covers, in words that name the local day.</summary>
+    public static string PeriodRange(AgentPeriod p) => p switch
+    {
+        AgentPeriod.Today => "Today · since midnight, your local time",
+        AgentPeriod.Week => "Last 7 days, ending now",
+        _ => "Last 30 days, ending now",
+    };
+
+    public static string PeriodHelp(AgentPeriod p) => p == AgentPeriod.Today
+        ? "Counts everything since 12:00 AM on this PC's clock, not the last 24 hours."
+        : "Counts whole local days, including today so far.";
 
     public static string Period(AgentPeriod p) => p switch { AgentPeriod.Today => Today, AgentPeriod.Week => Week7, _ => Month30 };
 

@@ -381,7 +381,7 @@ internal sealed class IslandCore : IDisposable
 
         foreach (var s in Ctx.Island.Strips)
         {
-            if (s.Id is "agents" or "agents.resting" || s.Id.EndsWith(".resting", StringComparison.Ordinal) || s.Id.EndsWith(".notice", StringComparison.Ordinal) || list.Contains(s.Id))
+            if (s.Id is "agents" or "agents.resting" || s.Id.EndsWith(".resting", StringComparison.Ordinal) || s.Id.EndsWith(".notice", StringComparison.Ordinal) || s.Id.EndsWith(".attention", StringComparison.Ordinal) || list.Contains(s.Id))
             {
                 continue;
             }
@@ -465,6 +465,19 @@ internal sealed class IslandCore : IDisposable
         if (!IslandOn || !Session.CanPresent)
         {
             return;
+        }
+
+        // A contributed ".attention" strip (an agent waits for the person) shows at once, with a click that runs the element's Tag action.
+        foreach (var s in Ctx.Island.Strips.Where(x => x.Id.EndsWith(".attention", StringComparison.Ordinal)).ToList())
+        {
+            var attention = TakeStrip(s.Id);
+            _strips[s.Id] = null;
+            if (attention is null)
+            {
+                continue;
+            }
+
+            ShowNotice(new Notice { Event = NoticeEvents.AgentsAttention, Element = attention, Glyph = G.Sparkle, Title = "attention", Detail = Guid.NewGuid().ToString("N"), OnClick = attention.Tag as Action, Banner = false });
         }
 
         foreach (var s in Ctx.Island.Strips.Where(x => x.Id.EndsWith(".notice", StringComparison.Ordinal)).ToList())

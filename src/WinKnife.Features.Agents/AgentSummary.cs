@@ -219,7 +219,8 @@ public static class AgentLimitSupport
             return window;
         }
 
-        return new LimitWindow(window.Id, window.Kind, window.Minutes, window.Scope, 0, null);
+        // Renewed since it was read: what it holds now is unknown until the next reading, never shown as a fresh zero.
+        return window with { UsedPercent = 0, ResetsAt = null, EstimatedResetsAt = null, Renewed = true };
     }
 
     /// <summary>Once an estimate has passed, the countdown is unknown until another reading places it.</summary>

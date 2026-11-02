@@ -211,10 +211,10 @@ internal static class ClaudeAppUsage
                 continue;
             }
 
-            result.Add(new LimitWindow("claude." + window.Key, window.Kind, window.Minutes, window.Scope, used, resets, session?.Estimate));
+            result.Add(new LimitWindow("claude." + window.Key, window.Kind, window.Minutes, window.Scope, used, resets, session?.Estimate) { Active = used > 0 });
         }
 
-        return result.Count == 0 ? null : new AgentLimits(AgentProvider.Claude, result, latest.Date, LimitSource.ClaudeApp);
+        return result.Count == 0 ? null : new AgentLimits(AgentProvider.Claude, result, latest.Date, LimitSource.ClaudeApp) { Origin = LimitOrigins.ClaudeDesktop };
     }
 
     /// <summary>Where Claude Code's own first request places the session the newest reading saw.</summary>

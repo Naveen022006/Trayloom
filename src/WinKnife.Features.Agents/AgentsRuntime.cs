@@ -32,6 +32,7 @@ public sealed class AgentsRuntime : IDisposable
         Service = new AgentUsageService(Settings, context.Ui, context.Log);
         Resets = new CodexResetService(Service);
         Accounts = new CodexProfileLimitsService(Settings);
+        Sessions = new AgentSessionMonitor(AgentSessionPaths.Default());
         _noticeTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
         _noticeTimer.Tick += (_, _) =>
         {
@@ -50,6 +51,29 @@ public sealed class AgentsRuntime : IDisposable
     public CodexResetService Resets { get; }
 
     public CodexProfileLimitsService Accounts { get; }
+
+    /// <summary>The live sessions of Claude Code and Codex (the Now card, the closed strip and the permission notices).</summary>
+    public AgentSessionMonitor Sessions { get; }
+
+    private readonly Queue<AgentAttention> _attention = new();
+
+    /// <summary>The session that most recently started waiting for the person (kept so the page can show it).</summary>
+    public AgentAttention? LastAttention { get; private set; }
+
+    /// <summary>Raised on the UI thread when the live sessions changed.</summary>
+    public event Action? SessionsChanged;
+
+    /// <summary>The next permission notice waiting to be shown on the closed island, once.</summary>
+    public AgentAttention? TakeAttention() => _attention.Count > 0 ? _attention.Dequeue() : null;
+
+    public bool HasAttention => _attention.Count > 0;
+
+    /// <summary>Brings the window of the session that waits forward (the Claude app, or the terminal or editor above it).</summary>
+    public bool FocusSession(AgentAttention attention)
+    {
+        var session = Sessions.Current.FirstOrDefault(s => s.Key == attention.Key);
+        return AgentProcesses.FocusHost(session ?? new AgentSession { Origin = attention.Origin, Pid = attention.Pid, Provider = attention.Provider });
+    }
 
     public IContributionServices Services => _context;
 
@@ -79,6 +103,8 @@ public sealed class AgentsRuntime : IDisposable
         Service.Alert += OnAlert;
         Service.LiveChanged += OnLiveChanged;
         Service.Changed += OnServiceChanged;
+        Sessions.Changed += OnSessionsChanged;
+        Sessions.Attention += OnAttention;
         _context.App.Changed += OnSettingChanged;
         _context.Runtime.Changed += Sync;
         SystemEvents.SessionSwitch += OnSessionSwitch;
@@ -101,6 +127,10 @@ public sealed class AgentsRuntime : IDisposable
         Service.Alert -= OnAlert;
         Service.LiveChanged -= OnLiveChanged;
         Service.Changed -= OnServiceChanged;
+        Sessions.Changed -= OnSessionsChanged;
+        Sessions.Attention -= OnAttention;
+        Sessions.Stop();
+        _attention.Clear();
         _noticeTimer.Stop();
         Notice = null;
         Accounts.Pause();
@@ -118,6 +148,42 @@ public sealed class AgentsRuntime : IDisposable
     {
         Service.SyncWithPreferences();
         Accounts.Synchronize();
+        var providers = Settings.Providers();
+        Sessions.ClaudeEnabled = providers.Contains(AgentProvider.Claude);
+        Sessions.CodexEnabled = providers.Contains(AgentProvider.Codex);
+        if (Settings.IsEnabled())
+        {
+            Sessions.Start();
+        }
+        else
+        {
+            Sessions.Stop();
+        }
+    }
+
+    private void OnSessionsChanged()
+    {
+        _context.Ui.BeginInvoke(() =>
+        {
+            SessionsChanged?.Invoke();
+            StripInvalidated?.Invoke();
+            IslandContext?.Invalidate();
+        });
+    }
+
+    private void OnAttention(AgentAttention attention)
+    {
+        _context.Ui.BeginInvoke(() =>
+        {
+            LastAttention = attention;
+            if (!Settings.AttentionAlerts() || !Settings.IsEnabled())
+            {
+                return;
+            }
+
+            _attention.Enqueue(attention);
+            IslandContext?.Invalidate();
+        });
     }
 
     private void OnSettingChanged(string key)

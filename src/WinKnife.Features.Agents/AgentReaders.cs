@@ -379,7 +379,7 @@ internal sealed class CodexReader : IAgentHarnessReader
                         var windows = AgentLogParser.CodexWindows(limits, date, AgentLogParser.LogWindowKeys);
                         if (windows.Count > 0)
                         {
-                            entries.Add(new LogEntry.Limits(new AgentLimits(AgentProvider.Codex, windows, date, LimitSource.SessionLog)));
+                            entries.Add(new LogEntry.Limits(new AgentLimits(AgentProvider.Codex, windows, date, LimitSource.SessionLog) { Origin = LimitOrigins.CodexLog }));
                         }
                     }
 

@@ -405,16 +405,40 @@ internal sealed class AgentUsageStore
 
     public void SetLimits(AgentLimits reading) => Limits[reading.Provider] = reading;
 
-    /// <summary>Keeps the newer of two readings of an account.</summary>
+    /// <summary>The newest reading of each origin (Codex's session log and its app-server), kept apart so the diagnostics can show both.</summary>
+    public Dictionary<string, AgentLimits> Readings { get; private set; } = [];
+
+    /// <summary>Remembers the reading under its origin, and keeps the newest of a provider's origins as the one in use (the logged moment decides, then the more direct source).</summary>
     public void UpdateLimits(AgentLimits reading)
     {
-        if (!Limits.TryGetValue(reading.Provider, out var cur) || cur.ObservedAt <= reading.ObservedAt)
+        // Readings saved by an older build carry no origin: Codex ones are told apart by how they were made.
+        if (reading.Origin is null && reading.Provider == AgentProvider.Codex)
         {
-            Limits[reading.Provider] = reading;
+            reading = reading with { Origin = reading.Source == LimitSource.SessionLog ? LimitOrigins.CodexLog : LimitOrigins.CodexServer };
+        }
+
+        var origin = reading.Provider.Raw() + ":" + (reading.Origin ?? reading.Source.ToString());
+        if (!Readings.TryGetValue(origin, out var own) || own.ObservedAt <= reading.ObservedAt)
+        {
+            Readings[origin] = reading;
+        }
+
+        var best = Readings.Values.Where(r => r.Provider == reading.Provider)
+            .OrderByDescending(r => r.ObservedAt).ThenBy(r => LimitOrigins.Rank(r.Origin)).FirstOrDefault();
+        if (best is not null)
+        {
+            Limits[reading.Provider] = best;
         }
     }
 
-    public void ClearLimits(AgentProvider provider) => Limits.Remove(provider);
+    public void ClearLimits(AgentProvider provider)
+    {
+        Limits.Remove(provider);
+        foreach (var key in Readings.Where(kv => kv.Value.Provider == provider).Select(kv => kv.Key).ToList())
+        {
+            Readings.Remove(key);
+        }
+    }
 
     /// <summary>A turn that has written nothing for this long is not being worked on; it waits aside for a while.</summary>
     public void CloseIdleTurns(DateTime now, TimeSpan idle)
@@ -674,7 +698,7 @@ internal sealed class AgentUsageStore
             saved.Records.Add(new SavedRecord { Key = keys[i], Record = _records[i], Billable = _billables[i], Sources = _sources[i] });
         }
 
-        saved.Limits = Limits.Values.OrderBy(l => l.Provider.Raw(), StringComparer.Ordinal).ToList();
+        saved.Limits = Limits.Values.Concat(Readings.Values).Distinct().OrderBy(l => l.Provider.Raw(), StringComparer.Ordinal).ThenBy(l => l.Origin, StringComparer.Ordinal).ToList();
         saved.Turns = Turns.Values.Where(t => t.Provider != AgentProvider.OpenCode).OrderBy(t => t.Id, StringComparer.Ordinal).ToList();
         saved.Waiting = Waiting.Values.Where(t => t.Provider != AgentProvider.OpenCode).OrderBy(t => t.Id, StringComparer.Ordinal).ToList();
         return saved;
@@ -695,7 +719,10 @@ internal sealed class AgentUsageStore
             store._index[saved.Records[i].Key] = i;
         }
 
-        store.Limits = saved.Limits.GroupBy(l => l.Provider).ToDictionary(g => g.Key, g => g.Last());
+        foreach (var reading in saved.Limits.OrderBy(l => l.ObservedAt))
+        {
+            store.UpdateLimits(reading);
+        }
         store.Turns = new Dictionary<string, LiveSession>(saved.Turns.ToDictionary(t => t.Id), PathComparer);
         store.Waiting = new Dictionary<string, LiveSession>(saved.Waiting.ToDictionary(t => t.Id), PathComparer);
         return store;

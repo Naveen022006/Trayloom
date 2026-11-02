@@ -284,10 +284,10 @@ internal sealed class AgentRing : FrameworkElement
     }
 }
 
-/// <summary>Vector marks of the four agents (generic marks, drawn in the provider tint; no brand artwork is shipped).</summary>
+/// <summary>Vector marks of the four agents (vector geometries in <see cref="AgentMarkGeometry"/>, drawn in the provider tint; no brand artwork is shipped).</summary>
 internal static class AgentMarks
 {
-    public static double Scale(AgentProvider p) => p == AgentProvider.Claude ? 1.45 : 1.2;
+    public static double Scale(AgentProvider p) => p == AgentProvider.Claude ? 1.3 : 1.2;
 
     /// <summary>The mark drawn in a square of <paramref name="size"/> DIPs with the given brush.</summary>
     public static FrameworkElement Create(AgentProvider provider, double size, Brush? brush = null)
@@ -295,9 +295,11 @@ internal static class AgentMarks
         brush ??= provider.TintBrush();
         var canvas = new Canvas { Width = 24, Height = 24 };
 
-        Path Stroke(string data, double thickness = 2.2) => new()
+        Path Fill(Geometry data, double opacity = 1) => new() { Data = data, Fill = brush, Opacity = opacity };
+
+        Path Outline(Geometry data, double thickness) => new()
         {
-            Data = Geometry.Parse(data),
+            Data = data,
             Stroke = brush,
             StrokeThickness = thickness,
             StrokeStartLineCap = PenLineCap.Round,
@@ -308,31 +310,19 @@ internal static class AgentMarks
         switch (provider)
         {
             case AgentProvider.Claude:
-                // A many-rayed burst: long and short rays around a centre.
-                for (var i = 0; i < 12; i++)
-                {
-                    var angle = i * Math.PI / 6 + 0.12;
-                    var outer = i % 2 == 0 ? 11.2 : 8.6;
-                    var inner = 3.2;
-                    var x1 = 12 + inner * Math.Cos(angle);
-                    var y1 = 12 + inner * Math.Sin(angle);
-                    var x2 = 12 + outer * Math.Cos(angle);
-                    var y2 = 12 + outer * Math.Sin(angle);
-                    canvas.Children.Add(Stroke(string.Create(CultureInfo.InvariantCulture, $"M{x1:0.##},{y1:0.##} L{x2:0.##},{y2:0.##}"), 2.3));
-                }
-
+                canvas.Children.Add(Fill(AgentMarkGeometry.Spark));
                 break;
             case AgentProvider.Codex:
-                canvas.Children.Add(Stroke("M8,6 L2.5,12 L8,18", 2.4));
-                canvas.Children.Add(Stroke("M16,6 L21.5,12 L16,18", 2.4));
-                canvas.Children.Add(Stroke("M13.6,4.5 L10.4,19.5", 2.4));
+                canvas.Children.Add(Outline(AgentMarkGeometry.Knot, 1.55));
                 break;
             case AgentProvider.OpenCode:
-                canvas.Children.Add(Stroke("M4,6.5 L11,12 L4,17.5", 2.5));
-                canvas.Children.Add(Stroke("M13.5,19 L21,19", 2.5));
+                canvas.Children.Add(Fill(AgentMarkGeometry.Frame));
+                canvas.Children.Add(Fill(AgentMarkGeometry.FrameInner, 0.5));
                 break;
             default:
-                canvas.Children.Add(Stroke("M12,12 C9.4,7.2 2.6,7.2 2.6,12 C2.6,16.8 9.4,16.8 12,12 C14.6,7.2 21.4,7.2 21.4,12 C21.4,16.8 14.6,16.8 12,12", 2.5));
+                canvas.Children.Add(Fill(AgentMarkGeometry.Head));
+                canvas.Children.Add(Fill(AgentMarkGeometry.Ears));
+                canvas.Children.Add(Outline(AgentMarkGeometry.Crown, 1.9));
                 break;
         }
 
@@ -842,5 +832,38 @@ internal sealed class AgentFitRow : Panel
 
         share.Arrange(new Rect(finalSize.Width - shareWidth, (h - share.DesiredSize.Height) / 2, shareWidth, share.DesiredSize.Height));
         return finalSize;
+    }
+}
+
+/// <summary>A sheet of the four marks at the sizes the island uses, on black; used for visual checks and screenshots.</summary>
+public static class AgentMarkSheet
+{
+    public static FrameworkElement Create()
+    {
+        var root = new StackPanel { Background = Brushes.Black, Margin = new Thickness(0) };
+        foreach (var size in new double[] { 14, 16, 18, 32, 64 })
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(14, 10, 14, 4) };
+            row.Children.Add(AU.Text(size.ToString("0") + " px", 11, null, AgentColors.Secondary));
+            ((TextBlock)row.Children[0]).Width = 46;
+            foreach (var p in AgentProviders.All)
+            {
+                var cell = new Grid { Width = Math.Max(48, size * 1.8), Height = size * 1.6 };
+                cell.Children.Add(AgentMarks.Create(p, size, p.TintBrush()));
+                row.Children.Add(cell);
+            }
+
+            root.Children.Add(row);
+        }
+
+        var strip = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(14, 10, 14, 12) };
+        foreach (var p in AgentProviders.All)
+        {
+            strip.Children.Add(new AgentGlyph(p, 13) { Margin = new Thickness(0, 0, 14, 0) });
+        }
+
+        strip.Children.Add(AU.Text("  strip glyphs (13) animated", 10, null, AgentColors.Secondary));
+        root.Children.Add(strip);
+        return root;
     }
 }

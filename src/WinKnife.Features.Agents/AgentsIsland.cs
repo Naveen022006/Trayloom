@@ -17,6 +17,7 @@ public sealed class AgentStripView : StackPanel
     private readonly TextBlock _reading;
     private readonly AgentReadout _readout;
     private string _shape = "";
+    private readonly bool _waiting;
 
     /// <summary>
     /// Creates the strip from the latest snapshot. <paramref name="snapshotOverride"/> and <paramref name="providerOverride"/> let the settings sample
@@ -29,11 +30,19 @@ public sealed class AgentStripView : StackPanel
         VerticalAlignment = VerticalAlignment.Center;
         var snapshot = snapshotOverride ?? runtime.Service.Snapshot;
         var live = snapshot.Live;
-        var working = AgentProviders.All.Where(p => live.Any(l => l.Provider == p)).ToList();
+        var sessions = snapshotOverride is null ? runtime.Sessions.Current.Where(s => s.State != AgentSessionState.Idle).ToList() : [];
+        _waiting = sessions.Any(s => s.IsWaiting);
+        var working = AgentProviders.All.Where(p => live.Any(l => l.Provider == p) || sessions.Any(s => s.Provider == p)).ToList();
         _readout = runtime.Settings.Readout();
-        var tint = working.Count > 0 ? working[0].Tint() : Colors.White;
+        var tint = _waiting ? AgentColors.Orange : working.Count > 0 ? working[0].Tint() : Colors.White;
         var size = working.Count > 1 ? 10.0 : 12.0;
         var marks = new StackPanel { Orientation = Orientation.Horizontal };
+        if (_waiting)
+        {
+            // Amber pulse: a session waits for the person.
+            marks.Children.Add(new AgentPulse(AgentColors.Orange, 4) { Margin = new Thickness(0, 0, 2, 0) });
+        }
+
         foreach (var p in working)
         {
             marks.Children.Add(new AgentGlyph(p, size));
@@ -76,6 +85,21 @@ public sealed class AgentStripView : StackPanel
         var settings = _runtime.Settings;
         var snapshot = snapshotOverride ?? _runtime.Service.Snapshot;
         var text = AgentSettings.StripReading(snapshot, _readout, settings.UsedDisplay(), settings.Focus(), DateTime.UtcNow);
+        if (snapshotOverride is null)
+        {
+            var sessions = _runtime.Sessions.Current.Where(s => s.State != AgentSessionState.Idle).ToList();
+            if (sessions.Any(s => s.IsWaiting))
+            {
+                text = "Needs you";
+            }
+            else if (snapshot.Live.Count == 0 && sessions.Count > 0)
+            {
+                // Sessions found from their files have no token counts yet: the clock is the one reading they can give.
+                text = AgentFormat.Clock((DateTime.UtcNow - sessions.Min(s => s.Since)).TotalSeconds);
+            }
+        }
+
+        _reading.Foreground = _waiting ? AgentColors.Of(AgentColors.Orange) : _reading.Foreground;
         _reading.Text = text;
         // A reading that gains a digit, like an hour passing, needs a wider island; the island measures the same reading.
         var shape = AgentSettings.ReadingShape(text);
@@ -228,12 +252,34 @@ public sealed class AgentsLiveStrip : IIslandStrip
         }
 
         runtime.IslandContext = context;
-        if (!runtime.Settings.ShowsLiveActivity() || runtime.Service.Snapshot.Live.Count == 0)
+        if (!runtime.Settings.ShowsLiveActivity()
+            || (runtime.Service.Snapshot.Live.Count == 0 && !runtime.Sessions.Current.Any(s => s.State != AgentSessionState.Idle)))
         {
             return null;
         }
 
         return new AgentStripView(runtime);
+    }
+}
+
+/// <summary>"Claude needs your permission": shown the moment a session starts waiting for the person; a click brings its window forward.</summary>
+public sealed class AgentsAttentionStrip : IIslandStrip
+{
+    public string? FeatureId => AgentKeys.FeatureId;
+
+    public int Order => 39;
+
+    public string Id => "agents.attention";
+
+    public FrameworkElement? CreateStrip(IIslandContext context)
+    {
+        if (context.Services.Get<AgentsRuntime>() is not { } runtime || !runtime.Settings.IsEnabled() || runtime.TakeAttention() is not { } attention)
+        {
+            return null;
+        }
+
+        runtime.IslandContext = context;
+        return new AgentAttentionView(attention, () => runtime.FocusSession(attention));
     }
 }
 

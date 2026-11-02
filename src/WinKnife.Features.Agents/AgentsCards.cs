@@ -151,10 +151,7 @@ internal static class AgentCardViews
         }
 
         var stale = AgentSettings.LimitsAreStale(limits, provider, isAccountCard, now);
-        var all = (limits?.Windows ?? []).Select(w => AgentLimitSupport.Current(w, now)).ToList();
-        var session = all.FirstOrDefault(w => w.Kind == LimitKind.Session);
-        var longer = all.Where(w => w.Kind != LimitKind.Session).OrderByDescending(w => w.UsedPercent).FirstOrDefault();
-        var windows = new[] { session, longer }.Where(w => w is not null).Select(w => w!).ToList();
+        var windows = LimitPresenter.Rows(provider, limits, now, c.UsedDisplay);
 
         var accessory = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         if (isAccountCard)
@@ -217,7 +214,7 @@ internal static class AgentCardViews
 
             if (windows.Count > 0)
             {
-                Add(body, Meters(c, provider, windows, stale), 6);
+                Add(body, Meters(windows, stale), 6);
             }
 
             if (notes.Caption is { } note)
@@ -231,14 +228,42 @@ internal static class AgentCardViews
         }
         else
         {
-            Add(body, Meters(c, provider, windows, stale), 6);
-            if (windows.Count == 1 && limits is not null && now - limits.ObservedAt > TimeSpan.FromSeconds(600))
+            Add(body, Meters(windows, stale), 6);
+            if (limits is not null)
             {
-                Add(body, AU.Text(AgentStrings.Updated(Relative(c, limits.ObservedAt)), 9.5, null, AgentColors.Tertiary, TextTrimming.CharacterEllipsis), 6);
+                // Where the numbers come from and how old they are: every reading says so, and an old one is not dressed up as fresh.
+                var (source, old) = LimitPresenter.SourceLine(limits, now);
+                var line = AU.Text(source + (old ? " · may be out of date" : ""), 9, null, old ? AgentColors.Of(Orange) : AgentColors.Tertiary, TextTrimming.CharacterEllipsis);
+                AU.Tip(line, "Open the AI Agents settings, \"Where these numbers come from\", to compare every source.");
+                Add(body, line, 5);
+                if (LimitPresenter.Breakdown(limits) is { } breakdown)
+                {
+                    var uses = AU.Text("This week's use: " + breakdown, 9, null, AgentColors.Secondary, TextTrimming.CharacterEllipsis);
+                    AU.Tip(uses, "Share of this week's plan use by product, as Claude reports it" + (limits.BreakdownAsOf is { } at ? " (as of " + AgentFormat.Relative(at, now, false) + ")" : "") + ".");
+                    Add(body, uses, 3);
+                }
+
+                if (LimitPresenter.Disagreement(snapshot, provider, now) is { } diff)
+                {
+                    Add(body, AU.Text(diff, 8.5, null, AgentColors.Tertiary, TextTrimming.CharacterEllipsis), 3);
+                }
             }
         }
 
         return Chrome(body);
+    }
+
+    /// <summary>The height the default limits card of a provider needs (the page sizes its row from this).</summary>
+    public static double LimitsHeight(AgentCardContext c, AgentProvider provider)
+    {
+        var limits = c.Snapshot.Limits.GetValueOrDefault(provider);
+        var rows = LimitPresenter.Rows(provider, limits, c.Now, c.UsedDisplay);
+        if (rows.Count == 0)
+        {
+            return AgentSettings.CardHeight;
+        }
+
+        return LimitPresenter.CardHeight(rows, LimitPresenter.Breakdown(limits) is not null, LimitPresenter.Disagreement(c.Snapshot, provider, c.Now) is not null);
     }
 
     private static string CodexAccountMessage(CodexAccountError e) => e switch
@@ -263,83 +288,58 @@ internal static class AgentCardViews
         return status.ClaudeProfile.IsDefault ? email : name + " · " + email;
     }
 
-    private static FrameworkElement Meters(AgentCardContext c, AgentProvider provider, List<LimitWindow> windows, bool stale)
+    private static FrameworkElement Meters(List<LimitRowModel> rows, bool stale)
     {
         var panel = new StackPanel { Opacity = stale ? 0.6 : 1 };
-        foreach (var w in windows)
+        foreach (var row in rows)
         {
-            Add(panel, LimitRow(c, provider, w), 5);
+            Add(panel, LimitRow(row), 5);
         }
 
         return panel;
     }
 
-    /// <summary>A usage-based forecast would read as a promise, so a row says only what is left or used, as chosen, and when the window renews.</summary>
-    private static FrameworkElement LimitRow(AgentCardContext c, AgentProvider provider, LimitWindow window)
+    /// <summary>A row says what is left or used, when the source says the window renews, or why there is nothing to count.</summary>
+    private static FrameworkElement LimitRow(LimitRowModel model)
     {
-        var now = c.Now;
-        var pace = AgentLimitSupport.Pace(window, now);
-        var tint = AgentColors.LimitTint(provider, window.UsedFraction);
-        var remaining = !c.UsedDisplay;
-        var fraction = remaining ? window.RemainingFraction : window.UsedFraction;
-        var reset = AgentLimitSupport.DisplayedReset(window, now) is { } r ? (window.EstimatedResetsAt is null ? "" : "≈ ") + Countdown(r, now) : null;
         var row = new StackPanel();
         var line = new AgentFitRow { Height = 15 };
-        line.Children.Add(AU.Text(LimitLabel(window), 10, FontWeights.Medium, AgentColors.White(0.85), TextTrimming.CharacterEllipsis));
-        if (reset is not null)
-        {
-            var countdown = new StackPanel { Orientation = Orientation.Horizontal };
-            countdown.Children.Add(AU.Icon(Glyphs.Refresh, 7.5, AgentColors.Secondary));
-            var text = AU.Text(reset, 9.5, null, AgentColors.Secondary);
-            text.Margin = new Thickness(2, 0, 0, 0);
-            countdown.Children.Add(text);
-            line.Children.Add(countdown);
-        }
-
-        var share = AU.Text(AgentSettings.LimitShare(window, c.UsedDisplay), 12, FontWeights.SemiBold, tint == provider.Tint() ? AgentColors.Primary : AgentColors.Of(tint), display: true, mono: true);
+        line.Children.Add(AU.Text(model.Label, 10, FontWeights.Medium, AgentColors.White(0.85), TextTrimming.CharacterEllipsis));
+        var quiet = model.Fraction is null && !model.NoteIsAlert;
+        var share = AU.Text(model.Value, model.Fraction is null ? 11 : 12, FontWeights.SemiBold, quiet ? AgentColors.Secondary : AgentColors.Of(model.Tint), display: true, mono: true);
         line.Children.Add(share);
         row.Children.Add(line);
-        var meter = new AgentMeter(fraction, pace is { } p ? (remaining ? 1 - p.Elapsed : p.Elapsed) : null, tint, 4);
-        meter.Margin = new Thickness(0, 2, 0, 0);
-        row.Children.Add(meter);
-        AU.Tip(row, LimitHelp(c, window));
+        if (model.Fraction is { } fraction)
+        {
+            var meter = new AgentMeter(fraction, model.Pace, model.Tint, 4) { Margin = new Thickness(0, 2, 0, 0) };
+            row.Children.Add(meter);
+        }
+        else if (model.Note is { } note)
+        {
+            var t = AU.Text(note, 9.5, null, model.NoteIsAlert ? AgentColors.Of(model.Tint) : AgentColors.Secondary, TextTrimming.CharacterEllipsis);
+            t.Margin = new Thickness(0, 2, 0, 0);
+            row.Children.Add(t);
+        }
+
+        if (model.Reset is not null)
+        {
+            var reset = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 0) };
+            reset.Children.Add(AU.Icon(Glyphs.Refresh, 7.5, AgentColors.Secondary));
+            var text = AU.Text("resets " + model.Reset, 9.5, null, AgentColors.Secondary, TextTrimming.CharacterEllipsis);
+            text.Margin = new Thickness(3, 0, 0, 0);
+            reset.Children.Add(text);
+            row.Children.Add(reset);
+        }
+
+        AU.Tip(row, model.Tip);
         return row;
     }
-
-    /// <summary>What the window covers: its length, or the model it is kept for.</summary>
-    private static string LimitLabel(LimitWindow w) => w.Kind switch
-    {
-        LimitKind.Session => AgentStrings.Session,
-        LimitKind.Weekly => w.Scope is { } s ? AgentStrings.Weekly + " · " + s : AgentStrings.Weekly,
-        _ => w.Minutes is { } m ? AgentFormat.Duration(m * 60.0, 1) : w.Scope ?? AgentStrings.ReadoutLimit,
-    };
 
     /// <summary>How long until the window renews: days and hours, or hours and minutes, never seconds on a card that redraws every few.</summary>
     private static string Countdown(DateTime date, DateTime now)
     {
         var seconds = (date - now).TotalSeconds;
         return AgentFormat.Duration(Math.Max(60, seconds), seconds >= 3600 ? 2 : 1);
-    }
-
-    private static string LimitHelp(AgentCardContext c, LimitWindow w)
-    {
-        var parts = new List<string> { LimitLabel(w), AgentStrings.UsedShare(AgentFormat.Percent(w.UsedFraction)), AgentStrings.Left(AgentFormat.Percent(w.RemainingFraction)) };
-        if (AgentLimitSupport.DisplayedReset(w, c.Now) is { } resets)
-        {
-            parts.Add(resets.ToLocalTime().ToString("MMM d, h:mm tt", CultureInfo.CurrentCulture));
-            if (w.EstimatedResetsAt is not null)
-            {
-                parts.Add(AgentStrings.Estimated);
-            }
-        }
-
-        var observed = c.Snapshot.Limits.Values.Select(l => l.ObservedAt).DefaultIfEmpty(DateTime.MinValue).Max();
-        if (observed != DateTime.MinValue && c.Now - observed > TimeSpan.FromSeconds(600))
-        {
-            parts.Add(AgentStrings.Updated(AgentFormat.Relative(observed, c.Now, false)));
-        }
-
-        return string.Join(" · ", parts);
     }
 
     /// <summary>Without a recent reading from the Claude app, the session still ends five hours after its first request.</summary>
@@ -477,10 +477,10 @@ internal static class AgentCardViews
         value.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         value.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         var amount = AU.Text((usage.FullyPriced ? "" : "≥ ") + AgentFormat.Cost(usage.Total.Cost), 22, FontWeights.Medium, AgentColors.Primary, TextTrimming.None, true, true);
-        var caption = AU.Text(AgentStrings.ApiValue, 9.5, null, AgentColors.Secondary);
-        caption.Margin = new Thickness(5, 0, 0, 0);
-        caption.VerticalAlignment = VerticalAlignment.Bottom;
-        caption.Margin = new Thickness(5, 0, 0, 4);
+        // Dollar figures here are what the same tokens would cost at API list prices. A subscription charges a fixed price instead.
+        var caption = new StackPanel { VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(6, 0, 0, 2) };
+        caption.Children.Add(AU.Text(AgentStrings.ApiEquivalent, 9.5, FontWeights.Medium, AgentColors.Strong, TextTrimming.CharacterEllipsis));
+        caption.Children.Add(AU.Text(AgentStrings.NotWhatYouPay, 9, null, AgentColors.Secondary, TextTrimming.CharacterEllipsis));
         Grid.SetColumn(caption, 1);
         value.Children.Add(amount);
         value.Children.Add(caption);
@@ -488,118 +488,22 @@ internal static class AgentCardViews
         body.Children.Add(value);
         var split = new AgentProviderSplit(c.Providers, usage) { Margin = new Thickness(0, 5, 0, 0) };
         body.Children.Add(split);
-        var parts = new List<string> { AgentStrings.Tokens(AgentFormat.Tokens(usage.Total.Tokens.Total)) };
-        if (usage.Total.Tokens.CacheHitRate is { } rate and > 0)
-        {
-            parts.Add(AgentStrings.Cached(AgentFormat.Percent(rate)));
-        }
-
-        var footer = AU.Text(string.Join(" · ", parts), 10, null, AgentColors.Secondary, TextTrimming.CharacterEllipsis);
-        footer.Margin = new Thickness(0, 5, 0, 0);
-        AU.Tip(footer, AgentStrings.Saved(AgentFormat.Cost(usage.Total.Savings)));
-        body.Children.Add(footer);
+        var period = AU.Text(AgentStrings.PeriodRange(c.Period), 9.5, FontWeights.Medium, AgentColors.Secondary, TextTrimming.CharacterEllipsis);
+        period.Margin = new Thickness(0, 4, 0, 0);
+        AU.Tip(period, AgentStrings.PeriodHelp(c.Period));
+        body.Children.Insert(2, period);
+        var t = usage.Total.Tokens;
+        var tokens = new StackPanel { Margin = new Thickness(0, 5, 0, 0) };
+        tokens.Children.Add(AU.Text(AgentStrings.Tokens(AgentFormat.Tokens(t.Total)) + " · in " + AgentFormat.Tokens(t.Input) + " · out " + AgentFormat.Tokens(t.Output), 9.5, null, AgentColors.Secondary, TextTrimming.CharacterEllipsis, false, true));
+        tokens.Children.Add(AU.Text("cache read " + AgentFormat.Tokens(t.CacheRead) + " · cache write " + AgentFormat.Tokens(t.CacheWrite), 9.5, null, AgentColors.Tertiary, TextTrimming.CharacterEllipsis, false, true));
+        AU.Tip(tokens, AgentStrings.Saved(AgentFormat.Cost(usage.Total.Savings)));
+        body.Children.Add(tokens);
         return Chrome(body);
     }
 
     // ------------------------------------------------------------------------------------------ now
 
-    public static FrameworkElement Live(AgentCardContext c)
-    {
-        var live = c.Snapshot.Live.Where(s => c.Providers.Contains(s.Provider)).ToList();
-        var accessory = new StackPanel { Orientation = Orientation.Horizontal };
-        if (live.Count > 2)
-        {
-            accessory.Children.Add(AU.Chip("+" + (live.Count - 2), Colors.White));
-        }
-
-        if (live.Count > 0)
-        {
-            accessory.Children.Add(new AgentPulse(live[0].Provider.Tint(), 5) { Margin = new Thickness(2, 0, 0, 0) });
-        }
-
-        var body = Body();
-        body.Children.Add(Header(AgentStrings.LiveCard, AgentCard.Live.Glyph(), live.Count > 0 ? live[0].Provider.Tint() : null, null, accessory));
-        var rows = new StackPanel { Margin = new Thickness(0, 7, 0, 0) };
-        if (live.Count == 0)
-        {
-            foreach (var provider in c.Providers)
-            {
-                Add(rows, IdleRow(c, provider), 5);
-            }
-        }
-        else
-        {
-            var clocks = new List<(TextBlock Block, DateTime Started)>();
-            foreach (var session in live.Take(2))
-            {
-                Add(rows, LiveRow(session, c.Now, clocks), 5);
-            }
-
-            body.Loaded += (_, _) =>
-            {
-                var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-                timer.Tick += (_, _) =>
-                {
-                    foreach (var (block, started) in clocks)
-                    {
-                        block.Text = AgentFormat.Clock((DateTime.UtcNow - started).TotalSeconds);
-                    }
-                };
-                timer.Start();
-                body.Unloaded += (_, _) => timer.Stop();
-            };
-        }
-
-        body.Children.Add(rows);
-        return Chrome(body);
-    }
-
-    private static FrameworkElement LiveRow(LiveSession session, DateTime now, List<(TextBlock, DateTime)> clocks)
-    {
-        var box = new StackPanel();
-        var line = new Grid();
-        line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var glyph = new AgentGlyph(session.Provider, 9);
-        line.Children.Add(glyph);
-        var name = AU.Text(session.Project.Length == 0 ? session.Provider.DisplayName() : session.Project, 11, FontWeights.SemiBold, AgentColors.Primary, TextTrimming.CharacterEllipsis);
-        name.Margin = new Thickness(4, 0, 4, 0);
-        Grid.SetColumn(name, 1);
-        line.Children.Add(name);
-        var clock = AU.Text(AgentFormat.Clock((now - session.Started).TotalSeconds), 11, FontWeights.Medium, session.Provider.TintBrush(), mono: true);
-        Grid.SetColumn(clock, 2);
-        line.Children.Add(clock);
-        clocks.Add((clock, session.Started));
-        box.Children.Add(line);
-        // Tokens the agent wrote, as its own window counts them; every call also reads the whole context again, which the tooltip and the cost include.
-        var parts = new[]
-        {
-            AgentPricing.DisplayName(session.Model),
-            session.Tokens.Output > 0 ? AgentStrings.Written(AgentFormat.Tokens(session.Tokens.Output)) : "",
-            session.Cost > 0 ? AgentFormat.Cost(session.Cost) : "",
-        }.Where(p => p.Length > 0);
-        box.Children.Add(AU.Text(string.Join(" · ", parts), 9.5, null, AgentColors.Secondary, TextTrimming.CharacterEllipsis));
-        AU.Tip(box, AgentStrings.Tokens(AgentFormat.Tokens(session.Tokens.Total)) + " · " + AgentStrings.Cached(AgentFormat.Percent(session.Tokens.CacheHitRate ?? 0)));
-        return box;
-    }
-
-    private static FrameworkElement IdleRow(AgentCardContext c, AgentProvider provider)
-    {
-        var line = new Grid();
-        line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        line.Children.Add(new AgentGlyph(provider, 9, false));
-        var name = AU.Text(provider.DisplayName(), 10.5, FontWeights.Medium, AgentColors.Primary);
-        name.Margin = new Thickness(5, 0, 4, 0);
-        Grid.SetColumn(name, 1);
-        line.Children.Add(name);
-        var last = AU.Text(c.Snapshot.LastActivity.TryGetValue(provider, out var d) ? Relative(c, d) : AgentStrings.Idle, 9.5, null, AgentColors.Secondary, TextTrimming.CharacterEllipsis);
-        Grid.SetColumn(last, 2);
-        line.Children.Add(last);
-        return line;
-    }
+    public static FrameworkElement Live(AgentCardContext c) => AgentSessionCard.Build(c);
 
     // ------------------------------------------------------------------------------------------ trend
 

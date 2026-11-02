@@ -8,6 +8,9 @@ namespace WinKnife.Features.Agents;
 /// <summary>One tile of the AI page grid.</summary>
 public sealed record AgentTile(AgentCard Card, AgentProvider? Provider, string? AccountId = null, bool NamesDefaultAccount = false)
 {
+    /// <summary>The height this card needs for what it shows now (the sessions listed, the limits and notes); null keeps the default.</summary>
+    public double? HeightHint { get; init; }
+
     public string Id => Card.Raw() + (Provider is { } p ? "." + p.Raw() : "") + (AccountId is { } a ? "." + a : "");
 }
 
@@ -57,6 +60,7 @@ public sealed class AgentSettings
         app.Register(AgentKeys.LimitThreshold, DefaultLimitThreshold);
         app.Register(AgentKeys.DailyBudget, 0.0);
         app.Register(AgentKeys.PriceUpdates, true);
+        app.Register(AgentKeys.Attention, true);
     }
 
     /// <summary>The island is installed, the AI section is switched on and not hidden from the island.</summary>
@@ -144,6 +148,9 @@ public sealed class AgentSettings
         var v = _app.Get(AgentKeys.DailyBudget, 0.0);
         return double.IsFinite(v) && v > 0 ? v : null;
     }
+
+    /// <summary>Whether a session waiting for the person raises an island notice (the Now card and strip always show the state).</summary>
+    public bool AttentionAlerts() => _app.Get(AgentKeys.Attention, true);
 
     public bool UpdatesPrices() => _app.Get(AgentKeys.PriceUpdates, true);
 
@@ -364,12 +371,13 @@ public sealed class AgentSettings
 
     public static double Height(IReadOnlyList<AgentTile> row)
     {
-        if (row.Any(t => t.Card.FullWidth()))
+        var hint = row.Where(t => t.HeightHint is not null).Select(t => t.HeightHint!.Value).DefaultIfEmpty(0).Max();
+        if (row.Any(t => t.Card.FullWidth() && t.HeightHint is null))
         {
-            return ChartHeight;
+            return Math.Max(hint, ChartHeight);
         }
 
-        return row.Any(t => t.AccountId is not null || t.NamesDefaultAccount) ? AccountCardHeight : CardHeight;
+        return Math.Max(hint, row.Any(t => t.AccountId is not null || t.NamesDefaultAccount) ? AccountCardHeight : CardHeight);
     }
 
     public static double ContentHeight(IReadOnlyList<List<AgentTile>> rows) =>

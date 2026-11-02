@@ -124,6 +124,25 @@ public enum LimitKind
 /// <summary>A usage allowance and how much of it is spent, as the provider reports it.</summary>
 public sealed record LimitWindow(string Id, LimitKind Kind, int? Minutes, string? Scope, double UsedPercent, DateTime? ResetsAt, DateTime? EstimatedResetsAt = null)
 {
+    /// <summary>The source's own severity word (<c>normal</c>, <c>warning</c>, <c>critical</c>) when it gave one.</summary>
+    public string? Severity { get; init; }
+
+    /// <summary>False when the source says the window is not running (nothing started it yet); null when it did not say.</summary>
+    public bool? Active { get; init; }
+
+    /// <summary>The source's name for a window this app has no word for.</summary>
+    public string? Label { get; init; }
+
+    /// <summary>Why the window reads as it does when the source's own figures were adjusted (diagnostics only).</summary>
+    public string? Note { get; init; }
+
+    /// <summary>The reset time passed before the next reading: the window renewed and nothing says what it holds now.</summary>
+    public bool Renewed { get; init; }
+
+    /// <summary>Not running and nothing used: the next request starts it. Never shown as a percentage or a countdown.</summary>
+    [JsonIgnore]
+    public bool NotStarted => !Renewed && ResetsAt is null && UsedPercent <= 0 && Active != true;
+
     [JsonIgnore]
     public double UsedFraction => Math.Min(1, Math.Max(0, UsedPercent / 100));
 
@@ -138,7 +157,42 @@ public enum LimitSource
     Account,
 }
 
-public sealed record AgentLimits(AgentProvider Provider, List<LimitWindow> Windows, DateTime ObservedAt, LimitSource Source);
+public sealed record AgentLimits(AgentProvider Provider, List<LimitWindow> Windows, DateTime ObservedAt, LimitSource Source)
+{
+    /// <summary>Which reading this is (see <see cref="LimitOrigins"/>); null for readings saved by an older build.</summary>
+    public string? Origin { get; init; }
+
+    /// <summary>Claude's weekly use by product, when the source gave it.</summary>
+    public List<LimitShare>? Breakdown { get; init; }
+
+    public DateTime? BreakdownAsOf { get; init; }
+}
+
+/// <summary>One product's share of the week's use (Claude Code, Chats, Cowork...).</summary>
+public sealed record LimitShare(string Key, string Name, double Percent);
+
+/// <summary>The places a limit reading can come from, with the words shown next to the numbers.</summary>
+public static class LimitOrigins
+{
+    public const string ClaudeCli = "claude-cli";
+    public const string ClaudeCache = "claude-cache";
+    public const string ClaudeDesktop = "claude-desktop";
+    public const string CodexServer = "codex-server";
+    public const string CodexLog = "codex-log";
+
+    public static string Name(string? origin) => origin switch
+    {
+        ClaudeCli => "Claude Code",
+        ClaudeCache => "Claude Code (saved copy)",
+        ClaudeDesktop => "Claude app history",
+        CodexServer => "Codex app-server",
+        CodexLog => "Codex session log",
+        _ => "Local readings",
+    };
+
+    /// <summary>Order of trust when two readings are from the same moment.</summary>
+    public static int Rank(string? origin) => origin switch { ClaudeCli => 0, CodexServer => 0, ClaudeCache => 1, ClaudeDesktop => 2, _ => 3 };
+}
 
 /// <summary>The subscription an account is on.</summary>
 public sealed record AgentPlan(string Name, double? MonthlyPrice);
@@ -242,7 +296,7 @@ public static class AgentCards
     };
 
     /// <summary>Charts need the island's width; everything else pairs up.</summary>
-    public static bool FullWidth(this AgentCard c) => c is AgentCard.Trend or AgentCard.Activity;
+    public static bool FullWidth(this AgentCard c) => c is AgentCard.Trend or AgentCard.Activity or AgentCard.Live;
 
     /// <summary>Cards that cover the period chosen in the island's top row.</summary>
     public static bool FollowsPeriod(this AgentCard c) => c is AgentCard.Spend or AgentCard.Trend or AgentCard.Models or AgentCard.Projects;
@@ -387,6 +441,9 @@ public sealed class AgentUsageSnapshot
 
     public HashSet<AgentProvider> Seen = [];
 
+    /// <summary>Every limit source with its raw readings, for "Where these numbers come from".</summary>
+    public List<LimitSourceInfo> LimitSources = [];
+
     public AgentPeriodUsage Usage(AgentPeriod p) => Periods.TryGetValue(p, out var u) ? u : new AgentPeriodUsage();
 
     public IEnumerable<LiveSession> Working(AgentProvider p) => Live.Where(s => s.Provider == p);
@@ -415,8 +472,32 @@ public static class AgentKeys
     public const string LimitThreshold = "notchAgentsLimitThreshold";
     public const string DailyBudget = "notchAgentsDailyBudget";
     public const string PriceUpdates = "notchAgentsPriceUpdates";
+    public const string Attention = "notchAgentsAttention";
     public const string IdleContent = "notchIdleContent";
     public const string HiddenModules = "notchHiddenModules";
     public const string FeatureId = "notch-agents";
     public const string ModuleId = "agents";
+}
+
+/// <summary>One place a limit reading can come from, as it stands now (diagnostics).</summary>
+public sealed class LimitSourceInfo
+{
+    public string Origin { get; set; } = "";
+
+    public AgentProvider Provider { get; set; }
+
+    public string Name { get; set; } = "";
+
+    /// <summary>The file or command the reading came from.</summary>
+    public string Where { get; set; } = "";
+
+    public DateTime? ObservedAt { get; set; }
+
+    /// <summary>What happened when this source was read (used, older than another, unavailable and why).</summary>
+    public string Status { get; set; } = "";
+
+    /// <summary>The values exactly as the source gave them.</summary>
+    public List<string> Raw { get; set; } = [];
+
+    public bool InUse { get; set; }
 }

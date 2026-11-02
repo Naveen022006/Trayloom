@@ -171,6 +171,9 @@ internal sealed class AgentsSettingsView
                 Nearest(_app.Get(AgentKeys.LimitThreshold, AgentSettings.DefaultLimitThreshold), AgentSettings.LimitThresholds), v => _app.Set(AgentKeys.LimitThreshold, v))));
         }
 
+        card.AddDivider();
+        card.Add(new AgentAttentionSettings(_app));
+        card.AddDivider();
         card.Add(Menu("", AgentStrings.Budget,
             AgentSettings.Budgets.Select(v => (v, v == 0 ? AgentStrings.Off : AgentFormat.Cost(v))).ToList(),
             Nearest(_app.Get(AgentKeys.DailyBudget, 0.0), AgentSettings.Budgets), v => _app.Set(AgentKeys.DailyBudget, v)));
@@ -192,6 +195,12 @@ internal sealed class AgentsSettingsView
             {
                 card.AddCaption(AgentStrings.ClaudeLimitsPrivacy);
             }
+        }
+
+        if (claude || codex)
+        {
+            card.AddDivider();
+            card.Add(new LimitDiagnosticsView(_runtime, Environment.GetEnvironmentVariable("WINKNIFE_OPEN_DIAGNOSTICS") == "1"));
         }
 
         return card;

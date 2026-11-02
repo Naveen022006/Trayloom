@@ -53,6 +53,8 @@ public sealed class AgentsPageView : Grid
         _runtime.Service.Changed += _onChanged;
         _runtime.Accounts.Changed += _onChanged;
         _runtime.Resets.Changed += _onChanged;
+        _runtime.SessionsChanged += _onChanged;
+        _runtime.Sessions.SetWatching(true);
         _runtime.Services.App.Changed += OnSetting;
         _refresh.Start();
         _runtime.Service.PageDidAppear(_preview);
@@ -71,6 +73,8 @@ public sealed class AgentsPageView : Grid
         _runtime.Service.Changed -= _onChanged;
         _runtime.Accounts.Changed -= _onChanged;
         _runtime.Resets.Changed -= _onChanged;
+        _runtime.SessionsChanged -= _onChanged;
+        _runtime.Sessions.SetWatching(false);
         _runtime.Services.App.Changed -= OnSetting;
         _refresh.Stop();
         if (!_preview)
@@ -122,6 +126,12 @@ public sealed class AgentsPageView : Grid
             return;
         }
 
+        if (providers.Contains(AgentProvider.Codex))
+        {
+            // Codex's limits card shows the account's own answer, asked at most every few minutes while the page is open.
+            _runtime.Resets.RefreshIfStale();
+        }
+
         var period = settings.Period();
         var context = new AgentCardContext
         {
@@ -135,6 +145,14 @@ public sealed class AgentsPageView : Grid
             OpenAgentSettings = () => _runtime.Services.Shell.OpenSettings(SettingsPages.Join(SettingsPages.Island, AgentsSettingsSection.AnchorId)),
         };
 
+        // Cards that grow with what they show: the sessions listed, the limits and their notes.
+        tiles = tiles.Select(t => t.Card switch
+        {
+            AgentCard.Live => t with { HeightHint = AgentSessionCard.Height(context) },
+            AgentCard.Spend => t with { HeightHint = 146 },
+            AgentCard.Limits when t.AccountId is null && t.Provider is { } p => t with { HeightHint = AgentCardViews.LimitsHeight(context, p) },
+            _ => t,
+        }).ToList();
         var grid = new AgentCardGrid();
         foreach (var tile in tiles)
         {

@@ -186,6 +186,9 @@ internal static class NoticeEvents
     public static readonly NoticeEvent SystemNotification = new("systemNotification", K.NotificationsEnabled, 1, 3, "notifications");
     public static readonly NoticeEvent Accessory = new("accessory", K.Accessories, 1, 4, "system");
     public static readonly NoticeEvent Agents = new("agents", K.AgentsEnabled, 1, 5, "agents");
+
+    /// <summary>An agent session waits for the person (permission or a question): above the ordinary notices, and it stays long enough to be seen.</summary>
+    public static readonly NoticeEvent AgentsAttention = new("agentsAttention", K.AgentsEnabled, 2, 15, "agents");
     public static readonly NoticeEvent ClipboardCopy = new("clipboard", K.Clipboard, 0, 2.5, "clipboard");
     public static readonly NoticeEvent Download = new("download", K.DownloadsEnabled, 0, 6, "downloads");
     public static readonly NoticeEvent Track = new("track", K.TrackChange, 0, 3, "music");

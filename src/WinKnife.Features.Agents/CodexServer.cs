@@ -301,7 +301,7 @@ internal static class CodexServer
         }
 
         var windows = AgentLogParser.CodexWindows(s, observed, AgentLogParser.ServerWindowKeys);
-        return windows.Count == 0 ? null : new AgentLimits(AgentProvider.Codex, windows, observed, LimitSource.Account);
+        return windows.Count == 0 ? null : new AgentLimits(AgentProvider.Codex, windows, observed, LimitSource.Account) { Origin = LimitOrigins.CodexServer };
     }
 
     public static CodexOutcome? OutcomeOf(JsonElement result) => result.Str("outcome") switch

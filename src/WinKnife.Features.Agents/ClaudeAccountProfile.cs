@@ -26,6 +26,9 @@ public sealed class ClaudeAccountProfile : IEquatable<ClaudeAccountProfile>
 
         /// <summary>The copy of the account's limits Claude Code keeps in its profile file (<c>cachedUsageUtilization</c>).</summary>
         public AgentLimits? CachedLimits { get; set; }
+
+        /// <summary>The saved copy's figures as written, for the diagnostics list.</summary>
+        public List<string> CachedRaw { get; set; } = [];
     }
 
     public ClaudeAccountProfile(string directory = "")
@@ -198,6 +201,10 @@ public sealed class ClaudeAccountProfile : IEquatable<ClaudeAccountProfile>
             {
                 reading.UsageFetched = AgentTime.Epoch.AddMilliseconds(ms);
                 reading.CachedLimits = CachedLimits(cached, reading.UsageFetched.Value);
+                if (cached.Prop("utilization") is { ValueKind: JsonValueKind.Object } raw)
+                {
+                    reading.CachedRaw = ClaudeServer.Describe(raw);
+                }
             }
         }
         catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
@@ -212,7 +219,7 @@ public sealed class ClaudeAccountProfile : IEquatable<ClaudeAccountProfile>
     private static AgentLimits? CachedLimits(JsonElement? cached, DateTime fetched)
     {
         var utilization = cached.Prop("utilization");
-        return utilization is { ValueKind: JsonValueKind.Object } u ? ClaudeServer.Limits(u, fetched) : null;
+        return utilization is { ValueKind: JsonValueKind.Object } u ? ClaudeServer.Limits(u, fetched, LimitOrigins.ClaudeCache) : null;
     }
 
     public string Name(string defaultName)

@@ -96,6 +96,10 @@ public sealed class AgentUsageService : IDisposable
     private List<ClaudeAppUsage.Sample> _claudeAppSamples = [];
     private AgentLimits? _claudeAccountLimits;
     private AgentLimits? _claudeCachedLimits;
+    private List<string> _claudeAccountRaw = [];
+    private List<string> _claudeCachedRaw = [];
+    private DateTime? _claudeCachedFetched;
+    private List<LimitSourceInfo> _claudeSources = [];
     private AgentPriceList? _shippedPrices;
     private Dictionary<AgentProvider, AgentLimits> _previousLimits = [];
     private readonly Dictionary<string, (AgentProvider Provider, LimitWindow Window)> _warned = [];
@@ -283,6 +287,10 @@ public sealed class AgentUsageService : IDisposable
         _claudeAppSamples = [];
         _claudeAccountLimits = null;
         _claudeCachedLimits = null;
+        _claudeAccountRaw = [];
+        _claudeCachedRaw = [];
+        _claudeCachedFetched = null;
+        _claudeSources = [];
         _savedMark = null;
         _lastSave = DateTime.MinValue;
         _initialFiles = null;
@@ -1000,12 +1008,48 @@ public sealed class AgentUsageService : IDisposable
 
         var previousLive = _published.Live.Select(l => l.Id).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
         var next = AgentUsageSummary.Snapshot(_store.Records, _store.Limits, _store.Live, plans, _enabled, DateTime.UtcNow);
+        next.LimitSources = BuildLimitSources(next);
         _published = next;
         _snapshot = next;
         CheckBudget(next);
         PublishStatus();
         var liveChanged = !previousLive.SequenceEqual(next.Live.Select(l => l.Id).OrderBy(x => x, StringComparer.OrdinalIgnoreCase));
         RaiseChanged(liveChanged);
+    }
+
+    private List<LimitSourceInfo> BuildLimitSources(AgentUsageSnapshot next)
+    {
+        var list = new List<LimitSourceInfo>(_claudeSources);
+        if (_enabled.Contains(AgentProvider.Codex))
+        {
+            var inUse = _store.Limits.GetValueOrDefault(AgentProvider.Codex);
+            foreach (var origin in new[] { LimitOrigins.CodexServer, LimitOrigins.CodexLog })
+            {
+                var reading = _store.Readings.Values.FirstOrDefault(r => r.Provider == AgentProvider.Codex && r.Origin == origin);
+                var info = new LimitSourceInfo
+                {
+                    Origin = origin, Provider = AgentProvider.Codex, Name = LimitOrigins.Name(origin),
+                    Where = origin == LimitOrigins.CodexServer ? "codex app-server, account/rateLimits/read (asked when the Codex limits card shows)" : "~/.codex/sessions/**/rollout-*.jsonl, token_count events",
+                    ObservedAt = reading?.ObservedAt, InUse = reading is not null && ReferenceEquals(reading, inUse),
+                };
+                if (reading is null)
+                {
+                    info.Status = origin == LimitOrigins.CodexServer ? "Not asked yet, or Codex could not answer" : "No token_count event with limits in the logs";
+                }
+                else
+                {
+                    info.Status = info.InUse ? "In use: the newest reading" : "Not used: an older reading than the one in use";
+                    foreach (var w in reading.Windows)
+                    {
+                        info.Raw.Add($"window {w.Minutes?.ToString() ?? "?"} min: used {w.UsedPercent:0.#}%, reset {(w.ResetsAt is { } r ? r.ToString("u") : "none given")}" + (w.Note is { } n ? " - " + n : ""));
+                    }
+                }
+
+                list.Add(info);
+            }
+        }
+
+        return list;
     }
 
     private void PublishStatus()
@@ -1186,6 +1230,8 @@ public sealed class AgentUsageService : IDisposable
         }
 
         _claudeCachedLimits = reading.CachedLimits;
+        _claudeCachedRaw = reading.CachedRaw;
+        _claudeCachedFetched = reading.UsageFetched;
         if (reading.Identity is not { } identity)
         {
             _claudePlan = null;
@@ -1252,10 +1298,11 @@ public sealed class AgentUsageService : IDisposable
         // Claude Code's own first request can place the session's start.
         var start = ClaudeAppUsage.SessionStart(_store.Records, _claudeAppSamples, _claudeOrganization);
         var desktop = ClaudeAppUsage.Limits(_claudeAppSamples, now, start, _claudeOrganization);
-        // One source while the account answers. The app's session renewal is the latest the session can end, so trading places with the
-        // exact one at each save the app makes would read as a new window and warn again; newer wins once the account reading is old.
-        var recent = account is not null && now - account.ObservedAt < ClaudeAppUsage.Freshness ? account : null;
-        var latest = recent ?? new[] { desktop, account, cached }.Where(l => l is not null).OrderByDescending(l => l!.ObservedAt).FirstOrDefault();
+        // The newest observation wins, whichever source it came from; on a tie the more direct source does. The desktop app's saved
+        // history never outranks a later reading from Claude Code itself.
+        var latest = new[] { desktop, account, cached }.Where(l => l is not null).Select(l => l!)
+            .OrderByDescending(l => l.ObservedAt).ThenBy(l => LimitOrigins.Rank(l.Origin)).FirstOrDefault();
+        _claudeSources = DescribeClaudeSources(account, cached, desktop, latest);
         if (latest is not null)
         {
             _store.SetLimits(latest);
@@ -1264,6 +1311,39 @@ public sealed class AgentUsageService : IDisposable
         {
             _store.ClearLimits(AgentProvider.Claude);
         }
+    }
+
+    /// <summary>Every place Claude's limits can be read, with what each one says now (the "Where these numbers come from" list).</summary>
+    private List<LimitSourceInfo> DescribeClaudeSources(AgentLimits? account, AgentLimits? cached, AgentLimits? desktop, AgentLimits? chosen)
+    {
+        var home = _home;
+        string Why(AgentLimits? reading) => ReferenceEquals(reading, chosen) ? "In use: the newest reading" : "Not used: an older reading than the one in use";
+        var list = new List<LimitSourceInfo>
+        {
+            new()
+            {
+                Origin = LimitOrigins.ClaudeCli, Provider = AgentProvider.Claude, Name = "Claude Code (live check)", Where = "claude.exe, control request get_usage (no prompt is sent)",
+                ObservedAt = _claudeAccountLimits?.ObservedAt, Raw = _claudeAccountRaw, InUse = account is not null && ReferenceEquals(account, chosen),
+                Status = _claudeChecking ? "Checking now" : account is null ? (_claudeFailure is { } f ? AgentStrings.ClaudeCode(f) : "Not asked yet, or every window has since expired") : Why(account),
+            },
+            new()
+            {
+                Origin = LimitOrigins.ClaudeCache, Provider = AgentProvider.Claude, Name = "Claude Code (saved copy)", Where = _readerClaudeProfile.ProfileFile(home) + " > cachedUsageUtilization",
+                ObservedAt = _claudeCachedFetched, Raw = _claudeCachedRaw, InUse = cached is not null && ReferenceEquals(cached, chosen),
+                Status = cached is null ? (_claudeCachedFetched is null ? "No saved copy in this profile" : "Saved copy has no window that is still running") : Why(cached),
+            },
+        };
+        var path = ClaudeAppUsage.HistoryPath();
+        var sample = _claudeAppSamples.LastOrDefault(s => _claudeOrganization is null || s.Organization is null || s.Organization == _claudeOrganization);
+        list.Add(new LimitSourceInfo
+        {
+            Origin = LimitOrigins.ClaudeDesktop, Provider = AgentProvider.Claude, Name = "Claude desktop app history", Where = path ?? "plan-usage-history.json (Claude app not found)",
+            ObservedAt = sample?.Date,
+            Raw = sample is null ? [] : [string.Join(", ", sample.Used.Select(kv => kv.Key + " " + kv.Value.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%")) + " (percentages only: the app does not save reset times)"],
+            InUse = desktop is not null && ReferenceEquals(desktop, chosen),
+            Status = path is null ? "Claude app not found on this PC" : desktop is null ? "Latest sample is too old or has no running window" : Why(desktop),
+        });
+        return list;
     }
 
     /// <summary>Every minute only while the page shows; failures back off, and looking at the page does not bypass that.</summary>
@@ -1325,6 +1405,7 @@ public sealed class AgentUsageService : IDisposable
                 if (_readerClaudeProfile.Equals(profile) && result.Summary is { } summary && Equals(_claudeIdentity, summary.Identity))
                 {
                     _claudeAccountLimits = summary.Limits;
+                    _claudeAccountRaw = summary.Raw ?? [];
                     ReadClaudeApp(DateTime.UtcNow);
                     CheckLimits();
                     SchedulePublish();

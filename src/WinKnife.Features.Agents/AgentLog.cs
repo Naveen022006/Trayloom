@@ -289,7 +289,21 @@ internal static class AgentLogParser
                 resets = observed.AddSeconds(Math.Max(0, delay));
             }
 
-            windows.Add(new LimitWindow("codex." + (minutes?.ToString() ?? slot), KindOf(minutes), minutes, null, Math.Min(100, Math.Max(0, used)), resets));
+            // A window that has not started is reported as ending one full window from now: no such end was ever scheduled, so none is kept.
+            var running = true;
+            string? note = null;
+            if (resets is { } r && used <= 0 && minutes is { } length && Math.Abs((r - observed).TotalMinutes - length) <= 2)
+            {
+                note = $"reset time {r:u} is exactly one {length}-minute window after the reading, so no window is running";
+                resets = null;
+                running = false;
+            }
+
+            windows.Add(new LimitWindow("codex." + (minutes?.ToString() ?? slot), KindOf(minutes), minutes, null, Math.Min(100, Math.Max(0, used)), resets)
+            {
+                Active = running ? (resets is not null ? true : null) : false,
+                Note = note,
+            });
         }
 
         if (windows.Count == 0 && limits.Prop(keys.Individual) is { ValueKind: JsonValueKind.Object } individual
