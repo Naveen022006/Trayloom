@@ -2,13 +2,15 @@
 
 WinKnife is a Windows 10/11 tray utility (.NET 9, WPF) that bundles many small system tweaks and tools into one
 "install what you need" app. It is a Windows replica of the macOS utility [Vorssaint](https://vorssaint.com): the same
-tray panel, Settings window, Features hub, Dynamic Island, Command Bar and feature catalog (73 installable entries),
-rebuilt for Windows. Features are installed or uninstalled one by one from the **Features hub**; whatever is
+tray panel, Settings window, Features hub, Dynamic Island, Command Bar and feature catalog (79 entries, of which
+73 are installable on Windows and 6 are marked unavailable because Windows has no equivalent), rebuilt for Windows. Features are installed or uninstalled one by one from the **Features hub**; whatever is
 uninstalled disappears from the whole app and loads nothing.
 
 WinKnife is licensed under the same terms as Vorssaint, **GPL-3.0-or-later** (see `LICENSE`). It is an independent
 project and is **not affiliated with or endorsed by Vorssaint**; the Vorssaint name, logo and icon are not used.
 
+* Languages: 15 (System default, English and the 13 other Vorssaint languages), switched live in Settings > General > Language;
+  see `specs/L10N_TODO.md` for coverage. A few WinKnife-only texts (the first-run guide, install offer) are still English.
 * Settings: `%APPDATA%\WinKnife\settings.json` (override the folder with the `WINKNIFE_DATA` environment variable).
 * Log: `<settings folder>\logs\winknife.log`.
 * First run: onboarding, then only the **Essentials** bundle (Volume mixer, System monitor, Keep awake) is installed.
@@ -32,6 +34,22 @@ Catalog groups, as in the Features hub (Windows availability noted where it diff
 | Tools | Quick panel, Quick toggles, Quit apps, Color picker, Copy text from screen, Cleaning Mode, Media, Cleaner, Uninstaller, Packages (winget), App updates, Screenshot (editor, scrolling capture, pins), Screen recording (Windows.Graphics.Capture + Media Foundation), Camera preview, Radial menu, Scratchpad, Command Bar, Wallpaper, Kill Process, Port Manager. |
 | Dynamic Island | The island itself plus Calendar, Notifications, Gestures, Timer, Accessory alerts, Lyrics (online lookup is **off** by default), Up next, Bars follow the music, Downloads, **AI Agents** (Claude Code, Codex, OpenCode, Copilot usage and limits, read locally), Watch, Companion. Installing the island switches it on. |
 | Monitor | CPU, GPU, Memory, Network, Disks, Power, Connected devices, shown in the tray panel and as a strip next to the tray icon. *Unavailable:* Fan control. |
+
+## AI Agents (Dynamic Island)
+
+Install **AI Agents** (it needs the Dynamic Island) to follow Claude Code, Codex, OpenCode and GitHub Copilot from the island.
+Everything is read **locally**; nothing is sent anywhere and no account password is read.
+
+* **Limits** show the session and weekly windows with where the number came from and how old it is ("From Claude Code, 2 minutes
+  ago"). Claude's usage comes from what Claude Code reports; Codex asks the local Codex app-server and falls back to its session log
+  (older readings are labelled as possibly out of date). If a source is missing the card says so instead of showing a guess.
+* **Now** lists live sessions (the one you are typing in, background agents) and what each is doing.
+* **Spending** is the *API-equivalent value* of your tokens from the local logs (models, projects, trend). It is what the usage
+  would cost at API prices, **not what you pay** on a subscription.
+* **Permission alerts**: when a Claude Code session asks for a permission, the island pops out to say which session needs you (you still answer in Claude Code). This uses
+  a small hook in Claude's `settings.json` that only reports the event and never changes what Claude decides; WinKnife adds it
+  only when you install it from the AI Agents settings (after a backup) and removes it when you remove it there.
+* With a very large history (several GB of logs) the first scan can take a moment and the feature keeps a few hundred MB.
 
 ## Install and first start
 
@@ -119,7 +137,9 @@ working. Ctrl+Alt+Arrow is also used by some Intel graphics drivers for screen r
   settings become Windows Settings pages.
 * Nothing talks to Vorssaint servers: share links are hidden, feedback opens a GitHub issue, the agent price list is
   bundled, lyrics lookup is opt-in.
-* Per-app output routing and extra brightness are unavailable on the current Windows builds.
+* Per-app output routing uses an undocumented Windows interface. The first use on each Windows build runs a self-test (WinKnife
+  routes its own silent stream to the default output and reads it back); if that does not round-trip, the route picker is hidden for
+  that build and the reason is logged. Extra brightness is unavailable.
 
 ## Build, run, publish
 
@@ -163,15 +183,18 @@ WinKnife never tries to bypass SAC or SmartScreen.
 ## Known limitations
 
 * Not yet done (tracked in `specs/R3_NOTES.md`): the shared app picker / app list lives in three projects (Input,
-  Windows, Files) instead of Core; recorder extras (pointer track, click ring, auto-zoom, text lanes, audio time-stretch,
-  per-window loopback, capture border); an elevated "run cleaner as administrator" relaunch helper.
+  Windows, Files) instead of Core.
+* The screenshot editor and recorder editor windows are hidden from screen capture on purpose, so screenshot tools show them blank.
+* Exporting a recording renders every frame on the CPU: a 15 second clip takes about 15 s and briefly uses 1 to 2 GB.
+* `TESTING.md` lists what needs a real person to verify (Alt+Tab takeover, taskbar previews, edge snapping, real clicks in
+  recordings, the permission alert, and so on).
 * Features that hook input (smooth scrolling, focus follows mouse, super key, snippets, protection, the switcher) cannot
   see or change input in elevated windows unless WinKnife runs elevated.
 * GPU monitor needs the Windows GPU engine counters; external brightness needs DDC/CI; Packages and App updates need
   `winget`.
 * With a very large AI-agent history (several GB of Claude Code logs) the Agents extension alone keeps ~200 MB resident;
-  turn it off in the Dynamic Island settings if that matters. Idle cost with everything installed is below 3 % of one
-  core.
+  turn it off in the Dynamic Island settings if that matters. Idle cost with everything installed is about 3 to 4 % of one
+  core (0.1 % of a 28-thread CPU) and 0.6 to 0.9 GB of memory, most of it the AI-agent history.
 
 ## License
 
