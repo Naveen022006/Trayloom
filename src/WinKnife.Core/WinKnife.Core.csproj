@@ -5,4 +5,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Localization\Strings.*.json" WithCulture="false" LogicalName="WinKnife.Localization.%(Filename)%(Extension)" />
+  </ItemGroup>
 </Project>

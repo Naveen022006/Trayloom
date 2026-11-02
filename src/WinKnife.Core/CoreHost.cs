@@ -49,6 +49,7 @@ public sealed class CoreHost : IContributionServices, IDisposable
         Log = new FileLog();
         Store = new SettingsStore(AppPaths.SettingsFile, Log);
         var app = new AppSettings(Store);
+        Loc.Initialize(app);
         AppKeys.RegisterDefaults(app);
         App = app;
         Hooks = new InputHooks(Log);
