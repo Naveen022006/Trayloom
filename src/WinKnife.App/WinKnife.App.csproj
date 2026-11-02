@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>WinKnife.App</RootNamespace>
+    <AssemblyName>WinKnife</AssemblyName>
+    <!-- WFO0003: the manifest is the DPI source of truth required by the spec (PerMonitorV2). -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\winknife.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <Resource Include="Assets\winknife.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\WinKnife.Core\WinKnife.Core.csproj" />
+    <ProjectReference Include="..\WinKnife.Features.Input\WinKnife.Features.Input.csproj" />
+    <ProjectReference Include="..\WinKnife.Features.Windows\WinKnife.Features.Windows.csproj" />
+    <ProjectReference Include="..\WinKnife.Features.System\WinKnife.Features.System.csproj" />
+    <ProjectReference Include="..\WinKnife.Features.Tools\WinKnife.Features.Tools.csproj" />
+    <ProjectReference Include="..\WinKnife.Features.Island\WinKnife.Features.Island.csproj" />
+  </ItemGroup>
+</Project>

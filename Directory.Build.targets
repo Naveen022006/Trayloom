@@ -1,0 +1,9 @@
+<Project>
+  <ItemGroup>
+    <!-- WinForms/System.Drawing are only used for the tray icon; their implicit usings clash with WPF types. -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+    <!-- The WPF SDK drops System.IO from the implicit usings; put it back. -->
+    <Using Include="System.IO" />
+  </ItemGroup>
+</Project>

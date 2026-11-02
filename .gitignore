@@ -1,0 +1,15 @@
+## .NET / Visual Studio
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.userprefs
+*.DotSettings.user
+*.log
+TestResults/
+.idea/
+*.nupkg
+publish/
+artifacts/
+dist/

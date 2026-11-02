@@ -1,0 +1,17 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <Version>0.1.0</Version>
+    <Authors>WinKnife contributors</Authors>
+    <Copyright>GPL-3.0-or-later</Copyright>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- WPF0001: the Fluent ThemeMode API is experimental in .NET 9. CS1591: missing XML docs are not an error. -->
+    <NoWarn>$(NoWarn);WPF0001;CS1591</NoWarn>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,19 @@
+<Window x:Class="WinKnife.App.QuickPanelWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False" Topmost="True"
+        SizeToContent="WidthAndHeight" ShowActivated="True"
+        Style="{DynamicResource WK.WindowStyle}">
+    <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+    <!-- WinKnife — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils) -->
+    <Border BorderThickness="1" BorderBrush="{DynamicResource WK.Border}" Padding="12">
+        <StackPanel Width="448">
+            <TextBlock Text="Quick panel" Style="{DynamicResource WK.SubtitleTextStyle}" Margin="4,0,0,8" />
+            <WrapPanel x:Name="Tiles" />
+            <TextBlock x:Name="EmptyText" Margin="4,4,4,8" Visibility="Collapsed"
+                       Text="No actions yet. Install features in the Features hub to see them here."
+                       Style="{DynamicResource WK.MutedTextStyle}" />
+            <Button Content="Features..." HorizontalAlignment="Left" Margin="4,8,0,0" Padding="14,5" Click="OnFeaturesClick" />
+        </StackPanel>
+    </Border>
+</Window>
