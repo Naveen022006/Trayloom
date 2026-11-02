@@ -19,8 +19,8 @@ for behaviour. When the README screenshots and the Swift code disagree, the code
 
 - **Branding**: product name "WinKnife", own icon; never the Vorssaint name/saturn logo. Replace
   "Mac" with "PC", "menu bar" with "notification area"/"tray" where the spec marks `[WIN]`.
-- **Strings**: English strings verbatim from the specs. No localisation in v2 (keep strings in one
-  `Strings` class per project so it can be added later).
+- **Strings**: English strings verbatim from the specs, wrapped in `Loc.T` / `Loc.F` (`WinKnife.Core/Localization`); the 15
+  Vorssaint languages come from tables harvested out of Vorssaint (see `specs/L10N_TODO.md`).
 - **Hotkeys**: macOS ⌘ maps to **Win** in multi-modifier global hotkeys (⌃⌥⌘ → Ctrl+Alt+Win,
   ⌃⌘ → Ctrl+Win, ⇧⌥⌘ → Shift+Alt+Win), ⌥ → Alt, ⌃ → Ctrl. Shortcuts intercepted inside the
   front app use Windows conventions (⌘Q → Alt+F4, ⌘W → Ctrl+W, ⌘Tab → Alt+Tab). If a default
