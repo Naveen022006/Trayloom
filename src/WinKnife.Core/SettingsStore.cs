@@ -31,6 +31,7 @@ public sealed class SettingsStore : IDisposable
     private JsonObject _scopesNode;
     private bool _dirty;
     private bool _disposed;
+    private volatile bool _suspended;
 
     /// <summary>Opens (or creates) the store at <paramref name="path"/>.</summary>
     public SettingsStore(string path, ILog log)
@@ -58,6 +59,9 @@ public sealed class SettingsStore : IDisposable
 
     /// <summary>Writes pending changes immediately.</summary>
     public void Flush() => SaveIfDirty();
+
+    /// <summary>Stops every further write (used right before the settings file is replaced by an import / deleted).</summary>
+    public void SuspendSaving() => _suspended = true;
 
     /// <inheritdoc />
     public void Dispose()
@@ -182,6 +186,11 @@ public sealed class SettingsStore : IDisposable
 
     private void SaveIfDirty()
     {
+        if (_suspended)
+        {
+            return;
+        }
+
         string json;
         lock (_gate)
         {

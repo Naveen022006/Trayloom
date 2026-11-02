@@ -47,16 +47,25 @@ public interface IFeature
     /// <summary>Stable kebab-case identifier, persisted in settings. Never rename.</summary>
     string Id { get; }
 
-    /// <summary>Display name.</summary>
-    string Name { get; }
+    /// <summary>
+    /// Display name. Defaults to the catalog title of <see cref="CatalogId"/> (the hub, sidebar and panel use the catalog,
+    /// not this property).
+    /// </summary>
+    string Name => FeatureCatalog.Get(CatalogId)?.Title ?? Id;
 
-    /// <summary>One sentence describing what the feature does.</summary>
-    string Description { get; }
+    /// <summary>One sentence describing what the feature does. Defaults to the catalog description.</summary>
+    string Description => FeatureCatalog.Get(CatalogId)?.Description ?? string.Empty;
 
-    /// <summary>Group in the Features hub.</summary>
-    FeatureGroup Group { get; }
+    /// <summary>Group in the Features hub. Defaults to the catalog group.</summary>
+    FeatureGroup Group => FeatureCatalog.Get(CatalogId)?.Group ?? FeatureGroup.Tools;
 
-    /// <summary>True when the feature is installed on first run.</summary>
+    /// <summary>
+    /// The catalog entry this feature binds to: <see cref="Id"/> resolved through <see cref="FeatureCatalog.Resolve"/>
+    /// (a catalog id, a Vorssaint raw id or a v1 id all work).
+    /// </summary>
+    string CatalogId => FeatureCatalog.Resolve(Id);
+
+    /// <summary>Ignored: install defaults come from the catalog (<see cref="FeatureCatalogEntry.DefaultInstalled"/>).</summary>
     bool InstalledByDefault => false;
 
     /// <summary>Called when the feature is installed and the app is running. Hook up everything here.</summary>
@@ -87,31 +96,13 @@ public interface IFeature
 public sealed record FeatureAction(string Id, string Title, Action Invoke, string? Glyph = null);
 
 /// <summary>Services handed to a feature in <see cref="IFeature.Start"/>. Scoped to that feature.</summary>
-public interface IFeatureContext
+public interface IFeatureContext : IContributionServices
 {
-    /// <summary>Settings scoped to this feature id.</summary>
+    /// <summary>Settings scoped to this feature id (the old per-feature store; new code should use <see cref="IContributionServices.App"/>).</summary>
     IFeatureSettings Settings { get; }
-
-    /// <summary>Shared low-level keyboard/mouse hooks. Subscriptions are disposed when the feature stops.</summary>
-    IInputHooks Hooks { get; }
-
-    /// <summary>Global hotkeys. Registrations are disposed when the feature stops.</summary>
-    IHotkeyService Hotkeys { get; }
-
-    /// <summary>Tray balloon / toast notifications.</summary>
-    INotifier Notifier { get; }
-
-    /// <summary>The UI dispatcher.</summary>
-    Dispatcher Ui { get; }
-
-    /// <summary>Log whose lines are prefixed with the feature id.</summary>
-    ILog Log { get; }
 
     /// <summary><c>%APPDATA%\WinKnife\&lt;feature-id&gt;\</c>, created on first access.</summary>
     string DataDirectory { get; }
-
-    /// <summary>All actions of the currently running features.</summary>
-    IActionCatalog Actions { get; }
 }
 
 /// <summary>Read-only view over the actions of all running features.</summary>

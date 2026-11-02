@@ -8,19 +8,20 @@ using System.Windows.Threading;
 namespace WinKnife.Core;
 
 /// <summary>
-/// Discovers features, tracks which are installed (persisted in settings) and starts/stops them with
-/// exception isolation. Also serves as the <see cref="IActionCatalog"/>. All members must be used on the UI thread
-/// (calls from other threads are marshalled).
+/// Discovers <see cref="IFeature"/> classes, binds each to its catalog entry (by id, raw id or v1 id), starts/stops them with
+/// exception isolation and serves as the <see cref="IActionCatalog"/>. The install state itself lives in
+/// <see cref="IAppSettings"/> (<c>featureAvailable.&lt;rawId&gt;</c>); <see cref="FeatureRuntime"/> owns install/uninstall
+/// semantics. All members must be used on the UI thread (calls from other threads are marshalled).
 /// </summary>
 public sealed class FeatureRegistry : IActionCatalog, IDisposable
 {
-    private const string CoreScope = "_core";
-    private const string InstalledKey = "installed";
     private const string FeatureAssemblyPrefix = "WinKnife.Features.";
 
-    private sealed class Entry(IFeature feature)
+    private sealed class Entry(IFeature feature, string catalogId)
     {
         public IFeature Feature { get; } = feature;
+
+        public string CatalogId { get; } = catalogId;
 
         public bool Running { get; set; }
 
@@ -29,19 +30,35 @@ public sealed class FeatureRegistry : IActionCatalog, IDisposable
         public ScopedHooks? Hooks { get; set; }
 
         public ScopedHotkeys? Hotkeys { get; set; }
+
+        public ScopedShortcuts? Shortcuts { get; set; }
     }
 
     private sealed class FeatureContext(
         IFeatureSettings settings,
+        IAppSettings app,
+        IFeatureRuntime runtime,
+        IShell shell,
+        IShortcutService shortcuts,
         IInputHooks hooks,
         IHotkeyService hotkeys,
         INotifier notifier,
         Dispatcher ui,
         ILog log,
         string featureId,
-        IActionCatalog actions) : IFeatureContext
+        IActionCatalog actions,
+        IIslandRegistry island,
+        IServiceHub services) : IFeatureContext
     {
         public IFeatureSettings Settings { get; } = settings;
+
+        public IAppSettings App { get; } = app;
+
+        public IFeatureRuntime Runtime { get; } = runtime;
+
+        public IShell Shell { get; } = shell;
+
+        public IShortcutService Shortcuts { get; } = shortcuts;
 
         public IInputHooks Hooks { get; } = hooks;
 
@@ -56,38 +73,48 @@ public sealed class FeatureRegistry : IActionCatalog, IDisposable
         public string DataDirectory => AppPaths.FeatureData(featureId);
 
         public IActionCatalog Actions { get; } = actions;
+
+        public IIslandRegistry Island { get; } = island;
+
+        public IServiceHub Services { get; } = services;
     }
 
-    private readonly SettingsStore _store;
+    private readonly IAppSettings _app;
     private readonly IInputHooks _hooks;
     private readonly IHotkeyService _hotkeys;
+    private readonly IShortcutService _shortcuts;
     private readonly INotifier _notifier;
+    private readonly IShell _shell;
+    private IIslandRegistry _island;
+    private readonly IServiceHub _services;
     private readonly Dispatcher _ui;
     private readonly ILog _log;
     private readonly List<Entry> _entries = [];
     private readonly Dictionary<string, Entry> _byId = new(StringComparer.Ordinal);
-    private readonly ScopedSettings _core;
-    private HashSet<string> _installed = new(StringComparer.Ordinal);
+    private IFeatureRuntime _runtime = null!;
 
-    /// <summary>Creates a registry; call <see cref="Discover"/> then <see cref="StartInstalled"/>.</summary>
-    public FeatureRegistry(SettingsStore store, IInputHooks hooks, IHotkeyService hotkeys, INotifier notifier, Dispatcher ui, ILog log)
+    /// <summary>Creates a registry; <see cref="FeatureRuntime"/> calls <see cref="Discover"/> and <see cref="StartInstalled"/>.</summary>
+    public FeatureRegistry(IAppSettings app, IInputHooks hooks, IHotkeyService hotkeys, IShortcutService shortcuts, INotifier notifier, IShell shell, IIslandRegistry island, IServiceHub services, Dispatcher ui, ILog log)
     {
-        _store = store;
+        _services = services;
+        _island = island;
+        _app = app;
         _hooks = hooks;
         _hotkeys = hotkeys;
+        _shortcuts = shortcuts;
         _notifier = notifier;
+        _shell = shell;
         _ui = ui;
         _log = log;
-        _core = store.GetScope(CoreScope);
     }
 
-    /// <summary>Raised on the UI thread after a feature was installed, uninstalled, started, stopped or failed.</summary>
+    /// <summary>Raised on the UI thread after a feature was started, stopped or failed.</summary>
     public event Action<IFeature>? FeatureStateChanged;
 
     /// <inheritdoc />
     public event Action? Changed;
 
-    /// <summary>All discovered features ordered by group and name.</summary>
+    /// <summary>All discovered feature classes in catalog order.</summary>
     public IReadOnlyList<IFeature> Features => [.. _entries.Select(e => e.Feature)];
 
     /// <inheritdoc />
@@ -119,6 +146,10 @@ public sealed class FeatureRegistry : IActionCatalog, IDisposable
         }
     }
 
+    internal void AttachRuntime(IFeatureRuntime runtime) => _runtime = runtime;
+
+    internal void AttachIsland(IIslandRegistry island) => _island = island;
+
     /// <summary>
     /// Finds all non-abstract <see cref="IFeature"/> types with a public parameterless constructor in loaded
     /// <c>WinKnife.Features.*</c> assemblies. Assemblies of that name found next to the executable are loaded first.
@@ -146,15 +177,22 @@ public sealed class FeatureRegistry : IActionCatalog, IDisposable
                     try
                     {
                         var feature = (IFeature)Activator.CreateInstance(type)!;
-                        if (_byId.ContainsKey(feature.Id))
+                        var catalogId = feature.CatalogId;
+                        if (FeatureCatalog.Get(catalogId) is null)
                         {
-                            _log.Warn($"Duplicate feature id '{feature.Id}' in {type.FullName}; ignored");
+                            _log.Warn($"Feature {feature.Id} ({type.FullName}) is not in the catalog; ignored");
                             continue;
                         }
 
-                        var entry = new Entry(feature);
+                        if (_byId.ContainsKey(catalogId))
+                        {
+                            _log.Warn($"Duplicate feature for catalog id {catalogId} in {type.FullName}; ignored");
+                            continue;
+                        }
+
+                        var entry = new Entry(feature, catalogId);
                         _entries.Add(entry);
-                        _byId[feature.Id] = entry;
+                        _byId[catalogId] = entry;
                     }
                     catch (Exception ex)
                     {
@@ -163,21 +201,15 @@ public sealed class FeatureRegistry : IActionCatalog, IDisposable
                 }
             }
 
-            _entries.Sort((a, b) =>
-            {
-                var byGroup = a.Feature.Group.CompareTo(b.Feature.Group);
-                return byGroup != 0 ? byGroup : string.Compare(a.Feature.Name, b.Feature.Name, StringComparison.CurrentCultureIgnoreCase);
-            });
-
+            _entries.Sort((a, b) => IndexOf(a.CatalogId).CompareTo(IndexOf(b.CatalogId)));
             _log.Info($"Discovered {_entries.Count} feature(s)");
-            LoadInstalledSet();
         });
     }
 
     /// <summary>Starts every installed feature (call once after <see cref="Discover"/>).</summary>
     public void StartInstalled() => OnUi(() =>
     {
-        foreach (var entry in _entries.Where(e => _installed.Contains(e.Feature.Id)).ToList())
+        foreach (var entry in _entries.Where(e => IsInstalled(e.CatalogId)).ToList())
         {
             StartEntry(entry);
         }
@@ -192,44 +224,43 @@ public sealed class FeatureRegistry : IActionCatalog, IDisposable
         }
     });
 
-    /// <summary>True when the feature is in the installed set.</summary>
-    public bool IsInstalled(string featureId) => _installed.Contains(featureId);
+    /// <summary>True when the catalog feature (id, raw id or v1 id) is installed.</summary>
+    public bool IsInstalled(string featureId) =>
+        FeatureCatalog.TryResolve(featureId, out var entry) && _app.Get<bool>(AppKeys.Available(entry));
 
     /// <summary>True when the feature is currently started.</summary>
-    public bool IsRunning(string featureId) => _byId.TryGetValue(featureId, out var e) && e.Running;
+    public bool IsRunning(string featureId) => _byId.TryGetValue(FeatureCatalog.Resolve(featureId), out var e) && e.Running;
 
     /// <summary>The last start error of the feature, if it failed to start.</summary>
-    public string? GetError(string featureId) => _byId.TryGetValue(featureId, out var e) ? e.Error : null;
+    public string? GetError(string featureId) => _byId.TryGetValue(FeatureCatalog.Resolve(featureId), out var e) ? e.Error : null;
 
-    /// <summary>Looks up a feature by id.</summary>
+    /// <summary>Looks up the feature class bound to a catalog entry.</summary>
     public bool TryGet(string featureId, [NotNullWhen(true)] out IFeature? feature)
     {
-        feature = _byId.TryGetValue(featureId, out var e) ? e.Feature : null;
+        feature = _byId.TryGetValue(FeatureCatalog.Resolve(featureId), out var e) ? e.Feature : null;
         return feature is not null;
     }
 
-    /// <summary>Installs (starts + persists) or uninstalls (stops + persists) a feature. Returns false if it failed to start.</summary>
-    public bool SetInstalled(string featureId, bool installed)
+    /// <summary>
+    /// Brings the running state of one feature in line with its install flag: starts it when installed, stops it when not.
+    /// Catalog entries without a feature class are ignored. Returns false when the start failed.
+    /// </summary>
+    public bool Sync(string featureId)
     {
         var ok = true;
         OnUi(() =>
         {
-            if (!_byId.TryGetValue(featureId, out var entry))
+            if (!_byId.TryGetValue(FeatureCatalog.Resolve(featureId), out var entry))
             {
-                ok = false;
                 return;
             }
 
-            if (installed)
+            if (IsInstalled(entry.CatalogId))
             {
-                _installed.Add(featureId);
-                PersistInstalled();
                 ok = entry.Running || StartEntry(entry);
             }
             else
             {
-                _installed.Remove(featureId);
-                PersistInstalled();
                 StopEntry(entry);
                 entry.Error = null;
                 FeatureStateChanged?.Invoke(entry.Feature);
@@ -241,21 +272,41 @@ public sealed class FeatureRegistry : IActionCatalog, IDisposable
     /// <inheritdoc />
     public void Dispose() => StopAll();
 
+    private static int IndexOf(string catalogId)
+    {
+        for (var i = 0; i < FeatureCatalog.All.Count; i++)
+        {
+            if (FeatureCatalog.All[i].Id == catalogId)
+            {
+                return i;
+            }
+        }
+
+        return int.MaxValue;
+    }
+
     private bool StartEntry(Entry entry)
     {
         var feature = entry.Feature;
         entry.Error = null;
         entry.Hooks = new ScopedHooks(_hooks);
         entry.Hotkeys = new ScopedHotkeys(_hotkeys);
+        entry.Shortcuts = new ScopedShortcuts(_shortcuts);
         var context = new FeatureContext(
-            _store.GetScope(feature.Id),
+            _app.Scope(feature.Id),
+            _app,
+            _runtime,
+            _shell,
+            entry.Shortcuts,
             entry.Hooks,
             entry.Hotkeys,
             _notifier,
             _ui,
             new PrefixedLog(_log, feature.Id),
             feature.Id,
-            this);
+            this,
+            _island,
+            _services);
         try
         {
             feature.Start(context);
@@ -268,7 +319,7 @@ public sealed class FeatureRegistry : IActionCatalog, IDisposable
             entry.Error = ex.Message;
             TryStop(feature);
             ReleaseScopes(entry);
-            _notifier.Show("WinKnife", $"{feature.Name} could not be started: {ex.Message}", NotificationLevel.Error);
+            _notifier.Show("WinKnife", $"{FeatureCatalog.Get(entry.CatalogId)?.Title ?? feature.Id} could not be started: {ex.Message}", NotificationLevel.Error);
         }
 
         FeatureStateChanged?.Invoke(feature);
@@ -307,8 +358,10 @@ public sealed class FeatureRegistry : IActionCatalog, IDisposable
     {
         entry.Hooks?.Dispose();
         entry.Hotkeys?.Dispose();
+        entry.Shortcuts?.Dispose();
         entry.Hooks = null;
         entry.Hotkeys = null;
+        entry.Shortcuts = null;
     }
 
     private Action Guard(IFeature feature, FeatureAction action) => () =>
@@ -323,21 +376,6 @@ public sealed class FeatureRegistry : IActionCatalog, IDisposable
             _notifier.Show("WinKnife", $"{action.Title} failed: {ex.Message}", NotificationLevel.Error);
         }
     };
-
-    private void LoadInstalledSet()
-    {
-        if (_core.Contains(InstalledKey))
-        {
-            _installed = new HashSet<string>(_core.Get(InstalledKey, new List<string>()), StringComparer.Ordinal);
-        }
-        else
-        {
-            _installed = new HashSet<string>(_entries.Where(e => e.Feature.InstalledByDefault).Select(e => e.Feature.Id), StringComparer.Ordinal);
-            PersistInstalled();
-        }
-    }
-
-    private void PersistInstalled() => _core.Set(InstalledKey, _installed.Order(StringComparer.Ordinal).ToList());
 
     private void OnUi(Action action)
     {
@@ -384,6 +422,62 @@ public sealed class FeatureRegistry : IActionCatalog, IDisposable
         catch (ReflectionTypeLoadException ex)
         {
             return ex.Types.Where(t => t is not null)!;
+        }
+    }
+
+    /// <summary>Shortcut bindings made by one feature; disposed when it stops.</summary>
+    private sealed class ScopedShortcuts(IShortcutService inner) : IShortcutService, IDisposable
+    {
+        private readonly List<IDisposable> _bindings = [];
+
+        public IReadOnlyList<ShortcutRole> Roles => inner.Roles;
+
+        public event Action<string>? Changed
+        {
+            add => inner.Changed += value;
+            remove => inner.Changed -= value;
+        }
+
+        public ShortcutRole? Role(string roleId) => inner.Role(roleId);
+
+        public void DefineRole(ShortcutRole role) => inner.DefineRole(role);
+
+        public Hotkey? GetHotkey(string roleId) => inner.GetHotkey(roleId);
+
+        public ShortcutState GetState(string roleId) => inner.GetState(roleId);
+
+        public IDisposable Bind(string roleId, Action callback)
+        {
+            var binding = inner.Bind(roleId, callback);
+            lock (_bindings)
+            {
+                _bindings.Add(binding);
+            }
+
+            return binding;
+        }
+
+        public ShortcutSetResult TrySet(string roleId, Hotkey? hotkey) => inner.TrySet(roleId, hotkey);
+
+        public void Reset(string roleId) => inner.Reset(roleId);
+
+        public bool IsDefault(string roleId) => inner.IsDefault(roleId);
+
+        public string? FindConflict(Hotkey hotkey, string exceptRoleId) => inner.FindConflict(hotkey, exceptRoleId);
+
+        public void Dispose()
+        {
+            IDisposable[] all;
+            lock (_bindings)
+            {
+                all = [.. _bindings];
+                _bindings.Clear();
+            }
+
+            foreach (var binding in all)
+            {
+                binding.Dispose();
+            }
         }
     }
 
