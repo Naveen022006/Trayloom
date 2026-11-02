@@ -1,0 +1,95 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// WinKnife — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
+
+namespace WinKnife.Features.Capture;
+
+/// <summary>English strings of the recorder editor (verbatim from RecorderFeatureStrings / RecorderExportStrings).</summary>
+internal static class RS
+{
+    public const string Look = "Look";
+    public const string LookRaw = "Original";
+    public const string LookClean = "Smooth";
+    public const string LookStudio = "Studio";
+    public const string Pointer = "Pointer";
+    public const string PointerShow = "Draw the pointer";
+    public const string PointerSmoothing = "Smoothing";
+    public const string SmoothingOff = "None";
+    public const string SmoothingLight = "Light";
+    public const string SmoothingSmooth = "Smooth";
+    public const string SmoothingCinematic = "Cinematic";
+    public const string PointerSize = "Size";
+    public const string ClickRing = "Mark where you click";
+    public const string Zoom = "Zoom";
+    public const string ZoomToggle = "Zoom in on every click";
+    public const string ZoomAmount = "How close";
+    public const string Background = "Background";
+    public const string Shape = "Shape";
+    public const string ShapeOriginal = "Original";
+    public const string ShapeWide = "Wide";
+    public const string ShapeSquare = "Square";
+    public const string ShapeVertical = "Tall";
+    public const string NoPointerNote = "This recording has no pointer track, so there is nothing to smooth. Zooms placed by hand still work.";
+    public const string ZoomLaneEmptyHint = "Click here to add a zoom";
+    public const string AddZoom = "Add a zoom";
+    public const string ThisZoom = "This zoom";
+    public const string ZoomWhere = "Where it looks";
+    public const string ZoomFollows = "Follows the pointer";
+    public const string ZoomPickSpot = "Pick a spot";
+    public const string ZoomPickSpotHint = "Click the picture to aim it";
+    public const string RegenerateZooms = "Back to one per click";
+    public const string BackToOptions = "All options";
+    public const string CutOut = "Cut out";
+    public const string AddText = "Add text";
+    public const string TextLaneEmptyHint = "Click here to add text";
+    public const string ThisText = "This text";
+    public const string TextPlaceholder = "Your text here";
+    public const string TextLabel = "Text";
+    public const string Size = "Size";
+    public const string Position = "Position";
+    public const string Colour = "Colour";
+    public const string Remove = "Remove";
+    public const string PresetsButton = "Presets";
+    public const string SavePreset = "Save current preset…";
+    public const string PresetNamePlaceholder = "Preset name";
+    public const string RemovePreset = "Remove preset";
+    public const string Save = "Save";
+    public const string Cancel = "Cancel";
+    public const string Done = "Done";
+    public const string ZoomEmptyTitle = "No zooms yet";
+    public const string ZoomEmptyCaption = "Create them from your clicks or add one on the timeline.";
+    public const string CreateAutomaticZooms = "Create automatic zooms";
+    public const string TypingZoomToggle = "Keep zoomed in while typing";
+    public const string TypingZoomCaption = "After a click, typing keeps the automatic zoom on that spot.";
+    public const string BlurLane = "Blur";
+    public const string AddBlur = "Blur an area";
+    public const string BlurLaneEmptyHint = "Click here to add a blur";
+    public const string ThisBlur = "This blur";
+    public const string BlurPickArea = "Choose the area";
+    public const string BlurPickAreaHint = "Drag over what should stay hidden";
+    public const string BlurCaption = "Hidden for as long as its block lasts on the timeline.";
+    public const string BlurStrength = "Blur strength";
+    public const string AddImage = "Add image";
+    public const string ImageLane = "Image";
+    public const string ImageLaneEmptyHint = "Click here to add an image";
+    public const string ThisImage = "This image";
+    public const string ImageSize = "Size";
+    public const string ImageOpacity = "Opacity";
+    public const string ImageImportFailed = "Couldn’t add this image.";
+    public const string Margin = "Margin";
+    public const string Corners = "Corners";
+    public const string Blur = "Blur";
+    public const string Quality = "Quality";
+    public const string QualitySmall = "Small file";
+    public const string QualityBalanced = "Balanced";
+    public const string QualityHigh = "High";
+    public const string ExportSpeed = "Export speed";
+    public const string CustomSpeed = "Custom speed";
+    public const string ExportDuration = "Export duration";
+    public const string SpeedNote = "Applies to video, GIF and shared links. The editing preview stays at 1×; the original recording is unchanged.";
+    public const string SystemAudioTrack = "PC sound";
+    public const string MicrophoneTrack = "Microphone";
+    public const string Volume = "Volume";
+    public const string Restore = "Restore";
+    public const string None = "None";
+    public const string RevealInExplorer = "Reveal in File Explorer";
+}

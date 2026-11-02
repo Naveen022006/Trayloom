@@ -66,6 +66,9 @@ internal sealed class WgcCapture : IDisposable
 
     public static bool IsSupported => GraphicsCaptureSession.IsSupported();
 
+    /// <summary>True when the OS accepted hiding the yellow capture border for this session.</summary>
+    public bool BorderHidden { get; private set; }
+
     public int Width => _w;
 
     public int Height => _h;
@@ -128,15 +131,9 @@ internal sealed class WgcCapture : IDisposable
             // older builds
         }
 
-        try
-        {
-            _session.GetType().GetProperty("IsBorderRequired")?.SetValue(_session, false);
-        }
-        catch
-        {
-            // needs the borderless capability; the OS draws its border outside the captured pixels
-        }
-
+        // the yellow border is drawn by the OS outside the captured pixels; hide it where Windows allows it
+        BorderHidden = CaptureBorder.TrySuppress(_session);
+        CaptureHost.Log("capture border: " + CaptureBorder.LastResult);
         _session.StartCapture();
     }
 

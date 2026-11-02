@@ -109,6 +109,96 @@ internal static class RecorderSupport
 
     public static string DefaultName(DateTime now) => $"{Strings.Recorder.FileNamePrefix} {FileStamp(now)}";
 
+    // ---- canvas -------------------------------------------------------------------------------------------------------
+
+    public const double MaximumCanvasEdge = 3840;
+
+    /// <summary>The whole picture, background included. A visible background grows the short side; without one a shape crops the source.</summary>
+    public static Size CanvasSize(Size source, double padding, double? ratio, bool cropsToAspect)
+    {
+        if (source.Width <= 0 || source.Height <= 0)
+        {
+            return new Size(EvenSize(source.Width), EvenSize(source.Height));
+        }
+
+        var margin = Math.Min(0.35, Math.Max(0, padding));
+        var inner = 1 - 2 * margin;
+        if (inner <= 0.05)
+        {
+            return new Size(EvenSize(source.Width), EvenSize(source.Height));
+        }
+
+        var width = source.Width / inner;
+        var height = source.Height / inner;
+        if (ratio is { } r)
+        {
+            if (cropsToAspect)
+            {
+                if (width / height > r)
+                {
+                    width = height * r;
+                }
+                else
+                {
+                    height = width / r;
+                }
+            }
+            else if (width / height < r)
+            {
+                width = height * r;
+            }
+            else
+            {
+                height = width / r;
+            }
+        }
+
+        var longest = Math.Max(width, height);
+        if (longest > MaximumCanvasEdge)
+        {
+            var f = MaximumCanvasEdge / longest;
+            width *= f;
+            height *= f;
+        }
+
+        return new Size(EvenSize(width), EvenSize(height));
+    }
+
+    /// <summary>Where the recording sits inside the canvas: centred, own proportions; a crop covers the canvas.</summary>
+    public static Rect CardRect(Size canvas, Size source, double padding, bool fillsCanvas)
+    {
+        if (source.Width <= 0 || source.Height <= 0 || canvas.Width <= 0 || canvas.Height <= 0)
+        {
+            return new Rect(0, 0, canvas.Width, canvas.Height);
+        }
+
+        var margin = Math.Min(0.35, Math.Max(0, padding));
+        var availW = canvas.Width * (1 - 2 * margin);
+        var availH = canvas.Height * (1 - 2 * margin);
+        var fx = availW / source.Width;
+        var fy = availH / source.Height;
+        var f = fillsCanvas ? Math.Max(fx, fy) : Math.Min(fx, fy);
+        var w = Math.Round(source.Width * f);
+        var h = Math.Round(source.Height * f);
+        return new Rect(Math.Round((canvas.Width - w) / 2), Math.Round((canvas.Height - h) / 2), w, h);
+    }
+
+    public static double CardCorner(double factor, Size card) => Math.Round(Math.Clamp(factor, 0, 1) * Math.Min(card.Width, card.Height) * 0.09);
+
+    /// <summary>A point on the stage as the picture's own 0..1 space (aspect-fit letterbox maths); not clamped.</summary>
+    public static Point? UnitPoint(Point location, Size view, Size source)
+    {
+        if (source.Width <= 0 || source.Height <= 0 || view.Width <= 0 || view.Height <= 0)
+        {
+            return null;
+        }
+
+        var fit = Math.Min(view.Width / source.Width, view.Height / source.Height);
+        var shownW = source.Width * fit;
+        var shownH = source.Height * fit;
+        return new Point((location.X - (view.Width - shownW) / 2) / shownW, (location.Y - (view.Height - shownH) / 2) / shownH);
+    }
+
     public static double Smoothstep(double t)
     {
         t = Math.Clamp(t, 0, 1);

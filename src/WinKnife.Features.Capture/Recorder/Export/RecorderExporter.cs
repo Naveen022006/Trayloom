@@ -4,6 +4,7 @@
 using System.Runtime.InteropServices.WindowsRuntime;
 using System.Text;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Windows.Media.Editing;
@@ -12,7 +13,10 @@ using Windows.Storage;
 
 namespace WinKnife.Features.Capture;
 
-/// <summary>Exports a take: MP4 (plain Media Foundation render, or frame-by-frame when blurs / speed are used) and GIF.</summary>
+/// <summary>
+/// Exports a take: MP4 (plain Media Foundation render when nothing is drawn, otherwise frame by frame through the shared composer)
+/// and GIF. Audio is mixed from the sidecars; export speed is applied with a pitch-preserving WSOLA stretch.
+/// </summary>
 internal static class RecorderExporter
 {
     private static (int W, int H) OutputSize(Take take, EditDocument doc)
@@ -38,8 +42,8 @@ internal static class RecorderExporter
 
     // ---- audio mix --------------------------------------------------------------------------------------------------
 
-    /// <summary>Mixes the kept sidecar tracks over the kept ranges (gains applied, speed by resampling) into 16-bit PCM bytes.</summary>
-    public static byte[]? MixAudio(Take take, EditDocument doc, double speed)
+    /// <summary>The kept sidecar tracks over the kept ranges (gains applied, ranges concatenated) as 48 kHz stereo floats at 1x speed.</summary>
+    public static float[]? MixFloat(Take take, EditDocument doc)
     {
         var tracks = new List<(float[] Data, double Gain)>();
         if (take.HasSystemAudio && doc.KeepsSystemAudio)
@@ -58,15 +62,16 @@ internal static class RecorderExporter
         }
 
         var ranges = doc.KeptRanges(take.Duration);
-        var outFrames = (int)(ranges.Sum(r => r.End - r.Start) * 48000 / speed);
-        var mix = new float[outFrames * 2];
+        var total = (int)Math.Round(ranges.Sum(r => r.End - r.Start) * 48000);
+        var mix = new float[total * 2];
         var pos = 0;
         foreach (var (a, b) in ranges)
         {
-            var frames = (int)((b - a) * 48000 / speed);
-            for (var i = 0; i < frames && pos + i < outFrames; i++)
+            var frames = (int)Math.Round((b - a) * 48000);
+            var from = (long)Math.Round(a * 48000);
+            for (var i = 0; i < frames && pos + i < total; i++)
             {
-                var src = (long)((a * 48000) + i * speed);
+                var src = from + i;
                 foreach (var (data, gain) in tracks)
                 {
                     if ((src + 1) * 2 < data.Length)
@@ -78,6 +83,23 @@ internal static class RecorderExporter
             }
 
             pos += frames;
+        }
+
+        return mix;
+    }
+
+    /// <summary>The mix at the export speed (WSOLA time stretch keeps the pitch) as 16-bit stereo PCM bytes.</summary>
+    public static byte[]? MixAudio(Take take, EditDocument doc, double speed)
+    {
+        var mix = MixFloat(take, doc);
+        if (mix is null)
+        {
+            return null;
+        }
+
+        if (Math.Abs(speed - 1) > 0.0005)
+        {
+            mix = TimeStretch.Stretch(mix, speed);
         }
 
         var pcm = new byte[mix.Length * 2];
@@ -110,6 +132,181 @@ internal static class RecorderExporter
         bw.Write(pcm);
     }
 
+    // ---- STA helper --------------------------------------------------------------------------------------------------
+
+    /// <summary>WPF visuals are thread-affine: the composer runs on its own STA thread.</summary>
+    private static Task<T> RunSta<T>(Func<T> work)
+    {
+        var tcs = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                tcs.SetResult(work());
+            }
+            catch (Exception ex)
+            {
+                tcs.SetException(ex);
+            }
+            finally
+            {
+                try
+                {
+                    System.Windows.Threading.Dispatcher.CurrentDispatcher.InvokeShutdown();
+                }
+                catch
+                {
+                    // nothing to shut down
+                }
+            }
+        })
+        { IsBackground = true, Name = "WinKnife recorder composer" };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        return tcs.Task;
+    }
+
+    /// <summary>The composer plus a decoder: gives the finished BGRA frame for a moment of the edited timeline.</summary>
+    private sealed class ComposedFrames
+    {
+        private const int Lanes = 4;
+        private readonly Take _take;
+        private readonly EditDocument _doc;
+        private readonly FrameSource[] _sources;
+        private readonly Image _image = new();
+        private readonly Dictionary<int, (double Src, Task<BitmapSource?> Task)> _pending = new();
+        private BitmapSource? _lastFrame;
+        private Func<int, double>? _timeOf;
+        private int _total;
+        private int _started = -1;
+
+        public ComposedFrames(Take take, EditDocument doc, double outputScale, double? gifLongEdge)
+        {
+            _take = take;
+            _doc = doc;
+            var src = new Size(take.Width, take.Height);
+            var plan = RecorderPlan.Build(doc, take.Pointer, take.TypingTimes, src, take.Fps, take.Duration, outputScale)
+                ?? throw new InvalidOperationException("No plan");
+            if (gifLongEdge is { } edge)
+            {
+                var longest = Math.Max(plan.Canvas.Width, plan.Canvas.Height);
+                if (longest > edge)
+                {
+                    plan = RecorderPlan.Build(doc, take.Pointer, take.TypingTimes, src, take.Fps, take.Duration, edge / longest)!;
+                }
+            }
+
+            Plan = plan;
+            Composer = new RecorderComposer(plan, _image, false);
+            _sources = Enumerable.Range(0, Lanes).Select(_ => FrameSource.OpenAsync(take.VideoPath).GetAwaiter().GetResult()).ToArray();
+        }
+
+        public RecorderPlan Plan { get; }
+
+        public RecorderComposer Composer { get; }
+
+        public int Width => (int)Plan.Canvas.Width;
+
+        public int Height => (int)Plan.Canvas.Height;
+
+        /// <summary>Tells the decoder which moments (edited clock) the coming frames need, so it can read ahead on several lanes.</summary>
+        public void ReadAhead(int total, Func<int, double> editedTimeOfFrame)
+        {
+            _total = total;
+            _timeOf = editedTimeOfFrame;
+        }
+
+        private void StartAhead(int i)
+        {
+            if (_timeOf is null)
+            {
+                return;
+            }
+
+            for (var j = Math.Max(_started + 1, i); j < Math.Min(_total, i + Lanes * 2); j++)
+            {
+                var src = _doc.SourceTime(_timeOf(j), _take.Duration);
+                if (_pending.TryGetValue(j - 1, out var prev) && Math.Abs(prev.Src - src) < 1e-4)
+                {
+                    _pending[j] = (src, prev.Task);
+                }
+                else
+                {
+                    var source = _sources[j % Lanes];
+                    _pending[j] = (src, Task.Run<BitmapSource?>(async () =>
+                    {
+                        try
+                        {
+                            return await source.GetFrameAsync(TimeSpan.FromSeconds(src));
+                        }
+                        catch
+                        {
+                            return null;
+                        }
+                    }));
+                }
+
+                _started = j;
+            }
+        }
+
+        /// <summary>Renders the frame for a moment on the edited clock (post trim and cuts, before speed).</summary>
+        public byte[] Render(double tEdit, int planIndex, int ordinal)
+        {
+            StartAhead(ordinal);
+            if (_pending.Remove(ordinal, out var entry))
+            {
+                var frame = entry.Task.GetAwaiter().GetResult();
+                if (frame is not null)
+                {
+                    _lastFrame = frame;
+                }
+            }
+            else
+            {
+                var src = _doc.SourceTime(tEdit, _take.Duration);
+                try
+                {
+                    _lastFrame = _sources[0].GetFrameAsync(TimeSpan.FromSeconds(src)).GetAwaiter().GetResult();
+                }
+                catch
+                {
+                    // keep the previous picture so the length is preserved
+                }
+            }
+
+            var picture = _lastFrame ?? throw new InvalidOperationException("No decodable frame");
+            _image.Source = WithBlurs(picture, tEdit);
+            Composer.Apply(planIndex, tEdit);
+            return Composer.RenderBgra();
+        }
+
+        private BitmapSource WithBlurs(BitmapSource frame, double tEdit)
+        {
+            if (Plan.Blurs.Count == 0)
+            {
+                return frame;
+            }
+
+            EditorDocument? edit = null;
+            BitmapSource image = frame.Format == PixelFormats.Pbgra32 ? frame : new FormatConvertedBitmap(frame, PixelFormats.Pbgra32, null, 0);
+            for (var i = 0; i < Plan.Blurs.Count; i++)
+            {
+                if (!Plan.BlurCovered(i, tEdit))
+                {
+                    continue;
+                }
+
+                var b = Plan.Blurs[i];
+                edit ??= new EditorDocument(image, 1);
+                var rect = new Rect(b.X * image.PixelWidth, b.Y * image.PixelHeight, b.Width * image.PixelWidth, b.Height * image.PixelHeight);
+                edit.Marks.Add(new Annotation { Kind = ToolId.Pixelate, P1 = rect.TopLeft, P2 = rect.BottomRight, BlurStyle = "pixelate", BlurLevel = b.Strength, Seed = 7 });
+            }
+
+            return edit is null ? frame : EditorRenderer.RenderAnnotated(edit);
+        }
+    }
+
     // ---- MP4 --------------------------------------------------------------------------------------------------------------
 
     public static async Task ExportMp4Async(Take take, string dest, IProgress<double>? progress, CancellationToken ct)
@@ -119,7 +316,7 @@ internal static class RecorderExporter
         var staging = Staging(dest, ".mp4");
         try
         {
-            if (doc.Blurs.Count == 0 && Math.Abs(doc.ExportSpeed - 1) < 0.001)
+            if (!doc.HasPictureEffects(take.Pointer, take.Duration) && Math.Abs(doc.ExportSpeed - 1) < 0.001)
             {
                 await PlainRenderAsync(take, doc, staging, progress, ct);
             }
@@ -204,77 +401,87 @@ internal static class RecorderExporter
     private static async Task FrameRenderAsync(Take take, EditDocument doc, string staging, IProgress<double>? progress, CancellationToken ct)
     {
         var speed = Math.Clamp(doc.ExportSpeed, 0.25, 4);
-        var (w, h) = OutputSize(take, doc);
         var fps = take.Fps;
         var outDuration = doc.OutputDuration(take.Duration) / speed;
         var frames = Math.Max(1, (int)Math.Floor(outDuration * fps));
         var audio = MixAudio(take, doc, speed);
-        var writer = new VideoWriter(staging, w, h, fps, RecorderSupport.AverageBitRate(w, h, fps, doc.Quality), false);
-        writer.Begin();
-        var source = await FrameSource.OpenAsync(take.VideoPath);
-        var audioPos = 0;
+        var scale = RecorderSupport.OutputScale(doc.Quality);
+        var w = 0;
+        var h = 0;
+        VideoWriter? writer = null;
         const int blockBytes = 48000 / 50 * 4; // 20 ms
-        try
+        var audioPos = 0;
+
+        await RunSta(() =>
         {
-            for (var i = 0; i < frames; i++)
+            var composed = new ComposedFrames(take, doc, scale, null);
+            composed.ReadAhead(frames, k => (double)k / fps * speed);
+            w = composed.Width;
+            h = composed.Height;
+            writer = new VideoWriter(staging, w, h, fps, RecorderSupport.AverageBitRate(w, h, fps, doc.Quality), false);
+            writer.Begin();
+            try
             {
-                ct.ThrowIfCancellationRequested();
-                if (writer.Failure is not null)
+                for (var i = 0; i < frames; i++)
                 {
-                    throw writer.Failure;
-                }
-
-                var tOut = (double)i / fps;
-                var src = doc.SourceTime(tOut * speed, take.Duration);
-                var frame = await source.GetFrameAsync(TimeSpan.FromSeconds(src));
-                var composed = ComposeFrame(frame, doc, src, w, h);
-                var bytes = Pixels.Get(composed);
-                if (!writer.TryAdd(new VideoFrame(bytes, TimeSpan.FromSeconds(tOut)), block: true))
-                {
-                    break;
-                }
-
-                if (audio is not null)
-                {
-                    var until = (int)Math.Min(audio.Length, (tOut + 1.0 / fps) * 48000 * 4);
-                    until -= until % 4;
-                    while (audioPos + blockBytes <= until)
+                    ct.ThrowIfCancellationRequested();
+                    if (writer.Failure is not null)
                     {
-                        var block = new byte[blockBytes];
-                        Buffer.BlockCopy(audio, audioPos, block, 0, blockBytes);
-                        writer.AddAudio(new AudioBlock(block, TimeSpan.FromSeconds(audioPos / 4.0 / 48000), TimeSpan.FromMilliseconds(20)));
-                        audioPos += blockBytes;
+                        throw writer.Failure;
                     }
-                }
 
-                progress?.Report(Math.Min(0.9, (double)(i + 1) / frames * 0.9));
-            }
-
-            if (audio is not null)
-            {
-                while (audioPos < audio.Length)
-                {
-                    var len = Math.Min(blockBytes, audio.Length - audioPos);
-                    len -= len % 4;
-                    if (len <= 0)
+                    var tOut = (double)i / fps;
+                    var tEdit = tOut * speed;
+                    var bytes = composed.Render(tEdit, composed.Plan.FrameIndex(tEdit), i);
+                    if (!writer.TryAdd(new VideoFrame(bytes, TimeSpan.FromSeconds(tOut)), block: true))
                     {
                         break;
                     }
 
-                    var block = new byte[len];
-                    Buffer.BlockCopy(audio, audioPos, block, 0, len);
-                    writer.AddAudio(new AudioBlock(block, TimeSpan.FromSeconds(audioPos / 4.0 / 48000), TimeSpan.FromSeconds(len / 4.0 / 48000)));
-                    audioPos += len;
+                    if (audio is not null)
+                    {
+                        var until = (int)Math.Min(audio.Length, (tOut + 1.0 / fps) * 48000 * 4);
+                        until -= until % 4;
+                        while (audioPos + blockBytes <= until)
+                        {
+                            var block = new byte[blockBytes];
+                            Buffer.BlockCopy(audio, audioPos, block, 0, blockBytes);
+                            writer.AddAudio(new AudioBlock(block, TimeSpan.FromSeconds(audioPos / 4.0 / 48000), TimeSpan.FromMilliseconds(20)));
+                            audioPos += blockBytes;
+                        }
+                    }
+
+                    progress?.Report(Math.Min(0.9, (double)(i + 1) / frames * 0.9));
+                }
+
+                if (audio is not null)
+                {
+                    while (audioPos < audio.Length)
+                    {
+                        var len = Math.Min(blockBytes, audio.Length - audioPos);
+                        len -= len % 4;
+                        if (len <= 0)
+                        {
+                            break;
+                        }
+
+                        var block = new byte[len];
+                        Buffer.BlockCopy(audio, audioPos, block, 0, len);
+                        writer.AddAudio(new AudioBlock(block, TimeSpan.FromSeconds(audioPos / 4.0 / 48000), TimeSpan.FromSeconds(len / 4.0 / 48000)));
+                        audioPos += len;
+                    }
                 }
             }
-        }
-        finally
-        {
-            writer.Complete();
-        }
+            finally
+            {
+                writer.Complete();
+            }
+
+            return 0;
+        });
 
         progress?.Report(0.95);
-        if (writer.Completion is { } c)
+        if (writer!.Completion is { } c)
         {
             await c;
         }
@@ -317,32 +524,6 @@ internal static class RecorderExporter
         }
     }
 
-    /// <summary>Applies the blur regions active at <paramref name="sourceTime"/> and scales to the output size.</summary>
-    private static BitmapSource ComposeFrame(BitmapSource frame, EditDocument doc, double sourceTime, int w, int h)
-    {
-        BitmapSource image = frame.Format == PixelFormats.Pbgra32 ? frame : new FormatConvertedBitmap(frame, PixelFormats.Pbgra32, null, 0);
-        var active = doc.Blurs.Where(b => sourceTime >= b.Start && sourceTime <= b.End).ToList();
-        if (active.Count > 0)
-        {
-            var edit = new EditorDocument(image, 1);
-            foreach (var b in active)
-            {
-                var rect = new Rect(b.X * image.PixelWidth, b.Y * image.PixelHeight, b.Width * image.PixelWidth, b.Height * image.PixelHeight);
-                edit.Marks.Add(new Annotation { Kind = ToolId.Pixelate, P1 = rect.TopLeft, P2 = rect.BottomRight, BlurStyle = "pixelate", BlurLevel = b.Strength, Seed = 7 });
-            }
-
-            image = EditorRenderer.RenderAnnotated(edit);
-        }
-
-        if (image.PixelWidth == w && image.PixelHeight == h)
-        {
-            return image;
-        }
-
-        var tb = new TransformedBitmap(image, new ScaleTransform((double)w / image.PixelWidth, (double)h / image.PixelHeight));
-        return Pixels.Make(Pixels.Get(tb), tb.PixelWidth, tb.PixelHeight);
-    }
-
     // ---- GIF --------------------------------------------------------------------------------------------------------------------
 
     public static async Task ExportGifAsync(Take take, string dest, IProgress<double>? progress, CancellationToken ct)
@@ -354,39 +535,49 @@ internal static class RecorderExporter
         {
             var speed = Math.Clamp(doc.ExportSpeed, 0.25, 4);
             var fps = doc.GifFrameRate is 8 or 12 or 15 ? doc.GifFrameRate : 12;
-            var (gw, gh) = RecorderSupport.GifSize(take.Width, take.Height, doc.GifSize);
+            var longEdge = doc.GifSize switch { "small" => 420.0, "large" => 800.0, _ => 600.0 };
             var outDuration = doc.OutputDuration(take.Duration) / speed;
             var frames = Math.Max(1, (int)Math.Floor(outDuration * fps));
-            var collected = new List<(BitmapSource Image, ushort Delay)>();
-
-            var source = await FrameSource.OpenAsync(take.VideoPath);
-            BitmapSource? previous = null;
-            for (var i = 0; i < frames; i++)
+            var collected = await RunSta(() =>
             {
-                ct.ThrowIfCancellationRequested();
-                var tOut = Math.Min(outDuration, (double)i / fps);
-                var src = doc.SourceTime(tOut * speed, take.Duration);
-                BitmapSource? composed;
-                try
+                var list = new List<(BitmapSource Image, ushort Delay)>();
+                var composed = new ComposedFrames(take, doc, 1, longEdge);
+                composed.ReadAhead(frames, k => Math.Min(outDuration, (double)k / fps) * speed);
+                BitmapSource? previous = null;
+                for (var i = 0; i < frames; i++)
                 {
-                    var frame = await source.GetFrameAsync(TimeSpan.FromSeconds(src));
-                    composed = ComposeFrame(frame, doc, src, gw, gh);
-                    previous = composed;
-                }
-                catch
-                {
-                    composed = previous;
+                    ct.ThrowIfCancellationRequested();
+                    var tOut = Math.Min(outDuration, (double)i / fps);
+                    var tEdit = tOut * speed;
+                    BitmapSource? image;
+                    try
+                    {
+                        var bytes = composed.Render(tEdit, composed.Plan.FrameIndex(tEdit), i);
+                        image = BitmapSource.Create(composed.Width, composed.Height, 96, 96, PixelFormats.Pbgra32, null, bytes, composed.Width * 4);
+                        image.Freeze();
+                        previous = image;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch
+                    {
+                        image = previous;
+                    }
+
+                    if (image is null)
+                    {
+                        continue;
+                    }
+
+                    var delay = (ushort)Math.Max(1, Math.Round((i + 1) * 100.0 / fps) - Math.Round(i * 100.0 / fps));
+                    list.Add((image, delay));
+                    progress?.Report(Math.Min(0.95, (double)(i + 1) / frames));
                 }
 
-                if (composed is null)
-                {
-                    continue;
-                }
-                var delay = (ushort)Math.Max(1, Math.Round((i + 1) * 100.0 / fps) - Math.Round(i * 100.0 / fps));
-                collected.Add((composed, delay));
-                progress?.Report(Math.Min(0.95, (double)(i + 1) / frames));
-                collected.Add((composed, delay));
-            }
+                return list;
+            });
 
             if (collected.Count == 0)
             {

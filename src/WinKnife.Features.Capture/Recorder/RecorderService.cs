@@ -19,6 +19,7 @@ internal sealed class RecorderService
     private VideoWriter? _writer;
     private WasapiCapture? _sys;
     private WasapiCapture? _mic;
+    private PointerRecorder? _pointerRec;
     private Take? _take;
     private RecorderPill? _pill;
     private RegionGuideWindow? _guide;
@@ -239,7 +240,7 @@ internal sealed class RecorderService
             _startQpc = Qpc();
             if (_ctx.App.Get<bool>(K.RecSystemAudio))
             {
-                _sys = TryAudio(_take.SystemWav, true, false);
+                _sys = TrySystemAudio(_take.SystemWav, pick);
             }
 
             if (_ctx.App.Get<bool>(K.RecMicrophone))
@@ -247,11 +248,13 @@ internal sealed class RecorderService
                 _mic = TryAudio(_take.MicWav, false, true);
             }
 
+            _pointerRec = new PointerRecorder(_ctx.Hooks, PointerRegion(pick), EventTime);
             _cap.FrameReady += OnFrame;
             _cap.Closed += () => CaptureHost.Ui.BeginInvoke(() => Stop(null));
             Thread.Sleep(120); // let the selection overlay leave
             _startQpc = Qpc();
             _cap.Start();
+            _pointerRec.Start();
             IsRecording = true;
             _preparing = false;
             ElapsedSeconds = 0;
@@ -267,6 +270,79 @@ internal sealed class RecorderService
             AbortStart();
             QuickToolHud.Show(G.Record, Strings.Recorder.RecordFailed);
         }
+    }
+
+    /// <summary>The recorded rectangle in virtual-screen pixels: the picked area, or the window's visible frame.</summary>
+    private static Int32Rect PointerRegion(RegionPick pick)
+    {
+        if (pick.Window != 0 && N.DwmGetWindowAttribute(pick.Window, N.DWMWA_EXTENDED_FRAME_BOUNDS, out N.RECT r, System.Runtime.InteropServices.Marshal.SizeOf<N.RECT>()) == 0 && r.Width > 0 && r.Height > 0)
+        {
+            return new Int32Rect(r.Left, r.Top, r.Width, r.Height);
+        }
+
+        return pick.Screen;
+    }
+
+    /// <summary>Recording seconds of a QPC instant: null before the first frame and inside a pause.</summary>
+    private double? EventTime(long qpc)
+    {
+        lock (_gate)
+        {
+            if (!_haveOrigin || qpc < _originQpc || (_paused && qpc >= _pauseStartQpc))
+            {
+                return null;
+            }
+
+            long pausedBefore = 0;
+            foreach (var (s, e) in _pauses)
+            {
+                if (qpc >= s && qpc < e)
+                {
+                    return null;
+                }
+
+                if (qpc >= e)
+                {
+                    pausedBefore += e - s;
+                }
+            }
+
+            return (qpc - _originQpc - pausedBefore) / (double)_freq;
+        }
+    }
+
+    /// <summary>
+    /// System sound. A window recording follows the picture (process loopback of the window's app and its children); a whole-screen
+    /// recording leaves WinKnife's own sound out. Both fall back to plain endpoint loopback where process loopback is not available.
+    /// </summary>
+    private static WasapiCapture? TrySystemAudio(string path, RegionPick pick)
+    {
+        if (ProcessLoopbackActivator.IsAvailable)
+        {
+            var target = pick.Window != 0 && pick.WindowProcessId > 0
+                ? new ProcessLoopbackTarget(pick.WindowProcessId, true)
+                : new ProcessLoopbackTarget(Environment.ProcessId, false);
+            try
+            {
+                var cap = new WasapiCapture(path, true, target);
+                cap.Start();
+                return cap;
+            }
+            catch (Exception ex)
+            {
+                CaptureHost.Log("process loopback unavailable, using endpoint loopback", ex);
+                try
+                {
+                    File.Delete(path);
+                }
+                catch
+                {
+                    // ignore
+                }
+            }
+        }
+
+        return TryAudio(path, true, false);
     }
 
     private static WasapiCapture? TryAudio(string path, bool loopback, bool isMic)
@@ -308,6 +384,7 @@ internal sealed class RecorderService
             _writer?.Cancel();
             _sys?.Stop();
             _mic?.Stop();
+            _pointerRec?.Stop();
         }
         catch
         {
@@ -317,6 +394,7 @@ internal sealed class RecorderService
         _cap = null;
         _writer = null;
         _sys = _mic = null;
+        _pointerRec = null;
         CloseSurfaces();
         _take?.Delete();
         _take = null;
@@ -438,6 +516,7 @@ internal sealed class RecorderService
         }
 
         var duration = Math.Max(0.2, ElapsedAt(stopQpc));
+        _pointerRec?.Stop();
         N.SetThreadExecutionState(N.ES_CONTINUOUS);
         CloseSurfaces();
         _cap?.Dispose();
@@ -462,6 +541,15 @@ internal sealed class RecorderService
             {
                 _sys?.Stop();
                 _mic?.Stop();
+                try
+                {
+                    _pointerRec?.Stop();
+                    _pointerRec?.Save(take.Folder);
+                }
+                catch (Exception ex)
+                {
+                    CaptureHost.Log("saving the pointer track failed", ex);
+                }
             });
             if (writer.Completion is { } c)
             {
@@ -476,6 +564,7 @@ internal sealed class RecorderService
         _cap = null;
         _writer = null;
         _sys = _mic = null;
+        _pointerRec = null;
         take.Duration = duration;
         var ok = writer.Failure is null && File.Exists(take.VideoPath) && new FileInfo(take.VideoPath).Length > 0;
         await CaptureHost.Ui.InvokeAsync(() =>
@@ -498,15 +587,21 @@ internal sealed class RecorderService
     private void Deliver(Take take)
     {
         var s = _ctx.App;
+        var opensEditor = _stopReason is null && s.Get<bool>(K.RecOpenEditor);
         take.Document = new EditDocument
         {
             Quality = RecorderSupport.SanitizedQuality(s.Get<string>(K.RecQuality)),
             KeepsSystemAudio = s.Get<bool>(K.RecSystemAudio),
             GifSize = s.Get<string>(K.RecGifSize) ?? "medium",
             GifFrameRate = s.Get<int>(K.RecGifFps),
+            ZoomEnabled = opensEditor && s.Get<bool>(K.RecAutoZoom),
+            ShowsPointer = opensEditor,
         };
-        if (_stopReason is null && s.Get<bool>(K.RecOpenEditor))
+        if (opensEditor)
         {
+            // the first set of zooms comes straight from the clicks, once; after that they belong to the person
+            take.Document.RestoreAutomaticZooms(take.Pointer.Clicks, take.TypingTimes, take.Duration);
+            take.Document.ZoomsGenerated = true;
             OpenEditor(take);
             return;
         }
