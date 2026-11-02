@@ -2,72 +2,92 @@
 // WinKnife — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
 
 using System.Text;
-using System.Windows;
 using WinKnife.Core;
-using WinKnife.Core.Ui;
 
-namespace WinKnife.Features.WindowTools;
+namespace WinKnife.Features.Files;
+
+/// <summary>What the Clean URL settings page and panel ask of the running feature.</summary>
+internal interface ICleanUrlHost
+{
+    bool IsRunning { get; }
+
+    /// <summary>Names the last automatic clean took out (empty until one happened).</summary>
+    IReadOnlyList<string> LastRemoved { get; }
+
+    event Action? Changed;
+
+    /// <summary>Writes a cleaned link to the clipboard (marked as WinKnife's own write). Returns false when the clipboard is busy.</summary>
+    bool CopyCleaned(string url);
+}
 
 /// <summary>Removes tracking parameters (utm_*, fbclid, gclid, ...) from links as soon as they are copied.</summary>
-public sealed class CleanUrlFeature : IFeature
+public sealed class CleanUrlFeature : IFeature, ICleanUrlHost
 {
     private IFeatureContext? _context;
     private IDisposable? _subscription;
+    private List<string> _lastRemoved = [];
 
     public string Id => "clean-url";
 
-    public string Name => "Clean URL";
-
-    public string Description => "Strip tracking parameters such as utm_*, fbclid and gclid from links the moment you copy them.";
-
-    public FeatureGroup Group => FeatureGroup.ClipboardFiles;
-
     public IReadOnlyList<FeatureAction> Actions =>
     [
-        new FeatureAction("clean-clipboard", "Clean link on clipboard", CleanNow, ""),
+        new FeatureAction("clean-clipboard", "Clean the copied link", CleanNow, ""),
     ];
+
+    public event Action? Changed;
+
+    public bool IsRunning => _context is not null && _context.App.Get<bool>("urlCleanerEnabled");
+
+    public IReadOnlyList<string> LastRemoved => _lastRemoved;
+
+    internal static void RegisterDefaults(IAppSettings app)
+    {
+        app.Register("urlCleanerEnabled", false);
+        app.Register("urlCleanerCustomParameters", string.Empty);
+        app.Register("urlCleanerSiteParameters", string.Empty);
+        app.Register("urlCleanerDisabledParameters", string.Empty);
+        app.Register("panelUtilityURLCleaner", true);
+    }
 
     public void Start(IFeatureContext context)
     {
         _context = context;
+        RegisterDefaults(context.App);
         _subscription = ClipboardMonitor.Subscribe(OnClipboardChanged);
+        context.App.Changed += OnSettingChanged;
+        Hub.CleanUrl = this;
     }
 
     public void Stop()
     {
+        if (_context is not null)
+        {
+            _context.App.Changed -= OnSettingChanged;
+        }
+
+        if (ReferenceEquals(Hub.CleanUrl, this))
+        {
+            Hub.CleanUrl = null;
+        }
+
         _subscription?.Dispose();
         _subscription = null;
         _context = null;
     }
 
-    public FrameworkElement? CreateSettingsView()
+    private void OnSettingChanged(string key)
     {
-        if (_context is null)
+        if (key == "urlCleanerEnabled")
         {
-            return null;
+            _context?.Ui.BeginInvoke(() => Changed?.Invoke());
         }
-
-        return new SettingsViewBuilder(_context.Settings)
-            .AddToggle("notify", "Show a notification when a link was cleaned", false)
-            .AddText("customParameters", "Extra parameters to remove", string.Empty, "Comma separated names removed from links on every site, for example: ref, campaign_id.")
-            .AddText("siteParameters", "Extra parameters per site", string.Empty, "Comma separated host|name pairs, for example: example.com|trk, shop.example|aff.")
-            .AddText("disabledParameters", "Parameters to keep", string.Empty, "Built-in names to leave alone, as host|name (empty host = every site), for example: youtube.com|si, |utm_*, |fbclid.")
-            .AddNote("Only links where something was removed are rewritten, as plain text. Copies containing images, files, passwords or several items are never touched.")
-            .Build();
     }
 
-    private UrlRules LoadRules()
-    {
-        var settings = _context!.Settings;
-        return UrlRules.Parse(
-            settings.Get("customParameters", string.Empty),
-            settings.Get("siteParameters", string.Empty),
-            settings.Get("disabledParameters", string.Empty));
-    }
+    public bool CopyCleaned(string url) => ClipboardIO.WriteText(url, markOwn: false);
 
     private async void OnClipboardChanged()
     {
-        if (_context is null)
+        if (_context is null || !_context.App.Get<bool>("urlCleanerEnabled"))
         {
             return;
         }
@@ -82,7 +102,12 @@ public sealed class CleanUrlFeature : IFeature
                 return;
             }
 
-            TryCleanAutomatically(sequence);
+            var result = await Task.Run(() => TryCleanAutomatically(sequence));
+            if (result is { Count: > 0 })
+            {
+                _lastRemoved = result;
+                Changed?.Invoke();
+            }
         }
         catch (Exception ex)
         {
@@ -90,23 +115,25 @@ public sealed class CleanUrlFeature : IFeature
         }
     }
 
-    private void TryCleanAutomatically(uint sequence)
+    /// <summary>Background thread: returns the removed names when the clipboard link was rewritten.</summary>
+    private List<string>? TryCleanAutomatically(uint sequence)
     {
-        if (ClipboardIO.IsOwnWrite() || ClipboardIO.IsSensitive() || HasNonTextContent())
+        var context = _context;
+        if (context is null || ClipboardIO.IsOwnWrite() || ClipboardIO.IsSensitive() || HasNonTextContent())
         {
-            return;
+            return null;
         }
 
         var text = ClipboardIO.ReadText();
         if (string.IsNullOrWhiteSpace(text) || text.Length > 8192)
         {
-            return;
+            return null;
         }
 
-        var result = UrlCleaner.Clean(text, LoadRules());
+        var result = UrlCleaner.Clean(text, UrlRuleCatalog.Load(context.App));
         if (result is null || result.Removed.Count == 0)
         {
-            return;
+            return null;
         }
 
         // The rewrite drops HTML flavours; only do it when they add nothing but formatting to the link.
@@ -115,27 +142,24 @@ public sealed class CleanUrlFeature : IFeature
             var html = ReadHtmlFragment();
             if (html is null || !UrlCleaner.HtmlAddsNothing(html, text))
             {
-                return;
+                return null;
             }
         }
 
         // Narrow the window in which another program may have copied something new since we read.
         if (WinApi.GetClipboardSequenceNumber() != sequence)
         {
-            return;
+            return null;
         }
 
-        // Not tagged as a WinKnife write: the clipboard history should record the cleaned link.
+        // Not tagged as a WinKnife write: the clipboard history should record the cleaned link once.
         if (!ClipboardIO.WriteText(result.Url, markOwn: false))
         {
-            return;
+            return null;
         }
 
-        _context!.Log.Info($"Cleaned link, removed: {string.Join(", ", result.Removed)}");
-        if (_context.Settings.Get("notify", false))
-        {
-            _context.Notifier.Show("Link cleaned", $"Removed {string.Join(", ", result.Removed)}");
-        }
+        context.Log.Info($"Cleaned link, removed: {string.Join(", ", result.Removed)}");
+        return [.. result.Removed];
     }
 
     private void CleanNow()
@@ -147,18 +171,20 @@ public sealed class CleanUrlFeature : IFeature
         }
 
         var text = ClipboardIO.ReadText();
-        var result = text is null ? null : UrlCleaner.Clean(text, LoadRules());
+        var result = text is null ? null : UrlCleaner.Clean(text, UrlRuleCatalog.Load(context.App));
         if (result is null)
         {
-            context.Notifier.Show("Clean URL", "The clipboard does not hold a web link.");
+            context.Notifier.Show(Strings.CleanUrl.Name, Strings.CleanUrl.NoUrl);
         }
         else if (result.Removed.Count == 0)
         {
-            context.Notifier.Show("Clean URL", "Nothing to remove from this link.");
+            context.Notifier.Show(Strings.CleanUrl.Name, Strings.CleanUrl.NoChange);
         }
         else if (ClipboardIO.WriteText(result.Url, markOwn: false))
         {
-            context.Notifier.Show("Link cleaned", $"Removed {string.Join(", ", result.Removed)}");
+            _lastRemoved = [.. result.Removed];
+            Changed?.Invoke();
+            context.Notifier.Show(Strings.CleanUrl.Name, string.Format(Strings.CleanUrl.RemovedFormat, string.Join(", ", result.Removed)));
         }
     }
 

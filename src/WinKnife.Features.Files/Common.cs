@@ -1,126 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // WinKnife — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
 
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using WinKnife.Core;
 using WinKnife.Core.Native;
 using static WinKnife.Core.Native.NativeConstants;
 
-namespace WinKnife.Features.WindowTools;
+namespace WinKnife.Features.Files;
 
-/// <summary>One configurable global shortcut of a feature.</summary>
-/// <param name="SettingKey">Settings key holding the <see cref="Hotkey"/> (null stored = disabled).</param>
-/// <param name="Label">Name used in notifications.</param>
-/// <param name="Default">Default shortcut, or null for none.</param>
-/// <param name="Callback">Invoked on the UI thread.</param>
-internal sealed record HotkeyBinding(string SettingKey, string Label, Hotkey? Default, Action Callback);
-
-/// <summary>
-/// Registers a set of settings-driven hotkeys and re-registers them when a setting changes, so the
-/// <c>HotkeyRecorder</c> cards in the settings view take effect immediately.
-/// </summary>
-internal sealed class HotkeyBindings : IDisposable
-{
-    private readonly IFeatureContext _context;
-    private readonly IReadOnlyList<HotkeyBinding> _bindings;
-    private readonly List<IDisposable> _registrations = [];
-    private readonly HashSet<string> _warned = [];
-    private bool _applyQueued;
-    private bool _disposed;
-
-    public HotkeyBindings(IFeatureContext context, IReadOnlyList<HotkeyBinding> bindings)
-    {
-        _context = context;
-        _bindings = bindings;
-        _context.Settings.Changed += OnSettingChanged;
-        Apply();
-    }
-
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        _disposed = true;
-        _context.Settings.Changed -= OnSettingChanged;
-        Clear();
-    }
-
-    private void OnSettingChanged(string key)
-    {
-        if (_disposed || !_bindings.Any(b => b.SettingKey == key) || _applyQueued)
-        {
-            return;
-        }
-
-        _applyQueued = true;
-        _context.Ui.BeginInvoke(() =>
-        {
-            _applyQueued = false;
-            if (!_disposed)
-            {
-                Apply();
-            }
-        });
-    }
-
-    private void Clear()
-    {
-        foreach (var registration in _registrations)
-        {
-            try
-            {
-                registration.Dispose();
-            }
-            catch (Exception)
-            {
-                // already unregistered
-            }
-        }
-
-        _registrations.Clear();
-    }
-
-    private void Apply()
-    {
-        Clear();
-        foreach (var binding in _bindings)
-        {
-            var hotkey = _context.Settings.Get<Hotkey?>(binding.SettingKey, binding.Default);
-            if (hotkey is null)
-            {
-                continue;
-            }
-
-            var callback = binding.Callback;
-            if (_context.Hotkeys.TryRegister(hotkey, () => Safe(binding.Label, callback), out var registration))
-            {
-                _registrations.Add(registration);
-            }
-            else if (_warned.Add($"{binding.SettingKey}:{hotkey}"))
-            {
-                _context.Notifier.Show("Shortcut unavailable", $"{binding.Label}: {hotkey} is already used by another program. Pick another one in the feature settings.", NotificationLevel.Warning);
-            }
-        }
-    }
-
-    private void Safe(string label, Action callback)
-    {
-        try
-        {
-            callback();
-        }
-        catch (Exception ex)
-        {
-            _context.Log.Error($"{label} failed", ex);
-        }
-    }
-}
-
-/// <summary>Foreground / placement helpers shared by the window features.</summary>
+/// <summary>Foreground / placement helpers shared by the floating windows of this project.</summary>
 internal static class WinUtil
 {
     /// <summary>Restores a minimized window and brings it to the foreground.</summary>
@@ -178,11 +70,27 @@ internal static class WinUtil
         return NativeMethods.GetDpiForWindow(hwnd) / 96.0;
     }
 
-    /// <summary>Moves and sizes a window in physical pixels without activating it.</summary>
-    public static void SetBounds(Window window, int x, int y, int width, int height)
+    /// <summary>Desired size of a not-yet-shown window's content in device-independent units (fixed Width / Height respected).</summary>
+    public static Size DesiredSize(Window window)
+    {
+        if (window.Content is not FrameworkElement content)
+        {
+            return new Size(window.Width, window.Height);
+        }
+
+        var availableWidth = double.IsNaN(window.Width) ? double.PositiveInfinity : window.Width;
+        var availableHeight = double.IsNaN(window.Height) ? double.PositiveInfinity : window.Height;
+        content.Measure(new Size(availableWidth, availableHeight));
+        var width = double.IsNaN(window.Width) ? content.DesiredSize.Width : window.Width;
+        var height = double.IsNaN(window.Height) ? content.DesiredSize.Height : window.Height;
+        return new Size(width, height);
+    }
+
+    /// <summary>Moves a window (keeping its size) to physical pixel coordinates, topmost, without activating it.</summary>
+    public static void MoveTo(Window window, int x, int y, bool topmost = true)
     {
         var hwnd = new WindowInteropHelper(window).EnsureHandle();
-        NativeMethods.SetWindowPos(hwnd, 0, x, y, width, height, SWP_NOZORDER | SWP_NOACTIVATE);
+        NativeMethods.SetWindowPos(hwnd, topmost ? HWND_TOPMOST : 0, x, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE | (topmost ? 0u : SWP_NOZORDER));
     }
 
     /// <summary>Asks Windows to round the corners of a borderless window.</summary>
@@ -200,21 +108,18 @@ internal static class WinUtil
         }
     }
 
-    /// <summary>Hides a window from Alt+Tab / the taskbar (adds WS_EX_TOOLWINDOW).</summary>
-    public static void MakeToolWindow(Window window)
+    /// <summary>Hides a window from Alt+Tab / the taskbar (adds WS_EX_TOOLWINDOW), optionally never activating on click.</summary>
+    public static void MakeToolWindow(Window window, bool noActivate = false)
     {
         var hwnd = new WindowInteropHelper(window).EnsureHandle();
         var style = NativeMethods.GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64();
-        NativeMethods.SetWindowLongPtr(hwnd, GWL_EXSTYLE, (nint)(style | WS_EX_TOOLWINDOW));
-    }
+        style |= WS_EX_TOOLWINDOW;
+        if (noActivate)
+        {
+            style |= WS_EX_NOACTIVATE;
+        }
 
-    /// <summary>True while every modifier in <paramref name="modifiers"/> is physically held.</summary>
-    public static bool AnyModifierHeld(HotkeyModifiers modifiers)
-    {
-        return (modifiers.HasFlag(HotkeyModifiers.Alt) && Down(VK_MENU))
-            || (modifiers.HasFlag(HotkeyModifiers.Control) && Down(VK_CONTROL))
-            || (modifiers.HasFlag(HotkeyModifiers.Shift) && Down(VK_SHIFT))
-            || (modifiers.HasFlag(HotkeyModifiers.Win) && (Down(VK_LWIN) || Down(VK_RWIN)));
+        NativeMethods.SetWindowLongPtr(hwnd, GWL_EXSTYLE, (nint)style);
     }
 
     /// <summary>True when any of Ctrl, Alt, Shift or Win is down.</summary>
@@ -223,50 +128,19 @@ internal static class WinUtil
 
     public static bool Down(int vk) => (NativeMethods.GetAsyncKeyState(vk) & 0x8000) != 0;
 
-    /// <summary>All connected monitors, ordered left to right then top to bottom.</summary>
-    public static List<(nint Handle, RECT Bounds, RECT Work)> Monitors()
-    {
-        var list = new List<(nint, RECT, RECT)>();
-        WinApi.EnumDisplayMonitors(0, 0, (nint monitor, nint hdc, ref RECT rect, nint lParam) =>
-        {
-            var info = new MONITORINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<MONITORINFO>() };
-            if (NativeMethods.GetMonitorInfoW(monitor, ref info))
-            {
-                list.Add((monitor, info.rcMonitor, info.rcWork));
-            }
-
-            return true;
-        }, 0);
-        return [.. list.OrderBy(m => m.Item2.Left).ThenBy(m => m.Item2.Top)];
-    }
-}
-
-internal static class ForegroundHelper
-{
-    /// <summary>
-    /// When WinKnife itself (a flyout, the command bar) holds the foreground, hands it to the topmost foreign window
-    /// and returns true so the caller can wait a moment before sending keys.
-    /// </summary>
-    public static bool HandBackFromOwnWindow()
+    /// <summary>The window handle that currently has the foreground when it is not one of this process' windows (else 0).</summary>
+    public static nint ForeignForeground()
     {
         var foreground = NativeMethods.GetForegroundWindow();
         NativeMethods.GetWindowThreadProcessId(foreground, out var pid);
-        if (foreground == 0 || pid != (uint)Environment.ProcessId)
-        {
-            return false;
-        }
+        return pid == (uint)Environment.ProcessId ? 0 : foreground;
+    }
 
-        foreach (var window in WindowEnumerator.Enumerate(includeMinimized: false))
-        {
-            NativeMethods.GetWindowThreadProcessId(window.Handle, out var windowPid);
-            if (windowPid != (uint)Environment.ProcessId)
-            {
-                WinUtil.Activate(window.Handle);
-                return true;
-            }
-        }
-
-        return false;
+    /// <summary>Lower-cased executable name (<c>chrome.exe</c>) of the process owning the window, or an empty string.</summary>
+    public static string ProcessImageName(nint hwnd)
+    {
+        var path = WinApi.GetWindowProcessPath(hwnd, out _);
+        return string.IsNullOrEmpty(path) ? string.Empty : Path.GetFileName(path).ToLowerInvariant();
     }
 }
 
@@ -291,5 +165,175 @@ internal static class ModifierHelper
                 InputSender.SendKey((ushort)vk, keyUp: true);
             }
         }
+    }
+}
+
+/// <summary>Icons of files, folders and executables (shell icons), cached per key.</summary>
+internal static class ShellIcons
+{
+    private static readonly Dictionary<string, ImageSource?> Cache = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The shell icon of an existing path (large 32 px) or, when it does not exist, of its extension.</summary>
+    public static ImageSource? ForPath(string path, bool small = false)
+    {
+        var exists = File.Exists(path) || Directory.Exists(path);
+        var ext = Path.GetExtension(path);
+        var key = (exists && (ext.Equals(".exe", StringComparison.OrdinalIgnoreCase) || ext.Equals(".lnk", StringComparison.OrdinalIgnoreCase) || ext.Equals(".ico", StringComparison.OrdinalIgnoreCase)))
+            ? path
+            : exists && Directory.Exists(path) ? "<dir>" : "ext:" + ext;
+        key += small ? "|s" : "|l";
+        if (Cache.TryGetValue(key, out var cached))
+        {
+            return cached;
+        }
+
+        ImageSource? image = null;
+        try
+        {
+            var info = new SHFILEINFO();
+            var isDir = Directory.Exists(path);
+            var flags = WinApi.SHGFI_ICON | (small ? WinApi.SHGFI_SMALLICON : WinApi.SHGFI_LARGEICON);
+            var attrs = isDir ? WinApi.FILE_ATTRIBUTE_DIRECTORY : WinApi.FILE_ATTRIBUTE_NORMAL;
+            if (!exists || !(ext.Equals(".exe", StringComparison.OrdinalIgnoreCase) || ext.Equals(".lnk", StringComparison.OrdinalIgnoreCase) || ext.Equals(".ico", StringComparison.OrdinalIgnoreCase)))
+            {
+                flags |= WinApi.SHGFI_USEFILEATTRIBUTES;
+            }
+
+            var lookup = exists && (flags & WinApi.SHGFI_USEFILEATTRIBUTES) == 0 ? path : (isDir ? "folder" : "file" + (string.IsNullOrEmpty(ext) ? ".bin" : ext));
+            if (WinApi.SHGetFileInfoW(lookup, attrs, ref info, (uint)Marshal.SizeOf<SHFILEINFO>(), flags) != 0 && info.hIcon != 0)
+            {
+                try
+                {
+                    image = Imaging.CreateBitmapSourceFromHIcon(info.hIcon, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+                    image.Freeze();
+                }
+                finally
+                {
+                    WinApi.DestroyIcon(info.hIcon);
+                }
+            }
+        }
+        catch (Exception)
+        {
+            image = null;
+        }
+
+        Cache[key] = image;
+        return image;
+    }
+
+    /// <summary>Icon of an executable image given as a full path (null when unknown).</summary>
+    public static ImageSource? ForExecutable(string? exePath) =>
+        string.IsNullOrEmpty(exePath) || !File.Exists(exePath) ? null : ForPath(exePath, small: true);
+}
+
+/// <summary>
+/// Tracks which executables came to the foreground recently (the clipboard names no source for a copy, so a copy is judged
+/// against every app that was in front since the last look). Must be created on a thread with a message loop (the UI thread).
+/// </summary>
+internal sealed class ForegroundTracker : IDisposable
+{
+    private readonly WinApi.WinEventProc _callback;
+    private readonly List<(DateTime At, string Image, string? Path)> _recent = [];
+    private nint _hook;
+
+    public ForegroundTracker()
+    {
+        _callback = OnEvent;
+        _hook = WinApi.SetWinEventHook(WinApi.EVENT_SYSTEM_FOREGROUND, WinApi.EVENT_SYSTEM_FOREGROUND, 0, _callback, 0, 0, WinApi.WINEVENT_OUTOFCONTEXT);
+        Remember(NativeMethods.GetForegroundWindow());
+    }
+
+    public void Dispose()
+    {
+        if (_hook != 0)
+        {
+            WinApi.UnhookWinEvent(_hook);
+            _hook = 0;
+        }
+    }
+
+    /// <summary>Executable names that were in front during the last <paramref name="window"/> (plus the current one).</summary>
+    public IReadOnlyList<(string Image, string? Path)> Recent(TimeSpan window)
+    {
+        Remember(NativeMethods.GetForegroundWindow());
+        var cutoff = DateTime.UtcNow - window;
+        return [.. _recent.Where(r => r.At >= cutoff).Select(r => (r.Image, r.Path))];
+    }
+
+    /// <summary>Raised (UI thread) after the foreground window changed.</summary>
+    public event Action<nint>? ForegroundChanged;
+
+    private void OnEvent(nint hook, uint eventType, nint hwnd, int idObject, int idChild, uint threadId, uint time)
+    {
+        Remember(hwnd);
+        ForegroundChanged?.Invoke(hwnd);
+    }
+
+    private void Remember(nint hwnd)
+    {
+        try
+        {
+            var path = WinApi.GetWindowProcessPath(hwnd, out var pid);
+            if (string.IsNullOrEmpty(path) || pid == (uint)Environment.ProcessId)
+            {
+                return;
+            }
+
+            var image = Path.GetFileName(path).ToLowerInvariant();
+            _recent.RemoveAll(r => r.At < DateTime.UtcNow.AddSeconds(-30));
+            _recent.Add((DateTime.UtcNow, image, path));
+        }
+        catch (Exception)
+        {
+            // best effort
+        }
+    }
+}
+
+/// <summary>Services shared between the feature instances and the (stateless) contribution classes of this project.</summary>
+internal static class Hub
+{
+    /// <summary>The running clipboard history feature, null while it is not installed.</summary>
+    public static IClipboardHost? Clipboard { get; set; }
+
+    /// <summary>The running shelf feature, null while it is not installed.</summary>
+    public static IShelfHost? Shelf { get; set; }
+
+    /// <summary>The running URL cleaner, null while it is not installed.</summary>
+    public static ICleanUrlHost? CleanUrl { get; set; }
+
+    /// <summary>The flat app settings (set by the features and panel sections; used where a context is not at hand).</summary>
+    public static IAppSettings? Settings { get; set; }
+}
+
+internal static class Lists
+{
+    /// <summary>Normalises an app identity (process image name or path) for comparisons.</summary>
+    public static string Key(string identity) => identity.Trim().ToLowerInvariant();
+
+    /// <summary>True when <paramref name="imageName"/> (or its full path) matches an entry of the list.</summary>
+    public static bool Contains(IEnumerable<string> list, string? imageName, string? fullPath = null)
+    {
+        foreach (var raw in list)
+        {
+            var entry = Key(raw);
+            if (entry.Length == 0)
+            {
+                continue;
+            }
+
+            if (imageName is not null && (entry == imageName.ToLowerInvariant() || Path.GetFileName(entry) == imageName.ToLowerInvariant()))
+            {
+                return true;
+            }
+
+            if (fullPath is not null && string.Equals(entry, fullPath, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

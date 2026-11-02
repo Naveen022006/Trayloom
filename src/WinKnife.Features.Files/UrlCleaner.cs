@@ -4,7 +4,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace WinKnife.Features.WindowTools;
+namespace WinKnife.Features.Files;
 
 /// <summary>A cleaned link and the query parameter names taken out of it.</summary>
 internal sealed record UrlCleanResult(string Url, IReadOnlyList<string> Removed);
@@ -74,7 +74,7 @@ internal static class UrlCleaner
 {
     public const string UtmWildcard = "utm_*";
 
-    private static readonly HashSet<string> TrackedParameters = new(StringComparer.Ordinal)
+    internal static readonly HashSet<string> TrackedParameters = new(StringComparer.Ordinal)
     {
         "fbclid", "gclid", "dclid", "gbraid", "wbraid", "msclkid", "yclid",
         "mc_cid", "mc_eid", "igshid", "twclid", "ttclid", "li_fat_id",
@@ -83,7 +83,7 @@ internal static class UrlCleaner
     };
 
     /// <summary>Trackers that only one site uses (matched on the host or any subdomain of it).</summary>
-    private static readonly Dictionary<string, string[]> HostParameters = new(StringComparer.Ordinal)
+    internal static readonly Dictionary<string, string[]> HostParameters = new(StringComparer.Ordinal)
     {
         ["youtube.com"] = ["si", "pp", "feature", "kw"],
         ["youtu.be"] = ["si", "pp", "feature", "kw"],

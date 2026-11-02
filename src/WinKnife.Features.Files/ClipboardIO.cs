@@ -9,7 +9,7 @@ using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media.Imaging;
 
-namespace WinKnife.Features.WindowTools;
+namespace WinKnife.Features.Files;
 
 /// <summary>Registered and standard clipboard formats used by the clipboard features.</summary>
 internal static class ClipFormats
@@ -40,6 +40,12 @@ internal static class ClipFormats
     public static readonly uint FileGroupDescriptor = WinApi.RegisterClipboardFormatW("FileGroupDescriptor");
     public static readonly uint FileContents = WinApi.RegisterClipboardFormatW("FileContents");
     public static readonly uint ShellIdList = WinApi.RegisterClipboardFormatW("Shell IDList Array");
+    public static readonly uint PreferredDropEffect = WinApi.RegisterClipboardFormatW("Preferred DropEffect");
+    public static readonly uint CanUploadToCloud = WinApi.RegisterClipboardFormatW("CanUploadToCloudClipboard");
+    public static readonly uint ViewerIgnore = WinApi.RegisterClipboardFormatW("Clipboard Viewer Ignore");
+    public static readonly uint Rtf = WinApi.RegisterClipboardFormatW("Rich Text Format");
+    public static readonly uint UrlW = WinApi.RegisterClipboardFormatW("UniformResourceLocatorW");
+    public static readonly uint UrlA = WinApi.RegisterClipboardFormatW("UniformResourceLocator");
 }
 
 /// <summary>Low level clipboard access with retries (the clipboard is a shared, briefly locked resource).</summary>
@@ -74,18 +80,210 @@ internal static class ClipboardIO
     /// </summary>
     public static bool IsSensitive()
     {
-        if (IsAvailable(ClipFormats.ExcludeFromMonitor))
+        if (IsAvailable(ClipFormats.ExcludeFromMonitor) || IsAvailable(ClipFormats.ViewerIgnore))
         {
             return true;
         }
 
-        if (!IsAvailable(ClipFormats.CanIncludeInHistory))
+        foreach (var format in new[] { ClipFormats.CanIncludeInHistory, ClipFormats.CanUploadToCloud })
+        {
+            if (!IsAvailable(format))
+            {
+                continue;
+            }
+
+            var bytes = ReadFormat(format);
+            if (bytes is { Length: >= 4 } && BitConverter.ToUInt32(bytes, 0) == 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Every advertised clipboard format id (empty when the clipboard could not be opened).</summary>
+    public static List<uint> Formats()
+    {
+        var list = new List<uint>();
+        if (!Open())
+        {
+            return list;
+        }
+
+        try
+        {
+            for (var format = WinApi.EnumClipboardFormats(0); format != 0; format = WinApi.EnumClipboardFormats(format))
+            {
+                list.Add(format);
+            }
+        }
+        finally
+        {
+            WinApi.CloseClipboard();
+        }
+
+        return list;
+    }
+
+    /// <summary>Paths of a copied file list (CF_HDROP), or null.</summary>
+    public static List<string>? ReadFiles(int maxPaths = 100)
+    {
+        var bytes = ReadFormat(ClipFormats.HDrop);
+        if (bytes is null || bytes.Length < 20)
+        {
+            return null;
+        }
+
+        var offset = BitConverter.ToInt32(bytes, 0);
+        var wide = BitConverter.ToInt32(bytes, 16) != 0;
+        if (offset < 20 || offset >= bytes.Length)
+        {
+            return null;
+        }
+
+        var text = wide
+            ? Encoding.Unicode.GetString(bytes, offset, bytes.Length - offset)
+            : Encoding.Default.GetString(bytes, offset, bytes.Length - offset);
+        var paths = new List<string>();
+        foreach (var part in text.Split('\0'))
+        {
+            if (part.Length == 0)
+            {
+                // An empty entry ends the list.
+                if (paths.Count > 0)
+                {
+                    break;
+                }
+
+                continue;
+            }
+
+            paths.Add(part);
+            if (paths.Count >= maxPaths)
+            {
+                break;
+            }
+        }
+
+        return paths.Count == 0 ? null : paths;
+    }
+
+    /// <summary>The <c>Preferred DropEffect</c> (1 copy, 2 move) of the current clipboard content, or 0 when absent.</summary>
+    public static uint ReadDropEffect()
+    {
+        var bytes = ReadFormat(ClipFormats.PreferredDropEffect);
+        return bytes is { Length: >= 4 } ? BitConverter.ToUInt32(bytes, 0) : 0;
+    }
+
+    /// <summary>Builds a CF_HDROP payload (wide paths).</summary>
+    public static byte[] BuildHDrop(IEnumerable<string> paths)
+    {
+        var joined = string.Join('\0', paths) + "\0\0";
+        var chars = Encoding.Unicode.GetBytes(joined);
+        var data = new byte[20 + chars.Length];
+        BitConverter.GetBytes(20).CopyTo(data, 0);
+        BitConverter.GetBytes(1).CopyTo(data, 16);
+        chars.CopyTo(data, 20);
+        return data;
+    }
+
+    /// <summary>Replaces the clipboard with a file list (copy or move).</summary>
+    public static bool WriteFiles(IReadOnlyList<string> paths, bool move = false, bool markOwn = true)
+    {
+        if (paths.Count == 0 || !Open())
         {
             return false;
         }
 
-        var bytes = ReadFormat(ClipFormats.CanIncludeInHistory);
-        return bytes is { Length: >= 4 } && BitConverter.ToUInt32(bytes, 0) == 0;
+        try
+        {
+            WinApi.EmptyClipboard();
+            var ok = SetBytes(ClipFormats.HDrop, BuildHDrop(paths));
+            SetBytes(ClipFormats.PreferredDropEffect, BitConverter.GetBytes(move ? WinApi.DROPEFFECT_MOVE : WinApi.DROPEFFECT_COPY));
+            if (markOwn)
+            {
+                SetBytes(ClipFormats.OwnWrite, [1]);
+            }
+
+            return ok;
+        }
+        finally
+        {
+            WinApi.CloseClipboard();
+        }
+    }
+
+    /// <summary>Marks the current file list as copy instead of move without touching the files (cancels a cut).</summary>
+    public static bool RewriteAsCopy()
+    {
+        var paths = ReadFiles(10_000);
+        return paths is not null && WriteFiles(paths, move: false, markOwn: true);
+    }
+
+    /// <summary>Empties the clipboard. Returns the sequence number right after clearing.</summary>
+    public static uint Clear()
+    {
+        if (!Open())
+        {
+            return WinApi.GetClipboardSequenceNumber();
+        }
+
+        try
+        {
+            WinApi.EmptyClipboard();
+        }
+        finally
+        {
+            WinApi.CloseClipboard();
+        }
+
+        return WinApi.GetClipboardSequenceNumber();
+    }
+
+    /// <summary>Wraps an HTML fragment in the CF_HTML header.</summary>
+    public static byte[] BuildHtmlFormat(string fragment)
+    {
+        const string header = "Version:0.9\r\nStartHTML:{0:D10}\r\nEndHTML:{1:D10}\r\nStartFragment:{2:D10}\r\nEndFragment:{3:D10}\r\n";
+        const string pre = "<html><body><!--StartFragment-->";
+        const string post = "<!--EndFragment--></body></html>";
+        var headerLength = string.Format(header, 0, 0, 0, 0).Length;
+        var startFragment = headerLength + Encoding.UTF8.GetByteCount(pre);
+        var endFragment = startFragment + Encoding.UTF8.GetByteCount(fragment);
+        var endHtml = endFragment + Encoding.UTF8.GetByteCount(post);
+        return Encoding.UTF8.GetBytes(string.Format(header, headerLength, endHtml, startFragment, endFragment) + pre + fragment + post + "\0");
+    }
+
+    /// <summary>Writes text plus an HTML flavour (used for piles that mix text and images).</summary>
+    public static bool WriteRich(string plain, string htmlFragment, byte[]? firstPng = null)
+    {
+        if (!Open())
+        {
+            return false;
+        }
+
+        try
+        {
+            WinApi.EmptyClipboard();
+            var ok = true;
+            if (plain.Length > 0)
+            {
+                ok &= SetBytes(ClipFormats.UnicodeText, Encoding.Unicode.GetBytes(plain + "\0"));
+            }
+
+            ok &= SetBytes(ClipFormats.Html, BuildHtmlFormat(htmlFragment));
+            if (firstPng is not null)
+            {
+                SetBytes(ClipFormats.Png, firstPng);
+            }
+
+            SetBytes(ClipFormats.OwnWrite, [1]);
+            return ok;
+        }
+        finally
+        {
+            WinApi.CloseClipboard();
+        }
     }
 
     /// <summary>Reads Unicode text from the clipboard, or null.</summary>
@@ -325,7 +523,10 @@ internal static class ClipboardIO
         return true;
     }
 
-    /// <summary>Reads an image from the clipboard and returns it as PNG bytes (preferring the lossless alpha PNG format).</summary>
+    /// <summary>
+    /// Reads an image from the clipboard and returns it as PNG bytes (the lossless alpha PNG format first, then DIB/DIBV5).
+    /// Works on any thread (no WPF clipboard access).
+    /// </summary>
     public static byte[]? ReadImagePng()
     {
         var png = ReadFormat(ClipFormats.Png);
@@ -334,40 +535,57 @@ internal static class ClipboardIO
             return png;
         }
 
-        if (!IsAvailable(ClipFormats.DibV5) && !IsAvailable(ClipFormats.Dib) && !IsAvailable(ClipFormats.Bitmap))
-        {
-            return null;
-        }
+        var dib = IsAvailable(ClipFormats.DibV5) ? ReadFormat(ClipFormats.DibV5) : null;
+        dib ??= IsAvailable(ClipFormats.Dib) ? ReadFormat(ClipFormats.Dib) : null;
+        return dib is null ? null : DibToPng(dib);
+    }
 
-        for (var attempt = 0; attempt < 5; attempt++)
+    /// <summary>Converts a packed DIB (BITMAPINFOHEADER / V4 / V5 + pixels) to PNG bytes.</summary>
+    public static byte[]? DibToPng(byte[] dib)
+    {
+        try
         {
-            try
-            {
-                var image = Clipboard.GetImage();
-                if (image is null)
-                {
-                    return null;
-                }
-
-                var encoder = new PngBitmapEncoder();
-                encoder.Frames.Add(BitmapFrame.Create(image));
-                using var stream = new MemoryStream();
-                encoder.Save(stream);
-                return stream.ToArray();
-            }
-            catch (COMException)
-            {
-                Thread.Sleep(20);
-            }
-            catch (Exception)
+            if (dib.Length < 40)
             {
                 return null;
             }
-        }
 
-        return null;
+            var headerSize = BitConverter.ToInt32(dib, 0);
+            var bitCount = BitConverter.ToInt16(dib, 14);
+            var compression = BitConverter.ToInt32(dib, 16);
+            var colorsUsed = BitConverter.ToInt32(dib, 32);
+            var tableEntries = bitCount <= 8 ? (colorsUsed != 0 ? colorsUsed : 1 << bitCount) : colorsUsed;
+            var masks = compression == 3 && headerSize == 40 ? 12 : 0;
+            var pixelOffset = 14 + headerSize + masks + tableEntries * 4;
+            var file = new byte[14 + dib.Length];
+            file[0] = (byte)'B';
+            file[1] = (byte)'M';
+            BitConverter.GetBytes(file.Length).CopyTo(file, 2);
+            BitConverter.GetBytes(pixelOffset).CopyTo(file, 10);
+            Buffer.BlockCopy(dib, 0, file, 14, dib.Length);
+
+            using var input = new MemoryStream(file);
+            var decoder = BitmapDecoder.Create(input, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+            BitmapSource frame = decoder.Frames[0];
+            if (headerSize < 108 && bitCount == 32)
+            {
+                // No alpha information in a plain 32 bit DIB: treat it as opaque.
+                frame = new FormatConvertedBitmap(frame, System.Windows.Media.PixelFormats.Bgr32, null, 0);
+            }
+
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(frame));
+            using var output = new MemoryStream();
+            encoder.Save(output);
+            return output.ToArray();
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 }
+
 
 /// <summary>An in-memory copy of every raw (HGLOBAL) clipboard format, used to restore the clipboard after a temporary change.</summary>
 internal sealed class ClipboardSnapshot
@@ -377,6 +595,9 @@ internal sealed class ClipboardSnapshot
     public bool IsEmpty => _items.Count == 0;
 
     public bool HasFileData { get; private set; }
+
+    /// <summary>True when some advertised format could not be copied (restoring would lose data), so a transient paste must fail open.</summary>
+    public bool Unpreservable { get; private set; }
 
     private static bool IsSkipped(uint format) =>
         format is ClipFormats.Bitmap or ClipFormats.MetafilePict or ClipFormats.Palette or ClipFormats.EnhMetafile
@@ -404,24 +625,32 @@ internal sealed class ClipboardSnapshot
 
                 if (IsSkipped(format))
                 {
+                    if (format is ClipFormats.MetafilePict or ClipFormats.EnhMetafile || (format >= 0x80 && format <= 0x8F) || (format >= 0x200 && format <= 0x3FF))
+                    {
+                        snapshot.Unpreservable = true;
+                    }
+
                     continue;
                 }
 
                 var handle = WinApi.GetClipboardData(format);
                 if (handle == 0)
                 {
+                    snapshot.Unpreservable = true;
                     continue;
                 }
 
                 var size = WinApi.GlobalSize(handle);
                 if (size == 0 || total + (long)size > ClipboardIO.MaxSnapshotBytes)
                 {
+                    snapshot.Unpreservable = true;
                     continue;
                 }
 
                 var pointer = WinApi.GlobalLock(handle);
                 if (pointer == 0)
                 {
+                    snapshot.Unpreservable = true;
                     continue;
                 }
 

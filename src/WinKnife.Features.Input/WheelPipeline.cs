@@ -24,6 +24,14 @@ internal struct WheelEvent
     /// <summary>Event time in ms.</summary>
     public uint Timestamp;
 
+    /// <summary>Pointer position in physical pixels.</summary>
+    public int X;
+
+    public int Y;
+
+    /// <summary>True for a genuine wheel notch (not injected, a multiple of 120): mice, never touchpads or remote tools.</summary>
+    public bool Notch;
+
     /// <summary>True once a stage changed <see cref="Delta"/> or <see cref="Horizontal"/>.</summary>
     public bool Changed;
 }
@@ -49,7 +57,7 @@ internal interface IWheelStage
 /// One ordered chain for every feature that touches the mouse wheel. Without it the features would each swallow
 /// and re-inject the wheel event and hide it from one another (injected events are tagged and ignored), so
 /// smooth + invert + horizontal could never compose. Chain order (lower Order first):
-/// 10 horizontal-scroll, 20 invert-scroll, 30 linear-scroll, 40 smooth-scroll.
+/// 5 zoom, 10 horizontal-scroll, 20 invert-scroll, 30 linear-scroll, 40 smooth-scroll.
 /// Each running wheel feature registers a stage and subscribes a hook handler that calls <see cref="Handle"/>;
 /// only the handler of the first registered stage actually processes the event, so it runs exactly once.
 /// If no stage modifies the event it passes through untouched; otherwise the original is swallowed and the final
@@ -107,6 +115,9 @@ internal static class WheelPipeline
             Injected = source.IsInjected,
             Modifiers = source.Modifiers,
             Timestamp = source.Timestamp,
+            X = source.X,
+            Y = source.Y,
+            Notch = !source.IsInjected && source.WheelDelta % 120 == 0,
         };
 
         foreach (var registration in chain)
@@ -131,7 +142,7 @@ internal static class WheelPipeline
     }
 }
 
-/// <summary>Base for features that contribute a stage to the <see cref="WheelPipeline"/>.</summary>
+/// <summary>Base for features that contribute a stage to the <see cref="WheelPipeline"/> while they are engaged.</summary>
 public abstract class WheelFeatureBase : InputFeatureBase
 {
     private IWheelStage? _stage;
@@ -143,7 +154,11 @@ public abstract class WheelFeatureBase : InputFeatureBase
     {
     }
 
-    protected sealed override void OnStart()
+    protected virtual void OnWheelStopped()
+    {
+    }
+
+    protected sealed override void Engage()
     {
         var stage = CreateStage();
         _stage = stage;
@@ -152,5 +167,9 @@ public abstract class WheelFeatureBase : InputFeatureBase
         OnWheelStarted();
     }
 
-    protected override void OnStop() => _stage = null;
+    protected sealed override void Disengage()
+    {
+        OnWheelStopped();
+        _stage = null;
+    }
 }

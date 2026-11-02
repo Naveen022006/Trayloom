@@ -4,9 +4,9 @@
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace WinKnife.Features.Tools;
+namespace WinKnife.Features.Capture;
 
-/// <summary>P/Invoke declarations used only by the Tools project.</summary>
+/// <summary>P/Invoke declarations used only by the Capture project (screen grabbing, cursor, display affinity).</summary>
 internal static class N
 {
     public const int SM_XVIRTUALSCREEN = 76;
@@ -15,76 +15,133 @@ internal static class N
     public const int SM_CYVIRTUALSCREEN = 79;
     public const uint SRCCOPY = 0x00CC0020;
     public const uint CAPTUREBLT = 0x40000000;
-    public const uint WM_SETTINGCHANGE = 0x001A;
-    public const uint WM_COMMAND = 0x0111;
-    public const uint SMTO_ABORTIFHUNG = 0x0002;
-    public static readonly nint HWND_BROADCAST = new(0xFFFF);
-    public const uint SPI_SETDESKWALLPAPER = 0x0014;
-    public const uint SPIF_UPDATEINIFILE = 0x01;
-    public const uint SPIF_SENDCHANGE = 0x02;
     public const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
     public const int DWMWA_CLOAKED = 14;
-    public const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
-    public const uint SHERB_NOCONFIRMATION = 0x1;
-    public const uint SHERB_NOPROGRESSUI = 0x2;
-    public const uint SHERB_NOSOUND = 0x4;
-    public const int SW_SHOWNOACTIVATE = 4;
+    public const uint WDA_NONE = 0;
+    public const uint WDA_EXCLUDEFROMCAPTURE = 0x11;
+    public const int GW_OWNER = 4;
+    public const int GWL_EXSTYLE = -20;
+    public const long WS_EX_TRANSPARENT = 0x20;
+    public const long WS_EX_LAYERED = 0x80000;
+    public const long WS_EX_TOOLWINDOW = 0x80;
+    public const long WS_EX_NOACTIVATE = 0x08000000;
+    public const uint ES_CONTINUOUS = 0x80000000;
+    public const uint ES_SYSTEM_REQUIRED = 0x1;
+    public const uint ES_DISPLAY_REQUIRED = 0x2;
+    public const uint DI_NORMAL = 3;
+    public const int CURSOR_SHOWING = 1;
+    public const int CURSOR_SUPPRESSED = 2;
 
-    private const string User32 = "user32.dll";
-    private const string Gdi32 = "gdi32.dll";
-    private const string Kernel32 = "kernel32.dll";
-    private const string Shell32 = "shell32.dll";
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT
+    {
+        public int Left, Top, Right, Bottom;
+        public readonly int Width => Right - Left;
+        public readonly int Height => Bottom - Top;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POINT
+    {
+        public int X, Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct CURSORINFO
+    {
+        public int cbSize;
+        public int flags;
+        public nint hCursor;
+        public POINT ptScreenPos;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ICONINFO
+    {
+        public bool fIcon;
+        public int xHotspot;
+        public int yHotspot;
+        public nint hbmMask;
+        public nint hbmColor;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct MONITORINFOEX
+    {
+        public int cbSize;
+        public RECT rcMonitor;
+        public RECT rcWork;
+        public uint dwFlags;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+        public string szDevice;
+    }
 
     public delegate bool EnumWindowsProc(nint hWnd, nint lParam);
 
-    [DllImport(User32)] public static extern int GetSystemMetrics(int index);
-    [DllImport(User32)] public static extern nint GetDC(nint hwnd);
-    [DllImport(User32)] public static extern int ReleaseDC(nint hwnd, nint hdc);
-    [DllImport(User32)] public static extern bool EnumWindows(EnumWindowsProc proc, nint lParam);
-    [DllImport(User32)] public static extern bool IsWindowVisible(nint hwnd);
-    [DllImport(User32)] public static extern bool IsIconic(nint hwnd);
-    [DllImport(User32, CharSet = CharSet.Unicode)] public static extern int GetWindowTextW(nint hwnd, StringBuilder text, int max);
-    [DllImport(User32, CharSet = CharSet.Unicode)] public static extern int GetClassNameW(nint hwnd, StringBuilder text, int max);
-    [DllImport(User32, CharSet = CharSet.Unicode)] public static extern nint FindWindowW(string? cls, string? title);
-    [DllImport(User32, CharSet = CharSet.Unicode)] public static extern nint FindWindowExW(nint parent, nint after, string? cls, string? title);
-    [DllImport(User32)] public static extern nint SendMessageW(nint hwnd, uint msg, nint wParam, nint lParam);
-    [DllImport(User32, CharSet = CharSet.Unicode)] public static extern nint SendMessageTimeoutW(nint hwnd, uint msg, nint wParam, string lParam, uint flags, uint timeout, out nint result);
-    [DllImport(User32)] public static extern bool LockWorkStation();
-    [DllImport(User32)] public static extern bool EnumChildWindows(nint parent, EnumWindowsProc proc, nint lParam);
-    [DllImport(User32, CharSet = CharSet.Unicode)] public static extern bool SystemParametersInfoW(uint action, uint param, string? vparam, uint winIni);
-    [DllImport(User32)] public static extern bool ShowWindow(nint hwnd, int cmd);
+    public delegate bool MonitorEnumProc(nint hMonitor, nint hdc, ref RECT rect, nint data);
 
-    [DllImport(Gdi32)] public static extern nint CreateCompatibleDC(nint hdc);
-    [DllImport(Gdi32)] public static extern nint CreateCompatibleBitmap(nint hdc, int w, int h);
-    [DllImport(Gdi32)] public static extern nint SelectObject(nint hdc, nint obj);
-    [DllImport(Gdi32)] public static extern bool BitBlt(nint dest, int x, int y, int w, int h, nint src, int sx, int sy, uint rop);
-    [DllImport(Gdi32)] public static extern bool DeleteObject(nint obj);
-    [DllImport(Gdi32)] public static extern bool DeleteDC(nint hdc);
+    [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
+    [DllImport("user32.dll")] public static extern nint GetDC(nint hwnd);
+    [DllImport("user32.dll")] public static extern int ReleaseDC(nint hwnd, nint hdc);
+    [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc proc, nint lParam);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(nint hwnd);
+    [DllImport("user32.dll")] public static extern bool IsIconic(nint hwnd);
+    [DllImport("user32.dll")] public static extern bool IsZoomed(nint hwnd);
+    [DllImport("user32.dll")] public static extern nint GetWindow(nint hwnd, int cmd);
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(nint hwnd, out int pid);
+    [DllImport("user32.dll")] public static extern bool GetWindowRect(nint hwnd, out RECT rect);
+    [DllImport("user32.dll")] public static extern nint GetForegroundWindow();
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(nint hwnd);
+    [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT pt);
+    [DllImport("user32.dll")] public static extern bool GetCursorInfo(ref CURSORINFO info);
+    [DllImport("user32.dll")] public static extern bool GetIconInfo(nint icon, out ICONINFO info);
+    [DllImport("user32.dll")] public static extern bool DrawIconEx(nint hdc, int x, int y, nint icon, int w, int h, int step, nint brush, uint flags);
+    [DllImport("user32.dll")] public static extern bool SetWindowDisplayAffinity(nint hwnd, uint affinity);
+    [DllImport("user32.dll")] public static extern bool EnumDisplayMonitors(nint hdc, nint clip, MonitorEnumProc proc, nint data);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern bool GetMonitorInfoW(nint monitor, ref MONITORINFOEX info);
+    [DllImport("user32.dll")] public static extern nint MonitorFromPoint(POINT pt, uint flags);
+    [DllImport("user32.dll")] public static extern nint MonitorFromWindow(nint hwnd, uint flags);
+    [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int vk);
+    [DllImport("user32.dll")] public static extern bool PrintWindow(nint hwnd, nint hdc, uint flags);
+    [DllImport("user32.dll")] public static extern uint GetClipboardSequenceNumber();
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] public static extern nint GetWindowLongPtr(nint hwnd, int index);
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] public static extern nint SetWindowLongPtr(nint hwnd, int index, nint value);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowTextW(nint hwnd, StringBuilder text, int max);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassNameW(nint hwnd, StringBuilder text, int max);
+    [DllImport("user32.dll")] public static extern bool SetWindowPos(nint hwnd, nint after, int x, int y, int cx, int cy, uint flags);
 
-    [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(nint hwnd, int attr, out WinKnife.Core.Native.RECT value, int size);
-    [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(nint hwnd, int attr, out int value, int size);
+    [DllImport("gdi32.dll")] public static extern nint CreateCompatibleDC(nint hdc);
+    [DllImport("gdi32.dll")] public static extern nint CreateCompatibleBitmap(nint hdc, int w, int h);
+    [DllImport("gdi32.dll")] public static extern nint SelectObject(nint hdc, nint obj);
+    [DllImport("gdi32.dll")] public static extern bool BitBlt(nint dest, int x, int y, int w, int h, nint src, int sx, int sy, uint rop);
+    [DllImport("gdi32.dll")] public static extern bool DeleteObject(nint obj);
+    [DllImport("gdi32.dll")] public static extern bool DeleteDC(nint hdc);
+    [DllImport("gdi32.dll")] public static extern int GetDIBits(nint hdc, nint bmp, uint start, uint lines, nint bits, ref BITMAPINFO bmi, uint usage);
 
-    [DllImport(Kernel32)] public static extern nint OpenProcess(uint access, bool inherit, int pid);
-    [DllImport(Kernel32)] public static extern bool CloseHandle(nint handle);
-    [DllImport(Kernel32, CharSet = CharSet.Unicode)] public static extern bool QueryFullProcessImageNameW(nint process, uint flags, StringBuilder name, ref int size);
-
-    [DllImport(Shell32, CharSet = CharSet.Unicode)] public static extern int SHEmptyRecycleBinW(nint hwnd, string? root, uint flags);
-    [DllImport(Shell32, CharSet = CharSet.Unicode)] public static extern int SHQueryRecycleBinW(string? root, ref SHQUERYRBINFO info);
-    [DllImport(Shell32)] public static extern void SHChangeNotify(int eventId, uint flags, nint item1, nint item2);
-
-    [DllImport("iphlpapi.dll", SetLastError = true)]
-    public static extern uint GetExtendedTcpTable(nint table, ref int size, bool order, int family, int tableClass, uint reserved);
-
-    [DllImport("iphlpapi.dll", SetLastError = true)]
-    public static extern uint GetExtendedUdpTable(nint table, ref int size, bool order, int family, int tableClass, uint reserved);
-
-    [StructLayout(LayoutKind.Sequential, Pack = 4)]
-    public struct SHQUERYRBINFO
+    [StructLayout(LayoutKind.Sequential)]
+    public struct BITMAPINFOHEADER
     {
-        public int cbSize;
-        public long i64Size;
-        public long i64NumItems;
+        public int biSize, biWidth, biHeight;
+        public short biPlanes, biBitCount;
+        public int biCompression, biSizeImage, biXPelsPerMeter, biYPelsPerMeter, biClrUsed, biClrImportant;
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct BITMAPINFO
+    {
+        public BITMAPINFOHEADER bmiHeader;
+        public int bmiColors;
+    }
+
+    [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(nint hwnd, int attr, out RECT value, int size);
+    [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(nint hwnd, int attr, out int value, int size);
+    [DllImport("dwmapi.dll")] public static extern int DwmSetWindowAttribute(nint hwnd, int attr, ref int value, int size);
+    [DllImport("shcore.dll")] public static extern int GetDpiForMonitor(nint monitor, int type, out uint x, out uint y);
+    [DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint flags);
+    [DllImport("kernel32.dll")] public static extern bool QueryPerformanceCounter(out long value);
+    [DllImport("kernel32.dll")] public static extern bool QueryPerformanceFrequency(out long value);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] public static extern bool GetDiskFreeSpaceExW(string dir, out ulong free, out ulong total, out ulong totalFree);
 
     public static string WindowText(nint hwnd)
     {
@@ -100,24 +157,14 @@ internal static class N
         return sb.ToString();
     }
 
-    /// <summary>Full image path of a process id, or null when it cannot be queried.</summary>
-    public static string? ProcessPath(int pid)
+    /// <summary>Hides a window from screenshots, recordings and the screen grabber (Windows 10 2004+).</summary>
+    public static void ExcludeFromCapture(nint hwnd, bool exclude = true)
     {
-        var handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
-        if (handle == 0)
+        if (hwnd != 0)
         {
-            return null;
-        }
-
-        try
-        {
-            var sb = new StringBuilder(1024);
-            var size = sb.Capacity;
-            return QueryFullProcessImageNameW(handle, 0, sb, ref size) ? sb.ToString() : null;
-        }
-        finally
-        {
-            CloseHandle(handle);
+            SetWindowDisplayAffinity(hwnd, exclude ? WDA_EXCLUDEFROMCAPTURE : WDA_NONE);
         }
     }
+
+    public static bool IsKeyDown(int vk) => (GetAsyncKeyState(vk) & 0x8000) != 0;
 }

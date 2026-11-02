@@ -1,88 +1,115 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // WinKnife — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
 
-using System.Windows;
+using System.Text.Json;
 using WinKnife.Core;
 using WinKnife.Core.Native;
-using WinKnife.Core.Ui;
 
 namespace WinKnife.Features.Input;
 
 /// <summary>
-/// Turns "Enhance pointer precision" (mouse acceleration) off while the feature runs and puts back the exact
-/// previous SPI_GETMOUSE values on Stop. The change is session-only (no SPIF_UPDATEINIFILE), so a crash or log-off
-/// can never leave it disabled permanently; the original values are also kept in the feature's settings
-/// (<c>savedMouse</c>) so the next start can restore them after an unclean exit.
+/// "Disable mouse acceleration": turns "Enhance pointer precision" off while the switch is on and puts back the exact
+/// previous SPI_GETMOUSE triple when it is turned off, the feature is uninstalled or WinKnife quits. The change is
+/// session-only (no SPIF_UPDATEINIFILE), and the original triple is journaled in the feature data folder before
+/// anything is changed so the next launch restores it after an unclean exit. Pointer speed is never changed.
 /// </summary>
-public sealed class MouseAccelerationFeature : IFeature
+public sealed class MouseAccelerationFeature : InputFeatureBase
 {
-    private const string BackupKey = "savedMouse";
+    private const string JournalFile = "mouse-acceleration.json";
 
-    private IFeatureContext? _context;
     private int[]? _original;
-    private bool _disabled;
 
-    public string Id => "mouse-acceleration";
+    public override string Id => "mouse-acceleration";
 
-    public string Name => "Disable mouse acceleration";
+    protected override bool IsEnabled() => App.Get<bool>(K.AccelDisabled);
 
-    public string Description => "Turn off Windows pointer acceleration so the cursor moves the same distance at any speed.";
+    protected override IEnumerable<FeatureAction> ExtraActions => [];
 
-    public FeatureGroup Group => FeatureGroup.MouseKeyboard;
+    protected override void OnInstalled() => RecoverFromCrash();
 
-    public IReadOnlyList<FeatureAction> Actions =>
-    [
-        new FeatureAction(
-            "toggle",
-            _disabled ? "Restore pointer acceleration" : "Disable pointer acceleration",
-            () => SetDisabled(!_disabled),
-            ""),
-    ];
-
-    public void Start(IFeatureContext context)
+    protected override void Engage()
     {
-        _context = context;
         var current = new int[3];
         if (!NativeMethods.SystemParametersInfoW(NativeConstants.SPI_GETMOUSE, 0, current, 0))
         {
-            context.Log.Error("SPI_GETMOUSE failed; mouse acceleration is left unchanged");
+            Context!.Log.Error("SPI_GETMOUSE failed; mouse acceleration is left unchanged");
             return;
         }
 
-        // After a crash the saved copy holds the real original while the live values are still "off".
-        var backup = context.Settings.Get<int[]?>(BackupKey, null);
-        _original = backup is { Length: 3 } && current[2] == 0 ? backup : current;
-        context.Settings.Set<int[]?>(BackupKey, _original);
-        SetDisabled(true);
+        _original = (int[])current.Clone();
+        WriteJournal(_original);
+        Apply(disabled: true);
     }
 
-    public void Stop()
+    protected override void Disengage()
     {
-        if (_original is not null)
+        if (_original is null)
         {
-            SetDisabled(false);
-            _context?.Settings.Set<int[]?>(BackupKey, null);
+            return;
         }
 
+        Apply(disabled: false);
+        DeleteJournal();
         _original = null;
-        _context = null;
     }
 
-    public FrameworkElement? CreateSettingsView()
+    private string JournalPath => System.IO.Path.Combine(Context!.DataDirectory, JournalFile);
+
+    // After a crash the journal still holds the real original while the live values are still "off".
+    private void RecoverFromCrash()
     {
-        if (_context is null)
+        try
         {
-            return null;
-        }
+            if (!File.Exists(JournalPath))
+            {
+                return;
+            }
 
-        return new SettingsViewBuilder(_context.Settings)
-            .AddNote("While this feature is installed, \"Enhance pointer precision\" is switched off, and switched back to its previous state when the feature is removed or WinKnife quits. Pointer speed itself is not changed; adjust it in Windows mouse settings.")
-            .Build();
+            var saved = JsonSerializer.Deserialize<int[]>(File.ReadAllText(JournalPath));
+            if (saved is { Length: 3 })
+            {
+                NativeMethods.SystemParametersInfoW(NativeConstants.SPI_SETMOUSE, 0, saved, NativeConstants.SPIF_SENDCHANGE);
+                Context!.Log.Info("Pointer acceleration restored from the recovery journal");
+            }
+
+            DeleteJournal();
+        }
+        catch (Exception ex)
+        {
+            Context?.Log.Error("Reading the mouse acceleration journal failed", ex);
+        }
     }
 
-    private void SetDisabled(bool disabled)
+    private void WriteJournal(int[] values)
     {
-        if (_original is null || _context is null)
+        try
+        {
+            File.WriteAllText(JournalPath, JsonSerializer.Serialize(values));
+        }
+        catch (Exception ex)
+        {
+            Context?.Log.Error("Writing the mouse acceleration journal failed", ex);
+        }
+    }
+
+    private void DeleteJournal()
+    {
+        try
+        {
+            if (File.Exists(JournalPath))
+            {
+                File.Delete(JournalPath);
+            }
+        }
+        catch
+        {
+            // best effort
+        }
+    }
+
+    private void Apply(bool disabled)
+    {
+        if (_original is null || Context is null)
         {
             return;
         }
@@ -95,14 +122,13 @@ public sealed class MouseAccelerationFeature : IFeature
 
         if (NativeMethods.SystemParametersInfoW(NativeConstants.SPI_SETMOUSE, 0, values, NativeConstants.SPIF_SENDCHANGE))
         {
-            _disabled = disabled;
-            _context.Log.Info(disabled
+            Context.Log.Info(disabled
                 ? "Pointer acceleration disabled"
                 : $"Pointer acceleration restored ({values[0]}, {values[1]}, {values[2]})");
         }
         else
         {
-            _context.Log.Error($"SPI_SETMOUSE failed (Win32 error {System.Runtime.InteropServices.Marshal.GetLastWin32Error()})");
+            Context.Log.Error($"SPI_SETMOUSE failed (Win32 error {System.Runtime.InteropServices.Marshal.GetLastWin32Error()})");
         }
     }
 }

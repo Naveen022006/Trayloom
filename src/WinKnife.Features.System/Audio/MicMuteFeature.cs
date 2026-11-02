@@ -2,52 +2,54 @@
 // WinKnife — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
 
 using System.Windows;
-using System.Windows.Input;
+using System.Windows.Controls;
 using NAudio.CoreAudioApi;
 using WinKnife.Core;
 using WinKnife.Core.Ui;
 
 namespace WinKnife.Features.SystemTools;
 
-/// <summary>A hotkey mutes and unmutes your microphone system-wide, with an on-screen indicator while muted.</summary>
-public sealed class MicMuteFeature : IFeature
+/// <summary>
+/// Mute microphone (spec 05 D4): mutes the switch of EVERY capture endpoint, falling back to zero input volume (the previous level is
+/// kept and given back on unmute). The state persists across launches, device changes re-apply an active mute, and a device this app
+/// changed gets its level back when it returns.
+/// </summary>
+public sealed class MicMuteFeature : IFeature, IMicMuteState
 {
-    private static readonly Hotkey DefaultHotkey = new(HotkeyModifiers.Control | HotkeyModifiers.Alt, Key.M);
-
-    private IFeatureContext? _context;
-    private HotkeyBinding? _hotkey;
+    private IFeatureContext? _ctx;
+    private IDisposable? _shortcut;
     private DeviceWatcher? _watcher;
-    private MMDevice? _device;
-    private Osd? _toast;
-    private Osd? _indicator;
+    private Osd? _osd;
     private bool _muted;
-    private bool _mutedByUs;
+    private bool _busy;
+
+    public static MicMuteFeature? Instance { get; private set; }
 
     public string Id => "mic-mute";
 
-    public string Name => "Mute microphone";
+    public bool IsMuted => _muted;
 
-    public string Description => "Mute or unmute your microphone from anywhere with one hotkey, with a clear on-screen indicator.";
-
-    public FeatureGroup Group => FeatureGroup.Sound;
+    public event Action? Changed;
 
     public IReadOnlyList<FeatureAction> Actions =>
     [
-        new FeatureAction("toggle", _muted ? "Unmute microphone" : "Mute microphone", Toggle, _muted ? "" : ""),
+        new FeatureAction("toggle", _muted ? Strings.MicMute.Unmute : Strings.MicMute.Title, Toggle, _muted ? "" : ""),
     ];
 
     public void Start(IFeatureContext context)
     {
-        _context = context;
-        _hotkey = new HotkeyBinding(context, "hotkey", DefaultHotkey, Toggle);
-        context.Settings.Changed += OnSettingChanged;
+        _ctx = context;
+        Instance = this;
+        SystemDefaults.Register(context.App);
+        context.Services.Provide<IMicMuteState>(this);
+        _shortcut = context.Shortcuts.Bind("micMute", Toggle);
         try
         {
             _watcher = new DeviceWatcher((change, _) =>
             {
-                if (change == DeviceChange.DefaultChanged)
+                if (change != DeviceChange.StateChanged || true)
                 {
-                    _context?.Ui.BeginInvoke(Attach);
+                    _ctx?.Ui.BeginInvoke(Reapply);
                 }
             });
         }
@@ -56,191 +58,256 @@ public sealed class MicMuteFeature : IFeature
             context.Log.Error("Could not watch audio devices", ex);
         }
 
-        Attach();
-        UpdateIndicator();
+        // The mute persists across relaunch.
+        _muted = context.App.Get<bool>("micMuteActive");
+        if (_muted)
+        {
+            Reapply();
+        }
+
+        RestoreReturned();
     }
 
     public void Stop()
     {
-        if (_context is not null)
-        {
-            _context.Settings.Changed -= OnSettingChanged;
-        }
-
-        // Do not leave the microphone muted when the feature goes away.
-        if (_mutedByUs && _muted)
-        {
-            ApplyMute(false);
-        }
-
-        _hotkey?.Dispose();
-        _hotkey = null;
+        _shortcut?.Dispose();
+        _shortcut = null;
         _watcher?.Dispose();
         _watcher = null;
-        Detach();
-        _toast?.Close();
-        _toast = null;
-        _indicator?.Close();
-        _indicator = null;
-        _mutedByUs = false;
-        _muted = false;
-        _context = null;
+        _ctx?.Services.Withdraw<IMicMuteState>(this);
+        _osd?.Close();
+        _osd = null;
+        if (Instance == this)
+        {
+            Instance = null;
+        }
+
+        _ctx = null;
     }
 
-    public FrameworkElement? CreateSettingsView() =>
-        _context is null
-            ? null
-            : new SettingsViewBuilder(_context.Settings)
-                .AddHotkey("hotkey", "Toggle microphone mute", DefaultHotkey)
-                .AddToggle("showIndicator", "Show an indicator while muted", true, "A small pill in the top-right corner of the main screen.")
-                .AddToggle("allDevices", "Mute every microphone", false, "Off: only the default microphone. On: all active recording devices.")
-                .Build();
-
-    private void Toggle()
+    /// <summary>Toggles the mute of every microphone and shows the HUD.</summary>
+    public void Toggle()
     {
-        if (_context is null)
+        var ctx = _ctx;
+        if (ctx is null)
         {
             return;
         }
 
-        Attach();
         var target = !_muted;
-        if (!ApplyMute(target))
+        var (ok, total) = Apply(target);
+        if (total == 0)
         {
-            _context.Notifier.Show("Microphone", "No microphone found to mute.", NotificationLevel.Warning);
+            Hud(Gl.MicOff, Strings.MicMute.Partial);
             return;
         }
 
-        _mutedByUs = target;
-        _toast ??= new Osd();
-        _toast.Display(target ? "" : "", target ? "Microphone muted" : "Microphone on", 1400);
-    }
-
-    private bool ApplyMute(bool mute)
-    {
-        try
+        _muted = ok > 0 && target;
+        if (!target)
         {
-            var all = _context?.Settings.Get("allDevices", false) ?? false;
-            var any = false;
-            if (all)
-            {
-                using var enumerator = new MMDeviceEnumerator();
-                foreach (var device in enumerator.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active))
-                {
-                    using (device)
-                    {
-                        device.AudioEndpointVolume.Mute = mute;
-                        any = true;
-                    }
-                }
-            }
-            else if (_device is not null)
-            {
-                _device.AudioEndpointVolume.Mute = mute;
-                any = true;
-            }
-
-            if (any)
-            {
-                _muted = mute;
-                UpdateIndicator();
-            }
-
-            return any;
-        }
-        catch (Exception ex)
-        {
-            _context?.Log.Error("Could not change microphone mute", ex);
-            return false;
-        }
-    }
-
-    private void Attach()
-    {
-        Detach();
-        try
-        {
-            using var enumerator = new MMDeviceEnumerator();
-            if (!enumerator.HasDefaultAudioEndpoint(DataFlow.Capture, Role.Console))
-            {
-                _muted = false;
-                UpdateIndicator();
-                return;
-            }
-
-            _device = enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Console);
-            _device.AudioEndpointVolume.OnVolumeNotification += OnVolumeNotification;
-            _muted = _device.AudioEndpointVolume.Mute;
-            UpdateIndicator();
-        }
-        catch (Exception ex)
-        {
-            _context?.Log.Warn($"Could not attach to the default microphone: {ex.Message}");
-        }
-    }
-
-    private void Detach()
-    {
-        if (_device is null)
-        {
-            return;
+            _muted = false;
         }
 
-        try
+        ctx.App.Set("micMuteActive", _muted);
+        Changed?.Invoke();
+        if (ok < total)
         {
-            _device.AudioEndpointVolume.OnVolumeNotification -= OnVolumeNotification;
-            _device.Dispose();
-        }
-        catch (Exception)
-        {
-        }
-
-        _device = null;
-    }
-
-    private void OnVolumeNotification(AudioVolumeNotificationData data)
-    {
-        // Raised on a COM thread when the mute state changes from anywhere (Settings, other apps, headset button).
-        _context?.Ui.BeginInvoke(() =>
-        {
-            if (_context is null || _muted == data.Muted)
-            {
-                return;
-            }
-
-            _muted = data.Muted;
-            if (!_muted)
-            {
-                _mutedByUs = false;
-            }
-
-            UpdateIndicator();
-        });
-    }
-
-    private void OnSettingChanged(string key)
-    {
-        if (key == "showIndicator")
-        {
-            _context?.Ui.BeginInvoke(UpdateIndicator);
-        }
-    }
-
-    private void UpdateIndicator()
-    {
-        if (_context is null)
-        {
-            return;
-        }
-
-        if (_muted && _context.Settings.Get("showIndicator", true))
-        {
-            _indicator ??= new Osd(corner: true);
-            _indicator.Display("", "Microphone muted", 0);
+            Hud(Gl.MicOff, target ? Strings.MicMute.Partial : Strings.MicMute.StillMuted);
         }
         else
         {
-            _indicator?.Dismiss();
+            Hud(target ? Gl.MicOff : Gl.Mic, target ? Strings.MicMute.On : Strings.MicMute.Off);
         }
+    }
+
+    private void Reapply()
+    {
+        if (_ctx is null || _busy)
+        {
+            return;
+        }
+
+        if (_muted)
+        {
+            _busy = true;
+            try
+            {
+                Apply(true);
+            }
+            finally
+            {
+                _busy = false;
+            }
+        }
+
+        RestoreReturned();
+    }
+
+    /// <summary>Applies the mute to every active capture endpoint; returns (succeeded, total).</summary>
+    private (int Ok, int Total) Apply(bool mute)
+    {
+        var ctx = _ctx;
+        if (ctx is null)
+        {
+            return (0, 0);
+        }
+
+        var levels = ctx.App.Get<Dictionary<string, double>>("micMuteSavedLevels");
+        var ok = 0;
+        var total = 0;
+        var levelsChanged = false;
+        try
+        {
+            using var enumerator = new MMDeviceEnumerator();
+            foreach (var device in enumerator.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active))
+            {
+                using (device)
+                {
+                    total++;
+                    try
+                    {
+                        var volume = device.AudioEndpointVolume;
+                        if (mute)
+                        {
+                            var level = volume.MasterVolumeLevelScalar;
+                            if (level > 0.01f && !levels.ContainsKey(device.ID))
+                            {
+                                levels[device.ID] = level;
+                                levelsChanged = true;
+                            }
+
+                            volume.Mute = true;
+                            if (!volume.Mute)
+                            {
+                                volume.MasterVolumeLevelScalar = 0f;
+                            }
+
+                            ok++;
+                        }
+                        else
+                        {
+                            volume.Mute = false;
+                            if (levels.TryGetValue(device.ID, out var saved))
+                            {
+                                if (volume.MasterVolumeLevelScalar < 0.01f)
+                                {
+                                    volume.MasterVolumeLevelScalar = (float)Math.Clamp(saved, 0.01, 1);
+                                }
+
+                                levels.Remove(device.ID);
+                                levelsChanged = true;
+                            }
+
+                            ok++;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        ctx.Log.Warn($"Microphone '{device.ID}' could not be changed: {ex.Message}");
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            ctx.Log.Error("Could not change microphone mute", ex);
+        }
+
+        if (levelsChanged)
+        {
+            ctx.App.Set("micMuteSavedLevels", levels);
+        }
+
+        return (ok, total);
+    }
+
+    /// <summary>A microphone this app silenced while it was unplugged gets its level back when it returns (unless muting is active).</summary>
+    private void RestoreReturned()
+    {
+        var ctx = _ctx;
+        if (ctx is null || _muted)
+        {
+            return;
+        }
+
+        var levels = ctx.App.Get<Dictionary<string, double>>("micMuteSavedLevels");
+        if (levels.Count > 0)
+        {
+            Apply(false);
+        }
+    }
+
+    private void Hud(string glyph, string text)
+    {
+        _osd ??= new Osd();
+        _osd.Display(glyph, text, 1400);
+    }
+}
+
+/// <summary>Quick tools page: the Mute microphone section (anchor <c>micMute</c>).</summary>
+public sealed class MicMuteSettingsSection : ISettingsSection
+{
+    public string? FeatureId => "mic-mute";
+
+    public string PageId => SettingsPages.QuickTools;
+
+    public string? Anchor => "micMute";
+
+    public string? Title => "Mute microphone";
+
+    public int Order => 100;
+
+    public IReadOnlyList<string> Keywords => ["mic mute", "indicator", "notification area", "global shortcut", "microphone"];
+
+    public FrameworkElement CreateView(ISettingsContext c)
+    {
+        SystemDefaults.Register(c.App);
+        var app = c.App;
+        var card = new SettingsCard(Strings.MicMute.Title);
+        var feature = MicMuteFeature.Instance;
+        var muted = feature?.IsMuted == true;
+
+        var buttonRow = new StackPanel { Orientation = Orientation.Horizontal };
+        var buttonHost = new ContentControl();
+        Button Make(bool isMuted) => UiKit.Button(isMuted ? Strings.MicMute.Unmute : Strings.MicMute.Title, ButtonKind.Bordered, 12, isMuted ? Gl.MicOff : Gl.Mic, () => feature?.Toggle());
+        buttonHost.Content = Make(muted);
+        buttonRow.Children.Add(buttonHost);
+        var state = UiKit.Icon(Gl.MicOff, 12, ThemeKeys.Orange);
+        var stateText = UiKit.Text(Strings.MicMute.On, 12, FontWeights.Medium, ThemeKeys.Orange);
+        stateText.Margin = new Thickness(6, 0, 0, 0);
+        var stateRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(14, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Visibility = muted ? Visibility.Visible : Visibility.Collapsed };
+        stateRow.Children.Add(state);
+        stateRow.Children.Add(stateText);
+        buttonRow.Children.Add(stateRow);
+        card.Add(buttonRow);
+        card.AddCaption(Strings.MicMute.Caption);
+        card.AddDivider();
+        card.Add(new SettingsRow(Gl.MicOff, Strings.MicMute.Indicator, Strings.MicMute.IndicatorCaption, new MacSwitch(app.Get<bool>("micMuteMenuBarIndicator"), SwitchSize.Regular, on => app.Set("micMuteMenuBarIndicator", on))));
+        card.AddDivider();
+        var shortcutHost = new ContentControl { Margin = new Thickness(SettingsRow.TextInset, 0, 0, 0) };
+        void Shortcut() => shortcutHost.Content = app.Get<bool>("micMuteShortcutEnabled") ? ShortcutRows.Create(c, "micMute", Strings.OutputSwitcher.Shortcut, 12, Strings.OutputSwitcher.Rejected) : null;
+        card.Add(new SettingsRow(Gl.Keyboard, Strings.MicMute.GlobalShortcut, null, new MacSwitch(app.Get<bool>("micMuteShortcutEnabled"), SwitchSize.Regular, on =>
+        {
+            app.Set("micMuteShortcutEnabled", on);
+            Shortcut();
+        })));
+        Shortcut();
+        card.Add(shortcutHost);
+
+        if (feature is not null)
+        {
+            void Refresh()
+            {
+                var now = feature.IsMuted;
+                buttonHost.Content = Make(now);
+                stateRow.Visibility = now ? Visibility.Visible : Visibility.Collapsed;
+            }
+
+            void Changed() => card.Dispatcher.BeginInvoke(Refresh);
+            card.Loaded += (_, _) => feature.Changed += Changed;
+            card.Unloaded += (_, _) => feature.Changed -= Changed;
+        }
+
+        return card;
     }
 }

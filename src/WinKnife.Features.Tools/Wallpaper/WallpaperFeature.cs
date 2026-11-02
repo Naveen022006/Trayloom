@@ -1,354 +1,432 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // WinKnife — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
 
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using Microsoft.Win32;
 using WinKnife.Core;
 using WinKnife.Core.Ui;
 
 namespace WinKnife.Features.Tools;
 
-internal enum WallpaperFit
+/// <summary>Wallpaper (catalog id <c>wallpaper</c>): a still-image gallery in the tray panel that sets the desktop picture with one click.</summary>
+public sealed class WallpaperFeature : ToolsFeatureBase
 {
-    Center = 0,
-    Tile = 1,
-    Stretch = 2,
-    Fit = 3,
-    Fill = 4,
-    Span = 5,
-}
+    private WallpaperService? _service;
 
-[ComImport]
-[Guid("B92B56A9-8B55-4E14-9A89-0199BBB6F93B")]
-[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-internal interface IDesktopWallpaper
-{
-    void SetWallpaper([MarshalAs(UnmanagedType.LPWStr)] string? monitorId, [MarshalAs(UnmanagedType.LPWStr)] string wallpaper);
-
-    [return: MarshalAs(UnmanagedType.LPWStr)]
-    string GetWallpaper([MarshalAs(UnmanagedType.LPWStr)] string? monitorId);
-
-    [return: MarshalAs(UnmanagedType.LPWStr)]
-    string GetMonitorDevicePathAt(uint monitorIndex);
-
-    uint GetMonitorDevicePathCount();
-
-    void GetMonitorRECT([MarshalAs(UnmanagedType.LPWStr)] string monitorId, out WinKnife.Core.Native.RECT rect);
-
-    void SetBackgroundColor(uint color);
-
-    uint GetBackgroundColor();
-
-    void SetPosition(WallpaperFit position);
-
-    WallpaperFit GetPosition();
-}
-
-[ComImport]
-[Guid("C2CF3110-460E-4fc1-B9D0-8A1C0C9CC4BD")]
-internal class DesktopWallpaperClass
-{
-}
-
-internal static class WallpaperApi
-{
-    public static IReadOnlyList<string> MonitorIds()
-    {
-        var ids = new List<string>();
-        try
-        {
-            var wallpaper = (IDesktopWallpaper)new DesktopWallpaperClass();
-            var count = wallpaper.GetMonitorDevicePathCount();
-            for (uint i = 0; i < count; i++)
-            {
-                var id = wallpaper.GetMonitorDevicePathAt(i);
-                if (!string.IsNullOrEmpty(id))
-                {
-                    ids.Add(id);
-                }
-            }
-        }
-        catch
-        {
-            // COM interface unavailable: fall back to the global API only
-        }
-
-        return ids;
-    }
-
-    /// <summary>Sets the wallpaper for one monitor id, or for all monitors when <paramref name="monitorId"/> is null.</summary>
-    public static void Apply(string path, string? monitorId, WallpaperFit fit)
-    {
-        try
-        {
-            var wallpaper = (IDesktopWallpaper)new DesktopWallpaperClass();
-            wallpaper.SetPosition(fit);
-            wallpaper.SetWallpaper(monitorId, path);
-            return;
-        }
-        catch (Exception ex) when (ex is COMException or InvalidCastException or InvalidOperationException)
-        {
-            // fall back below
-        }
-
-        using (var key = Registry.CurrentUser.OpenSubKey(@"Control Panel\Desktop", writable: true))
-        {
-            if (key is not null)
-            {
-                var (style, tile) = fit switch
-                {
-                    WallpaperFit.Center => ("0", "0"),
-                    WallpaperFit.Tile => ("0", "1"),
-                    WallpaperFit.Stretch => ("2", "0"),
-                    WallpaperFit.Fit => ("6", "0"),
-                    WallpaperFit.Span => ("22", "0"),
-                    _ => ("10", "0"),
-                };
-                key.SetValue("WallpaperStyle", style);
-                key.SetValue("TileWallpaper", tile);
-            }
-        }
-
-        if (!N.SystemParametersInfoW(N.SPI_SETDESKWALLPAPER, 0, path, N.SPIF_UPDATEINIFILE | N.SPIF_SENDCHANGE))
-        {
-            throw new InvalidOperationException("Windows refused to change the wallpaper.");
-        }
-    }
-}
-
-/// <summary>Pick an image and set it as wallpaper (per monitor), with a list of recent choices.</summary>
-public sealed class WallpaperFeature : ToolFeatureBase
-{
-    private const int RecentLimit = 12;
-    private WallpaperWindow? _window;
-
+    /// <inheritdoc />
     public override string Id => "wallpaper";
 
-    public override string Name => "Wallpaper";
-
-    public override string Description => "Change your desktop wallpaper from any image, per monitor, and jump back to recent ones.";
-
+    /// <inheritdoc />
     public override IReadOnlyList<FeatureAction> Actions =>
     [
-        new FeatureAction("open", "Change wallpaper...", () => Safe(Open), ""),
-        new FeatureAction("random", "Random recent wallpaper", () => Safe(ApplyRandom), ""),
+        new FeatureAction("open", "Wallpaper", () => Safe(() => Ctx.Shell.OpenPanel(PanelTabs.Wallpaper)), ""),
     ];
 
-    protected override void OnStart() => BindHotkey("hotkey", null, Open);
+    /// <inheritdoc />
+    protected override void RegisterDefaults(IAppSettings app) => ToolsDefaults.Register(app);
 
+    /// <inheritdoc />
+    protected override void OnStart()
+    {
+        _service = new WallpaperService(Ctx);
+        WallpaperService.Instance = _service;
+    }
+
+    /// <inheritdoc />
     protected override void OnStop()
     {
-        _window?.Close();
-        _window = null;
-    }
-
-    public override FrameworkElement? CreateSettingsView()
-    {
-        if (Ctx is null)
-        {
-            return null;
-        }
-
-        var open = UiKit.Btn("Change wallpaper", Open, accent: true);
-        open.HorizontalAlignment = HorizontalAlignment.Left;
-        var builder = new SettingsViewBuilder(Ctx.Settings)
-            .AddHotkey("hotkey", "Open wallpaper picker", null, "Optional global shortcut.")
-            .AddChoice(
-                "fit",
-                "Picture position",
-                Enum.GetValues<WallpaperFit>().Select(f => new Choice<string>(f.ToString(), f.ToString())).ToArray(),
-                nameof(WallpaperFit.Fill));
-        return UiKit.WithExtras(builder.Build(), open);
-    }
-
-    internal WallpaperFit Fit() => Enum.TryParse<WallpaperFit>(Ctx.Settings.Get("fit", nameof(WallpaperFit.Fill)), out var f) ? f : WallpaperFit.Fill;
-
-    internal List<string> Recent() => Ctx.Settings.Get("recent", new List<string>()).Where(File.Exists).ToList();
-
-    internal void SetWallpaper(string path, string? monitorId)
-    {
-        WallpaperApi.Apply(path, monitorId, Fit());
-        var recent = Recent();
-        recent.RemoveAll(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase));
-        recent.Insert(0, path);
-        if (recent.Count > RecentLimit)
-        {
-            recent.RemoveRange(RecentLimit, recent.Count - RecentLimit);
-        }
-
-        Ctx.Settings.Set("recent", recent);
-    }
-
-    private void ApplyRandom()
-    {
-        var recent = Recent();
-        if (recent.Count == 0)
-        {
-            Ctx.Notifier.Show(Name, "No recent wallpapers yet. Pick one first.", NotificationLevel.Info);
-            return;
-        }
-
-        var path = recent[Random.Shared.Next(recent.Count)];
-        SetWallpaper(path, null);
-    }
-
-    private void Open()
-    {
-        if (_window is null)
-        {
-            _window = new WallpaperWindow(this, Ctx);
-            _window.Closed += (_, _) => _window = null;
-        }
-
-        UiKit.Raise(_window);
+        _service?.Clear();
+        WallpaperService.Instance = null;
+        _service = null;
     }
 }
 
-internal sealed class WallpaperWindow : Window
+/// <summary>Quick tools page card "Wallpaper" (02c 5.6).</summary>
+public sealed class WallpaperSettingsSection : ISettingsSection
 {
-    private readonly WallpaperFeature _feature;
-    private readonly IFeatureContext _ctx;
-    private readonly WrapPanel _recent = new();
-    private readonly ComboBox _monitor = new() { MinWidth = 180 };
-    private readonly IReadOnlyList<string> _monitorIds;
-    private readonly TextBlock _status = UiKit.Muted(string.Empty);
+    /// <inheritdoc />
+    public string? FeatureId => "wallpaper";
 
-    public WallpaperWindow(WallpaperFeature feature, IFeatureContext ctx)
+    /// <inheritdoc />
+    public string PageId => SettingsPages.QuickTools;
+
+    /// <inheritdoc />
+    public string? Anchor => "wallpaper";
+
+    /// <inheritdoc />
+    public string? Title => "Wallpaper";
+
+    /// <inheritdoc />
+    public IReadOnlyList<string> Keywords => ["Show on all displays", "Open Wallpaper settings", "background", "desktop picture"];
+
+    /// <inheritdoc />
+    public int Order => 60;
+
+    /// <inheritdoc />
+    public FrameworkElement CreateView(ISettingsContext c)
     {
-        _feature = feature;
+        ToolsDefaults.Register(c.App);
+        var card = new SettingsCard("Wallpaper");
+        card.Add(new SettingsRow(null, "Show on all displays", null, new MacSwitch(c.App.Get("wallpaperApplyAllDisplays", true), SwitchSize.Regular, on => c.App.Set("wallpaperApplyAllDisplays", on))));
+        var open = UiKit.Button("Open Wallpaper settings", ButtonKind.Bordered, 13, "", () => Plat.Open("ms-settings:personalization-background"));
+        open.HorizontalAlignment = HorizontalAlignment.Left;
+        card.Add(open);
+        return card;
+    }
+}
+
+/// <summary>The Wallpaper tab of the tray panel (spec 01 5.11).</summary>
+public sealed class WallpaperPanelSection : IPanelSection
+{
+    /// <inheritdoc />
+    public string? FeatureId => "wallpaper";
+
+    /// <inheritdoc />
+    public string TabId => PanelTabs.Wallpaper;
+
+    /// <inheritdoc />
+    public int Order => 10;
+
+    /// <inheritdoc />
+    public FrameworkElement CreateView(IPanelContext context)
+    {
+        var service = WallpaperService.Instance;
+        return service is null ? new StackPanel() : new WallpaperGalleryView(service, context);
+    }
+}
+
+/// <summary>Filter, switch, source buttons, thumbnail grid (3 x 8 per page), pager and status line.</summary>
+internal sealed class WallpaperGalleryView : StackPanel
+{
+    private readonly WallpaperService _service;
+    private readonly IPanelContext _ctx;
+    private int _page = 1;
+    private bool _removeMode;
+    private int _generation;
+
+    public WallpaperGalleryView(WallpaperService service, IPanelContext ctx)
+    {
+        _service = service;
         _ctx = ctx;
-        Title = "Wallpaper";
-        Width = 720;
-        Height = 560;
-        MinWidth = 520;
-        MinHeight = 380;
-        WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        SetResourceReference(StyleProperty, ThemeKeys.WindowStyle);
-        SourceInitialized += (_, _) => UiKit.ApplyTitleBarTheme(this);
-
-        _monitorIds = WallpaperApi.MonitorIds();
-        _monitor.Items.Add("All monitors");
-        for (var i = 0; i < _monitorIds.Count; i++)
+        Loaded += (_, _) =>
         {
-            _monitor.Items.Add($"Monitor {i + 1}");
-        }
-
-        _monitor.SelectedIndex = 0;
-        _monitor.IsEnabled = _monitorIds.Count > 1;
-
-        var pick = UiKit.Btn("Choose image...", Choose, true, "");
-        var bar = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
-        bar.Children.Add(pick);
-        var target = UiKit.Label("Apply to", ThemeKeys.TextMuted);
-        target.Margin = new Thickness(8, 0, 8, 0);
-        bar.Children.Add(target);
-        bar.Children.Add(_monitor);
-        bar.Children.Add(new Border { Width = 12 });
-        bar.Children.Add(_status);
-
-        var header = new StackPanel();
-        header.Children.Add(UiKit.Label("Recent wallpapers", null, 16, FontWeights.SemiBold));
-        header.Children.Add(UiKit.Muted("Click a picture to apply it. Drop an image file on this window to use it."));
-        header.Margin = new Thickness(0, 0, 0, 8);
-
-        var layout = new DockPanel { Margin = new Thickness(16) };
-        DockPanel.SetDock(bar, Dock.Top);
-        DockPanel.SetDock(header, Dock.Top);
-        layout.Children.Add(bar);
-        layout.Children.Add(header);
-        layout.Children.Add(new ScrollViewer { Content = _recent, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
-        Content = layout;
-
-        AllowDrop = true;
-        Drop += (_, e) =>
-        {
-            if (e.Data.GetData(DataFormats.FileDrop) is string[] files && files.FirstOrDefault(IsImage) is { } file)
-            {
-                Apply(file);
-            }
+            _service.Changed += OnChanged;
+            _service.ViewerAdded();
+            _ctx.SetKeepOpen(true);
+            Build();
         };
-        RefreshRecent();
+        Unloaded += (_, _) =>
+        {
+            _service.Changed -= OnChanged;
+            _service.ViewerRemoved();
+            _ctx.SetKeepOpen(false);
+        };
+        Build();
     }
 
-    private static bool IsImage(string path) =>
-        Path.GetExtension(path).ToLowerInvariant() is ".jpg" or ".jpeg" or ".png" or ".bmp" or ".gif" or ".tif" or ".tiff" or ".webp";
+    private void OnChanged() => Dispatcher.BeginInvoke(Build);
 
-    private void Choose()
+    private void Build()
+    {
+        Children.Clear();
+        _generation = _service.Generation;
+        var entries = _service.Filtered.ToList();
+        var pages = Math.Max(1, (int)Math.Ceiling(entries.Count / (double)WallpaperService.PageSize));
+        _page = Math.Clamp(_page, 1, pages);
+
+        var controls = new StackPanel();
+        controls.Children.Add(BuildFilter());
+        controls.AddSpaced(BuildAllDisplaysRow(), 8);
+        controls.AddSpaced(BuildButtons(), 8);
+        Children.Add(controls);
+
+        if (_removeMode && _service.Sources.Count > 0)
+        {
+            var strip = BuildRemoveStrip();
+            strip.Margin = new Thickness(0, 10, 0, 0);
+            Children.Add(strip);
+        }
+
+        var gallery = BuildGallery(entries, pages);
+        gallery.Margin = new Thickness(0, 10, 0, 0);
+        Children.Add(gallery);
+
+        if (true)
+        {
+            var pager = BuildPager(pages);
+            pager.Margin = new Thickness(0, 10, 0, 0);
+            Children.Add(pager);
+        }
+
+        if (_service.Downloading)
+        {
+            Children.Add(Status("Downloading…", ThemeKeys.TextSecondary));
+        }
+        else if (_service.Error is { } error)
+        {
+            Children.Add(Status(error, ThemeKeys.Orange));
+        }
+    }
+
+    private static TextBlock Status(string text, string key)
+    {
+        var block = UiKit.Text(text, 10.5, FontWeights.Normal, key, wrap: true);
+        block.Margin = new Thickness(0, 10, 0, 0);
+        return block;
+    }
+
+    private FrameworkElement BuildFilter()
+    {
+        var combo = new ComboBox { FontSize = 12, ItemsSource = new[] { "All", "Your pictures", "Windows" } };
+        combo.SelectedIndex = _service.Filter switch { "own" => 1, "apple" => 2, _ => 0 };
+        combo.SelectionChanged += (_, _) =>
+        {
+            var value = combo.SelectedIndex switch { 1 => "own", 2 => "apple", _ => "all" };
+            if (value != _service.Filter)
+            {
+                _service.Filter = value;
+                _page = 1;
+                Build();
+            }
+        };
+        return combo;
+    }
+
+    private FrameworkElement BuildAllDisplaysRow()
+    {
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var text = UiKit.Text("Show on all displays", 11.5, FontWeights.Medium);
+        text.VerticalAlignment = VerticalAlignment.Center;
+        grid.Children.Add(text);
+        var toggle = new MacSwitch(_ctx.App.Get("wallpaperApplyAllDisplays", true), SwitchSize.Small, on => _ctx.App.Set("wallpaperApplyAllDisplays", on));
+        Grid.SetColumn(toggle, 1);
+        grid.Children.Add(toggle);
+        return grid;
+    }
+
+    private FrameworkElement BuildButtons()
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        var addImage = PanelButtons.Mini("Add image", null, AddImages);
+        var addFolder = PanelButtons.Mini("Add folder", null, AddFolder);
+        addImage.IsEnabled = addFolder.IsEnabled = !_removeMode;
+        row.Children.Add(addImage);
+        addFolder.Margin = new Thickness(8, 0, 0, 0);
+        row.Children.Add(addFolder);
+        if (_service.Sources.Count > 0 || _removeMode)
+        {
+            var remove = PanelButtons.Mini(_removeMode ? "Done" : "Remove", null, () =>
+            {
+                _removeMode = !_removeMode;
+                Build();
+            });
+            remove.Margin = new Thickness(8, 0, 0, 0);
+            row.Children.Add(remove);
+        }
+
+        return row;
+    }
+
+    private void AddImages()
     {
         var dialog = new OpenFileDialog
         {
-            Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp;*.gif;*.tif;*.tiff;*.webp|All files|*.*",
+            Multiselect = true,
+            Title = "Choose images to keep in WinKnife’s wallpaper list",
+            Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp;*.gif;*.tif;*.tiff;*.webp;*.heic|All files|*.*",
             InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
         };
-        if (dialog.ShowDialog(this) == true)
+        if (dialog.ShowDialog() == true)
         {
-            Apply(dialog.FileName);
+            _service.AddSources(dialog.FileNames);
         }
     }
 
-    private void Apply(string path)
+    private void AddFolder()
     {
-        try
+        var dialog = new OpenFolderDialog { Title = "Choose a folder of images to keep in WinKnife’s wallpaper list", InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures) };
+        if (dialog.ShowDialog() == true)
         {
-            var index = _monitor.SelectedIndex;
-            string? id = index > 0 && index - 1 < _monitorIds.Count ? _monitorIds[index - 1] : null;
-            _feature.SetWallpaper(path, id);
-            _status.Text = "Applied " + Path.GetFileName(path);
-            RefreshRecent();
-        }
-        catch (Exception ex)
-        {
-            _ctx.Log.Warn("Wallpaper failed: " + ex.Message);
-            MessageBox.Show(this, ex.Message, "Wallpaper", MessageBoxButton.OK, MessageBoxImage.Warning);
+            _service.AddSources([dialog.FolderName]);
         }
     }
 
-    private void RefreshRecent()
+    private FrameworkElement BuildRemoveStrip()
     {
-        _recent.Children.Clear();
-        var recent = _feature.Recent();
-        if (recent.Count == 0)
+        var panel = new WrapPanel();
+        foreach (var source in _service.Sources)
         {
-            _recent.Children.Add(UiKit.Muted("Nothing yet."));
-            return;
+            var chip = new Border
+            {
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(8, 5, 8, 5),
+                Margin = new Thickness(0, 0, 8, 6),
+                Background = new SolidColorBrush(Color.FromArgb(0x26, 128, 128, 128)),
+            };
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            row.Children.Add(UiKit.Icon(source.Unreachable ? "" : source.IsFolder ? "" : "", 11, ThemeKeys.TextSecondary, FontWeights.SemiBold));
+            var title = UiKit.Text(source.Unreachable ? "Unavailable" : System.IO.Path.GetFileName(source.Path.TrimEnd('\\')) is { Length: > 0 } n ? n : source.Path, 10.5, FontWeights.Normal, ThemeKeys.TextPrimary, trimming: TextTrimming.CharacterEllipsis);
+            title.MaxWidth = 130;
+            title.ToolTip = source.Path;
+            title.Margin = new Thickness(6, 0, 6, 0);
+            row.Children.Add(title);
+            var x = XBadge(14);
+            x.ToolTip = "Remove";
+            x.MouseLeftButtonUp += (_, _) => _service.RemoveSource(source.Path);
+            row.Children.Add(x);
+            chip.Child = row;
+            panel.Children.Add(chip);
         }
 
-        foreach (var path in recent)
+        return panel;
+    }
+
+    private static Border XBadge(double size) => new()
+    {
+        Width = size,
+        Height = size,
+        CornerRadius = new CornerRadius(size / 2),
+        Background = new SolidColorBrush(Color.FromRgb(0xE5, 0x39, 0x35)),
+        Cursor = Cursors.Hand,
+        Child = new TextBlock { Text = "", FontFamily = UiKit.IconFont, FontSize = size * 0.55, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+    };
+
+    private FrameworkElement BuildGallery(List<WallpaperEntry> entries, int pages)
+    {
+        var host = new Grid();
+        var pageEntries = entries.Skip((_page - 1) * WallpaperService.PageSize).Take(WallpaperService.PageSize).ToList();
+        var rows = pages > 1 ? 8 : Math.Max(2, (int)Math.Ceiling(pageEntries.Count / 3.0));
+        host.Height = rows * 54 + (rows - 1) * 8;
+        if (pageEntries.Count == 0)
         {
-            try
+            if (_service.Loading)
             {
-                var image = new BitmapImage();
-                image.BeginInit();
-                image.UriSource = new Uri(path);
-                image.DecodePixelWidth = 320;
-                image.CacheOption = BitmapCacheOption.OnLoad;
-                image.EndInit();
-                image.Freeze();
-                var thumb = new Image { Source = image, Width = 200, Height = 120, Stretch = Stretch.UniformToFill };
-                var frame = new Border
-                {
-                    Child = thumb,
-                    ClipToBounds = true,
-                    CornerRadius = new CornerRadius(8),
-                    BorderThickness = new Thickness(1),
-                    Margin = new Thickness(0, 0, 10, 10),
-                    Cursor = Cursors.Hand,
-                    ToolTip = path,
-                };
-                frame.SetResourceReference(Border.BorderBrushProperty, ThemeKeys.Border);
-                var captured = path;
-                frame.MouseLeftButtonUp += (_, _) => Apply(captured);
-                _recent.Children.Add(frame);
+                host.Children.Add(new ProgressBar { IsIndeterminate = true, Width = 80, Height = 4, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center });
             }
-            catch
+            else
             {
-                // unreadable image: skip it
+                var text = _service.Filter switch { "own" => "No pictures added yet", "apple" => "No Windows wallpapers found", _ => "No wallpapers found" };
+                var empty = UiKit.Text(text, 11, FontWeights.Normal, ThemeKeys.TextSecondary);
+                empty.HorizontalAlignment = HorizontalAlignment.Center;
+                empty.VerticalAlignment = VerticalAlignment.Center;
+                host.Children.Add(empty);
             }
+
+            return host;
         }
+
+        var grid = new UniformGrid { Columns = 3, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(-4, -4, -4, 0) };
+        foreach (var entry in pageEntries)
+        {
+            grid.Children.Add(BuildCell(entry));
+        }
+
+        host.Children.Add(grid);
+        // prefetch the next page
+        foreach (var next in entries.Skip(_page * WallpaperService.PageSize).Take(WallpaperService.PageSize))
+        {
+            _ = _service.ThumbnailAsync(next.Path, _generation);
+        }
+
+        return host;
+    }
+
+    private FrameworkElement BuildCell(WallpaperEntry entry)
+    {
+        var applied = _service.AppliedPath is { } a && a.Equals(entry.Path, StringComparison.OrdinalIgnoreCase);
+        var cell = new Grid { Height = 54, Margin = new Thickness(4), Cursor = Cursors.Hand, ToolTip = entry.Title };
+        var inner = new Grid { Background = new SolidColorBrush(Color.FromArgb(0x26, 128, 128, 128)) };
+        inner.Children.Add(UiKit.Icon("", 16, ThemeKeys.TextSecondary));
+        var image = new Image { Stretch = Stretch.UniformToFill };
+        inner.Children.Add(image);
+        cell.SizeChanged += (_, e) => inner.Clip = new RectangleGeometry(new Rect(0, 0, e.NewSize.Width, e.NewSize.Height), 6, 6);
+        cell.Children.Add(inner);
+        _ = LoadThumb(image, entry.Path);
+        if (applied)
+        {
+            var border = new Border { BorderThickness = new Thickness(2), CornerRadius = new CornerRadius(6), IsHitTestVisible = false };
+            border.SetResourceReference(Border.BorderBrushProperty, ThemeKeys.Accent);
+            cell.Children.Add(border);
+        }
+
+        if (_removeMode && entry.IsOwn)
+        {
+            var x = XBadge(16);
+            x.HorizontalAlignment = HorizontalAlignment.Right;
+            x.VerticalAlignment = VerticalAlignment.Top;
+            x.Margin = new Thickness(0, -4, -4, 0);
+            x.ToolTip = "Remove";
+            x.MouseLeftButtonUp += (_, e) =>
+            {
+                e.Handled = true;
+                _service.RemoveImage(entry.Path);
+            };
+            cell.Children.Add(x);
+        }
+
+        cell.MouseLeftButtonUp += async (_, _) =>
+        {
+            if (_removeMode || _service.Downloading)
+            {
+                return;
+            }
+
+            await _service.ApplyAsync(entry);
+        };
+        return cell;
+    }
+
+    private async Task LoadThumb(Image image, string path)
+    {
+        var source = await _service.ThumbnailAsync(path, _generation);
+        if (source is not null)
+        {
+            image.Source = source;
+        }
+    }
+
+    private FrameworkElement BuildPager(int pages)
+    {
+        var grid = new Grid { Height = 22 };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var left = new StackPanel { Orientation = Orientation.Horizontal };
+        if (pages > 1)
+        {
+            left.Children.Add(PagerButton("", "Previous", _page > 1, () => { _page--; Build(); }));
+            var label = UiKit.Text($"{_page} / {pages}", 10.5, FontWeights.Normal, ThemeKeys.TextSecondary);
+            label.FontFamily = UiKit.DisplayFont;
+            label.Margin = new Thickness(12, 0, 12, 0);
+            label.VerticalAlignment = VerticalAlignment.Center;
+            left.Children.Add(label);
+            left.Children.Add(PagerButton("", "Next", _page < pages, () => { _page++; Build(); }));
+        }
+
+        grid.Children.Add(left);
+        var link = UiKit.Text("Open Wallpaper settings", 10, FontWeights.Normal, ThemeKeys.TextSecondary);
+        link.HorizontalAlignment = HorizontalAlignment.Right;
+        link.VerticalAlignment = VerticalAlignment.Center;
+        link.Cursor = Cursors.Hand;
+        link.MouseLeftButtonUp += (_, _) => Plat.Open("ms-settings:personalization-background");
+        Grid.SetColumn(link, 1);
+        grid.Children.Add(link);
+        return grid;
+    }
+
+    private static Border PagerButton(string glyph, string tip, bool enabled, Action click)
+    {
+        var button = new Border { Width = 22, Height = 22, Background = Brushes.Transparent, ToolTip = tip, Opacity = enabled ? 1 : 0.35, Cursor = enabled ? Cursors.Hand : Cursors.Arrow, Child = UiKit.Icon(glyph, 11, ThemeKeys.TextSecondary, FontWeights.SemiBold) };
+        if (enabled)
+        {
+            button.MouseLeftButtonUp += (_, _) => click();
+        }
+
+        return button;
     }
 }

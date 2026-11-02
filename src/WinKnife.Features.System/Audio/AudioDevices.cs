@@ -14,8 +14,12 @@ public sealed class DevicePref
     public string Name { get; set; } = "";
 }
 
-/// <summary>An active audio endpoint.</summary>
-internal sealed record AudioEndpoint(string Id, string Name);
+/// <summary>An active audio endpoint (<see cref="FormFactor"/> is the Windows EndpointFormFactor: 3 headphones, 5 headset...).</summary>
+internal sealed record AudioEndpoint(string Id, string Name, int FormFactor = 10)
+{
+    /// <summary>Headphones or headset (wired or Bluetooth) - the endpoint the "lower volume on disconnect" guard cares about.</summary>
+    public bool IsHeadphones => FormFactor is 3 or 5;
+}
 
 /// <summary>Standard (undocumented but stable since Vista) COM interface used by the Sound control panel to set default endpoints.</summary>
 [ComImport]
@@ -67,7 +71,7 @@ internal static class AudioDevices
             {
                 using (device)
                 {
-                    result.Add(new AudioEndpoint(device.ID, SafeName(device)));
+                    result.Add(new AudioEndpoint(device.ID, SafeName(device), FormFactorOf(device)));
                 }
             }
         }
@@ -137,6 +141,95 @@ internal static class AudioDevices
             {
                 Marshal.ReleaseComObject(policy);
             }
+        }
+    }
+
+    /// <summary>Reads the endpoint form factor (10 = unknown).</summary>
+    private static int FormFactorOf(MMDevice device)
+    {
+        try
+        {
+            var value = device.Properties[new PropertyKey(new Guid("1da5d803-d492-4edd-8c23-e0c0ffee7f0e"), 0)].Value;
+            return value is uint u ? (int)u : 10;
+        }
+        catch (Exception)
+        {
+            return 10;
+        }
+    }
+
+    /// <summary>The endpoint's form factor by id (10 = unknown / missing).</summary>
+    public static int FormFactor(string id)
+    {
+        try
+        {
+            using var enumerator = new MMDeviceEnumerator();
+            using var device = enumerator.GetDevice(id);
+            return FormFactorOf(device);
+        }
+        catch (Exception)
+        {
+            return 10;
+        }
+    }
+
+    /// <summary>Makes the endpoint the default for the given roles only (0 console, 1 multimedia, 2 communications).</summary>
+    public static bool SetDefaultFor(string id, params int[] roles)
+    {
+        IPolicyConfig? policy = null;
+        try
+        {
+            policy = (IPolicyConfig)new PolicyConfigClient();
+            var ok = true;
+            foreach (var role in roles)
+            {
+                ok &= policy.SetDefaultEndpoint(id, role) >= 0;
+            }
+
+            return ok;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+        finally
+        {
+            if (policy is not null)
+            {
+                Marshal.ReleaseComObject(policy);
+            }
+        }
+    }
+
+    /// <summary>Master volume of the endpoint (0..1) and mute state; null when it cannot be read.</summary>
+    public static (float Volume, bool Muted)? ReadVolume(string id)
+    {
+        try
+        {
+            using var enumerator = new MMDeviceEnumerator();
+            using var device = enumerator.GetDevice(id);
+            var v = device.AudioEndpointVolume;
+            return (v.MasterVolumeLevelScalar, v.Mute);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Sets the endpoint master volume (0..1).</summary>
+    public static bool WriteVolume(string id, float scalar)
+    {
+        try
+        {
+            using var enumerator = new MMDeviceEnumerator();
+            using var device = enumerator.GetDevice(id);
+            device.AudioEndpointVolume.MasterVolumeLevelScalar = Math.Clamp(scalar, 0f, 1f);
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
         }
     }
 

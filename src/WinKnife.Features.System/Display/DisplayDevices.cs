@@ -117,6 +117,45 @@ internal static class DisplayNative
         public string Device;
     }
 
+    /// <summary>True when a non-internal display is attached and active.</summary>
+    public static bool HasExternalDisplay()
+    {
+        try
+        {
+            var targets = QueryTargets();
+            if (targets.Count > 0)
+            {
+                return targets.Values.Any(t => !t.Internal);
+            }
+        }
+        catch (Exception)
+        {
+        }
+
+        return GetSystemMetrics(80) > 1;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern int GetSystemMetrics(int index);
+
+    /// <summary>Physical-pixel bounds of the monitor with the GDI device name (e.g. \.\DISPLAY1), or null when it is not found.</summary>
+    public static (nint Handle, RECT Bounds)? FindMonitor(string gdiName)
+    {
+        (nint, RECT)? found = null;
+        EnumDisplayMonitors(0, 0, (monitor, _, _, _) =>
+        {
+            var info = new MonitorInfoEx { Size = Marshal.SizeOf<MonitorInfoEx>() };
+            if (GetMonitorInfoEx(monitor, ref info) && string.Equals(info.Device, gdiName, StringComparison.OrdinalIgnoreCase))
+            {
+                found = (monitor, info.Monitor);
+                return false;
+            }
+
+            return true;
+        }, 0);
+        return found;
+    }
+
     private delegate bool MonitorEnumProc(nint monitor, nint dc, nint rect, nint data);
 
     /// <summary>Lists every adjustable display (internal panels through WMI, external ones through DDC/CI). Slow: call off the UI thread.</summary>
@@ -254,7 +293,7 @@ internal static class DisplayNative
                 var name = "";
                 if (DisplayConfigGetDeviceInfo(target) == 0)
                 {
-                    name = System.Text.Encoding.Unicode.GetString(target, 32, 128).TrimEnd('\0');
+                    name = System.Text.Encoding.Unicode.GetString(target, 36, 128).TrimEnd('\0');
                 }
 
                 // INTERNAL (0x80000000), DISPLAYPORT_EMBEDDED (11), UDI_EMBEDDED (13)

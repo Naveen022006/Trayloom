@@ -7,6 +7,9 @@
     <ProjectReference Include="..\WinKnife.Core\WinKnife.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="SystemHarness" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />
   </ItemGroup>
 </Project>

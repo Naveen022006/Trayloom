@@ -1,229 +1,242 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // WinKnife — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
 
-using System.Windows;
-using System.Windows.Threading;
-using Microsoft.Win32;
+using System.Windows.Input;
 using WinKnife.Core;
-using WinKnife.Core.Ui;
 
 namespace WinKnife.Features.Island;
 
-/// <summary>A black pill at the top of the screen that shows now playing and expands into a panel of extensions.</summary>
+/// <summary>The Dynamic Island (catalog id <c>notch</c>): a pill at the top of the screen that expands into pages (spec 03 Parts B-D).</summary>
 public sealed class IslandFeature : IFeature
 {
     private IFeatureContext? _context;
+    private IslandCore? _core;
     private IslandWindow? _window;
-    private MediaService? _media;
-    private MusicSection? _music;
-    private DispatcherTimer? _poll;
-    private nint _foregroundHook;
-    private IslandNative.WinEventProc? _foregroundProc;
+    private IDisposable? _shortcut;
+    private IDisposable? _wheel;
     private bool _stopped = true;
+    private readonly GestureState _gesture = new();
 
     public string Id => "island";
 
-    public string Name => "Dynamic Island";
+    public IReadOnlyList<FeatureAction> Actions
+    {
+        get
+        {
+            if (_core is null || _window is null)
+            {
+                return [];
+            }
 
-    public string Description => "A pill at the top of your screen with now playing controls that expands into timers, a calendar and recent downloads.";
-
-    public FeatureGroup Group => FeatureGroup.Island;
-
-    public IReadOnlyList<FeatureAction> Actions =>
-    [
-        new FeatureAction("toggle", "Expand or collapse the island", () => _window?.Toggle(), ""),
-        new FeatureAction("play-pause", "Play or pause music", () => _media?.TogglePlayPause(), ""),
-        new FeatureAction("next", "Next track", () => _media?.Next(), ""),
-        new FeatureAction("previous", "Previous track", () => _media?.Previous(), ""),
-    ];
+            var core = _core;
+            return
+            [
+                new FeatureAction("toggle", "Open or close Dynamic Island", () => _window?.Toggle(), G.Controls),
+                new FeatureAction("explore", "Explore the island sections", () => _window?.Open("explore"), G.Explore),
+                new FeatureAction("play-pause", "Play or pause music", () => core.Playback.TogglePlayPause(), G.Play),
+                new FeatureAction("next", "Next track", () => core.Playback.Next(), G.Next),
+                new FeatureAction("previous", "Previous track", () => core.Playback.Previous(), G.Previous),
+                new FeatureAction("timer", "Open the island timer", () => _window?.Open("timer"), G.Timer),
+                new FeatureAction("calendar", "Open the island calendar", () => _window?.Open("calendar"), G.Calendar),
+            ];
+        }
+    }
 
     public void Start(IFeatureContext context)
     {
         _context = context;
         _stopped = false;
-        _media = new MediaService(context.Ui, context.Log);
-        _music = new MusicSection(_media, context.Ui);
-        IslandHub.RegisterSection(_music.ToSection());
-
-        _window = new IslandWindow(_media);
-        ApplySettings();
-        _window.Reposition(UseCursorMonitor);
-        _window.ShowNoActivate();
-        _window.Reposition(UseCursorMonitor);
-        _media.Start();
-
-        context.Settings.Changed += OnSettingChanged;
-        SystemEvents.DisplaySettingsChanged += OnDisplayChanged;
-
-        _foregroundProc = (_, _, _, _, _, _, _) => context.Ui.BeginInvoke(DispatcherPriority.Background, EvaluateVisibility);
-        _foregroundHook = IslandNative.SetWinEventHook(
-            IslandNative.EventSystemForeground,
-            IslandNative.EventSystemForeground,
-            0,
-            _foregroundProc,
-            0,
-            0,
-            IslandNative.WinEventOutOfContext | IslandNative.WinEventSkipOwnProcess);
-
-        UpdatePoll();
-        EvaluateVisibility();
+        K.RegisterDefaults(context.App);
+        _core = new IslandCore(context);
+        _core.Start();
+        context.App.Changed += OnSetting;
+        context.Runtime.Changed += OnRuntime;
+        _shortcut = context.Shortcuts.Bind("notch", () =>
+        {
+            if (_window is not null)
+            {
+                _window.Toggle();
+            }
+        });
+        _wheel = context.Hooks.SubscribeMouse(OnMouse, 10);
+        SyncEnabled();
     }
 
     public void Stop()
     {
         _stopped = true;
-        SystemEvents.DisplaySettingsChanged -= OnDisplayChanged;
         if (_context is not null)
         {
-            _context.Settings.Changed -= OnSettingChanged;
+            _context.App.Changed -= OnSetting;
+            _context.Runtime.Changed -= OnRuntime;
         }
 
-        if (_foregroundHook != 0)
-        {
-            IslandNative.UnhookWinEvent(_foregroundHook);
-            _foregroundHook = 0;
-        }
-
-        _foregroundProc = null;
-        _poll?.Stop();
-        _poll = null;
+        _shortcut?.Dispose();
+        _wheel?.Dispose();
+        _shortcut = _wheel = null;
+        IslandRects.Pill = null;
         _window?.Shutdown();
         _window = null;
-        _music?.Dispose();
-        _music = null;
-        IslandHub.UnregisterSection("music");
-        _media?.Dispose();
-        _media = null;
+        _core?.Dispose();
+        _core = null;
         _context = null;
     }
 
-    public FrameworkElement? CreateSettingsView()
-    {
-        if (_context is null)
-        {
-            return null;
-        }
+    private void OnRuntime() => _context?.Ui.BeginInvoke(SyncEnabled);
 
-        return new SettingsViewBuilder(_context.Settings)
-            .AddChoice(
-                "trigger",
-                "Open the island",
-                new Choice<string>[] { new("hover", "When the pointer rests on it"), new("click", "When I click it") },
-                "hover")
-            .AddChoice(
-                "monitor",
-                "Show on",
-                new Choice<string>[] { new("primary", "Primary monitor"), new("cursor", "Monitor under the pointer") },
-                "primary")
-            .AddChoice(
-                "collapseDelay",
-                "Close after the pointer leaves",
-                new Choice<int>[] { new(200, "Quickly"), new(450, "Short delay"), new(900, "Long delay"), new(2000, "Very long delay") },
-                450)
-            .AddIntSlider("topGap", "Distance from the top edge", 0, 24, 0)
-            .AddToggle("compactTitle", "Show the track name in the collapsed island", true)
-            .AddToggle("hideInFullscreen", "Hide while a full-screen app or game is in front", true)
-            .Build();
+    private void OnSetting(string key)
+    {
+        if (key == K.Enabled)
+        {
+            _context?.Ui.BeginInvoke(SyncEnabled);
+        }
     }
 
-    private bool UseCursorMonitor => _context?.Settings.Get("monitor", "primary") == "cursor";
-
-    private void ApplySettings()
+    private void SyncEnabled()
     {
-        if (_window is null || _context is null)
+        if (_stopped || _context is null || _core is null)
         {
             return;
         }
 
-        var s = _context.Settings;
-        _window.ExpandOnHover = s.Get("trigger", "hover") != "click";
-        _window.CollapseDelayMs = s.Get("collapseDelay", 450);
-        _window.TopGap = s.Get("topGap", 0);
-        _window.ShowTitleInCompact = s.Get("compactTitle", true);
+        var on = _context.App.Get<bool>(K.Enabled);
+        if (on && _window is null)
+        {
+            _window = new IslandWindow(_core);
+            _window.Begin();
+        }
+        else if (!on && _window is not null)
+        {
+            _window.Shutdown();
+            _window = null;
+        }
     }
 
-    private void OnSettingChanged(string key)
-    {
-        _context?.Ui.BeginInvoke(() =>
-        {
-            if (_stopped || _window is null)
-            {
-                return;
-            }
+    // ---------------------------------------------------------------- gestures (hook thread)
 
-            ApplySettings();
-            _window.Reposition(UseCursorMonitor);
-            UpdatePoll();
-            EvaluateVisibility();
-        });
+    private sealed class GestureState
+    {
+        public double AccV;
+        public double AccH;
+        public uint Last;
+        public bool Decided;
+        public uint LockedUntil;
     }
 
-    private void OnDisplayChanged(object? sender, EventArgs e)
+    private bool OnMouse(MouseHookEvent e)
     {
-        _context?.Ui.BeginInvoke(() =>
+        if (!e.IsWheel || e.IsFromWinKnife || _context is null)
         {
-            if (_stopped || _window is null)
-            {
-                return;
-            }
-
-            _window.Reposition(UseCursorMonitor);
-            EvaluateVisibility();
-        });
-    }
-
-    /// <summary>A slow timer is only needed to catch fullscreen toggles inside one window and to follow the pointer between monitors.</summary>
-    private void UpdatePoll()
-    {
-        var needed = _context is not null && (UseCursorMonitor || _context.Settings.Get("hideInFullscreen", true));
-        if (!needed)
-        {
-            _poll?.Stop();
-            return;
+            return false;
         }
 
-        if (_poll is null)
+        var pill = IslandRects.Pill;
+        if (pill is null || !_context.App.Get<bool>(K.Gestures) || !_context.Runtime.IsAvailable("notch-gestures"))
         {
-            _poll = new DispatcherTimer(DispatcherPriority.Background, _context!.Ui) { Interval = TimeSpan.FromMilliseconds(1500) };
-            _poll.Tick += (_, _) =>
+            return false;
+        }
+
+        var inside = e.X >= pill.Left && e.X < pill.Right && e.Y >= pill.Top && e.Y < pill.Bottom;
+        if (!inside)
+        {
+            return false;
+        }
+
+        if ((e.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Windows)) != 0)
+        {
+            return false;
+        }
+
+        var g = _gesture;
+        var t = e.Timestamp;
+        if (t - g.Last > 350)
+        {
+            g.AccV = g.AccH = 0;
+            g.Decided = false;
+        }
+
+        g.Last = t;
+        var horizontal = e.Kind == MouseEventKind.HorizontalWheel || (e.Modifiers & ModifierKeys.Shift) != 0;
+        var points = e.WheelDelta / 120.0 * 24.0;
+        if (horizontal)
+        {
+            g.AccH += e.Kind == MouseEventKind.Wheel ? -points : points;
+        }
+        else
+        {
+            g.AccV += points;
+        }
+
+        if (g.Decided && unchecked(t - g.LockedUntil) < int.MaxValue)
+        {
+            return pill.Expanded ? false : true;
+        }
+
+        var absV = Math.Abs(g.AccV);
+        var absH = Math.Abs(g.AccH);
+        if (absV + absH < 4)
+        {
+            return false;
+        }
+
+        var ui = _context.Ui;
+        var window = _window;
+        if (window is null)
+        {
+            return false;
+        }
+
+        if (absH > absV * 1.5 && absH >= 40)
+        {
+            g.Decided = true;
+            g.LockedUntil = t + 500;
+            if (!pill.MusicShowing)
             {
-                if (_window is { IsExpanded: false } window && UseCursorMonitor)
+                return false;
+            }
+
+            var next = g.AccH < 0;
+            ui.BeginInvoke(() =>
+            {
+                if (next)
                 {
-                    var cursorArea = Screens.UnderCursor();
-                    if (cursorArea.Bounds != window.Area.Bounds)
-                    {
-                        window.Reposition(true);
-                    }
+                    _core?.Playback.Next();
+                }
+                else
+                {
+                    _core?.Playback.Previous();
+                }
+            });
+            return true;
+        }
+
+        if (absV > absH * 1.5 && absV >= 16)
+        {
+            var down = g.AccV < 0; // wheel toward the user
+            if (!pill.Expanded)
+            {
+                g.Decided = true;
+                g.LockedUntil = t + 450;
+                if (down)
+                {
+                    ui.BeginInvoke(() => window.Open(takeFocus: true));
+                    return true;
                 }
 
-                EvaluateVisibility();
-            };
-        }
-
-        _poll.Start();
-    }
-
-    private void EvaluateVisibility()
-    {
-        if (_stopped || _window is null || _context is null)
-        {
-            return;
-        }
-
-        var hide = false;
-        if (_context.Settings.Get("hideInFullscreen", true))
-        {
-            var (monitor, bounds) = _window.MonitorInfo();
-            try
-            {
-                hide = IslandNative.IsFullscreenForeground(monitor, bounds);
+                return false;
             }
-            catch
+
+            // open island: scroll up over the top row (or a page without a scrolling list) closes it
+            var inHeader = e.Y < pill.HeaderBottom;
+            if (!down && (inHeader || !pill.ContentScrolls) && inHeader)
             {
-                hide = false;
+                g.Decided = true;
+                g.LockedUntil = t + 450;
+                ui.BeginInvoke(() => window.Collapse());
+                return true;
             }
         }
 
-        _window.SetSuppressed(hide);
+        return false;
     }
 }

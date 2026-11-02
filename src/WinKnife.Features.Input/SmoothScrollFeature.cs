@@ -4,71 +4,59 @@
 using System.Diagnostics;
 using System.Windows.Input;
 using WinKnife.Core;
-using WinKnife.Core.Ui;
+using WinKnife.Core.Native;
 
 namespace WinKnife.Features.Input;
 
 /// <summary>
-/// Animated wheel scrolling. Wheel notches are swallowed and their distance is re-emitted as many small wheel deltas
-/// by a timer thread (~125 Hz) following an exponential ease-out, so the total distance is exactly what the wheel
-/// asked for. Last stage (40) of the <see cref="WheelPipeline"/>, after horizontal/invert/linear.
-/// Limitations: apps that ignore wheel deltas below 120 will scroll in jumps; Ctrl/Win+wheel (zoom, magnifier),
-/// touchpads and other injected input are not smoothed.
+/// "Turns each mouse wheel step into a short, gentle glide." Wheel notches are swallowed and their distance is added
+/// to a per-axis budget that a ~60 Hz timer thread consumes with an exponential ease-out (spec 02b 1.3 constants):
+/// emitted per frame = min(|rem|, max(|rem| * (1 - e^(-dt / tau)), 60 / stretch * dt)) with
+/// tau = (0.16 - response * 0.12) * stretch and stretch = 1 + coast * 2 * travelled^2; frames are elapsed-time based
+/// (dt capped at 1/20 s) and leftovers below 1 / stretch pixels flush in one final frame. A direction reversal
+/// replaces the tail; a notch within 24 px of the previous one in the same window extends the glide. Last stage (40)
+/// of the <see cref="WheelPipeline"/>. Pixels are converted to wheel units at 3 units per pixel (40 px = one notch).
+/// Touchpad (fine-grained) and injected input, and Ctrl/Win+wheel zoom gestures, are never smoothed.
 /// </summary>
 public sealed class SmoothScrollFeature : WheelFeatureBase
 {
-    private const int TickMs = 8;
-    private const double MaxPending = 120 * 40;
+    private const double UnitsPerPixel = 3.0;
+    private const double MaxPendingUnits = 120 * 40;
 
-    private volatile int _durationMs = 260;
-    private volatile int _distancePercent = 100;
+    private volatile int _step = 40;
+    private volatile int _response = 65;
+    private volatile int _coast;
     private Animator? _animator;
+    private AppRuleSet? _rules;
 
     public override string Id => "smooth-scroll";
 
-    public override string Name => "Smooth scrolling";
-
-    public override string Description => "Animate mouse wheel scrolling so pages glide instead of jumping.";
+    protected override bool IsEnabled() => App.Get<bool>(K.SmoothEnabled);
 
     internal override IWheelStage CreateStage()
     {
+        _rules ??= new AppRuleSet(App, K.SmoothExceptions);
         _animator ??= new Animator(this);
         return new Stage(this, _animator);
     }
 
     protected override void OnWheelStarted() => _animator?.Start();
 
-    protected override void OnStop()
+    protected override void OnWheelStopped()
     {
         _animator?.Dispose();
         _animator = null;
-        base.OnStop();
-    }
-
-    protected override void OnPausedChanged(bool paused)
-    {
-        if (paused)
-        {
-            _animator?.Cancel();
-        }
+        _rules?.Dispose();
+        _rules = null;
     }
 
     protected override void LoadSettings()
     {
-        if (Context is null)
-        {
-            return;
-        }
-
-        _durationMs = Math.Clamp(Context.Settings.Get("duration", 260), 60, 900);
-        _distancePercent = Math.Clamp(Context.Settings.Get("distance", 100), 25, 400);
+        var step = App.Get<int>(K.SmoothStep);
+        _step = step is >= 20 and <= 100 ? step : 40;
+        _response = Math.Clamp(App.Get<int>(K.SmoothResponse), 0, 100);
+        _coast = Math.Clamp(App.Get<int>(K.SmoothCoast), 0, 100);
     }
-
-    protected override void BuildSettings(SettingsViewBuilder builder) => builder
-        .AddIntSlider("duration", "Animation length (ms)", 60, 900, 260,
-            "How long a scroll takes to glide to a stop.")
-        .AddIntSlider("distance", "Distance per notch (%)", 25, 400, 100)
-        .AddNote("Works with the other scroll features: sideways and inverted scrolling are applied first, linear scrolling normalises notches before they are animated.");
 
     private sealed class Stage(SmoothScrollFeature owner, Animator animator) : IWheelStage
     {
@@ -76,24 +64,18 @@ public sealed class SmoothScrollFeature : WheelFeatureBase
 
         public StageResult Process(ref WheelEvent e)
         {
-            if (owner.Paused || e.Injected)
+            // Touchpads / injected input, and zoom gestures, keep their own behaviour.
+            if (!e.Notch || (e.Modifiers & (ModifierKeys.Control | ModifierKeys.Windows)) != 0)
             {
                 return StageResult.Continue;
             }
 
-            // Fine-grained deltas (touchpads, high-resolution wheels) are already smooth.
-            if (Math.Abs(e.Delta) < 120 && !e.Changed)
+            if (owner._rules is { IsEmpty: false } rules && rules.MatchesPoint(e.X, e.Y))
             {
                 return StageResult.Continue;
             }
 
-            // Ctrl+wheel and Win+wheel are zoom gestures: animating them would zoom in tiny stutters.
-            if ((e.Modifiers & (ModifierKeys.Control | ModifierKeys.Windows)) != 0)
-            {
-                return StageResult.Continue;
-            }
-
-            animator.Add(e.Delta * owner._distancePercent / 100.0, e.Horizontal);
+            animator.Add(e.Delta * owner._step / 40.0, e.Horizontal, e.X, e.Y);
             return StageResult.Consumed;
         }
     }
@@ -102,12 +84,15 @@ public sealed class SmoothScrollFeature : WheelFeatureBase
     {
         private readonly object _gate = new();
         private readonly double[] _remaining = new double[2];
+        private readonly double[] _glide = new double[2];
         private readonly double[] _carry = new double[2];
         private readonly ManualResetEventSlim _wake = new(false);
         private Thread? _thread;
         private volatile bool _running;
         private bool _active;
         private bool _periodRaised;
+        private int _lastX = int.MinValue;
+        private int _lastY = int.MinValue;
 
         public void Start()
         {
@@ -122,20 +107,30 @@ public sealed class SmoothScrollFeature : WheelFeatureBase
             _thread.Start();
         }
 
-        public void Add(double delta, bool horizontal)
+        public void Add(double units, bool horizontal, int x, int y)
         {
             var axis = horizontal ? 1 : 0;
             var wake = false;
             lock (_gate)
             {
-                if (Math.Sign(_remaining[axis]) == -Math.Sign(delta))
+                // A tick within 24 px of the previous one keeps the same glide; otherwise a new glide starts.
+                var near = Math.Abs(x - _lastX) <= 24 && Math.Abs(y - _lastY) <= 24;
+                _lastX = x;
+                _lastY = y;
+                if (Math.Sign(_remaining[axis]) == -Math.Sign(units))
                 {
-                    // Reversing direction: drop what is left of the old animation.
                     _remaining[axis] = 0;
                     _carry[axis] = 0;
+                    _glide[axis] = 0;
                 }
 
-                _remaining[axis] = Math.Clamp(_remaining[axis] + delta, -MaxPending, MaxPending);
+                if (!near || _remaining[axis] == 0)
+                {
+                    _glide[axis] = 0;
+                }
+
+                _remaining[axis] = Math.Clamp(_remaining[axis] + units, -MaxPendingUnits, MaxPendingUnits);
+                _glide[axis] = Math.Max(Math.Abs(_remaining[axis]), _glide[axis]);
                 if (!_active)
                 {
                     _active = true;
@@ -146,15 +141,6 @@ public sealed class SmoothScrollFeature : WheelFeatureBase
             if (wake)
             {
                 _wake.Set();
-            }
-        }
-
-        public void Cancel()
-        {
-            lock (_gate)
-            {
-                _remaining[0] = _remaining[1] = 0;
-                _carry[0] = _carry[1] = 0;
             }
         }
 
@@ -185,25 +171,25 @@ public sealed class SmoothScrollFeature : WheelFeatureBase
                 }
 
                 _wake.Reset();
-                var last = clock.Elapsed.TotalMilliseconds;
+                var last = clock.Elapsed.TotalSeconds;
                 while (_running)
                 {
-                    Thread.Sleep(TickMs);
-                    var now = clock.Elapsed.TotalMilliseconds;
-                    var dt = Math.Clamp(now - last, 1, 50);
+                    Thread.Sleep(16);
+                    var now = clock.Elapsed.TotalSeconds;
+                    var dt = Math.Clamp(now - last, 0.001, 1.0 / 20);
                     last = now;
 
-                    var tau = owner._durationMs / 4.6;
-                    var k = 1 - Math.Exp(-dt / tau);
-                    var emit0 = 0;
-                    var emit1 = 0;
+                    var response = owner._response / 100.0;
+                    var coast = owner._coast / 100.0;
+                    int emit0, emit1;
                     lock (_gate)
                     {
-                        emit0 = Step(0, k);
-                        emit1 = Step(1, k);
+                        emit0 = Step(0, dt, response, coast);
+                        emit1 = Step(1, dt, response, coast);
                         if (_remaining[0] == 0 && _remaining[1] == 0)
                         {
                             _carry[0] = _carry[1] = 0;
+                            _glide[0] = _glide[1] = 0;
                             _active = false;
                         }
                     }
@@ -227,7 +213,7 @@ public sealed class SmoothScrollFeature : WheelFeatureBase
         }
 
         // Called under _gate. Returns the whole wheel units to emit for one axis.
-        private int Step(int axis, double k)
+        private int Step(int axis, double dt, double response, double coast)
         {
             var remaining = _remaining[axis];
             if (remaining == 0)
@@ -235,11 +221,38 @@ public sealed class SmoothScrollFeature : WheelFeatureBase
                 return 0;
             }
 
-            var step = Math.Abs(remaining) <= 3 ? remaining : remaining * k;
-            _remaining[axis] = Math.Abs(remaining) <= 3 ? 0 : remaining - step;
-            _carry[axis] += step;
+            var abs = Math.Abs(remaining);
+            var glide = Math.Max(_glide[axis], abs);
+            var travelled = glide > 0 ? 1 - abs / glide : 0;
+            var stretch = 1 + coast * 2 * travelled * travelled;
+            var tau = (0.16 - response * 0.12) * stretch;
+            var finish = UnitsPerPixel / stretch;
+            double emit;
+            if (abs <= finish)
+            {
+                emit = abs; // final frame flushes the tail
+            }
+            else
+            {
+                var eased = abs * (1 - Math.Exp(-dt / tau));
+                var floor = 60 * UnitsPerPixel / stretch * dt;
+                emit = Math.Min(abs, Math.Max(eased, floor));
+            }
+
+            var signed = Math.Sign(remaining) * emit;
+            _remaining[axis] = abs - emit <= 1e-6 ? 0 : remaining - signed;
+            _carry[axis] += signed;
             var whole = (int)Math.Truncate(_carry[axis]);
-            _carry[axis] -= whole;
+            if (_remaining[axis] == 0)
+            {
+                whole = (int)Math.Round(_carry[axis]); // the last frame rounds
+                _carry[axis] = 0;
+            }
+            else
+            {
+                _carry[axis] -= whole;
+            }
+
             return whole;
         }
     }

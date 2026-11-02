@@ -1,453 +1,1004 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // WinKnife — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
 
+using System.Diagnostics;
+using System.Media;
 using System.Windows;
-using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Shapes;
 using System.Windows.Threading;
 using WinKnife.Core;
 using WinKnife.Core.Native;
 using WinKnife.Core.Ui;
-using WpfPath = System.Windows.Shapes.Path;
 
 namespace WinKnife.Features.Tools;
 
-internal sealed record RadialSlot(string Title, string Glyph, Action Run);
-
-/// <summary>Hold a trigger to open a ring of actions around the pointer; move toward one and release to run it.</summary>
-public sealed class RadialMenuFeature : ToolFeatureBase
+/// <summary>What the settings page needs from the running feature.</summary>
+internal interface IRadialMenuService
 {
-    private const int SlotCount = 8;
+    /// <summary>True when a profile hotkey could not be registered.</summary>
+    bool RegistrationFailed { get; }
 
-    private IDisposable? _keyboard;
-    private IDisposable? _mouse;
-    private RadialWindow? _window;
-    private DispatcherTimer? _poll;
-    private volatile string _trigger = "hotkey";
-    private volatile int _vk;
-    private volatile int _mods;
-    private volatile bool _open;
+    /// <summary>True while the mouse hook can see extra buttons.</summary>
+    bool WatchingMouse { get; }
 
+    /// <summary>The last extra mouse button pressed while the test row was on screen (back, forward) or null.</summary>
+    string? LastMouseButtonSeen { get; }
+
+    /// <summary>Raised on the UI thread when an extra button was seen.</summary>
+    event Action? ButtonSeen;
+
+    /// <summary>Opens the wheel of a profile without a trigger (works while the feature is off).</summary>
+    void TryIt(RadialProfile profile);
+
+    /// <summary>The settings page shows the button test row: report presses (and keep the hook alive).</summary>
+    void SetButtonTest(bool active);
+}
+
+/// <summary>
+/// Radial menu: a wheel of up to 12 actions around the pointer, opened by a per-profile hotkey or side mouse button
+/// (spec 04-tools section 3). Hold to select, or press to keep it open.
+/// </summary>
+public sealed class RadialMenuFeature : ToolsFeatureBase, IRadialMenuService
+{
+    private readonly List<IDisposable> _hotkeys = [];
+    private readonly HashSet<string> _failed = [];
+    private readonly bool[] _swallowed = new bool[256];
+    private List<RadialProfile> _profiles = [];
+    private RadialWheelWindow? _window;
+    private RadialNowPlayingService? _nowPlaying;
+    private IDisposable? _mouseSub;
+    private IDisposable? _keySub;
+    private OutsideClickMonitor? _outside;
+    private ForegroundWatcher? _foreground;
+    private DispatcherTimer? _tick;
+    private int _buttonTests;
+    private volatile int _claimBack = -1;
+    private volatile int _claimForward = -1;
+    private volatile bool _sessionActive;
+
+    // session
+    private RadialProfile? _profile;
+    private List<List<RadialItem>> _stack = [];
+    private List<string> _trail = [];
+    private int? _highlight;
+    private bool _pointerActivated;
+    private Point _openPointer;
+    private Point _lastCursor;
+    private Rect _frame;
+    private Point _center;
+    private double _scale = 1;
+    private bool _holdPhase;
+    private string? _heldButton;
+    private Hotkey? _heldHotkey;
+    private string _mode = "pressOrHold";
+    private bool _light = true;
+
+    /// <inheritdoc />
     public override string Id => "radial-menu";
 
-    public override string Name => "Radial menu";
+    /// <inheritdoc />
+    public bool RegistrationFailed => _failed.Count > 0;
 
-    public override string Description => "Hold a shortcut or mouse button to open a ring of your favourite actions, flick toward one and let go.";
+    /// <inheritdoc />
+    public bool WatchingMouse => _mouseSub is not null;
 
+    /// <inheritdoc />
+    public string? LastMouseButtonSeen { get; private set; }
+
+    /// <inheritdoc />
+    public event Action? ButtonSeen;
+
+    /// <inheritdoc />
     public override IReadOnlyList<FeatureAction> Actions =>
     [
-        new FeatureAction("show", "Show radial menu at pointer", () => Safe(() => OpenMenu(manual: true)), ""),
+        new FeatureAction("try", "Radial menu", () => Safe(() => TryItCore(_profiles.FirstOrDefault() ?? RadialModel.Seed(Ctx))), ""),
     ];
 
+    /// <inheritdoc />
+    protected override void RegisterDefaults(IAppSettings app)
+    {
+        ToolsDefaults.Register(app);
+        app.Register("radialMenuEnabled", false);
+        app.Register("radialMenuAtPointer", true);
+        app.Register("radialMenuActivationMode", "pressOrHold");
+        app.Register("radialMenuProfiles", "");
+        app.Register("panelControlRadialMenu", true);
+    }
+
+    /// <inheritdoc />
     protected override void OnStart()
     {
-        ReloadConfig();
+        _window = new RadialWheelWindow();
+        _window.Clicked += OnWheelClicked;
+        _nowPlaying = new RadialNowPlayingService(Ctx);
+        _nowPlaying.Changed += RefreshContent;
+        Ctx.Services.Provide<IRadialMenuService>(this);
+        Sync();
     }
 
+    /// <inheritdoc />
     protected override void OnStop()
     {
-        CloseMenu(commit: false);
-        _keyboard?.Dispose();
-        _mouse?.Dispose();
-        _keyboard = null;
-        _mouse = null;
+        Ctx.Services.Withdraw<IRadialMenuService>(this);
+        EndSessionNow();
+        DisposeHotkeys();
+        _mouseSub?.Dispose();
+        _mouseSub = null;
+        _nowPlaying?.Dismiss();
+        _nowPlaying = null;
+        _window?.Close();
+        _window = null;
     }
 
-    protected override void OnSettingChangedUi(string key)
+    /// <inheritdoc />
+    protected override void OnSettingChanged(string key)
     {
-        if (key is "trigger" or "hotkey")
+        if (key is "radialMenuEnabled" or RadialModel.StoreKey or "radialMenuActivationMode")
         {
-            ReloadConfig();
+            Sync();
         }
     }
 
-    public override FrameworkElement? CreateSettingsView()
-    {
-        if (Ctx is null)
-        {
-            return null;
-        }
+    private bool Enabled => App.Get<bool>("radialMenuEnabled");
 
-        EnsureDefaults();
-        var choices = new List<Choice<string>> { new(string.Empty, "(empty)") };
-        foreach (var (feature, action) in Ctx.Actions.All)
+    // ------------------------------------------------------------------ registration
+
+    private void Sync()
+    {
+        _profiles = RadialModel.Load(Ctx);
+        DisposeHotkeys();
+        _failed.Clear();
+        if (Enabled)
         {
-            if (feature.Id == Id)
+            foreach (var profile in _profiles)
             {
-                continue;
+                if (!Hotkey.TryParse(profile.Shortcut, out var hotkey))
+                {
+                    continue;
+                }
+
+                var captured = profile;
+                var candidate = hotkey;
+                if (HotkeyMap.IsReserved(candidate) && HotkeyMap.Fallback(candidate) is { } fallback)
+                {
+                    candidate = fallback;
+                }
+
+                if (!Ctx.Hotkeys.TryRegister(candidate, () => Safe(() => OnHotkey(captured)), out var registration))
+                {
+                    if (HotkeyMap.Fallback(candidate) is { } second && Ctx.Hotkeys.TryRegister(second, () => Safe(() => OnHotkey(captured)), out registration))
+                    {
+                        _hotkeys.Add(registration);
+                        continue;
+                    }
+
+                    _failed.Add(profile.Id);
+                    continue;
+                }
+
+                _hotkeys.Add(registration);
+            }
+        }
+
+        _claimBack = Enabled ? _profiles.FindIndex(p => p.MouseButton == "back") : -1;
+        _claimForward = Enabled ? _profiles.FindIndex(p => p.MouseButton == "forward") : -1;
+        SyncMouseHook();
+        if (!Enabled && _sessionActive && _profile is not null && _heldButton is not null)
+        {
+            EndSession();
+        }
+    }
+
+    private void DisposeHotkeys()
+    {
+        foreach (var h in _hotkeys)
+        {
+            h.Dispose();
+        }
+
+        _hotkeys.Clear();
+    }
+
+    private void SyncMouseHook()
+    {
+        var need = _claimBack >= 0 || _claimForward >= 0 || _buttonTests > 0;
+        if (need && _mouseSub is null)
+        {
+            _mouseSub = Ctx.Hooks.SubscribeMouse(OnMouse, 100);
+        }
+        else if (!need && _mouseSub is not null)
+        {
+            _mouseSub.Dispose();
+            _mouseSub = null;
+        }
+    }
+
+    /// <inheritdoc />
+    public void SetButtonTest(bool active)
+    {
+        if (active)
+        {
+            _buttonTests++;
+            LastMouseButtonSeen = null;
+        }
+        else
+        {
+            _buttonTests = Math.Max(0, _buttonTests - 1);
+            LastMouseButtonSeen = null;
+        }
+
+        SyncMouseHook();
+    }
+
+    private bool OnMouse(MouseHookEvent e)
+    {
+        if (e.Kind is not (MouseEventKind.XButtonDown or MouseEventKind.XButtonUp) || e.XButton == 0 || e.IsFromWinKnife)
+        {
+            return false;
+        }
+
+        var which = e.XButton == 1 ? "back" : "forward";
+        var claim = e.XButton == 1 ? _claimBack : _claimForward;
+        var down = e.Kind == MouseEventKind.XButtonDown;
+        Ctx.Ui.BeginInvoke(() =>
+        {
+            if (!IsRunning)
+            {
+                return;
             }
 
-            choices.Add(new Choice<string>($"{feature.Id}/{action.Id}", $"{feature.Name}: {action.Title}"));
-        }
+            if (down && _buttonTests > 0)
+            {
+                LastMouseButtonSeen = which;
+                ButtonSeen?.Invoke();
+            }
 
-        var builder = new SettingsViewBuilder(Ctx.Settings)
-            .AddChoice(
-                "trigger",
-                "Open the menu with",
-                new Choice<string>[]
+            if (claim >= 0)
+            {
+                if (down)
                 {
-                    new("hotkey", "Held keyboard shortcut"),
-                    new("middle", "Middle mouse button"),
-                    new("x1", "Mouse back button"),
-                    new("x2", "Mouse forward button"),
-                },
-                "hotkey",
-                "Mouse triggers are swallowed while the menu is used, so choose a button you do not need elsewhere.")
-            .AddHotkey("hotkey", "Held shortcut", Hotkey.Parse("Ctrl+Alt+Q"), "Hold to show the ring, release to run the highlighted action.");
-        for (var i = 0; i < SlotCount; i++)
-        {
-            builder.AddChoice($"slot{i}", $"Slot {i + 1}", choices, string.Empty);
-        }
-
-        builder.AddNote("Filled slots are spread evenly around the ring, starting at the top and going clockwise. Use at least two.");
-        return builder.Build();
+                    OnButtonDown(which, claim);
+                }
+                else
+                {
+                    OnButtonUp(which);
+                }
+            }
+        });
+        return claim >= 0;
     }
 
-    private void EnsureDefaults()
+    // ------------------------------------------------------------------ triggers
+
+    private void OnHotkey(RadialProfile profile)
     {
-        if (Ctx.Settings.Get("slotsInitialized", false))
+        if (_sessionActive)
+        {
+            var same = _profile?.Id == profile.Id;
+            EndSessionNow();
+            if (same)
+            {
+                return;
+            }
+        }
+
+        BeginSession(profile, requestedHold: true, heldButton: null);
+    }
+
+    private void OnButtonDown(string which, int profileIndex)
+    {
+        if (profileIndex >= _profiles.Count)
         {
             return;
         }
 
-        string[] preferred =
-        [
-            "screenshot/region", "color-picker/pick", "screen-ocr/capture", "quick-toggles/dark-mode",
-            "command-bar/open", "scratchpad/toggle", "kill-process/open", "cleaner/open",
-        ];
-        var available = Ctx.Actions.All.Select(a => $"{a.Feature.Id}/{a.Action.Id}").ToHashSet();
-        var picked = preferred.Where(available.Contains).Take(SlotCount).ToList();
-        if (picked.Count < 2)
+        if (_sessionActive)
         {
-            return; // other features have not started yet; try again later
+            if (!_holdPhase)
+            {
+                EndSession();
+            }
+
+            return;
         }
 
-        for (var i = 0; i < SlotCount; i++)
-        {
-            Ctx.Settings.Set($"slot{i}", i < picked.Count ? picked[i] : string.Empty);
-        }
-
-        Ctx.Settings.Set("slotsInitialized", true);
+        BeginSession(_profiles[profileIndex], requestedHold: false, heldButton: which);
     }
 
-    private void ReloadConfig()
+    private void OnButtonUp(string which)
     {
-        _trigger = Ctx.Settings.Get("trigger", "hotkey");
-        var hotkey = Ctx.Settings.Get<Hotkey?>("hotkey", Hotkey.Parse("Ctrl+Alt+Q"));
-        _vk = hotkey?.VirtualKey ?? 0;
-        _mods = (int)(hotkey?.Modifiers ?? HotkeyModifiers.None);
-
-        _keyboard?.Dispose();
-        _mouse?.Dispose();
-        _keyboard = null;
-        _mouse = null;
-        if (_trigger == "hotkey")
+        if (_sessionActive && _holdPhase && _heldButton == which)
         {
-            if (_vk != 0)
-            {
-                _keyboard = Ctx.Hooks.SubscribeKeyboard(OnKeyboard, 100);
-            }
+            HandleHoldReleased();
+        }
+    }
+
+    void IRadialMenuService.TryIt(RadialProfile profile) => TryItCore(profile);
+
+    private void TryItCore(RadialProfile profile)
+    {
+        EndSessionNow();
+        BeginSession(profile, requestedHold: false, heldButton: null);
+    }
+
+    // ------------------------------------------------------------------ session
+
+    private void BeginSession(RadialProfile profile, bool requestedHold, string? heldButton)
+    {
+        if (_window is null)
+        {
+            return;
+        }
+
+        var items = AvailableItems(profile.Items);
+        if (items.Count == 0)
+        {
+            SystemSounds.Beep.Play();
+            return;
+        }
+
+        _light = ThemeManager.IsLight;
+        _profile = profile;
+        _nowPlaying?.Dismiss();
+        if (ContainsNowPlaying(items))
+        {
+            _nowPlaying?.Refresh();
         }
         else
         {
-            _mouse = Ctx.Hooks.SubscribeMouse(OnMouse, 100);
+            _nowPlaying?.Reset();
+        }
+
+        _stack = [items];
+        _trail = [];
+        _highlight = null;
+        _pointerActivated = false;
+        var cursor = Screens.CursorPosition();
+        _openPointer = cursor;
+        _lastCursor = cursor;
+        var modeValue = App.Get<string>("radialMenuActivationMode", "pressOrHold");
+        _mode = modeValue is "press" or "hold" ? modeValue : "pressOrHold";
+        _heldHotkey = Hotkey.TryParse(profile.Shortcut, out var hk) ? hk : null;
+        var hasModifiers = _heldHotkey is not null && _heldHotkey.Modifiers != HotkeyModifiers.None;
+        _heldButton = heldButton;
+        _holdPhase = _mode != "press" && (heldButton is not null || (requestedHold && hasModifiers));
+
+        Place(cursor);
+        _window.ResetFace();
+        RefreshContent(bloom: true);
+        _window.Open();
+        UpdateHub();
+        _sessionActive = true;
+        Array.Clear(_swallowed);
+        _keySub = Ctx.Hooks.SubscribeKeyboard(OnKey, 1000);
+        _outside = new OutsideClickMonitor(Ctx.Hooks, Ctx.Ui, () => _frame, () => EndSession(), () => _sessionActive);
+        _foreground = new ForegroundWatcher(Ctx.Ui);
+        _foreground.ForegroundChanged += OnForeground;
+        _tick = new DispatcherTimer(DispatcherPriority.Render, Ctx.Ui) { Interval = TimeSpan.FromMilliseconds(16) };
+        _tick.Tick += (_, _) => OnTick();
+        _tick.Start();
+    }
+
+    private void Place(Point cursor)
+    {
+        var area = Screens.FromPoint(cursor).WorkArea;
+        var scale = RadialNative.ScaleAt(cursor.X, cursor.Y);
+        var panel = RadialGeometry.PanelSize * scale;
+        var wanted = App.Get<bool>("radialMenuAtPointer", true) ? cursor : new Point(area.Left + area.Width / 2, area.Top + area.Height / 2);
+        var cx = wanted.X;
+        var cy = wanted.Y;
+        if (area.Width > panel && area.Height > panel)
+        {
+            cx = Math.Clamp(cx, area.Left + panel / 2, area.Right - panel / 2);
+            cy = Math.Clamp(cy, area.Top + panel / 2, area.Bottom - panel / 2);
+        }
+
+        _center = new Point(cx, cy);
+        _scale = scale;
+        _frame = new Rect(cx - panel / 2, cy - panel / 2, panel, panel);
+        Plat.PlaceWindow(_window!, _frame.Left, _frame.Top, RadialGeometry.PanelSize, RadialGeometry.PanelSize);
+        var dpi = VisualTreeHelper.GetDpi(_window!).DpiScaleX;
+        if (Math.Abs(dpi - scale) > 0.01)
+        {
+            _scale = dpi;
+            panel = RadialGeometry.PanelSize * dpi;
+            _frame = new Rect(cx - panel / 2, cy - panel / 2, panel, panel);
+            Plat.PlaceWindow(_window!, _frame.Left, _frame.Top, RadialGeometry.PanelSize, RadialGeometry.PanelSize);
         }
     }
 
-    // ---- Hook thread: tiny, no allocation-heavy work -------------------------------------------
+    private List<RadialItem> Current => _stack.Count > 0 ? _stack[^1] : [];
 
-    private bool OnKeyboard(KeyboardHookEvent e)
+    private void RefreshContent() => RefreshContent(bloom: false);
+
+    private void RefreshContent(bool bloom)
     {
-        if (e.IsFromWinKnife || e.VkCode != _vk)
+        if (_window is null || _profile is null)
+        {
+            return;
+        }
+
+        var color = RadialColors.Resolve(_profile.Color, _light);
+        var np = _nowPlaying;
+        _window.SetItems(Current, color, item => MakeChipIcon(item, np), bloom);
+        _window.SetHighlight(_highlight);
+    }
+
+    private FrameworkElement MakeChipIcon(RadialItem item, RadialNowPlayingService? np)
+    {
+        ImageSource? special = null;
+        if (item.Kind == RadialKinds.Media && item.Payload == "nowPlaying" && item.SymbolName.Length == 0 && np is { State: RadialNowPlayingState.Playing, Snapshot: { } snap })
+        {
+            special = Plat.ShellImage(@"shell:AppsFolder\" + snap.AppId, 34);
+        }
+
+        return RadialWheelWindow.MakeIcon(item, _light, special);
+    }
+
+    private void UpdateHub()
+    {
+        if (_window is null)
+        {
+            return;
+        }
+
+        if (_highlight is { } h && h < Current.Count)
+        {
+            var item = Current[h];
+            var name = RadialModel.DisplayName(item, _nowPlaying?.Label);
+            _window.SetHubFace("item." + item.Id + name, () =>
+            {
+                var text = UiKit.Text(name, 11, FontWeights.SemiBold, ThemeKeys.TextPrimary, wrap: true);
+                text.TextAlignment = TextAlignment.Center;
+                text.TextTrimming = TextTrimming.CharacterEllipsis;
+                text.MaxHeight = 48;
+                text.Margin = new Thickness(8, 0, 8, 0);
+                text.HorizontalAlignment = HorizontalAlignment.Center;
+                text.VerticalAlignment = VerticalAlignment.Center;
+                text.Foreground = new SolidColorBrush(_light ? Colors.Black : Colors.White);
+                return text;
+            });
+        }
+        else if (_stack.Count > 1)
+        {
+            var parent = _trail.Count > 0 ? _trail[^1] : "";
+            var label = parent.Length > 0 ? parent : "Submenu";
+            _window.SetHubFace("back." + label, () =>
+            {
+                var stack = new System.Windows.Controls.StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
+                var fg = new SolidColorBrush(_light ? Color.FromArgb(0x99, 0, 0, 0) : Color.FromArgb(0xB3, 255, 255, 255));
+                var chevron = UiKit.Icon("", 12, ThemeKeys.TextSecondary, FontWeights.SemiBold);
+                chevron.Foreground = fg;
+                stack.Children.Add(chevron);
+                var text = UiKit.Text(label, 9, FontWeights.Medium, ThemeKeys.TextSecondary, wrap: true);
+                text.Foreground = fg;
+                text.TextAlignment = TextAlignment.Center;
+                text.MaxHeight = 26;
+                text.Margin = new Thickness(8, 2, 8, 0);
+                stack.Children.Add(text);
+                return stack;
+            });
+        }
+        else
+        {
+            _window.SetHubFace("brand", () =>
+            {
+                var mark = BrandMark.Create(34);
+                mark.Fill = new SolidColorBrush(_light ? Colors.Black : Colors.White);
+                mark.HorizontalAlignment = HorizontalAlignment.Center;
+                mark.VerticalAlignment = VerticalAlignment.Center;
+                return mark;
+            });
+        }
+    }
+
+    private void SetHighlight(int? index)
+    {
+        if (_highlight == index)
+        {
+            return;
+        }
+
+        _highlight = index;
+        _window?.SetHighlight(index);
+        UpdateHub();
+    }
+
+    private void OnTick()
+    {
+        if (!_sessionActive || _window is null)
+        {
+            return;
+        }
+
+        if (_holdPhase && _heldHotkey is { } hk && !RequiredModifiersHeld(hk))
+        {
+            HandleHoldReleased();
+            if (!_sessionActive)
+            {
+                return;
+            }
+        }
+
+        var cursor = Screens.CursorPosition();
+        if (cursor != _lastCursor)
+        {
+            _lastCursor = cursor;
+            RefreshHighlight(cursor);
+        }
+    }
+
+    private void RefreshHighlight(Point cursor)
+    {
+        if (!_pointerActivated)
+        {
+            var travelled = Math.Sqrt(Math.Pow(cursor.X - _openPointer.X, 2) + Math.Pow(cursor.Y - _openPointer.Y, 2)) / _scale;
+            if (travelled < RadialGeometry.MoveActivation)
+            {
+                return;
+            }
+
+            _pointerActivated = true;
+        }
+
+        var dx = (cursor.X - _center.X) / _scale;
+        var dyUp = (_center.Y - cursor.Y) / _scale;
+        SetHighlight(RadialGeometry.SliceAt(dx, dyUp, Current.Count));
+    }
+
+    private static bool RequiredModifiersHeld(Hotkey hk)
+    {
+        static bool Down(int vk) => (NativeMethods.GetAsyncKeyState(vk) & 0x8000) != 0;
+        var m = hk.Modifiers;
+        return (!m.HasFlag(HotkeyModifiers.Control) || Down(0x11)) && (!m.HasFlag(HotkeyModifiers.Alt) || Down(0x12))
+            && (!m.HasFlag(HotkeyModifiers.Shift) || Down(0x10)) && (!m.HasFlag(HotkeyModifiers.Win) || Down(0x5B) || Down(0x5C));
+    }
+
+    private void HandleHoldReleased()
+    {
+        _holdPhase = false;
+        RefreshHighlight(Screens.CursorPosition());
+        if (_highlight is { } h)
+        {
+            Select(h);
+        }
+        else if (_mode == "hold")
+        {
+            EndSession();
+        }
+    }
+
+    /// <summary>Test hook: keep the wheel open when another app takes the foreground.</summary>
+    internal static bool IgnoreForegroundChanges = false;
+
+    private void OnForeground(nint hwnd)
+    {
+        if (IgnoreForegroundChanges || !_sessionActive || Plat.ProcessOf(hwnd) == Environment.ProcessId)
+        {
+            return;
+        }
+
+        var cls = N.ClassName(hwnd);
+        if (cls is "ForegroundStaging" or "XamlExplorerHostIslandWindow" or "Shell_TrayWnd" or "TopLevelWindowForOverflowXamlIsland")
+        {
+            return;
+        }
+
+        EndSession();
+    }
+
+    // ------------------------------------------------------------------ keys (hook thread)
+
+    private bool OnKey(KeyboardHookEvent e)
+    {
+        if (!_sessionActive)
+        {
+            return false;
+        }
+
+        var vk = e.VkCode;
+        var handled = vk is 0x1B or 0x0D or (>= 0x25 and <= 0x28) or (>= 0x31 and <= 0x39) or (>= 0x61 and <= 0x69);
+        if (!handled || vk >= _swallowed.Length)
         {
             return false;
         }
 
         if (e.IsKeyDown)
         {
-            if (_open)
+            var repeat = _swallowed[vk];
+            _swallowed[vk] = true;
+            var arrow = vk is >= 0x25 and <= 0x28;
+            if (!repeat || arrow)
             {
-                return true; // key repeat while open
+                Ctx.Ui.BeginInvoke(() => OnSessionKey(vk));
             }
 
-            if ((int)e.Modifiers != _mods)
-            {
-                return false;
-            }
-
-            _open = true;
-            Ctx.Ui.BeginInvoke(() => OpenMenu(manual: false));
             return true;
         }
 
-        if (_open)
+        if (_swallowed[vk])
         {
-            _open = false;
-            Ctx.Ui.BeginInvoke(() => CloseMenu(commit: true));
+            _swallowed[vk] = false;
             return true;
         }
 
         return false;
     }
 
-    private bool OnMouse(MouseHookEvent e)
+    private void OnSessionKey(int vk)
     {
-        if (e.IsFromWinKnife)
+        if (!_sessionActive)
         {
-            return false;
+            return;
         }
 
-        var match = _trigger switch
+        switch (vk)
         {
-            "middle" => e.Kind is MouseEventKind.MiddleDown or MouseEventKind.MiddleUp,
-            "x1" => e.Kind is MouseEventKind.XButtonDown or MouseEventKind.XButtonUp && e.XButton == 1,
-            "x2" => e.Kind is MouseEventKind.XButtonDown or MouseEventKind.XButtonUp && e.XButton == 2,
-            _ => false,
-        };
-        if (!match)
-        {
-            return false;
+            case 0x1B:
+                StepBack();
+                break;
+            case 0x0D:
+                if (_highlight is { } h)
+                {
+                    Select(h);
+                }
+
+                break;
+            case 0x25 or 0x26:
+                MoveHighlight(-1);
+                break;
+            case 0x27 or 0x28:
+                MoveHighlight(1);
+                break;
+            default:
+                var digit = vk >= 0x61 ? vk - 0x61 : vk - 0x31;
+                if (digit < Current.Count)
+                {
+                    Select(digit);
+                }
+
+                break;
         }
-
-        if (e.IsButtonDown)
-        {
-            if (_open || e.Modifiers != System.Windows.Input.ModifierKeys.None)
-            {
-                return _open;
-            }
-
-            _open = true;
-            Ctx.Ui.BeginInvoke(() => OpenMenu(manual: false));
-            return true;
-        }
-
-        if (_open)
-        {
-            _open = false;
-            Ctx.Ui.BeginInvoke(() => CloseMenu(commit: true));
-            return true;
-        }
-
-        return false;
     }
 
-    // ---- UI thread ---------------------------------------------------------------------------------
-
-    private List<RadialSlot> ResolveSlots()
+    private void MoveHighlight(int delta)
     {
-        EnsureDefaults();
-        var catalog = Ctx.Actions.All;
-        var slots = new List<RadialSlot>();
-        for (var i = 0; i < SlotCount; i++)
+        var count = Current.Count;
+        if (count == 0)
         {
-            var key = Ctx.Settings.Get($"slot{i}", string.Empty);
-            if (string.IsNullOrEmpty(key))
+            return;
+        }
+
+        if (_mode != "hold")
+        {
+            _holdPhase = false;
+        }
+
+        int next;
+        if (_highlight is null)
+        {
+            next = delta < 0 ? count - 1 : 0;
+        }
+        else
+        {
+            next = (_highlight.Value + delta + count) % count;
+        }
+
+        SetHighlight(next);
+    }
+
+    // ------------------------------------------------------------------ selection
+
+    private void OnWheelClicked(Point rel)
+    {
+        if (!_sessionActive)
+        {
+            return;
+        }
+
+        var distance = Math.Sqrt(rel.X * rel.X + rel.Y * rel.Y);
+        if (distance > RadialGeometry.WheelDiameter / 2)
+        {
+            EndSession();
+        }
+        else if (distance < RadialGeometry.DeadZone)
+        {
+            StepBack();
+        }
+        else if (_highlight is { } h)
+        {
+            Select(h);
+        }
+        else
+        {
+            // armed by position even when the pointer has not moved yet
+            var idx = RadialGeometry.SliceAt(rel.X, -rel.Y, Current.Count);
+            if (idx is { } i)
+            {
+                Select(i);
+            }
+        }
+    }
+
+    private void StepBack()
+    {
+        if (_stack.Count > 1)
+        {
+            _stack.RemoveAt(_stack.Count - 1);
+            if (_trail.Count > 0)
+            {
+                _trail.RemoveAt(_trail.Count - 1);
+            }
+
+            _highlight = null;
+            _pointerActivated = false;
+            _openPointer = Screens.CursorPosition();
+            RefreshContent(bloom: true);
+            UpdateHub();
+        }
+        else
+        {
+            EndSession();
+        }
+    }
+
+    private void Select(int index)
+    {
+        if (index < 0 || index >= Current.Count)
+        {
+            return;
+        }
+
+        var item = Current[index];
+        if (item.Kind == RadialKinds.Submenu)
+        {
+            _stack.Add(item.Children);
+            _trail.Add(item.Name);
+            _highlight = null;
+            _holdPhase = false;
+            _pointerActivated = false;
+            _openPointer = Screens.CursorPosition();
+            RefreshContent(bloom: true);
+            UpdateHub();
+            return;
+        }
+
+        var anchor = _center;
+        EndSession();
+        Run(item, anchor);
+    }
+
+    private void EndSession()
+    {
+        if (!_sessionActive)
+        {
+            return;
+        }
+
+        _sessionActive = false;
+        TearDownMonitors();
+        var window = _window;
+        window?.Close(() => { });
+        _profile = null;
+        _stack = [];
+        _holdPhase = false;
+        _heldButton = null;
+    }
+
+    private void EndSessionNow()
+    {
+        if (!_sessionActive && _window is not { IsVisible: true })
+        {
+            return;
+        }
+
+        _sessionActive = false;
+        TearDownMonitors();
+        _window?.HideNow();
+        _nowPlaying?.Dismiss();
+        _profile = null;
+        _stack = [];
+        _holdPhase = false;
+        _heldButton = null;
+    }
+
+    private void TearDownMonitors()
+    {
+        _tick?.Stop();
+        _tick = null;
+        _keySub?.Dispose();
+        _keySub = null;
+        _outside?.Dispose();
+        _outside = null;
+        if (_foreground is not null)
+        {
+            _foreground.ForegroundChanged -= OnForeground;
+            _foreground.Dispose();
+            _foreground = null;
+        }
+
+        Array.Clear(_swallowed);
+    }
+
+    // ------------------------------------------------------------------ items
+
+    private List<RadialItem> AvailableItems(IEnumerable<RadialItem> items)
+    {
+        var result = new List<RadialItem>();
+        foreach (var item in items)
+        {
+            var ok = item.Kind switch
+            {
+                RadialKinds.Tool => ToolActions.IsAvailable(Ctx, item.Payload) && (item.Payload != "shelf" || App.Get<bool>("shelfEnabled", false)),
+                RadialKinds.QuickToggle => QuickToggleOps.Available(Ctx, item.Payload),
+                RadialKinds.WindowLayout => Ctx.Runtime.IsAvailable("window-layout"),
+                _ => true,
+            };
+            if (!ok)
             {
                 continue;
             }
 
-            var found = catalog.FirstOrDefault(a => $"{a.Feature.Id}/{a.Action.Id}" == key);
-            if (found.Action is { } action)
+            if (item.Kind == RadialKinds.Submenu)
             {
-                slots.Add(new RadialSlot(action.Title, action.Glyph ?? "", () => action.Invoke()));
+                var children = AvailableItems(item.Children);
+                if (children.Count == 0)
+                {
+                    continue;
+                }
+
+                var copy = item.Clone();
+                copy.Children = children;
+                result.Add(copy);
+                continue;
+            }
+
+            result.Add(item);
+        }
+
+        return result;
+    }
+
+    private static bool ContainsNowPlaying(IEnumerable<RadialItem> items) =>
+        items.Any(i => (i.Kind == RadialKinds.Media && i.Payload == "nowPlaying") || (i.Kind == RadialKinds.Submenu && ContainsNowPlaying(i.Children)));
+
+    // ------------------------------------------------------------------ running
+
+    private void Run(RadialItem item, Point anchor)
+    {
+        switch (item.Kind)
+        {
+            case RadialKinds.App or RadialKinds.File:
+                var target = item.Payload.StartsWith("shell:", StringComparison.OrdinalIgnoreCase) ? item.Payload : RadialModel.Expand(item.Payload);
+                var exists = target.StartsWith("shell:", StringComparison.OrdinalIgnoreCase) || File.Exists(target) || Directory.Exists(target);
+                if (!exists || !Plat.Open(target))
+                {
+                    SystemSounds.Beep.Play();
+                }
+
+                break;
+            case RadialKinds.Url:
+                if (RadialModel.NormalizedUrl(item.Payload) is not { } url || !Plat.Open(url))
+                {
+                    SystemSounds.Beep.Play();
+                }
+
+                break;
+            case RadialKinds.Shortcut:
+                if (Hotkey.TryParse(item.Payload, out var hotkey))
+                {
+                    Plat.AfterModifiersReleased(Ctx.Ui, () => PressShortcut(hotkey));
+                }
+
+                break;
+            case RadialKinds.Tool:
+                Plat.After(Ctx.Ui, 150, () =>
+                {
+                    if (!ToolActions.Run(Ctx, item.Payload))
+                    {
+                        SystemSounds.Beep.Play();
+                    }
+                });
+                break;
+            case RadialKinds.QuickToggle:
+                Plat.After(Ctx.Ui, 150, () => Safe(() => QuickToggleOps.Run(Ctx, item.Payload)));
+                break;
+            case RadialKinds.WindowLayout:
+                Plat.After(Ctx.Ui, 150, () =>
+                {
+                    if (!RunLayout(item.Payload))
+                    {
+                        SystemSounds.Beep.Play();
+                    }
+                });
+                break;
+            case RadialKinds.Media:
+                if (item.Payload == "nowPlaying")
+                {
+                    _nowPlaying?.Present(anchor);
+                }
+                else
+                {
+                    var vk = item.Payload switch { "playPause" => (ushort)0xB3, "nextTrack" => (ushort)0xB0, _ => (ushort)0xB1 };
+                    Plat.AfterModifiersReleased(Ctx.Ui, () =>
+                    {
+                        InputSender.SendKey(vk, false, true);
+                        InputSender.SendKey(vk, true, true);
+                    });
+                }
+
+                break;
+        }
+    }
+
+    private bool RunLayout(string raw)
+    {
+        var def = RadialCatalog.Layouts.FirstOrDefault(l => l.Raw == raw);
+        var candidates = new[] { raw, def.Role, def.Title };
+        foreach (var (feature, action) in Ctx.Actions.All)
+        {
+            if (FeatureCatalog.Resolve(feature.Id) != "window-layout")
+            {
+                continue;
+            }
+
+            if (candidates.Any(c => c is not null && (action.Id.Equals(c, StringComparison.OrdinalIgnoreCase) || action.Title.Equals(c, StringComparison.OrdinalIgnoreCase))))
+            {
+                try
+                {
+                    action.Invoke();
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    Ctx.Log.Error("Window layout slice failed", ex);
+                    return false;
+                }
             }
         }
 
-        return slots;
+        return false;
     }
 
-    private void OpenMenu(bool manual)
+    private void PressShortcut(Hotkey hotkey)
     {
-        if (!IsRunning || _window is not null)
+        var mods = new List<ushort>();
+        if (hotkey.Modifiers.HasFlag(HotkeyModifiers.Control))
         {
-            return;
+            mods.Add(0x11);
         }
 
-        var slots = ResolveSlots();
-        if (slots.Count < 2)
+        if (hotkey.Modifiers.HasFlag(HotkeyModifiers.Alt))
         {
-            _open = false;
-            Ctx.Notifier.Show(Name, "Assign at least two actions to the radial menu in its settings.", NotificationLevel.Info);
-            return;
+            mods.Add(0x12);
         }
 
-        NativeMethods.GetCursorPos(out var origin);
-        _window = new RadialWindow(slots);
-        _window.PlaceAt(origin.X, origin.Y);
-        _window.ShowNoActivate();
-        _window.PlaceAt(origin.X, origin.Y);
-        _poll = new DispatcherTimer(TimeSpan.FromMilliseconds(16), DispatcherPriority.Input, (_, _) =>
+        if (hotkey.Modifiers.HasFlag(HotkeyModifiers.Shift))
         {
-            NativeMethods.GetCursorPos(out var p);
-            _window?.UpdatePointer(p.X, p.Y);
-        }, Ctx.Ui);
-        _poll.Start();
-        if (manual)
-        {
-            // No key/button to release: a click anywhere completes the selection.
-            _open = true;
-            _window.MouseDownCommit = () => CloseMenu(commit: true);
-            _window.ClickThrough = false;
-        }
-        else
-        {
-            _window.ClickThrough = true;
-        }
-    }
-
-    private void CloseMenu(bool commit)
-    {
-        _poll?.Stop();
-        _poll = null;
-        var window = _window;
-        _window = null;
-        _open = false;
-        if (window is null)
-        {
-            return;
+            mods.Add(0x10);
         }
 
-        var selected = commit ? window.Selected : null;
-        window.Close();
-        if (selected is not null)
+        if (hotkey.Modifiers.HasFlag(HotkeyModifiers.Win))
         {
-            Ctx.Ui.BeginInvoke(() => Safe(selected.Run), DispatcherPriority.Background);
+            mods.Add(0x5B);
         }
-    }
-}
 
-internal sealed class RadialWindow : OverlayWindow
-{
-    private const double Size = 380;
-    private const double Outer = 170;
-    private const double Inner = 54;
-    private static readonly Brush Idle = Freeze(new SolidColorBrush(Color.FromArgb(0xE6, 0x20, 0x20, 0x26)));
-    private static readonly Brush Hot = Freeze(new SolidColorBrush(Color.FromRgb(0x5B, 0x5B, 0xE8)));
-
-    private readonly List<RadialSlot> _slots;
-    private readonly List<WpfPath> _wedges = new();
-    private readonly TextBlock _centre = new();
-    private int _centreX;
-    private int _centreY;
-    private int _selected = -1;
-
-    public RadialWindow(List<RadialSlot> slots)
-    {
-        _slots = slots;
-        Width = Size;
-        Height = Size;
-        Left = -10000;
-        Top = -10000;
-        var canvas = new Canvas { Width = Size, Height = Size, Background = Brushes.Transparent };
-        var n = slots.Count;
-        var step = 2 * Math.PI / n;
-        for (var i = 0; i < n; i++)
+        var vk = (ushort)hotkey.VirtualKey;
+        var extended = hotkey.Key is Key.Left or Key.Right or Key.Up or Key.Down or Key.Insert or Key.Delete or Key.Home or Key.End or Key.PageUp or Key.PageDown;
+        foreach (var m in mods)
         {
-            var centreAngle = i * step;
-            var gap = 0.025;
-            var wedge = new WpfPath
+            InputSender.SendKey(m);
+        }
+
+        InputSender.SendKey(vk, false, extended);
+        Plat.After(Ctx.Ui, 40, () =>
+        {
+            InputSender.SendKey(vk, true, extended);
+            for (var i = mods.Count - 1; i >= 0; i--)
             {
-                Data = Wedge(centreAngle - step / 2 + gap, centreAngle + step / 2 - gap),
-                Fill = Idle,
-                Stroke = new SolidColorBrush(Color.FromArgb(60, 255, 255, 255)),
-                StrokeThickness = 1,
-            };
-            _wedges.Add(wedge);
-            canvas.Children.Add(wedge);
-
-            var mid = (Outer + Inner) / 2;
-            var stack = new StackPanel { Width = 92 };
-            var glyph = new TextBlock { Text = slots[i].Glyph, FontFamily = UiKit.IconFont, FontSize = 24, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center };
-            var label = new TextBlock { Text = slots[i].Title, FontSize = 11, Foreground = Brushes.White, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, MaxHeight = 30, TextTrimming = TextTrimming.CharacterEllipsis };
-            stack.Children.Add(glyph);
-            stack.Children.Add(label);
-            stack.IsHitTestVisible = false;
-            Canvas.SetLeft(stack, Size / 2 + mid * Math.Sin(centreAngle) - 46);
-            Canvas.SetTop(stack, Size / 2 - mid * Math.Cos(centreAngle) - 24);
-            canvas.Children.Add(stack);
-        }
-
-        var hub = new Ellipse { Width = Inner * 2 - 8, Height = Inner * 2 - 8, Fill = Idle, Stroke = new SolidColorBrush(Color.FromArgb(60, 255, 255, 255)) };
-        Canvas.SetLeft(hub, Size / 2 - Inner + 4);
-        Canvas.SetTop(hub, Size / 2 - Inner + 4);
-        canvas.Children.Add(hub);
-        _centre.Foreground = Brushes.White;
-        _centre.FontSize = 11;
-        _centre.TextAlignment = TextAlignment.Center;
-        _centre.TextWrapping = TextWrapping.Wrap;
-        _centre.Width = Inner * 2 - 20;
-        _centre.Text = "Release to run";
-        _centre.IsHitTestVisible = false;
-        Canvas.SetLeft(_centre, Size / 2 - _centre.Width / 2);
-        Canvas.SetTop(_centre, Size / 2 - 14);
-        canvas.Children.Add(_centre);
-        Content = canvas;
-        MouseLeftButtonDown += (_, _) => MouseDownCommit?.Invoke();
-    }
-
-    public Action? MouseDownCommit { get; set; }
-
-    public RadialSlot? Selected => _selected >= 0 ? _slots[_selected] : null;
-
-    private static Brush Freeze(SolidColorBrush brush)
-    {
-        brush.Freeze();
-        return brush;
-    }
-
-    private static Point Polar(double radius, double angle) => new(Size / 2 + radius * Math.Sin(angle), Size / 2 - radius * Math.Cos(angle));
-
-    private static Geometry Wedge(double a0, double a1)
-    {
-        var large = a1 - a0 > Math.PI;
-        var figure = new PathFigure { StartPoint = Polar(Outer, a0), IsClosed = true, IsFilled = true };
-        figure.Segments.Add(new ArcSegment(Polar(Outer, a1), new Size(Outer, Outer), 0, large, SweepDirection.Clockwise, true));
-        figure.Segments.Add(new LineSegment(Polar(Inner, a1), true));
-        figure.Segments.Add(new ArcSegment(Polar(Inner, a0), new Size(Inner, Inner), 0, large, SweepDirection.Counterclockwise, true));
-        var geometry = new PathGeometry([figure]);
-        geometry.Freeze();
-        return geometry;
-    }
-
-    /// <summary>Centres the ring on a physical-pixel point.</summary>
-    public void PlaceAt(int x, int y)
-    {
-        _centreX = x;
-        _centreY = y;
-        var side = (int)Math.Round(ToPhysical(Size));
-        SetPhysicalBounds(x - side / 2, y - side / 2, side, side);
-    }
-
-    public void UpdatePointer(int x, int y)
-    {
-        var scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
-        var dx = (x - _centreX) / scale;
-        var dy = (y - _centreY) / scale;
-        var index = -1;
-        if (Math.Sqrt(dx * dx + dy * dy) > Inner - 6)
-        {
-            var angle = Math.Atan2(dx, -dy);
-            if (angle < 0)
-            {
-                angle += 2 * Math.PI;
+                InputSender.SendKey(mods[i], true);
             }
-
-            var step = 2 * Math.PI / _slots.Count;
-            index = (int)Math.Floor((angle + step / 2) / step) % _slots.Count;
-        }
-
-        if (index == _selected)
-        {
-            return;
-        }
-
-        _selected = index;
-        for (var i = 0; i < _wedges.Count; i++)
-        {
-            _wedges[i].Fill = i == index ? Hot : Idle;
-        }
-
-        _centre.Text = index >= 0 ? _slots[index].Title : "Release to run";
+        });
     }
 }

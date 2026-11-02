@@ -2,8 +2,11 @@
   <PropertyGroup>
     <OutputType>Library</OutputType>
     <RootNamespace>WinKnife.Features.Capture</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="ZXing.Net" Version="0.16.11" />
+    <InternalsVisibleTo Include="CaptureHarness" />
     <ProjectReference Include="..\WinKnife.Core\WinKnife.Core.csproj" />
   </ItemGroup>
 </Project>

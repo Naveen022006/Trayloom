@@ -100,6 +100,65 @@ internal static class Win32
     [DllImport("shcore.dll")]
     public static extern int GetDpiForMonitor(nint monitor, int dpiType, out uint dpiX, out uint dpiY);
 
+    public const uint GW_HWNDPREV = 3;
+    public const uint SMTO_ABORTIFHUNG = 0x2;
+    public const uint WM_APPCOMMAND = 0x0319;
+    public const uint WM_SYSCOMMAND = 0x0112;
+    public const uint SC_CLOSE = 0xF060;
+    public const uint SPI_GETWHEELSCROLLLINES = 0x0068;
+
+    public delegate bool EnumWindowsProc(nint hwnd, nint lParam);
+
+    [DllImport(User32)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool EnumWindows(EnumWindowsProc callback, nint lParam);
+
+    [DllImport(User32)]
+    public static extern nint GetWindow(nint hwnd, uint command);
+
+    [DllImport(User32)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool IsWindow(nint hwnd);
+
+    [DllImport(User32, CharSet = CharSet.Unicode)]
+    public static extern int GetWindowTextLengthW(nint hwnd);
+
+    [DllImport(User32, CharSet = CharSet.Unicode)]
+    public static extern nint SendMessageTimeoutW(nint hwnd, uint msg, nint wParam, nint lParam, uint flags, uint timeout, out nint result);
+
+    [DllImport(User32)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool PostMessageW(nint hwnd, uint msg, nint wParam, nint lParam);
+
+    [DllImport(User32, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SystemParametersInfoW(uint action, uint param, out uint value, uint flags);
+
+    [DllImport(User32)]
+    public static extern nint GetShellWindow();
+
+    /// <summary>True while any of Ctrl, Alt, Shift or Win is physically down.</summary>
+    public static bool AnyModifierDown() =>
+        NativeMethods.GetAsyncKeyState(0x10) < 0 || NativeMethods.GetAsyncKeyState(0x11) < 0 || NativeMethods.GetAsyncKeyState(0x12) < 0
+        || NativeMethods.GetAsyncKeyState(0x5B) < 0 || NativeMethods.GetAsyncKeyState(0x5C) < 0;
+
+    /// <summary>Window title text (empty when none).</summary>
+    public static string WindowText(nint hwnd)
+    {
+        var length = GetWindowTextLengthW(hwnd);
+        if (length <= 0)
+        {
+            return string.Empty;
+        }
+
+        var buffer = new char[length + 1];
+        var read = GetWindowTextW(hwnd, buffer, buffer.Length);
+        return read > 0 ? new string(buffer, 0, read) : string.Empty;
+    }
+
+    [DllImport(User32, CharSet = CharSet.Unicode)]
+    private static extern int GetWindowTextW(nint hwnd, [Out, MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.U2)] char[] buffer, int maxCount);
+
     /// <summary>Window class name of <paramref name="hwnd"/> (empty when it cannot be read).</summary>
     public static string ClassName(nint hwnd)
     {

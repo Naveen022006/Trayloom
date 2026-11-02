@@ -2,39 +2,26 @@
 // WinKnife — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
 
 using System.Collections.Concurrent;
-using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Input;
 using WinKnife.Core;
 using WinKnife.Core.Native;
-using WinKnife.Core.Ui;
 
 namespace WinKnife.Features.Input;
 
-/// <summary>One trigger -> expansion pair stored in the feature settings.</summary>
-public sealed class Snippet
-{
-    public string Trigger { get; set; } = string.Empty;
-
-    public string Text { get; set; } = string.Empty;
-}
-
 /// <summary>
-/// Text expander: typing a trigger such as <c>;sig</c> replaces it with the stored text. The keyboard hook keeps a short
-/// in-memory buffer of the characters typed since the last cursor/mouse/shortcut interruption (never logged or saved,
-/// cleared on window changes, clicks, navigation keys, shortcuts and password boxes). When the buffer ends with a
-/// trigger, the last key is swallowed and a worker thread sends Backspaces for the characters that already reached
-/// the app, then types the expansion as Unicode key events (line breaks as Enter).
+/// Text snippets: typing a trigger such as <c>;sig</c> replaces it with the stored text. The keyboard hook keeps a short
+/// in-memory buffer (64 characters) of what was typed since the last delimiter, click, focus change or shortcut; it is
+/// never logged or saved. Each snippet expands "Right away" (the last trigger key is swallowed) or "After space, Tab or
+/// Return" (the delimiter is held back and typed after the replacement). The longest matching trigger wins; case is
+/// ignored only for snippets that ask for it. A worker thread erases the typed trigger with an exact number of
+/// Backspaces and inserts the text (typed, or pasted for long / multi-line text) after expanding the variables
+/// <c>{{date}}</c>, <c>{{time}}</c>, <c>{{datetime}}</c> and <c>{{clipboard}}</c>. An optional sound plays afterwards.
+/// The second part of the feature is the Quick snippet menu (<see cref="SnippetLibraryWindow"/>), opened by the
+/// <c>snippetLibrary</c> shortcut role.
 /// </summary>
 public sealed class TextSnippetsFeature : InputFeatureBase
 {
     private const int BufferSize = 64;
-
-    private static readonly Snippet[] Defaults =
-    [
-        new() { Trigger = ";sig", Text = "Best regards," },
-        new() { Trigger = ";shrug", Text = "¯\\_(ツ)_/¯" },
-    ];
 
     private readonly char[] _buffer = new char[BufferSize];
     private readonly char[] _chars = new char[8];
@@ -44,71 +31,179 @@ public sealed class TextSnippetsFeature : InputFeatureBase
     private bool _caps;
     private int _swallowUpVk = -1;
 
-    private volatile Snippet[] _snippets = [];
-    private volatile bool _ignoreCase;
-    private volatile bool _needBoundary;
+    private volatile SnippetItem[] _immediate = [];
+    private volatile SnippetItem[] _delimited = [];
+    private volatile bool _sound;
+    private volatile string _soundName = string.Empty;
 
-    private BlockingCollection<(int Backspaces, string Text)>? _jobs;
+    private BlockingCollection<Job>? _jobs;
     private Thread? _worker;
+    private IDisposable? _keySub;
+    private IDisposable? _mouseSub;
+    private IDisposable? _libraryBind;
+    private SnippetLibraryWindow? _library;
+
+    private readonly record struct Job(int Backspaces, string Text, string? Trailing, bool Expansion);
 
     public override string Id => "text-snippets";
 
-    public override string Name => "Text snippets";
+    protected override bool IsEnabled() => App.Get<bool>(K.SnippetsEnabled) || App.Get<bool>(K.LibraryEnabled);
 
-    public override string Description => "Type a short trigger like ;sig and have it expand into longer text anywhere.";
-
-    protected override void OnStart()
+    protected override IEnumerable<FeatureAction> ExtraActions
     {
-        _length = 0;
-        _swallowUpVk = -1;
-        _caps = (NativeMethods.GetKeyState(Win32.VK_CAPITAL) & 1) != 0;
-        _jobs = new BlockingCollection<(int, string)>();
+        get
+        {
+            if (Context is null || !App.Get<bool>(K.LibraryEnabled))
+            {
+                return [];
+            }
+
+            return [new FeatureAction("snippetLibrary", Strings.QuickSnippetMenu, () => ShowLibrary(), "")];
+        }
+    }
+
+    protected override void Engage()
+    {
+        _jobs = new BlockingCollection<Job>();
         var jobs = _jobs;
         _worker = new Thread(() => Work(jobs)) { IsBackground = true, Name = "WinKnife.Snippets" };
         _worker.Start();
-        SubscribeKeyboard(OnKey, HookPriorities.TextSnippets);
-        SubscribeMouse(OnMouse, HookPriorities.SnippetMouse);
+        SyncParts();
     }
 
-    protected override void OnStop()
+    protected override void Disengage()
     {
+        _keySub?.Dispose();
+        _mouseSub?.Dispose();
+        _libraryBind?.Dispose();
+        _keySub = _mouseSub = _libraryBind = null;
         _jobs?.CompleteAdding();
         _worker?.Join(1000);
         _worker = null;
         _jobs = null;
         _length = 0;
+        var library = _library;
+        _library = null;
+        if (library is not null)
+        {
+            Context?.Ui.BeginInvoke(library.Close);
+        }
+    }
+
+    protected override void OnSettingChanged(string key)
+    {
+        if (key is K.SnippetsEnabled or K.LibraryEnabled)
+        {
+            SyncParts();
+        }
     }
 
     protected override void LoadSettings()
+    {
+        var items = App.Get<bool>(K.SnippetsEnabled)
+            ? SnippetStore.Load(App).Where(x => x.Enabled && x.Trigger.Length >= SnippetStore.MinTrigger && x.Trigger.Length <= SnippetStore.MaxTrigger && x.Replacement.Length > 0).ToList()
+            : [];
+        _immediate = [.. items.Where(x => x.IsImmediate).OrderByDescending(x => x.Trigger.Length)];
+        _delimited = [.. items.Where(x => !x.IsImmediate).OrderByDescending(x => x.Trigger.Length)];
+        _sound = App.Get<bool>(K.SoundEnabled);
+        _soundName = App.Get<string>(K.SoundName) ?? string.Empty;
+    }
+
+    // Hooks only while "Expand snippets while typing" is on; the shortcut only while the quick menu is on.
+    private void SyncParts()
     {
         if (Context is null)
         {
             return;
         }
 
-        var s = Context.Settings;
-        _ignoreCase = s.Get("ignoreCase", false);
-        _needBoundary = s.Get("needBoundary", false);
-        var stored = s.Get<List<Snippet>?>("snippets", null) ?? [.. Defaults];
-        _snippets =
-        [
-            .. stored
-                .Where(x => x is { Trigger.Length: >= 2 and <= 32 } && !string.IsNullOrEmpty(x.Text) && x.Trigger.All(c => !char.IsControl(c)))
-                .GroupBy(x => x.Trigger, _ignoreCase ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
-                .Select(g => g.First())
-                .OrderByDescending(x => x.Trigger.Length),
-        ];
+        var expand = App.Get<bool>(K.SnippetsEnabled);
+        if (expand && _keySub is null)
+        {
+            _length = 0;
+            _swallowUpVk = -1;
+            _caps = (NativeMethods.GetKeyState(Win32.VK_CAPITAL) & 1) != 0;
+            _keySub = Context.Hooks.SubscribeKeyboard(OnKey, HookPriorities.TextSnippets);
+            _mouseSub = Context.Hooks.SubscribeMouse(OnMouse, HookPriorities.SnippetMouse);
+        }
+        else if (!expand && _keySub is not null)
+        {
+            _keySub.Dispose();
+            _mouseSub?.Dispose();
+            _keySub = _mouseSub = null;
+            _length = 0;
+        }
+
+        var library = App.Get<bool>(K.LibraryEnabled);
+        if (library && _libraryBind is null)
+        {
+            _libraryBind = Context.Shortcuts.Bind("snippetLibrary", () => ShowLibrary());
+        }
+        else if (!library && _libraryBind is not null)
+        {
+            _libraryBind.Dispose();
+            _libraryBind = null;
+        }
     }
 
-    protected override void BuildSettings(SettingsViewBuilder builder)
+    // ------------------------------------------------------------------------------------------ quick menu
+
+    /// <summary>Opens the Quick snippet menu (UI thread).</summary>
+    public void ShowLibrary()
     {
-        builder
-            .AddToggle("ignoreCase", "Ignore capitalisation of triggers", false)
-            .AddToggle("needBoundary", "Only expand at the start of a word", false,
-                "The trigger must not directly follow a letter or digit.")
-            .AddNote("Triggers need 2 to 32 characters; start them with a symbol such as ; or / so normal typing never matches. Expansions are typed as text (line breaks become Enter).")
-            .Add(new SnippetEditor(Context!.Settings, [.. Defaults]));
+        var context = Context;
+        if (context is null)
+        {
+            return;
+        }
+
+        context.Ui.BeginInvoke(() =>
+        {
+            if (_library is { IsVisible: true })
+            {
+                _library.Activate();
+                return;
+            }
+
+            var previous = NativeMethods.GetForegroundWindow();
+            _library = new SnippetLibraryWindow(context, previous, snippet => InsertFromMenu(snippet, previous));
+            _library.Show();
+        });
     }
+
+    private void InsertFromMenu(SnippetItem snippet, nint previous)
+    {
+        var context = Context;
+        if (context is null)
+        {
+            return;
+        }
+
+        ThreadPool.UnsafeQueueUserWorkItem(_ =>
+        {
+            try
+            {
+                if (previous != 0 && NativeMethods.GetForegroundWindow() != previous)
+                {
+                    NativeMethods.SetForegroundWindow(previous);
+                    for (var i = 0; i < 20 && NativeMethods.GetForegroundWindow() != previous; i++)
+                    {
+                        Thread.Sleep(15);
+                    }
+                }
+
+                SnippetTyper.WaitForModifiersReleased();
+                var text = SnippetVariables.Expand(snippet.Replacement, () => SnippetTyper.ClipboardText(context.Ui));
+                SnippetTyper.Insert(text, context.Ui, context.Log);
+            }
+            catch (Exception ex)
+            {
+                context.Log.Error("Inserting a snippet failed", ex);
+            }
+        }, null);
+    }
+
+    // ------------------------------------------------------------------------------------------ expansion
 
     private bool OnMouse(MouseHookEvent e)
     {
@@ -119,6 +214,8 @@ public sealed class TextSnippetsFeature : InputFeatureBase
 
         return false;
     }
+
+    private static bool IsDelimiter(int vk) => vk is 0x20 or 0x09 or 0x0D;
 
     private bool OnKey(KeyboardHookEvent e)
     {
@@ -151,12 +248,6 @@ public sealed class TextSnippetsFeature : InputFeatureBase
             return false;
         }
 
-        if (Paused)
-        {
-            _length = 0;
-            return false;
-        }
-
         var foreground = NativeMethods.GetForegroundWindow();
         if (foreground != _lastForeground)
         {
@@ -183,6 +274,11 @@ public sealed class TextSnippetsFeature : InputFeatureBase
             return false;
         }
 
+        if (IsDelimiter(vk))
+        {
+            return OnDelimiter(vk, foreground);
+        }
+
         if (!TryTranslate(e, foreground, ctrl && alt, out var ch))
         {
             return false;
@@ -202,23 +298,16 @@ public sealed class TextSnippetsFeature : InputFeatureBase
 
         _buffer[_length++] = ch;
 
-        var snippets = _snippets;
+        var snippets = _immediate;
         if (snippets.Length == 0 || IsPasswordField(foreground))
         {
             return false;
         }
 
         var typed = new ReadOnlySpan<char>(_buffer, 0, _length);
-        var comparison = _ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
         foreach (var snippet in snippets)
         {
-            var trigger = snippet.Trigger;
-            if (trigger.Length > typed.Length || !MemoryExtensions.Equals(typed[^trigger.Length..], trigger, comparison))
-            {
-                continue;
-            }
-
-            if (_needBoundary && typed.Length > trigger.Length && char.IsLetterOrDigit(typed[typed.Length - trigger.Length - 1]))
+            if (!EndsWith(typed, snippet))
             {
                 continue;
             }
@@ -226,11 +315,53 @@ public sealed class TextSnippetsFeature : InputFeatureBase
             // The earlier characters of the trigger already reached the app; the last one is held back.
             _length = 0;
             _swallowUpVk = vk;
-            _jobs?.Add((trigger.Length - 1, snippet.Text));
+            _jobs?.Add(new Job(snippet.Trigger.Length - 1, snippet.Replacement, null, true));
             return true;
         }
 
         return false;
+    }
+
+    private bool OnDelimiter(int vk, nint foreground)
+    {
+        var typed = new ReadOnlySpan<char>(_buffer, 0, _length);
+        var snippets = _delimited;
+        SnippetItem? match = null;
+        if (snippets.Length > 0 && _length > 0 && !IsPasswordField(foreground))
+        {
+            foreach (var snippet in snippets)
+            {
+                if (EndsWith(typed, snippet))
+                {
+                    match = snippet;
+                    break;
+                }
+            }
+        }
+
+        _length = 0;
+        if (match is null)
+        {
+            return false;
+        }
+
+        // Hold the delimiter back: erase the trigger, insert the text, then type the delimiter after it.
+        _swallowUpVk = vk;
+        var trailing = vk switch { 0x09 => "\t", 0x0D => "\n", _ => " " };
+        _jobs?.Add(new Job(match.Trigger.Length, match.Replacement, trailing, true));
+        return true;
+    }
+
+    private static bool EndsWith(ReadOnlySpan<char> typed, SnippetItem snippet)
+    {
+        var trigger = snippet.Trigger;
+        if (trigger.Length > typed.Length)
+        {
+            return false;
+        }
+
+        var comparison = snippet.IgnoresCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        return MemoryExtensions.Equals(typed[^trigger.Length..], trigger, comparison);
     }
 
     // Returns false when the key is a dead key (nothing to record, buffer unchanged); ch == '\0' means the key
@@ -284,25 +415,49 @@ public sealed class TextSnippetsFeature : InputFeatureBase
             return false;
         }
 
-        // Classic Edit controls flag password boxes with ES_PASSWORD (0x20); other toolkits are not detectable.
+        // Classic Edit controls flag password boxes with ES_PASSWORD (0x20); other toolkits are not detectable here.
         var style = NativeMethods.GetWindowLongPtr(info.hwndFocus, Win32.GWL_STYLE).ToInt64();
         return (style & 0x20) != 0 && Win32.ClassName(info.hwndFocus).Equals("Edit", StringComparison.OrdinalIgnoreCase);
     }
 
-    private void Work(BlockingCollection<(int Backspaces, string Text)> jobs)
+    private void Work(BlockingCollection<Job> jobs)
     {
         try
         {
-            foreach (var (backspaces, text) in jobs.GetConsumingEnumerable())
+            foreach (var job in jobs.GetConsumingEnumerable())
             {
                 try
                 {
-                    for (var i = 0; i < backspaces; i++)
+                    var context = Context;
+                    if (context is null)
                     {
-                        KeySender.Tap(Win32.VK_BACK);
+                        continue;
                     }
 
-                    KeySender.TypeText(text);
+                    SnippetTyper.WaitForModifiersReleased();
+                    var text = SnippetVariables.Expand(job.Text, () => SnippetTyper.ClipboardText(context.Ui));
+                    SnippetTyper.Backspaces(job.Backspaces);
+                    SnippetTyper.Insert(text, context.Ui, context.Log);
+                    if (job.Trailing is { } trailing)
+                    {
+                        if (trailing == "\n")
+                        {
+                            KeySender.Tap((ushort)Win32.VK_RETURN);
+                        }
+                        else if (trailing == "\t")
+                        {
+                            KeySender.Tap((ushort)Win32.VK_TAB);
+                        }
+                        else
+                        {
+                            InputSender.SendText(trailing);
+                        }
+                    }
+
+                    if (_sound)
+                    {
+                        SnippetSounds.Play(_soundName);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -315,97 +470,68 @@ public sealed class TextSnippetsFeature : InputFeatureBase
             // collection completed
         }
     }
+}
 
-    /// <summary>Settings editor: one row per snippet with trigger, text and a remove button, plus an add button.</summary>
-    private sealed class SnippetEditor : StackPanel
+/// <summary>System sounds for "Play a sound when a typed trigger expands" (the .wav files of the Windows Media folder).</summary>
+internal static class SnippetSounds
+{
+    private static string MediaFolder => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Media");
+
+    /// <summary>Names (file names without extension) of the available sounds, sorted.</summary>
+    public static List<string> Names()
     {
-        private readonly IFeatureSettings _settings;
-        private readonly StackPanel _rows = new();
-        private bool _loading;
-
-        public SnippetEditor(IFeatureSettings settings, List<Snippet> defaults)
+        try
         {
-            _settings = settings;
-            Margin = new Thickness(0, 8, 0, 0);
-
-            _loading = true;
-            foreach (var snippet in settings.Get<List<Snippet>?>("snippets", null) ?? defaults)
+            if (Directory.Exists(MediaFolder))
             {
-                AddRow(snippet.Trigger, snippet.Text);
+                return [.. Directory.EnumerateFiles(MediaFolder, "*.wav").Select(System.IO.Path.GetFileNameWithoutExtension).Where(x => x is not null).Select(x => x!).OrderBy(x => x, StringComparer.CurrentCultureIgnoreCase)];
+            }
+        }
+        catch
+        {
+            // fall through
+        }
+
+        return [];
+    }
+
+    /// <summary>The default sound: the first of the quiet notification sounds that exists.</summary>
+    public static string DefaultName()
+    {
+        var names = Names();
+        foreach (var preferred in new[] { "Windows Notify System Generic", "Windows Ding", "Windows Notify" })
+        {
+            if (names.Contains(preferred, StringComparer.OrdinalIgnoreCase))
+            {
+                return preferred;
+            }
+        }
+
+        return names.FirstOrDefault() ?? string.Empty;
+    }
+
+    public static bool Exists(string name) => name.Length > 0 && File.Exists(System.IO.Path.Combine(MediaFolder, name + ".wav"));
+
+    public static void Play(string name)
+    {
+        try
+        {
+            if (!Exists(name))
+            {
+                name = DefaultName();
             }
 
-            _loading = false;
-
-            Children.Add(_rows);
-            var add = new Button { Content = "Add snippet", HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 8, 0, 0), Padding = new Thickness(14, 6, 14, 6) };
-            add.SetResourceReference(StyleProperty, ThemeKeys.AccentButtonStyle);
-            add.Click += (_, _) =>
-            {
-                AddRow(string.Empty, string.Empty);
-                Save();
-            };
-            Children.Add(add);
-        }
-
-        private void AddRow(string trigger, string text)
-        {
-            var triggerBox = new TextBox { Text = trigger, Width = 110, VerticalAlignment = VerticalAlignment.Top, ToolTip = "Trigger, e.g. ;sig" };
-            var textBox = new TextBox
-            {
-                Text = text,
-                AcceptsReturn = true,
-                TextWrapping = TextWrapping.Wrap,
-                MinHeight = 30,
-                MaxHeight = 140,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                Margin = new Thickness(8, 0, 8, 0),
-                ToolTip = "Text to type",
-            };
-            var remove = new Button
-            {
-                Content = "",
-                FontFamily = new System.Windows.Media.FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"),
-                Width = 32,
-                Height = 30,
-                VerticalAlignment = VerticalAlignment.Top,
-                ToolTip = "Remove",
-            };
-
-            var grid = new Grid { Margin = new Thickness(0, 0, 0, 6) };
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            Grid.SetColumn(textBox, 1);
-            Grid.SetColumn(remove, 2);
-            grid.Children.Add(triggerBox);
-            grid.Children.Add(textBox);
-            grid.Children.Add(remove);
-
-            triggerBox.TextChanged += (_, _) => Save();
-            textBox.TextChanged += (_, _) => Save();
-            remove.Click += (_, _) =>
-            {
-                _rows.Children.Remove(grid);
-                Save();
-            };
-
-            _rows.Children.Add(grid);
-        }
-
-        private void Save()
-        {
-            if (_loading)
+            if (name.Length == 0)
             {
                 return;
             }
 
-            var list = new List<Snippet>();
-            foreach (Grid row in _rows.Children)
-            {
-                list.Add(new Snippet { Trigger = ((TextBox)row.Children[0]).Text, Text = ((TextBox)row.Children[1]).Text.Replace("\r\n", "\n") });
-            }
-
-            _settings.Set("snippets", list);
+            using var player = new System.Media.SoundPlayer(System.IO.Path.Combine(MediaFolder, name + ".wav"));
+            player.PlaySync();
+        }
+        catch
+        {
+            // a missing sound is not an error
         }
     }
 }

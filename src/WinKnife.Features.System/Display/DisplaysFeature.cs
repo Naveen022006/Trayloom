@@ -2,312 +2,253 @@
 // WinKnife — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
 
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Threading;
 using Microsoft.Win32;
 using WinKnife.Core;
-using WinKnife.Core.Native;
-using WinKnife.Core.Ui;
+using Windows.Devices.Radios;
 
 namespace WinKnife.Features.SystemTools;
 
-/// <summary>Brightness sliders for built-in panels (WMI) and external monitors (DDC/CI), plus optional brightness hotkeys.</summary>
+/// <summary>Displays: brightness for the built-in panel (WMI) and external monitors (DDC/CI), dimming, on / off and shortcuts.</summary>
 public sealed class DisplaysFeature : IFeature
 {
-    private IFeatureContext? _context;
-    private HotkeyBinding? _upHotkey;
-    private HotkeyBinding? _downHotkey;
-    private DisplaysWindow? _window;
-    private Osd? _osd;
-    private Task<List<DisplayDevice>>? _devices;
+    private IFeatureContext? _ctx;
+    private DisplayService? _service;
+    private IDisposable? _down;
+    private IDisposable? _up;
 
-    public string Id => "displays";
-
-    public string Name => "Displays";
-
-    public string Description => "Change the brightness of your built-in screen and compatible external monitors, from a flyout or with hotkeys.";
-
-    public FeatureGroup Group => FeatureGroup.EnergyDisplay;
+    public string Id => "brightness";
 
     public IReadOnlyList<FeatureAction> Actions =>
     [
-        new FeatureAction("panel", "Display brightness", TogglePanel, ""),
-        new FeatureAction("brighter", "Brightness up", () => Adjust(+1), ""),
-        new FeatureAction("dimmer", "Brightness down", () => Adjust(-1), ""),
+        new FeatureAction("panel", "Display brightness", () => _ctx?.Shell.OpenPanel(PanelTabs.Brightness), ""),
+        new FeatureAction("brighter", "Brightness up", () => _service?.Step(+1, followPointer: true), ""),
+        new FeatureAction("dimmer", "Brightness down", () => _service?.Step(-1, followPointer: true), ""),
     ];
 
     public void Start(IFeatureContext context)
     {
-        _context = context;
-        _upHotkey = new HotkeyBinding(context, "upHotkey", null, () => Adjust(+1));
-        _downHotkey = new HotkeyBinding(context, "downHotkey", null, () => Adjust(-1));
-        SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
+        _ctx = context;
+        SystemDefaults.Register(context.App);
+        _service = new DisplayService(context);
+        _service.Start();
+        _down = context.Shortcuts.Bind("displayBrightnessDecrease", () => _service?.Step(-1, context.App.Get<bool>("brightnessKeysEnabled")));
+        _up = context.Shortcuts.Bind("displayBrightnessIncrease", () => _service?.Step(+1, context.App.Get<bool>("brightnessKeysEnabled")));
     }
 
     public void Stop()
     {
-        SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
-        _upHotkey?.Dispose();
-        _upHotkey = null;
-        _downHotkey?.Dispose();
-        _downHotkey = null;
-        if (_window is not null)
-        {
-            _window.Hide();
-            _window.Close();
-            _window = null;
-        }
-
-        _osd?.Close();
-        _osd = null;
-        InvalidateDevices();
-        _context = null;
+        _down?.Dispose();
+        _down = null;
+        _up?.Dispose();
+        _up = null;
+        _service?.Stop();
+        _service = null;
+        _ctx = null;
     }
+}
 
-    public FrameworkElement? CreateSettingsView() =>
-        _context is null
-            ? null
-            : new SettingsViewBuilder(_context.Settings)
-                .AddHotkey("upHotkey", "Brightness up", null, "Adjusts the display under the mouse pointer.")
-                .AddHotkey("downHotkey", "Brightness down", null)
-                .AddIntSlider("step", "Hotkey step (percent)", 2, 25, 10)
-                .AddNote("Built-in laptop screens use Windows WMI; external monitors need DDC/CI enabled in their on-screen menu. Displays that cannot be controlled are hidden.")
-                .Build();
+/// <summary>DISPLAYS tab of the tray panel (visible while <c>brightnessControlEnabled</c>).</summary>
+public sealed class DisplaysPanelSection : IPanelSection
+{
+    public string? FeatureId => "brightness";
 
-    /// <summary>Detects the adjustable displays once and caches them until the display configuration changes.</summary>
-    internal Task<List<DisplayDevice>> GetDevicesAsync()
+    public string TabId => PanelTabs.Brightness;
+
+    public FrameworkElement CreateView(IPanelContext context) => DisplayViews.PanelCard(context);
+}
+
+/// <summary>Energy page: the Displays card (anchor <c>brightness</c>).</summary>
+public sealed class DisplaysSettingsSection : ISettingsSection
+{
+    public string? FeatureId => "brightness";
+
+    public string PageId => SettingsPages.Energy;
+
+    public string? Anchor => "brightness";
+
+    public string? Title => "Displays";
+
+    public int Order => 100;
+
+    public IReadOnlyList<string> Keywords =>
+    [
+        "control displays", "brightness", "extra dimming", "dim the picture", "turn off display", "more options", "brightness key steps",
+        "display brightness shortcuts", "show brightness when adjusting", "ddc",
+    ];
+
+    public FrameworkElement CreateView(ISettingsContext context) => DisplayViews.SettingsCard(context);
+}
+
+/// <summary>
+/// Bluetooth on sleep (spec 05 E4): switches the Bluetooth radio off when the PC sleeps and back on at wake, only when this app switched it
+/// off. The debt is a persisted flag so a PC shut down while asleep still gets Bluetooth back at the next launch.
+/// </summary>
+public sealed class BluetoothSleepFeature : IFeature
+{
+    private IFeatureContext? _ctx;
+
+    /// <summary>Null until detection finished.</summary>
+    public static bool? HasController { get; private set; }
+
+    public string Id => "bluetooth-sleep";
+
+    public void Start(IFeatureContext context)
     {
-        return _devices ??= Task.Run(() =>
+        _ctx = context;
+        SystemDefaults.Register(context.App);
+        SystemEvents.PowerModeChanged += OnPower;
+        _ = Task.Run(async () =>
         {
             try
             {
-                return DisplayNative.Enumerate();
+                var radios = await Radio.GetRadiosAsync();
+                HasController = radios.Any(r => r.Kind == RadioKind.Bluetooth);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                _context?.Log.Error("Display detection failed", ex);
-                return [];
+                HasController = false;
             }
+
+            // Pay the debt left by a previous run (also when the feature has since been turned off).
+            await PayDebtAsync();
         });
     }
 
-    internal void Refresh()
+    public void Stop()
     {
-        InvalidateDevices();
+        SystemEvents.PowerModeChanged -= OnPower;
+        _ctx = null;
     }
 
-    private void OnDisplaySettingsChanged(object? sender, EventArgs e) => _context?.Ui.BeginInvoke(InvalidateDevices);
-
-    private void InvalidateDevices()
+    private void OnPower(object? sender, PowerModeChangedEventArgs e)
     {
-        var old = _devices;
-        _devices = null;
-        if (old is not null)
-        {
-            // Wait for any in-flight detection, then free the monitor handles.
-            _ = old.ContinueWith(t =>
-            {
-                if (t.IsCompletedSuccessfully)
-                {
-                    foreach (var device in t.Result)
-                    {
-                        device.Dispose();
-                    }
-                }
-            });
-        }
-    }
-
-    private void TogglePanel()
-    {
-        if (_context is null)
+        var ctx = _ctx;
+        if (ctx is null)
         {
             return;
         }
 
-        _window ??= new DisplaysWindow(this);
-        _window.Toggle();
+        if (e.Mode == PowerModes.Suspend && ctx.App.Get<bool>("bluetoothSleepEnabled"))
+        {
+            // The suspend notification only allows about two seconds: switch off right away.
+            try
+            {
+                Task.Run(async () =>
+                {
+                    var radio = await FindBluetoothAsync();
+                    if (radio is not null && radio.State == RadioState.On)
+                    {
+                        var result = await radio.SetStateAsync(RadioState.Off);
+                        if (result == RadioAccessStatus.Allowed)
+                        {
+                            ctx.App.Set("bluetoothSleepRestorePending", ctx.App.Get<bool>("bluetoothSleepRestoreOnWake"));
+                        }
+                    }
+                }).Wait(1800);
+            }
+            catch (Exception ex)
+            {
+                ctx.Log.Warn($"Bluetooth could not be switched off for sleep: {ex.Message}");
+            }
+        }
+        else if (e.Mode == PowerModes.Resume)
+        {
+            _ = Task.Run(PayDebtAsync);
+        }
     }
 
-    private async void Adjust(int direction)
+    private async Task PayDebtAsync()
     {
-        var context = _context;
-        if (context is null)
+        var ctx = _ctx;
+        if (ctx is null || !ctx.App.Get<bool>("bluetoothSleepRestorePending"))
         {
             return;
         }
 
         try
         {
-            var devices = await GetDevicesAsync();
-            if (devices.Count == 0)
+            var radio = await FindBluetoothAsync();
+            if (radio is not null && radio.State == RadioState.Off)
             {
-                context.Notifier.Show("Displays", "No adjustable displays found.", NotificationLevel.Warning);
-                return;
-            }
-
-            var monitor = NativeMethods.MonitorFromPoint(
-                new POINT { X = (int)Screens.CursorPosition().X, Y = (int)Screens.CursorPosition().Y },
-                NativeConstants.MONITOR_DEFAULTTONEAREST);
-            var targets = devices.Where(d => d.HMonitor == monitor).ToList();
-            if (targets.Count == 0)
-            {
-                targets = [devices[0]];
-            }
-
-            var step = context.Settings.Get("step", 10);
-            var first = targets[0];
-            var value = Math.Clamp(first.Percent + (direction * step), 0, 100);
-            var ok = await Task.Run(() => targets.Aggregate(true, (acc, target) => target.Write(value) && acc));
-            if (!ok)
-            {
-                context.Log.Warn($"Setting brightness on {first.Name} failed.");
-            }
-
-            if (_context is not null)
-            {
-                _osd ??= new Osd();
-                _osd.Display("", $"{first.Name}: {value}%");
+                await radio.SetStateAsync(RadioState.On);
             }
         }
         catch (Exception ex)
         {
-            context.Log.Error("Brightness hotkey failed", ex);
+            ctx.Log.Warn($"Bluetooth could not be restored: {ex.Message}");
         }
+        finally
+        {
+            // Bluetooth the user switched on meanwhile cancels the debt; the flag is always cleared.
+            ctx.App.Set("bluetoothSleepRestorePending", false);
+        }
+    }
+
+    private static async Task<Radio?> FindBluetoothAsync()
+    {
+        var access = await Radio.RequestAccessAsync();
+        if (access != RadioAccessStatus.Allowed)
+        {
+            return null;
+        }
+
+        var radios = await Radio.GetRadiosAsync();
+        return radios.FirstOrDefault(r => r.Kind == RadioKind.Bluetooth);
     }
 }
 
-/// <summary>The brightness flyout: one slider per adjustable display.</summary>
-internal sealed class DisplaysWindow : FlyoutWindow
+/// <summary>Energy page: the Bluetooth on sleep card (anchor <c>bluetoothSleep</c>).</summary>
+public sealed class BluetoothSleepSettingsSection : ISettingsSection
 {
-    private readonly DisplaysFeature _feature;
-    private readonly StackPanel _rows = new();
-    private int _generation;
+    public string? FeatureId => "bluetooth-sleep";
 
-    public DisplaysWindow(DisplaysFeature feature)
-        : base("Display brightness", "", 380)
+    public string PageId => SettingsPages.Energy;
+
+    public string? Anchor => "bluetoothSleep";
+
+    public string? Title => "Bluetooth on sleep";
+
+    public int Order => 300;
+
+    public IReadOnlyList<string> Keywords => ["turn bluetooth off when the pc sleeps", "wakes", "headphones"];
+
+    public FrameworkElement CreateView(ISettingsContext c)
     {
-        _feature = feature;
-        Body.Children.Add(_rows);
-        var refresh = new Button { Content = "", ToolTip = "Detect displays again", Width = 30, Height = 30, Padding = new Thickness(0), FontFamily = new System.Windows.Media.FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets") };
-        refresh.Click += (_, _) =>
+        SystemDefaults.Register(c.App);
+        var app = c.App;
+        var card = new WinKnife.Core.Ui.SettingsCard();
+        var detected = BluetoothSleepFeature.HasController;
+        if (detected is null)
         {
-            _feature.Refresh();
-            Populate();
-        };
-        HeaderExtra.Children.Add(refresh);
-    }
-
-    protected override void OnShown() => Populate();
-
-    private void Populate()
-    {
-        var generation = ++_generation;
-        _rows.Children.Clear();
-        _rows.Children.Add(Message("Detecting displays..."));
-        _ = LoadAsync(generation);
-    }
-
-    private async Task LoadAsync(int generation)
-    {
-        List<DisplayDevice> devices;
-        try
-        {
-            devices = await _feature.GetDevicesAsync();
-        }
-        catch (Exception)
-        {
-            devices = [];
-        }
-
-        if (generation != _generation)
-        {
-            return;
-        }
-
-        _rows.Children.Clear();
-        if (devices.Count == 0)
-        {
-            _rows.Children.Add(Message("No adjustable displays found. External monitors need DDC/CI enabled in their on-screen menu."));
-            return;
-        }
-
-        foreach (var device in devices)
-        {
-            _rows.Children.Add(BuildRow(device));
-        }
-    }
-
-    private static TextBlock Message(string text)
-    {
-        var block = new TextBlock { Text = text, Margin = new Thickness(6, 8, 6, 8) };
-        block.SetResourceReference(FrameworkElement.StyleProperty, ThemeKeys.MutedTextStyle);
-        return block;
-    }
-
-    private UIElement BuildRow(DisplayDevice device)
-    {
-        var name = new TextBlock { Text = device.Name, TextTrimming = TextTrimming.CharacterEllipsis };
-        name.SetResourceReference(TextBlock.ForegroundProperty, ThemeKeys.Text);
-        var kind = new TextBlock { Text = device.Kind, FontSize = 11 };
-        kind.SetResourceReference(FrameworkElement.StyleProperty, ThemeKeys.MutedTextStyle);
-
-        var glyph = new TextBlock { Text = "", FontSize = 16, Margin = new Thickness(0, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center };
-        glyph.SetResourceReference(FrameworkElement.StyleProperty, ThemeKeys.IconTextStyle);
-        var slider = new Slider { Minimum = 0, Maximum = 100, Value = device.Percent, SmallChange = 1, LargeChange = 10, VerticalAlignment = VerticalAlignment.Center };
-        var percent = new TextBlock { Text = $"{device.Percent}%", Width = 40, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
-        percent.SetResourceReference(TextBlock.ForegroundProperty, ThemeKeys.TextMuted);
-
-        // DDC/CI writes are slow: coalesce slider movement and write on a worker thread.
-        var pending = -1;
-        var writing = false;
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
-        timer.Tick += async (_, _) =>
-        {
-            if (writing || pending < 0)
+            // Detection is still running: show the row and re-render once it is known.
+            _ = Task.Run(async () =>
             {
-                return;
-            }
+                for (var i = 0; i < 20 && BluetoothSleepFeature.HasController is null; i++)
+                {
+                    await Task.Delay(150);
+                }
 
-            writing = true;
-            var value = pending;
-            pending = -1;
-            await Task.Run(() => device.Write(value));
-            writing = false;
-        };
-        slider.ValueChanged += (_, e) =>
+                c.Ui.BeginInvoke(c.RequestRebuild);
+            });
+        }
+
+        if (detected == false)
         {
-            percent.Text = $"{(int)e.NewValue}%";
-            pending = (int)e.NewValue;
-            if (!timer.IsEnabled)
-            {
-                timer.Start();
-            }
-        };
-        IsVisibleChanged += (_, _) =>
+            card.Add(new WinKnife.Core.Ui.SettingsRow(Gl.Bluetooth, Strings.Bluetooth.Title, Strings.Bluetooth.NoController));
+            return card;
+        }
+
+        card.Add(new WinKnife.Core.Ui.SettingsRow(Gl.Bluetooth, Strings.Bluetooth.SleepRow, Strings.Bluetooth.SleepCaption, new WinKnife.Core.Ui.MacSwitch(app.Get<bool>("bluetoothSleepEnabled"), WinKnife.Core.Ui.SwitchSize.Regular, on =>
         {
-            if (!IsVisible)
-            {
-                timer.Stop();
-            }
-        };
+            app.Set("bluetoothSleepEnabled", on);
+            c.RequestRebuild();
+        })));
+        if (app.Get<bool>("bluetoothSleepEnabled"))
+        {
+            card.AddDivider();
+            card.Add(new WinKnife.Core.Ui.SettingsRow(Gl.Reset, Strings.Bluetooth.WakeRow, Strings.Bluetooth.WakeCaption, new WinKnife.Core.Ui.MacSwitch(app.Get<bool>("bluetoothSleepRestoreOnWake"), WinKnife.Core.Ui.SwitchSize.Regular, on => app.Set("bluetoothSleepRestoreOnWake", on))));
+        }
 
-        var sliderRow = new Grid { Margin = new Thickness(0, 6, 0, 0) };
-        sliderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        sliderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        sliderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        Grid.SetColumn(slider, 1);
-        Grid.SetColumn(percent, 2);
-        sliderRow.Children.Add(glyph);
-        sliderRow.Children.Add(slider);
-        sliderRow.Children.Add(percent);
-
-        var stack = new StackPanel();
-        stack.Children.Add(name);
-        stack.Children.Add(kind);
-        stack.Children.Add(sliderRow);
-        var card = new Border { Margin = new Thickness(0, 0, 0, 8), Child = stack };
-        card.SetResourceReference(Border.StyleProperty, ThemeKeys.CardStyle);
         return card;
     }
 }

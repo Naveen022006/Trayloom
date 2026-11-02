@@ -40,7 +40,7 @@ internal struct GUITHREADINFO
 }
 
 /// <summary>Feature-local Win32 declarations (things Core does not expose).</summary>
-internal static class WinApi
+internal static partial class WinApi
 {
     public const string User32 = "user32.dll";
     public const string Kernel32 = "kernel32.dll";

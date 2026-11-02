@@ -7,7 +7,7 @@ using WinKnife.Core.Native;
 
 namespace WinKnife.Features.Island;
 
-/// <summary>Island-specific Win32 interop (fullscreen detection, per-monitor DPI, foreground events).</summary>
+/// <summary>Island-specific Win32 interop (fullscreen detection, per-monitor DPI, foreground events, power status).</summary>
 internal static class IslandNative
 {
     internal delegate void WinEventProc(nint hook, uint eventType, nint hwnd, int idObject, int idChild, uint thread, uint time);
@@ -15,6 +15,20 @@ internal static class IslandNative
     internal const uint EventSystemForeground = 0x0003;
     internal const uint WinEventOutOfContext = 0x0000;
     internal const uint WinEventSkipOwnProcess = 0x0002;
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct SystemPowerStatus
+    {
+        public byte ACLineStatus;
+        public byte BatteryFlag;
+        public byte BatteryLifePercent;
+        public byte SystemStatusFlag;
+        public uint BatteryLifeTime;
+        public uint BatteryFullLifeTime;
+    }
+
+    [DllImport("kernel32.dll")]
+    private static extern bool GetSystemPowerStatus(out SystemPowerStatus status);
 
     [DllImport("shell32.dll")]
     internal static extern int SHQueryUserNotificationState(out int state);
@@ -38,6 +52,18 @@ internal static class IslandNative
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool IsWindowVisible(nint hwnd);
+
+    [DllImport("user32.dll")]
+    internal static extern bool SetWindowDisplayAffinity(nint hwnd, uint affinity);
+
+    [DllImport("user32.dll")]
+    internal static extern uint GetWindowThreadProcessId(nint hwnd, out uint pid);
+
+    [DllImport("user32.dll")]
+    private static extern nint GetKeyboardLayout(uint thread);
+
+    [DllImport("user32.dll")]
+    internal static extern short GetAsyncKeyState(int vKey);
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmGetWindowAttribute(nint hwnd, int attribute, out RECT rect, int size);
@@ -63,10 +89,35 @@ internal static class IslandNative
         return 1.0;
     }
 
-    private static string ClassName(nint hwnd)
+    internal static string ClassName(nint hwnd)
     {
         var sb = new StringBuilder(64);
         return GetClassNameW(hwnd, sb, sb.Capacity) > 0 ? sb.ToString() : string.Empty;
+    }
+
+    /// <summary>Battery presence, charge (0..100) and plug state.</summary>
+    internal static (bool HasBattery, int Percent, bool Plugged, bool Charging) Power()
+    {
+        if (!GetSystemPowerStatus(out var s))
+        {
+            return (false, 0, true, false);
+        }
+
+        var has = s.BatteryFlag != 128 && s.BatteryFlag != 255;
+        return (has, s.BatteryLifePercent <= 100 ? s.BatteryLifePercent : 0, s.ACLineStatus == 1, (s.BatteryFlag & 8) != 0);
+    }
+
+    /// <summary>Layout identifier of the foreground window's thread (input source notice).</summary>
+    internal static long ForegroundLayout()
+    {
+        var fg = NativeMethods.GetForegroundWindow();
+        if (fg == 0)
+        {
+            return 0;
+        }
+
+        var thread = GetWindowThreadProcessId(fg, out _);
+        return GetKeyboardLayout(thread).ToInt64();
     }
 
     /// <summary>
@@ -92,7 +143,6 @@ internal static class IslandNative
             return false;
         }
 
-        // Frame bounds exclude the invisible resize border, so a normally maximised window does not count.
         RECT frame;
         if (DwmGetWindowAttribute(fg, 9, out frame, Marshal.SizeOf<RECT>()) != 0)
         {
@@ -106,7 +156,6 @@ internal static class IslandNative
             return true;
         }
 
-        // D3D exclusive fullscreen / presentation mode can report a slightly different rectangle.
         return SHQueryUserNotificationState(out var state) == 0 && state is 3 or 4;
     }
 }

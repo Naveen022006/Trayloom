@@ -117,6 +117,28 @@ internal static class KeySender
     public static bool IsExtended(ushort vk) =>
         vk is >= 0x21 and <= 0x28 or 0x2D or 0x2E or 0x5B or 0x5C or 0x5D or 0x6F or 0x90 or 0xA3 or 0xA5;
 
+    public static INPUT KeyInput(ushort vk, bool up) =>
+        Key(vk, (IsExtended(vk) ? KEYEVENTF_EXTENDEDKEY : 0u) | (up ? KEYEVENTF_KEYUP : 0u));
+
+    public static INPUT WheelInput(int delta, bool horizontal) => new()
+    {
+        type = INPUT_MOUSE,
+        u = new INPUTUNION { mi = new MOUSEINPUT { dwFlags = horizontal ? MOUSEEVENTF_HWHEEL : MOUSEEVENTF_WHEEL, mouseData = unchecked((uint)delta) } },
+    };
+
+    public static INPUT ButtonInput(System.Windows.Input.MouseButton button, bool down)
+    {
+        var (flag, data) = button switch
+        {
+            System.Windows.Input.MouseButton.Left => (down ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP, 0u),
+            System.Windows.Input.MouseButton.Right => (down ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_RIGHTUP, 0u),
+            System.Windows.Input.MouseButton.Middle => (down ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_MIDDLEUP, 0u),
+            System.Windows.Input.MouseButton.XButton1 => (down ? MOUSEEVENTF_XDOWN : MOUSEEVENTF_XUP, 1u),
+            _ => (down ? MOUSEEVENTF_XDOWN : MOUSEEVENTF_XUP, 2u),
+        };
+        return new INPUT { type = INPUT_MOUSE, u = new INPUTUNION { mi = new MOUSEINPUT { dwFlags = flag, mouseData = data } } };
+    }
+
     private static INPUT Key(ushort vk, uint flags) => new()
     {
         type = INPUT_KEYBOARD,

@@ -2,131 +2,332 @@
 // WinKnife — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
 
 using System.Windows;
-using System.Windows.Input;
 using System.Windows.Threading;
 using WinKnife.Core;
 using WinKnife.Core.Native;
 using WinKnife.Core.Ui;
-using static WinKnife.Core.Native.NativeConstants;
+using DragDropEffects = System.Windows.DragDropEffects;
 
-namespace WinKnife.Features.WindowTools;
+namespace WinKnife.Features.Files;
 
-/// <summary>A small floating shelf that holds files while you move between windows.</summary>
-public sealed class ShelfFeature : IFeature
+/// <summary>
+/// The Shelf: a floating spot to gather files, images, links and text, then drag them anywhere later. Opened by the shortcut,
+/// by shaking the pointer during a drag, by the screen edge, or docked next to the tray icons while you drag.
+/// </summary>
+public sealed class ShelfFeature : IFeature, IShelfHost, IShelfService
 {
-    private static readonly Hotkey DefaultHotkey = new(HotkeyModifiers.Control | HotkeyModifiers.Alt | HotkeyModifiers.Shift, Key.F);
+    private const double ShakeWindowSeconds = 0.5;
+    private const double ShakeTravel = 220;
+    private const int ShakeStep = 6;
+    private const int ShakeReversals = 3;
+    private const int EdgeTrigger = 200;
+    private const int EdgeRetreat = 330;
 
     private IFeatureContext? _context;
-    private HotkeyBindings? _bindings;
-    private IDisposable? _mouseSubscription;
-    private DispatcherTimer? _timer;
-    private ShelfWindow? _window;
-    private bool _autoShown;
-    private int _dwell;
-    private int _idle;
+    private ShelfStore? _store;
+    private ShelfFloatingWindow? _floating;
+    private ShelfDockedWindow? _docked;
+    private DragProbeWindow? _probe;
+    private IDisposable? _mouse;
+    private DispatcherTimer? _tick;
+    private DispatcherTimer? _afterDrag;
+    private DispatcherTimer? _probeTimeout;
 
-    // Written on the hook thread, read on the UI thread.
-    private volatile bool _leftDown;
-    private int _downX;
-    private int _downY;
+    // gesture state (UI thread)
+    private bool _gesture;
+    private System.Windows.Point _down;
+    private bool _moved;
+    private bool _excluded;
+    private bool _probeDone;
+    private bool _contentDrag;
+    private DateTime _lastSummon = DateTime.MinValue;
+    private readonly List<(DateTime At, int X)> _samples = [];
+    private DateTime _edgeSince = DateTime.MaxValue;
+    private bool _edgeShown;
+    private int _edgeSide;
+    private DateTime _dockNear = DateTime.MaxValue;
 
     public string Id => "shelf";
 
-    public string Name => "Shelf";
-
-    public string Description => "Park files on a small floating shelf while you switch windows, then drag them out where you need them.";
-
-    public FeatureGroup Group => FeatureGroup.ClipboardFiles;
-
     public IReadOnlyList<FeatureAction> Actions =>
     [
-        new FeatureAction("toggle", _window is { IsVisible: true } ? "Hide shelf" : "Show shelf", Toggle, ""),
-        new FeatureAction("clear", "Clear shelf", () => _window?.Clear(), ""),
+        new FeatureAction("toggle", Strings.Shelf.OpenShelf, () => Toggle(), ""),
+        new FeatureAction("clear", Strings.Shelf.ClearAll, () => _store?.ClearAll(), ""),
     ];
+
+    ShelfStore IShelfHost.Store => _store!;
+
+    IContributionServices IShelfHost.Services => _context!;
+
+    public int ItemCount => _store?.LeafCount ?? 0;
+
+    public bool Pinned { get; set; }
+
+    internal static void RegisterDefaults(IAppSettings app)
+    {
+        app.Register("shelfEnabled", false);
+        app.Register("shelfShortcutEnabled", true);
+        app.Register("shelfShortcutAddsFinderSelection", false);
+        app.Register("shelfShakeToOpen", true);
+        app.Register("shelfDropZoneEnabled", true);
+        app.Register("shelfDockPlacement", "menuBar");
+        app.Register("shelfEdgeDragEnabled", false);
+        app.Register("shelfCloseAfterDrop", false);
+        app.Register("shelfRemoveAfterDrop", true);
+        app.Register("shelfClearOnClose", false);
+        app.Register("shelfAutomaticExclusions", new List<string>());
+        app.Register("notchShelf", true);
+        app.Register("panelControlShelf", true);
+    }
 
     public void Start(IFeatureContext context)
     {
         _context = context;
-        _bindings = new HotkeyBindings(context,
-        [
-            new HotkeyBinding("hotkey", "Shelf", DefaultHotkey, Toggle),
-        ]);
-
-        _timer = new DispatcherTimer(DispatcherPriority.Background, context.Ui) { Interval = TimeSpan.FromMilliseconds(60) };
-        _timer.Tick += OnTick;
-        ApplyAutoShowSetting();
-        context.Settings.Changed += OnSettingChanged;
+        RegisterDefaults(context.App);
+        _store = new ShelfStore(context.DataDirectory, context.Log, context.Ui);
+        _store.Changed += OnStoreChanged;
+        context.Shortcuts.Bind("shelf", () => OnShortcut());
+        context.Services.Provide<IShelfService>(this);
+        context.App.Changed += OnSettingChanged;
+        Hub.Shelf = this;
+        Hub.Settings = context.App;
+        Apply();
     }
 
     public void Stop()
     {
         if (_context is not null)
         {
-            _context.Settings.Changed -= OnSettingChanged;
+            _context.App.Changed -= OnSettingChanged;
+            _context.Services.Withdraw<IShelfService>(this);
         }
 
-        _bindings?.Dispose();
-        _bindings = null;
-        _mouseSubscription?.Dispose();
-        _mouseSubscription = null;
-        _timer?.Stop();
-        _timer = null;
-        var window = _window;
-        _window = null;
-        if (window is not null)
+        if (ReferenceEquals(Hub.Shelf, this))
         {
-            SavePosition(window);
-            window.Close();
+            Hub.Shelf = null;
+        }
+
+        StopMonitor();
+        _afterDrag?.Stop();
+        _afterDrag = null;
+        var floating = _floating;
+        var docked = _docked;
+        _floating = null;
+        _docked = null;
+        floating?.Close();
+        docked?.Close();
+        if (_store is not null)
+        {
+            _store.Changed -= OnStoreChanged;
+            _store.Flush();
+            _store = null;
         }
 
         _context = null;
     }
 
-    public FrameworkElement? CreateSettingsView()
-    {
-        if (_context is null)
-        {
-            return null;
-        }
+    private bool Enabled => _context?.App.Get<bool>("shelfEnabled") ?? false;
 
-        return new SettingsViewBuilder(_context.Settings)
-            .AddHotkey("hotkey", "Show or hide the shelf", DefaultHotkey)
-            .AddToggle("autoShow", "Show when dragging near the top edge", true, "While you drag something to the very top of the screen the shelf appears so you can drop files on it. It hides again when you are done.")
-            .AddToggle("remember", "Remember shelf contents between sessions", true)
-            .AddNote("Drag files onto the shelf. Drag a tile out to copy or move the file. Double-click opens it, right-click for more.")
-            .Build();
-    }
+    private IAppSettings App => _context!.App;
 
     private void OnSettingChanged(string key)
     {
-        if (key == "autoShow")
+        if (key.StartsWith("shelf", StringComparison.Ordinal) || key == "notchEnabled" || key == "notchShelf")
         {
-            _context?.Ui.BeginInvoke(ApplyAutoShowSetting);
+            _context?.Ui.BeginInvoke(Apply);
         }
     }
 
-    private void ApplyAutoShowSetting()
+    private void OnStoreChanged() => RefreshDocked();
+
+    public void FloatingHidden() => RefreshDocked();
+
+    private void Apply()
     {
-        var context = _context;
-        if (context is null)
+        if (_context is null)
         {
             return;
         }
 
-        var wanted = context.Settings.Get("autoShow", true);
-        if (wanted && _mouseSubscription is null)
+        if (!Enabled)
         {
-            _mouseSubscription = context.Hooks.SubscribeMouse(OnMouse);
+            StopMonitor();
+            _floating?.HideShelf();
+            _docked?.Conceal();
+            return;
         }
-        else if (!wanted && _mouseSubscription is not null)
+
+        var wantsMonitor = App.Get<bool>("shelfShakeToOpen") || App.Get<bool>("shelfDropZoneEnabled") || App.Get<bool>("shelfEdgeDragEnabled");
+        if (wantsMonitor)
         {
-            _mouseSubscription.Dispose();
-            _mouseSubscription = null;
-            _leftDown = false;
+            StartMonitor();
+        }
+        else
+        {
+            StopMonitor();
+        }
+
+        RefreshDocked();
+    }
+
+    // ---------------------------------------------------------------------------------------------- summon
+
+    private void OnShortcut()
+    {
+        if (!Enabled)
+        {
+            return;
+        }
+
+        var foreground = NativeMethods.GetForegroundWindow();
+        if (_floating is { IsVisible: true } && !(App.Get<bool>("shelfShortcutAddsFinderSelection") && ExplorerShell.IsExplorerWindow(foreground) && ExplorerShell.Selection(foreground).Count > 0))
+        {
+            _floating.HideShelf();
+            Pinned = false;
+            RefreshDocked();
+            return;
+        }
+
+        if (App.Get<bool>("shelfShortcutAddsFinderSelection") && ExplorerShell.IsExplorerWindow(foreground))
+        {
+            var selection = ExplorerShell.Selection(foreground);
+            if (selection.Count > 0)
+            {
+                _store?.AddFiles(selection);
+            }
+        }
+
+        Summon();
+    }
+
+    public void Summon()
+    {
+        if (_context is null || _store is null || !Enabled)
+        {
+            return;
+        }
+
+        try
+        {
+            _floating ??= new ShelfFloatingWindow(this);
+            _docked?.Conceal();
+            _floating.ShowAt(nearPointer: false);
+        }
+        catch (Exception ex)
+        {
+            _context.Log.Error("Could not show the shelf", ex);
         }
     }
 
-    /// <summary>Hook thread: only records the button state, never swallows.</summary>
+    public void Toggle()
+    {
+        if (_floating is { IsVisible: true })
+        {
+            _floating.HideShelf();
+            Pinned = false;
+            RefreshDocked();
+        }
+        else
+        {
+            Summon();
+        }
+    }
+
+    private void SummonNearPointer(int? edgeSide = null)
+    {
+        if (_context is null || _store is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _floating ??= new ShelfFloatingWindow(this);
+            _docked?.Conceal();
+            _floating.ShowAt(nearPointer: edgeSide is null, edgeSide);
+        }
+        catch (Exception ex)
+        {
+            _context.Log.Error("Could not show the shelf", ex);
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------------- drag-out rules
+
+    public void OnDragOut(IReadOnlyList<string> ids, DragDropEffects effect, bool windowPinned, Action closeWindow)
+    {
+        var store = _store;
+        if (store is null || _context is null)
+        {
+            return;
+        }
+
+        if (effect.HasFlag(DragDropEffects.Move) || App.Get<bool>("shelfRemoveAfterDrop"))
+        {
+            // Pinned items always stay; items accepted by another app leave the shelf.
+            store.Remove(ids, includePinned: false);
+        }
+
+        if (App.Get<bool>("shelfCloseAfterDrop") && !windowPinned)
+        {
+            closeWindow();
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------------- docked drop zone
+
+    private void RefreshDocked()
+    {
+        if (_context is null || !Enabled)
+        {
+            return;
+        }
+
+        var wanted = App.Get<bool>("shelfDropZoneEnabled");
+        if (!wanted || _floating is { IsVisible: true })
+        {
+            _docked?.Conceal();
+            return;
+        }
+
+        if (_docked is null && (_store?.Items.Count ?? 0) == 0)
+        {
+            return;
+        }
+
+        _docked ??= new ShelfDockedWindow(this);
+        _docked.Present();
+    }
+
+    // ---------------------------------------------------------------------------------------------- drag monitor
+
+    private void StartMonitor()
+    {
+        if (_mouse is not null || _context is null)
+        {
+            return;
+        }
+
+        _mouse = _context.Hooks.SubscribeMouse(OnMouse);
+        _tick = new DispatcherTimer(TimeSpan.FromMilliseconds(20), DispatcherPriority.Input, OnTick, _context.Ui);
+        _tick.Stop();
+    }
+
+    private void StopMonitor()
+    {
+        _mouse?.Dispose();
+        _mouse = null;
+        _tick?.Stop();
+        _tick = null;
+        _probeTimeout?.Stop();
+        var probe = _probe;
+        _probe = null;
+        probe?.Close();
+        _gesture = false;
+        _contentDrag = false;
+    }
+
+    /// <summary>Hook thread: records nothing but posts the gesture boundaries.</summary>
     private bool OnMouse(MouseHookEvent e)
     {
         if (e.IsFromWinKnife)
@@ -137,210 +338,345 @@ public sealed class ShelfFeature : IFeature
         switch (e.Kind)
         {
             case MouseEventKind.LeftDown:
-                _downX = e.X;
-                _downY = e.Y;
-                _leftDown = true;
-                _context?.Ui.BeginInvoke(() =>
-                {
-                    _dwell = 0;
-                    _timer?.Start();
-                });
+                var point = new System.Windows.Point(e.X, e.Y);
+                _context?.Ui.BeginInvoke(() => BeginGesture(point));
                 break;
             case MouseEventKind.LeftUp:
-                _leftDown = false;
+                _context?.Ui.BeginInvoke(EndGesture);
                 break;
         }
 
         return false;
     }
 
-    private void OnTick(object? sender, EventArgs e)
+    private void BeginGesture(System.Windows.Point down)
     {
-        var context = _context;
-        if (context is null)
+        if (_context is null || !Enabled)
         {
             return;
         }
 
-        if (_leftDown)
+        _gesture = true;
+        _down = down;
+        _moved = false;
+        _probeDone = false;
+        _contentDrag = false;
+        _samples.Clear();
+        _edgeSince = DateTime.MaxValue;
+        _dockNear = DateTime.MaxValue;
+        _excluded = IsExcludedSource(down);
+        _tick?.Start();
+    }
+
+    private bool IsExcludedSource(System.Windows.Point point)
+    {
+        try
         {
-            _idle = 0;
-            var cursor = Screens.CursorPosition();
-            var monitor = Screens.FromPoint(cursor);
-            var inBand = cursor.Y - monitor.Bounds.Top <= 3;
-            var travelled = Math.Abs(cursor.X - _downX) + Math.Abs(cursor.Y - _downY);
-
-            var info = new GUITHREADINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<GUITHREADINFO>() };
-            var movingWindow = WinApi.GetGUIThreadInfo(0, ref info) && (info.flags & WinApi.GUI_INMOVESIZE) != 0;
-
-            if (inBand && travelled > 60 && !movingWindow && !(_window is { IsVisible: true }))
+            var list = App.Get<List<string>>("shelfAutomaticExclusions");
+            if (list is null || list.Count == 0)
             {
-                _dwell++;
-                if (_dwell >= 4)
-                {
-                    Show(autoShown: true);
-                }
-            }
-            else if (!inBand)
-            {
-                _dwell = 0;
+                return false;
             }
 
-            return;
+            var hwnd = WinApi.WindowFromPoint(new POINT { X = (int)point.X, Y = (int)point.Y });
+            var root = hwnd == 0 ? 0 : WinApi.GetAncestor(hwnd, WinApi.GA_ROOT);
+            var path = WinApi.GetWindowProcessPath(root == 0 ? hwnd : root, out _);
+            return path is not null && Lists.Contains(list, Path.GetFileName(path).ToLowerInvariant(), path);
         }
-
-        // Button is up: keep ticking only while an automatically shown shelf waits to be dismissed.
-        if (_autoShown && _window is { IsVisible: true } window)
+        catch (Exception)
         {
-            if (CursorOver(window))
-            {
-                _idle = 0;
-            }
-            else if (++_idle >= 35)
-            {
-                Hide();
-            }
-        }
-        else
-        {
-            _timer?.Stop();
+            return false;
         }
     }
 
-    private static bool CursorOver(ShelfWindow window)
+    private static readonly nint[] SystemCursors = LoadSystemCursors();
+
+    private static nint[] LoadSystemCursors()
     {
-        var handle = window.Handle;
-        if (handle == 0 || !NativeMethods.GetWindowRect(handle, out var rect))
+        var ids = new[] { 32512, 32513, 32514, 32515, 32516, 32631, 32640, 32642, 32643, 32644, 32645, 32646, 32648, 32649, 32650, 32651 };
+        return [.. ids.Select(id => LoadCursor(0, id))];
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern nint LoadCursor(nint instance, int cursorName);
+
+    private static bool CursorLooksLikeDrag()
+    {
+        var info = new CURSORINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<CURSORINFO>() };
+        if (!WinApi.GetCursorInfo(ref info) || (info.flags & 1) == 0 || info.hCursor == 0)
         {
             return false;
         }
 
-        NativeMethods.GetCursorPos(out var pt);
-        return pt.X >= rect.Left && pt.X <= rect.Right && pt.Y >= rect.Top - 8 && pt.Y <= rect.Bottom;
+        return !SystemCursors.Contains(info.hCursor);
     }
 
-    private void Toggle()
+    private static bool WindowIsMoving()
     {
-        if (_window is { IsVisible: true })
+        var info = new GUITHREADINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<GUITHREADINFO>() };
+        return WinApi.GetGUIThreadInfo(0, ref info) && (info.flags & WinApi.GUI_INMOVESIZE) != 0;
+    }
+
+    private void OnTick(object? sender, EventArgs e)
+    {
+        if (!_gesture || _context is null)
         {
-            Hide();
+            _tick?.Stop();
+            return;
+        }
+
+        var cursor = Screens.CursorPosition();
+        if (!_moved)
+        {
+            if (Math.Abs(cursor.X - _down.X) + Math.Abs(cursor.Y - _down.Y) < 6)
+            {
+                return;
+            }
+
+            _moved = true;
+        }
+
+        if (!_contentDrag)
+        {
+            if (!_probeDone && !WindowIsMoving() && CursorLooksLikeDrag())
+            {
+                ShowProbe(cursor);
+            }
+
+            if (_probe is { IsVisible: true })
+            {
+                _probe.ShowAt(cursor);
+            }
+
+            return;
+        }
+
+        if (_excluded)
+        {
+            return;
+        }
+
+        if (App.Get<bool>("shelfShakeToOpen"))
+        {
+            DetectShake(cursor);
+        }
+
+        if (App.Get<bool>("shelfEdgeDragEnabled"))
+        {
+            EdgeLogic(cursor);
+        }
+
+        if (App.Get<bool>("shelfDropZoneEnabled"))
+        {
+            DockLogic(cursor);
+        }
+    }
+
+    private void ShowProbe(System.Windows.Point cursor)
+    {
+        _probeDone = true;
+        _probe ??= CreateProbe();
+        _probe.ShowAt(cursor);
+        _probeTimeout?.Stop();
+        _probeTimeout = new DispatcherTimer(TimeSpan.FromMilliseconds(250), DispatcherPriority.Input, (_, _) =>
+        {
+            _probeTimeout?.Stop();
+            if (!_contentDrag)
+            {
+                _probe?.Hide();
+            }
+        }, _context!.Ui);
+        _probeTimeout.Start();
+    }
+
+    private DragProbeWindow CreateProbe()
+    {
+        var probe = new DragProbeWindow();
+        probe.Entered += args =>
+        {
+            if (args.Data.GetDataPresent("WinKnife.ShelfItems"))
+            {
+                // A drag out of the shelf itself is no reason to summon anything.
+                _context?.Ui.BeginInvoke(() => _probe?.Hide());
+                return;
+            }
+
+            _contentDrag = true;
+            _samples.Clear();
+            _context?.Ui.BeginInvoke(() =>
+            {
+                _probe?.Hide();
+                if (!_excluded && App.Get<bool>("shelfDropZoneEnabled") && !_floatingVisible)
+                {
+                    _docked ??= new ShelfDockedWindow(this);
+                    _docked.DragInFlight = true;
+                    _docked.Present();
+                }
+            });
+        };
+        return probe;
+    }
+
+    private bool _floatingVisible => _floating is { IsVisible: true };
+
+    private void EndGesture()
+    {
+        if (!_gesture)
+        {
+            return;
+        }
+
+        var wasContent = _contentDrag;
+        _gesture = false;
+        _contentDrag = false;
+        _tick?.Stop();
+        _probeTimeout?.Stop();
+        _probe?.Hide();
+        if (!wasContent)
+        {
+            return;
+        }
+
+        // The drop (if any) lands around the mouse-up; settle before deciding what stays on screen.
+        _afterDrag?.Stop();
+        _afterDrag = new DispatcherTimer(TimeSpan.FromMilliseconds(450), DispatcherPriority.Background, (_, _) =>
+        {
+            _afterDrag?.Stop();
+            if (_docked is not null)
+            {
+                _docked.DragInFlight = false;
+            }
+
+            if (_edgeShown)
+            {
+                _edgeShown = false;
+                if (!Pinned && !(_floating?.PointerInside ?? false))
+                {
+                    _floating?.HideShelf();
+                }
+            }
+
+            RefreshDocked();
+        }, _context!.Ui);
+        _afterDrag.Start();
+    }
+
+    // ---------------------------------------------------------------------------------------------- shake
+
+    private void DetectShake(System.Windows.Point cursor)
+    {
+        var now = DateTime.UtcNow;
+        _samples.Add((now, (int)cursor.X));
+        _samples.RemoveAll(s => (now - s.At).TotalSeconds > ShakeWindowSeconds);
+        if (_samples.Count < 5 || (now - _lastSummon).TotalSeconds < 1)
+        {
+            return;
+        }
+
+        var reversals = 0;
+        double travel = 0;
+        var direction = 0;
+        for (var i = 1; i < _samples.Count; i++)
+        {
+            var step = _samples[i].X - _samples[i - 1].X;
+            travel += Math.Abs(step);
+            if (Math.Abs(step) <= ShakeStep)
+            {
+                continue;
+            }
+
+            var sign = Math.Sign(step);
+            if (direction != 0 && sign != direction)
+            {
+                reversals++;
+            }
+
+            direction = sign;
+        }
+
+        if (reversals >= ShakeReversals && travel > ShakeTravel)
+        {
+            _lastSummon = now;
+            _samples.Clear();
+            SummonNearPointer();
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------------- edge peek
+
+    private void EdgeLogic(System.Windows.Point cursor)
+    {
+        var area = Screens.FromPoint(cursor);
+        var bounds = area.Bounds;
+        var work = area.WorkArea;
+        var leftDistance = cursor.X - bounds.Left;
+        var rightDistance = bounds.Right - cursor.X;
+        var side = leftDistance <= rightDistance ? -1 : 1;
+        var distance = side < 0 ? leftDistance : rightDistance;
+        var seam = side < 0
+            ? Screens.FromPoint(new System.Windows.Point(bounds.Left - 10, cursor.Y)).Bounds != bounds
+            : Screens.FromPoint(new System.Windows.Point(bounds.Right + 10, cursor.Y)).Bounds != bounds;
+        var taskbarSide = side < 0 ? work.Left > bounds.Left + 1 : work.Right < bounds.Right - 1;
+
+        if (_edgeShown)
+        {
+            if (distance > EdgeRetreat || side != _edgeSide)
+            {
+                _edgeShown = false;
+                if (!Pinned)
+                {
+                    _floating?.HideShelf();
+                }
+
+                RefreshDocked();
+            }
+
+            return;
+        }
+
+        if (distance <= EdgeTrigger && !seam && !taskbarSide && !_floatingVisible)
+        {
+            if (_edgeSince == DateTime.MaxValue)
+            {
+                _edgeSince = DateTime.UtcNow;
+            }
+            else if ((DateTime.UtcNow - _edgeSince).TotalSeconds >= 0.15)
+            {
+                _edgeShown = true;
+                _edgeSide = side;
+                SummonNearPointer(side);
+            }
         }
         else
         {
-            Show(autoShown: false);
+            _edgeSince = DateTime.MaxValue;
         }
     }
 
-    private ShelfWindow EnsureWindow()
+    // ---------------------------------------------------------------------------------------------- dock
+
+    private void DockLogic(System.Windows.Point cursor)
     {
-        if (_window is not null)
-        {
-            return _window;
-        }
-
-        var context = _context!;
-        var window = new ShelfWindow();
-        if (context.Settings.Get("remember", true))
-        {
-            window.SetPaths(context.Settings.Get("items", new List<string>()));
-        }
-
-        window.ItemsChanged += () =>
-        {
-            // The user is using the shelf: do not hide it automatically any more.
-            _autoShown = false;
-            if (context.Settings.Get("remember", true))
-            {
-                context.Settings.Set("items", window.Items.ToList());
-            }
-        };
-        _window = window;
-        return window;
-    }
-
-    private void Show(bool autoShown)
-    {
-        var context = _context;
-        if (context is null)
+        var docked = _docked;
+        if (docked is null || _floatingVisible || docked.IsExpanded)
         {
             return;
         }
 
-        try
+        if (docked.IsNear(cursor, 16))
         {
-            var window = EnsureWindow();
-            window.PruneMissing();
-            _autoShown = autoShown;
-            _idle = 0;
-
-            var cursor = Screens.CursorPosition();
-            var area = Screens.FromPoint(cursor);
-            var scale = WinUtil.PrepareOnMonitorAt(window, (int)cursor.X, (int)cursor.Y);
-            var x = (int)(area.WorkArea.Left + (area.WorkArea.Width - ShelfWidthDips * scale) / 2);
-            var y = (int)(area.WorkArea.Top + 12 * scale);
-
-            var savedX = context.Settings.Get("x", int.MinValue);
-            var savedY = context.Settings.Get("y", int.MinValue);
-            if (!autoShown && savedX != int.MinValue && savedY != int.MinValue && IsOnScreen(savedX, savedY))
+            if (_dockNear == DateTime.MaxValue)
             {
-                x = savedX;
-                y = savedY;
+                _dockNear = DateTime.UtcNow;
             }
-
-            NativeMethods.SetWindowPos(window.Handle, HWND_TOPMOST, x, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
-            window.ShowNoActivate();
-            if (autoShown)
+            else if ((DateTime.UtcNow - _dockNear).TotalSeconds >= 0.15)
             {
-                _timer?.Start();
+                docked.Expand();
             }
         }
-        catch (Exception ex)
+        else
         {
-            context.Log.Error("Could not show the shelf", ex);
+            _dockNear = DateTime.MaxValue;
         }
-    }
-
-    private const double ShelfWidthDips = 352;
-
-    private void Hide()
-    {
-        var window = _window;
-        _autoShown = false;
-        if (window is null)
-        {
-            return;
-        }
-
-        SavePosition(window);
-        window.Hide();
-    }
-
-    private void SavePosition(ShelfWindow window)
-    {
-        var context = _context;
-        if (context is null || !window.IsVisible || window.Handle == 0)
-        {
-            return;
-        }
-
-        if (NativeMethods.GetWindowRect(window.Handle, out var rect))
-        {
-            context.Settings.Set("x", rect.Left);
-            context.Settings.Set("y", rect.Top);
-        }
-    }
-
-    private static bool IsOnScreen(int x, int y)
-    {
-        foreach (var monitor in WinUtil.Monitors())
-        {
-            var b = monitor.Bounds;
-            if (x >= b.Left - 20 && x < b.Right - 40 && y >= b.Top - 20 && y < b.Bottom - 40)
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 }

@@ -19,11 +19,13 @@ internal sealed class DeviceWatcher : IMMNotificationClient, IDisposable
 {
     private readonly MMDeviceEnumerator _enumerator = new();
     private readonly Action<DeviceChange, string> _handler;
+    private readonly Action<string, DeviceState>? _stateHandler;
     private bool _disposed;
 
-    public DeviceWatcher(Action<DeviceChange, string> handler)
+    public DeviceWatcher(Action<DeviceChange, string> handler, Action<string, DeviceState>? stateHandler = null)
     {
         _handler = handler;
+        _stateHandler = stateHandler;
         _enumerator.RegisterEndpointNotificationCallback(this);
     }
 
@@ -46,7 +48,18 @@ internal sealed class DeviceWatcher : IMMNotificationClient, IDisposable
         _enumerator.Dispose();
     }
 
-    public void OnDeviceStateChanged(string deviceId, DeviceState newState) => Raise(DeviceChange.StateChanged, deviceId);
+    public void OnDeviceStateChanged(string deviceId, DeviceState newState)
+    {
+        try
+        {
+            _stateHandler?.Invoke(deviceId, newState);
+        }
+        catch (Exception)
+        {
+        }
+
+        Raise(DeviceChange.StateChanged, deviceId);
+    }
 
     public void OnDeviceAdded(string pwstrDeviceId) => Raise(DeviceChange.Added, pwstrDeviceId);
 

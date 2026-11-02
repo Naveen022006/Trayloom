@@ -1,0 +1,422 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// WinKnife — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
+
+using System.Text.Json.Serialization;
+
+namespace WinKnife.Features.Agents;
+
+/// <summary>The coding agents whose session logs the island reads.</summary>
+public enum AgentProvider
+{
+    Claude,
+    Codex,
+    OpenCode,
+    Copilot,
+}
+
+/// <summary>Display helpers for <see cref="AgentProvider"/>.</summary>
+public static class AgentProviders
+{
+    public static readonly AgentProvider[] All = [AgentProvider.Claude, AgentProvider.Codex, AgentProvider.OpenCode, AgentProvider.Copilot];
+
+    public static string Raw(this AgentProvider p) => p switch
+    {
+        AgentProvider.Claude => "claude",
+        AgentProvider.Codex => "codex",
+        AgentProvider.OpenCode => "opencode",
+        _ => "copilot",
+    };
+
+    public static string DisplayName(this AgentProvider p) => p switch
+    {
+        AgentProvider.Claude => "Claude",
+        AgentProvider.Codex => "Codex",
+        AgentProvider.OpenCode => "OpenCode",
+        _ => "GitHub Copilot",
+    };
+
+    /// <summary>Whether the provider records a plan allowance in its local logs.</summary>
+    public static bool ReportsLimits(this AgentProvider p) => p != AgentProvider.Copilot;
+
+    /// <summary>Settings key that switches the provider on.</summary>
+    public static string SettingKey(this AgentProvider p) => p switch
+    {
+        AgentProvider.Claude => AgentKeys.Claude,
+        AgentProvider.Codex => AgentKeys.Codex,
+        AgentProvider.OpenCode => AgentKeys.OpenCode,
+        _ => AgentKeys.Copilot,
+    };
+}
+
+/// <summary>Token counts. <c>Input</c> excludes cache traffic, <c>Output</c> already contains reasoning.</summary>
+public record struct AgentTokens(long Input, long CacheWrite, long CacheRead, long Output, long Reasoning)
+{
+    public readonly long Total => Input + CacheWrite + CacheRead + Output;
+
+    /// <summary>Everything the model read, cached or not.</summary>
+    public readonly long Prompt => Input + CacheWrite + CacheRead;
+
+    public readonly double? CacheHitRate => Prompt > 0 ? (double)CacheRead / Prompt : null;
+
+    public static AgentTokens operator +(AgentTokens a, AgentTokens b) =>
+        new(a.Input + b.Input, a.CacheWrite + b.CacheWrite, a.CacheRead + b.CacheRead, a.Output + b.Output, a.Reasoning + b.Reasoning);
+
+    public static AgentTokens operator -(AgentTokens a, AgentTokens b) =>
+        new(a.Input - b.Input, a.CacheWrite - b.CacheWrite, a.CacheRead - b.CacheRead, a.Output - b.Output, a.Reasoning - b.Reasoning);
+
+    /// <summary>Streamed replies are logged once per block with growing output; the largest reading is final.</summary>
+    public readonly AgentTokens Merged(AgentTokens other) =>
+        new(Math.Max(Input, other.Input), Math.Max(CacheWrite, other.CacheWrite), Math.Max(CacheRead, other.CacheRead),
+            Math.Max(Output, other.Output), Math.Max(Reasoning, other.Reasoning));
+}
+
+/// <summary>What one response bills, beyond its model.</summary>
+public record struct AgentBillable
+{
+    public AgentTokens Tokens { get; set; }
+
+    /// <summary>Session totals: priced at base rates without long-context inference.</summary>
+    public bool IsAggregate { get; set; }
+
+    public long LongCacheWrite { get; set; }
+
+    public bool Fast { get; set; }
+
+    public bool Domestic { get; set; }
+
+    public long WebSearches { get; set; }
+}
+
+/// <summary>One billed model response.</summary>
+public sealed class UsageRecord
+{
+    public AgentProvider Provider { get; set; }
+
+    public DateTime Date { get; set; }
+
+    public string Model { get; set; } = "";
+
+    public string Project { get; set; } = "";
+
+    public string Session { get; set; } = "";
+
+    public int Requests { get; set; } = 1;
+
+    public AgentTokens Tokens { get; set; }
+
+    /// <summary>API list price of the response in US dollars; null when the model has no known price.</summary>
+    public double? Cost { get; set; }
+
+    public double Savings { get; set; }
+
+    public bool ReportedCost { get; set; }
+
+    public UsageRecord Clone() => (UsageRecord)MemberwiseClone();
+}
+
+public enum LimitKind
+{
+    Session,
+    Weekly,
+    Other,
+}
+
+/// <summary>A usage allowance and how much of it is spent, as the provider reports it.</summary>
+public sealed record LimitWindow(string Id, LimitKind Kind, int? Minutes, string? Scope, double UsedPercent, DateTime? ResetsAt, DateTime? EstimatedResetsAt = null)
+{
+    [JsonIgnore]
+    public double UsedFraction => Math.Min(1, Math.Max(0, UsedPercent / 100));
+
+    [JsonIgnore]
+    public double RemainingFraction => 1 - UsedFraction;
+}
+
+public enum LimitSource
+{
+    ClaudeApp,
+    SessionLog,
+    Account,
+}
+
+public sealed record AgentLimits(AgentProvider Provider, List<LimitWindow> Windows, DateTime ObservedAt, LimitSource Source);
+
+/// <summary>The subscription an account is on.</summary>
+public sealed record AgentPlan(string Name, double? MonthlyPrice);
+
+/// <summary>A turn an agent is working on right now.</summary>
+public sealed class LiveSession
+{
+    public string Id { get; set; } = "";
+
+    public AgentProvider Provider { get; set; }
+
+    public DateTime Started { get; set; }
+
+    public DateTime LastActivity { get; set; }
+
+    public string Model { get; set; } = "";
+
+    public string Project { get; set; } = "";
+
+    public AgentTokens Tokens { get; set; }
+
+    public double Cost { get; set; }
+
+    public LiveSession Clone() => (LiveSession)MemberwiseClone();
+}
+
+/// <summary>Something worth a moment in the closed island.</summary>
+public abstract record AgentUsageEvent
+{
+    public sealed record Finished(AgentProvider Provider, TimeSpan Duration, double Cost, long Tokens, string Project) : AgentUsageEvent;
+
+    public sealed record LimitWarning(AgentProvider Provider, LimitWindow Window) : AgentUsageEvent;
+
+    public sealed record LimitReset(AgentProvider Provider, LimitWindow Window) : AgentUsageEvent;
+
+    public sealed record BudgetReached(double Spent, double Budget) : AgentUsageEvent;
+}
+
+public enum AgentPeriod
+{
+    Today,
+    Week,
+    Month,
+}
+
+public static class AgentPeriods
+{
+    public static int Days(this AgentPeriod p) => p switch { AgentPeriod.Today => 1, AgentPeriod.Week => 7, _ => 30 };
+
+    public static string Raw(this AgentPeriod p) => p switch { AgentPeriod.Today => "today", AgentPeriod.Week => "week", _ => "month" };
+
+    public static AgentPeriod Parse(string? s) => s switch { "week" => AgentPeriod.Week, "month" => AgentPeriod.Month, _ => AgentPeriod.Today };
+}
+
+/// <summary>The cards of the AI page; raw ids are stored in the saved order.</summary>
+public enum AgentCard
+{
+    Limits,
+    Spend,
+    Live,
+    Trend,
+    Models,
+    Projects,
+    Activity,
+    Resets,
+}
+
+public static class AgentCards
+{
+    public static readonly AgentCard[] All =
+    [
+        AgentCard.Limits, AgentCard.Spend, AgentCard.Live, AgentCard.Trend,
+        AgentCard.Models, AgentCard.Projects, AgentCard.Activity, AgentCard.Resets,
+    ];
+
+    public static string Raw(this AgentCard c) => c switch
+    {
+        AgentCard.Limits => "limits",
+        AgentCard.Spend => "spend",
+        AgentCard.Live => "live",
+        AgentCard.Trend => "trend",
+        AgentCard.Models => "models",
+        AgentCard.Projects => "projects",
+        AgentCard.Activity => "activity",
+        _ => "resets",
+    };
+
+    public static AgentCard? Parse(string s) => All.Cast<AgentCard?>().FirstOrDefault(c => c!.Value.Raw() == s);
+
+    /// <summary>Segoe Fluent Icons glyph for the SF symbol of the card.</summary>
+    public static string Glyph(this AgentCard c) => c switch
+    {
+        AgentCard.Limits => "",
+        AgentCard.Spend => "",
+        AgentCard.Live => "",
+        AgentCard.Trend => "",
+        AgentCard.Models => "",
+        AgentCard.Projects => "",
+        AgentCard.Activity => "",
+        _ => "",
+    };
+
+    /// <summary>Charts need the island's width; everything else pairs up.</summary>
+    public static bool FullWidth(this AgentCard c) => c is AgentCard.Trend or AgentCard.Activity;
+
+    /// <summary>Cards that cover the period chosen in the island's top row.</summary>
+    public static bool FollowsPeriod(this AgentCard c) => c is AgentCard.Spend or AgentCard.Trend or AgentCard.Models or AgentCard.Projects;
+}
+
+public enum AgentReadout
+{
+    Elapsed,
+    Tokens,
+    Cost,
+    Limit,
+}
+
+public enum AgentLimitFocus
+{
+    MostUsed,
+    Session,
+    Weekly,
+}
+
+/// <summary>Totals of a period, a day or an hour.</summary>
+public struct AgentTotals
+{
+    public AgentTokens Tokens;
+    public double Cost;
+    public double Savings;
+    public long Requests;
+
+    /// <summary>Responses from a model without a known price, left out of <see cref="Cost"/>.</summary>
+    public int Unpriced;
+
+    public void Add(UsageRecord r)
+    {
+        Tokens += r.Tokens;
+        Requests += Math.Max(0, r.Requests);
+        Savings += r.Savings;
+        if (r.Cost is { } c)
+        {
+            Cost += c;
+        }
+        else
+        {
+            Unpriced++;
+        }
+    }
+
+    public void Add(in AgentTotals o)
+    {
+        Tokens += o.Tokens;
+        Cost += o.Cost;
+        Savings += o.Savings;
+        Requests += o.Requests;
+        Unpriced += o.Unpriced;
+    }
+
+    /// <summary>Cost when every response had a price, tokens otherwise.</summary>
+    public readonly double Weight(bool byCost) => byCost ? Cost : Tokens.Total;
+}
+
+/// <summary>One row of a breakdown: a model or a project.</summary>
+public sealed class AgentShare
+{
+    public string Id { get; set; } = "";
+
+    public string Name { get; set; } = "";
+
+    public AgentProvider? Provider { get; set; }
+
+    public AgentTotals Totals;
+}
+
+public sealed class AgentPeriodUsage
+{
+    public AgentTotals Total;
+    public Dictionary<AgentProvider, AgentTotals> ByProvider = [];
+    public List<AgentShare> Models = [];
+    public List<AgentShare> Projects = [];
+
+    public bool FullyPriced => Total.Unpriced == 0;
+}
+
+/// <summary>A day or an hour of use.</summary>
+public sealed class AgentBucket
+{
+    public DateTime Start { get; set; }
+
+    public Dictionary<AgentProvider, AgentTotals> ByProvider = [];
+
+    public AgentTotals Total
+    {
+        get
+        {
+            var t = new AgentTotals();
+            foreach (var v in ByProvider.Values)
+            {
+                t.Add(v);
+            }
+
+            return t;
+        }
+    }
+}
+
+/// <summary>Claude's allowance renews five hours after the first request that follows a renewal.</summary>
+public sealed class AgentBlock
+{
+    public DateTime Start { get; set; }
+
+    public DateTime End { get; set; }
+
+    public AgentTotals Totals;
+}
+
+/// <summary>Everything the page, the strip and the settings show.</summary>
+public sealed class AgentUsageSnapshot
+{
+    public const int DayCount = 91;
+
+    public bool Loaded { get; set; }
+
+    public DateTime Now { get; set; } = DateTime.MinValue;
+
+    public Dictionary<AgentPeriod, AgentPeriodUsage> Periods = [];
+
+    /// <summary>Oldest first, ending with today (local days, <see cref="AgentBucket.Start"/> is local midnight).</summary>
+    public List<AgentBucket> Days = [];
+
+    /// <summary>Today's 24 hours.</summary>
+    public List<AgentBucket> Hours = [];
+
+    public Dictionary<AgentProvider, AgentLimits> Limits = [];
+
+    public Dictionary<AgentProvider, AgentPlan> Plans = [];
+
+    public List<LiveSession> Live = [];
+
+    public AgentBlock? ClaudeBlock { get; set; }
+
+    public Dictionary<AgentProvider, AgentTotals> BurnRate = [];
+
+    public Dictionary<AgentProvider, DateTime> LastActivity = [];
+
+    public HashSet<AgentProvider> Seen = [];
+
+    public AgentPeriodUsage Usage(AgentPeriod p) => Periods.TryGetValue(p, out var u) ? u : new AgentPeriodUsage();
+
+    public IEnumerable<LiveSession> Working(AgentProvider p) => Live.Where(s => s.Provider == p);
+}
+
+/// <summary>Settings key names (Vorssaint <c>DefaultsKey</c> names).</summary>
+public static class AgentKeys
+{
+    public const string Enabled = "notchAgentsEnabled";
+    public const string Claude = "notchAgentsClaude";
+    public const string Codex = "notchAgentsCodex";
+    public const string OpenCode = "notchAgentsOpenCode";
+    public const string Copilot = "notchAgentsCopilot";
+    public const string ClaudeProfile = "notchAgentsClaudeProfile";
+    public const string CodexProfiles = "notchAgentsCodexProfiles";
+    public const string CardOrder = "notchAgentsCardOrder";
+    public const string HiddenCards = "notchAgentsHiddenCards";
+    public const string Period = "notchAgentsPeriod";
+    public const string LimitDisplay = "notchAgentsLimitDisplay";
+    public const string LimitFocus = "notchAgentsLimitFocus";
+    public const string LiveActivity = "notchAgentsLiveActivity";
+    public const string Readout = "notchAgentsReadout";
+    public const string FinishAlert = "notchAgentsFinishAlert";
+    public const string FinishMinimum = "notchAgentsFinishMinimum";
+    public const string LimitAlert = "notchAgentsLimitAlert";
+    public const string LimitThreshold = "notchAgentsLimitThreshold";
+    public const string DailyBudget = "notchAgentsDailyBudget";
+    public const string PriceUpdates = "notchAgentsPriceUpdates";
+    public const string IdleContent = "notchIdleContent";
+    public const string HiddenModules = "notchHiddenModules";
+    public const string FeatureId = "notch-agents";
+    public const string ModuleId = "agents";
+}
