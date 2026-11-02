@@ -337,7 +337,7 @@ internal sealed class WallpaperService
             monitor = WallpaperApi.MonitorAt((int)cursor.X, (int)cursor.Y);
             if (monitor is null)
             {
-                Error = "Could not set the wallpaper";
+                Error = Loc.T("Could not set the wallpaper");
                 Changed?.Invoke();
                 return;
             }
@@ -356,7 +356,7 @@ internal sealed class WallpaperService
 
             if (!ok)
             {
-                Error = "Could not download the wallpaper";
+                Error = Loc.T("Could not download the wallpaper");
                 Changed?.Invoke();
                 return;
             }
@@ -375,7 +375,7 @@ internal sealed class WallpaperService
         catch (Exception ex)
         {
             _ctx.Log.Warn("Wallpaper failed: " + ex.Message);
-            Error = "Could not set the wallpaper";
+            Error = Loc.T("Could not set the wallpaper");
         }
 
         Changed?.Invoke();

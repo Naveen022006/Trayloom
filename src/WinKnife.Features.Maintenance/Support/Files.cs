@@ -11,6 +11,7 @@ using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Maintenance;
 
@@ -547,7 +548,7 @@ internal static class FileOps
         var text = builder.ToString().Trim().Trim('.', '-', ' ');
         if (text.Length == 0)
         {
-            return "Output";
+            return Loc.T("Output");
         }
 
         var upper = text.ToUpperInvariant();

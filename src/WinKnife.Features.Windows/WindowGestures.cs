@@ -50,7 +50,7 @@ internal static class GestureModifiers
         "control" => "Ctrl",
         "option" => "Alt",
         "command" => "Win",
-        _ => "Shift",
+        _ => Loc.T("Shift"),
     };
 }
 

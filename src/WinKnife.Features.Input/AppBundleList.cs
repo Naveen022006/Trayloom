@@ -64,8 +64,10 @@ internal sealed class AppBundleList : StackPanel
     private readonly bool _compact;
     private readonly string _emptyText;
 
-    public AppBundleList(IAppSettings app, string key, string caption, string title = Strings.AppsToLeaveAlone, string addTitle = Strings.AddAnApp, bool compact = false, string emptyText = "")
+    public AppBundleList(IAppSettings app, string key, string caption, string? title = null, string? addTitle = null, bool compact = false, string emptyText = "")
     {
+        title ??= Strings.AppsToLeaveAlone;
+        addTitle ??= Strings.AddAnApp;
         _app = app;
         _key = key;
         _compact = compact;

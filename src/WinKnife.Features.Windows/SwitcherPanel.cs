@@ -427,7 +427,7 @@ internal sealed class SwitcherPanel : OverlayWindow
 
         if (window.Fullscreen)
         {
-            Badge("", "Full screen");
+            Badge("", Loc.T("Full screen"));
         }
 
         if (window.OtherDesktop)
@@ -457,7 +457,7 @@ internal sealed class SwitcherPanel : OverlayWindow
         var glass = UiKit.Icon("", 11, ThemeKeys.TextSecondary);
         glass.Margin = new Thickness(0, 0, 6, 0);
         row.Children.Add(glass);
-        var text = UiKit.Text(_query.Length == 0 ? "Search" : _query, 11, FontWeights.SemiBold, _query.Length == 0 ? ThemeKeys.TextTertiary : ThemeKeys.TextPrimary, trimming: TextTrimming.CharacterEllipsis);
+        var text = UiKit.Text(_query.Length == 0 ? Loc.T("Search") : _query, 11, FontWeights.SemiBold, _query.Length == 0 ? ThemeKeys.TextTertiary : ThemeKeys.TextPrimary, trimming: TextTrimming.CharacterEllipsis);
         text.MaxWidth = 180;
         row.Children.Add(text);
         if (_pinned)
@@ -479,7 +479,7 @@ internal sealed class SwitcherPanel : OverlayWindow
         var icon = UiKit.Icon("", 24, ThemeKeys.TextSecondary);
         icon.Margin = new Thickness(0, 0, 10, 0);
         row.Children.Add(icon);
-        row.Children.Add(UiKit.Text(_query.Length > 0 ? "No matching windows" : Strings.NoWindows, 14, FontWeights.Normal, ThemeKeys.TextSecondary));
+        row.Children.Add(UiKit.Text(_query.Length > 0 ? Loc.T("No matching windows") : Strings.NoWindows, 14, FontWeights.Normal, ThemeKeys.TextSecondary));
         return row;
     }
 
@@ -689,7 +689,7 @@ internal sealed class SwitcherPanel : OverlayWindow
         root.Children.Add(rowFrame);
         if (_o.ShowHints)
         {
-            var hint = UiKit.Text($"{_hintShortcut} to browse    W close    Q quit", 10, FontWeights.Medium, ThemeKeys.TextSecondary);
+            var hint = UiKit.Text(Loc.F("{0} to browse    W close    Q quit", _hintShortcut), 10, FontWeights.Medium, ThemeKeys.TextSecondary);
             hint.HorizontalAlignment = HorizontalAlignment.Center;
             hint.Margin = new Thickness(0, 8, 0, 0);
             root.Children.Add(hint);

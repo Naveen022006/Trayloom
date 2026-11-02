@@ -67,10 +67,45 @@ internal sealed class AppShell : IShell
             }
         };
         _host.Services.Changed += () => Application.Current.Dispatcher.BeginInvoke(UpdateTrayState);
+        Loc.Changed += () => Application.Current.Dispatcher.BeginInvoke(OnLanguageChanged);
         _trayTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
         _trayTimer.Tick += (_, _) => UpdateTrayState();
         _trayTimer.Start();
         UpdateTrayState();
+    }
+
+    /// <summary>
+    /// The language changed (Settings > General > Language): like Vorssaint the open windows take the new language at once.
+    /// The panel closes (it is rebuilt on its next opening) and Settings is recreated on the page that was open.
+    /// </summary>
+    private void OnLanguageChanged()
+    {
+        try
+        {
+            _panel?.ClosePanel();
+            if (_settings is { } old)
+            {
+                var destination = _s.App.Get<string>(AppKeys.SettingsLastPage);
+                var bounds = (old.Left, old.Top, old.Width, old.Height, old.WindowState);
+                _settings = null;
+                old.Close();
+                ShowSettings(string.IsNullOrEmpty(destination) ? SettingsPages.General : destination, null);
+                if (_settings is { } fresh && bounds.WindowState == WindowState.Normal)
+                {
+                    fresh.WindowStartupLocation = WindowStartupLocation.Manual;
+                    fresh.Left = bounds.Left;
+                    fresh.Top = bounds.Top;
+                    fresh.Width = bounds.Width;
+                    fresh.Height = bounds.Height;
+                }
+            }
+
+            UpdateTrayState();
+        }
+        catch (Exception ex)
+        {
+            _host.Log.Warn("Could not refresh the windows for the new language: " + ex.Message);
+        }
     }
 
     public void Dispose()
@@ -369,12 +404,12 @@ internal sealed class AppShell : IShell
         {
             var left = keepAwake.EndsAt is { } e ? e - DateTime.Now : (TimeSpan?)null;
             _tray.Tooltip = keepAwake.EndsAt is { } end
-                ? $"WinKnife: awake until {end:t} ({FormatLeft(left!.Value)} left)"
-                : "WinKnife: awake indefinitely";
+                ? Loc.F("WinKnife: awake until {0} ({1} left)", Loc.Fmt(end, "t"), FormatLeft(left!.Value))
+                : Loc.T("WinKnife: awake indefinitely");
             _tray.Badge = micShown ? Color.FromRgb(0xFF, 0x45, 0x3A) : null;
             var (glyph, font) = app.Get<string>("keepAwakeActiveIcon") switch
             {
-                "coffee" => ("☕", "Segoe UI Symbol"),
+                "coffee" => ("☕", Loc.T("Segoe UI Symbol")),
                 "eye" => ("", (string?)null),
                 "moon" => ("", null),
                 "light" => ("", null),
@@ -399,7 +434,7 @@ internal sealed class AppShell : IShell
         }
         else
         {
-            _tray.Tooltip = "WinKnife: normal sleep";
+            _tray.Tooltip = Loc.T("WinKnife: normal sleep");
             _tray.Badge = micShown ? Color.FromRgb(0xFF, 0x45, 0x3A) : null;
             _tray.SetLook(null, null, null, null);
         }
@@ -460,7 +495,7 @@ internal sealed class AppShell : IShell
             var svc = _host.Services.Get<IKeepAwakeService>();
             var toggle = FindAction("keep-awake", "toggle");
             var active = svc?.IsActive ?? toggle?.Title.Contains(": on", StringComparison.OrdinalIgnoreCase) ?? false;
-            menu.Items.Add(Item(active ? "Disable keep awake" : "Enable keep awake", () =>
+            menu.Items.Add(Item(active ? Loc.T("Disable keep awake") : Loc.T("Enable keep awake"), () =>
             {
                 if (svc is not null)
                 {
@@ -480,10 +515,10 @@ internal sealed class AppShell : IShell
             }));
             if (!active)
             {
-                var sub = new MenuItem { Header = "Activate for…" };
+                var sub = new MenuItem { Header = Loc.T("Activate for…") };
                 foreach (var (label, minutes, actionId) in new[]
                 {
-                    ("15 minutes", 15, "15m"), ("30 minutes", 30, ""), ("1 hour", 60, "1h"), ("2 hours", 120, "2h"), ("4 hours", 240, ""), ("8 hours", 480, ""), ("Indefinitely", 0, "forever"),
+                    (Loc.T("15 minutes"), 15, "15m"), (Loc.T("30 minutes"), 30, ""), (Loc.T("1 hour"), 60, "1h"), (Loc.T("2 hours"), 120, "2h"), (Loc.T("4 hours"), 240, ""), (Loc.T("8 hours"), 480, ""), (Loc.T("Indefinitely"), 0, "forever"),
                 })
                 {
                     var captured = (minutes, actionId);
@@ -516,7 +551,7 @@ internal sealed class AppShell : IShell
         if (rt.IsAvailable("cleaning-mode"))
         {
             any = true;
-            menu.Items.Add(Item("Cleaning Mode", () =>
+            menu.Items.Add(Item(Loc.T("Cleaning Mode"), () =>
             {
                 if (_host.Services.Get<ICleaningModeService>() is { } cleaning)
                 {
@@ -534,17 +569,17 @@ internal sealed class AppShell : IShell
             menu.Items.Add(new Separator());
         }
 
-        menu.Items.Add(Item("Settings…", () => OpenSettings(SettingsPages.Last), "Ctrl+,"));
-        menu.Items.Add(Item("Add features…", () => OpenFeatures()));
-        menu.Items.Add(Item("About WinKnife", () => OpenSettings(SettingsPages.About)));
+        menu.Items.Add(Item(Loc.T("Settings…"), () => OpenSettings(SettingsPages.Last), "Ctrl+,"));
+        menu.Items.Add(Item(Loc.T("Add features…"), () => OpenFeatures()));
+        menu.Items.Add(Item(Loc.T("About WinKnife"), () => OpenSettings(SettingsPages.About)));
         if (rt.IsAvailable("uninstaller"))
         {
-            menu.Items.Add(Item("Uninstall an app…", () => OpenSettings(SettingsPages.Uninstaller)));
+            menu.Items.Add(Item(Loc.T("Uninstall an app…"), () => OpenSettings(SettingsPages.Uninstaller)));
         }
 
         if (rt.IsAvailable("shelf") && _s.App.Get<bool>("shelfEnabled", true))
         {
-            menu.Items.Add(Item("Open shelf", () =>
+            menu.Items.Add(Item(Loc.T("Open shelf"), () =>
             {
                 if (_host.Services.Get<IShelfService>() is { } shelf)
                 {
@@ -557,15 +592,15 @@ internal sealed class AppShell : IShell
             }));
         }
 
-        menu.Items.Add(Item("Check for updates…", () => OpenSettings(SettingsPages.About)));
-        menu.Items.Add(Item("Report a problem…", ReportProblem));
+        menu.Items.Add(Item(Loc.T("Check for updates…"), () => OpenSettings(SettingsPages.About)));
+        menu.Items.Add(Item(Loc.T("Report a problem…"), ReportProblem));
         if (!InstallManager.IsInstalledCopy && !InstallManager.IsDevelopmentBuild)
         {
-            menu.Items.Add(Item("Install WinKnife…", () => InstallOffer?.Invoke(true)));
+            menu.Items.Add(Item(Loc.T("Install WinKnife…"), () => InstallOffer?.Invoke(true)));
         }
 
         menu.Items.Add(new Separator());
-        menu.Items.Add(Item("Quit WinKnife", Quit, "Ctrl+Q"));
+        menu.Items.Add(Item(Loc.T("Quit WinKnife"), Quit, "Ctrl+Q"));
         return menu;
     }
 

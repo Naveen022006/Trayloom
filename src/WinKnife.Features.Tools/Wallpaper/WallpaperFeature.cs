@@ -23,7 +23,7 @@ public sealed class WallpaperFeature : ToolsFeatureBase
     /// <inheritdoc />
     public override IReadOnlyList<FeatureAction> Actions =>
     [
-        new FeatureAction("open", "Wallpaper", () => Safe(() => Ctx.Shell.OpenPanel(PanelTabs.Wallpaper)), ""),
+        new FeatureAction("open", Loc.T("Wallpaper"), () => Safe(() => Ctx.Shell.OpenPanel(PanelTabs.Wallpaper)), ""),
     ];
 
     /// <inheritdoc />
@@ -58,7 +58,7 @@ public sealed class WallpaperSettingsSection : ISettingsSection
     public string? Anchor => "wallpaper";
 
     /// <inheritdoc />
-    public string? Title => "Wallpaper";
+    public string? Title => Loc.T("Wallpaper");
 
     /// <inheritdoc />
     public IReadOnlyList<string> Keywords => ["Show on all displays", "Open Wallpaper settings", "background", "desktop picture"];
@@ -70,9 +70,9 @@ public sealed class WallpaperSettingsSection : ISettingsSection
     public FrameworkElement CreateView(ISettingsContext c)
     {
         ToolsDefaults.Register(c.App);
-        var card = new SettingsCard("Wallpaper");
-        card.Add(new SettingsRow(null, "Show on all displays", null, new MacSwitch(c.App.Get("wallpaperApplyAllDisplays", true), SwitchSize.Regular, on => c.App.Set("wallpaperApplyAllDisplays", on))));
-        var open = UiKit.Button("Open Wallpaper settings", ButtonKind.Bordered, 13, "", () => Plat.Open("ms-settings:personalization-background"));
+        var card = new SettingsCard(Loc.T("Wallpaper"));
+        card.Add(new SettingsRow(null, Loc.T("Show on all displays"), null, new MacSwitch(c.App.Get("wallpaperApplyAllDisplays", true), SwitchSize.Regular, on => c.App.Set("wallpaperApplyAllDisplays", on))));
+        var open = UiKit.Button(Loc.T("Open Wallpaper settings"), ButtonKind.Bordered, 13, "", () => Plat.Open("ms-settings:personalization-background"));
         open.HorizontalAlignment = HorizontalAlignment.Left;
         card.Add(open);
         return card;
@@ -164,7 +164,7 @@ internal sealed class WallpaperGalleryView : StackPanel
 
         if (_service.Downloading)
         {
-            Children.Add(Status("Downloading…", ThemeKeys.TextSecondary));
+            Children.Add(Status(Loc.T("Downloading…"), ThemeKeys.TextSecondary));
         }
         else if (_service.Error is { } error)
         {
@@ -181,7 +181,7 @@ internal sealed class WallpaperGalleryView : StackPanel
 
     private FrameworkElement BuildFilter()
     {
-        var combo = new ComboBox { FontSize = 12, ItemsSource = new[] { "All", "Your pictures", "Windows" } };
+        var combo = new ComboBox { FontSize = 12, ItemsSource = new[] { Loc.T("All"), Loc.T("Your pictures"), Loc.T("Windows") } };
         combo.SelectedIndex = _service.Filter switch { "own" => 1, "apple" => 2, _ => 0 };
         combo.SelectionChanged += (_, _) =>
         {
@@ -201,7 +201,7 @@ internal sealed class WallpaperGalleryView : StackPanel
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var text = UiKit.Text("Show on all displays", 11.5, FontWeights.Medium);
+        var text = UiKit.Text(Loc.T("Show on all displays"), 11.5, FontWeights.Medium);
         text.VerticalAlignment = VerticalAlignment.Center;
         grid.Children.Add(text);
         var toggle = new MacSwitch(_ctx.App.Get("wallpaperApplyAllDisplays", true), SwitchSize.Small, on => _ctx.App.Set("wallpaperApplyAllDisplays", on));
@@ -213,15 +213,15 @@ internal sealed class WallpaperGalleryView : StackPanel
     private FrameworkElement BuildButtons()
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal };
-        var addImage = PanelButtons.Mini("Add image", null, AddImages);
-        var addFolder = PanelButtons.Mini("Add folder", null, AddFolder);
+        var addImage = PanelButtons.Mini(Loc.T("Add image"), null, AddImages);
+        var addFolder = PanelButtons.Mini(Loc.T("Add folder"), null, AddFolder);
         addImage.IsEnabled = addFolder.IsEnabled = !_removeMode;
         row.Children.Add(addImage);
         addFolder.Margin = new Thickness(8, 0, 0, 0);
         row.Children.Add(addFolder);
         if (_service.Sources.Count > 0 || _removeMode)
         {
-            var remove = PanelButtons.Mini(_removeMode ? "Done" : "Remove", null, () =>
+            var remove = PanelButtons.Mini(_removeMode ? Loc.T("Done") : Loc.T("Remove"), null, () =>
             {
                 _removeMode = !_removeMode;
                 Build();
@@ -238,7 +238,7 @@ internal sealed class WallpaperGalleryView : StackPanel
         var dialog = new OpenFileDialog
         {
             Multiselect = true,
-            Title = "Choose images to keep in WinKnife’s wallpaper list",
+            Title = Loc.T("Choose images to keep in WinKnife’s wallpaper list"),
             Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp;*.gif;*.tif;*.tiff;*.webp;*.heic|All files|*.*",
             InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
         };
@@ -250,7 +250,7 @@ internal sealed class WallpaperGalleryView : StackPanel
 
     private void AddFolder()
     {
-        var dialog = new OpenFolderDialog { Title = "Choose a folder of images to keep in WinKnife’s wallpaper list", InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures) };
+        var dialog = new OpenFolderDialog { Title = Loc.T("Choose a folder of images to keep in WinKnife’s wallpaper list"), InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures) };
         if (dialog.ShowDialog() == true)
         {
             _service.AddSources([dialog.FolderName]);
@@ -271,13 +271,13 @@ internal sealed class WallpaperGalleryView : StackPanel
             };
             var row = new StackPanel { Orientation = Orientation.Horizontal };
             row.Children.Add(UiKit.Icon(source.Unreachable ? "" : source.IsFolder ? "" : "", 11, ThemeKeys.TextSecondary, FontWeights.SemiBold));
-            var title = UiKit.Text(source.Unreachable ? "Unavailable" : System.IO.Path.GetFileName(source.Path.TrimEnd('\\')) is { Length: > 0 } n ? n : source.Path, 10.5, FontWeights.Normal, ThemeKeys.TextPrimary, trimming: TextTrimming.CharacterEllipsis);
+            var title = UiKit.Text(source.Unreachable ? Loc.T("Unavailable") : System.IO.Path.GetFileName(source.Path.TrimEnd('\\')) is { Length: > 0 } n ? n : source.Path, 10.5, FontWeights.Normal, ThemeKeys.TextPrimary, trimming: TextTrimming.CharacterEllipsis);
             title.MaxWidth = 130;
             title.ToolTip = source.Path;
             title.Margin = new Thickness(6, 0, 6, 0);
             row.Children.Add(title);
             var x = XBadge(14);
-            x.ToolTip = "Remove";
+            x.ToolTip = Loc.T("Remove");
             x.MouseLeftButtonUp += (_, _) => _service.RemoveSource(source.Path);
             row.Children.Add(x);
             chip.Child = row;
@@ -311,7 +311,7 @@ internal sealed class WallpaperGalleryView : StackPanel
             }
             else
             {
-                var text = _service.Filter switch { "own" => "No pictures added yet", "apple" => "No Windows wallpapers found", _ => "No wallpapers found" };
+                var text = _service.Filter switch { "own" => Loc.T("No pictures added yet"), "apple" => "No Windows wallpapers found", _ => Loc.T("No wallpapers found") };
                 var empty = UiKit.Text(text, 11, FontWeights.Normal, ThemeKeys.TextSecondary);
                 empty.HorizontalAlignment = HorizontalAlignment.Center;
                 empty.VerticalAlignment = VerticalAlignment.Center;
@@ -361,7 +361,7 @@ internal sealed class WallpaperGalleryView : StackPanel
             x.HorizontalAlignment = HorizontalAlignment.Right;
             x.VerticalAlignment = VerticalAlignment.Top;
             x.Margin = new Thickness(0, -4, -4, 0);
-            x.ToolTip = "Remove";
+            x.ToolTip = Loc.T("Remove");
             x.MouseLeftButtonUp += (_, e) =>
             {
                 e.Handled = true;
@@ -399,17 +399,17 @@ internal sealed class WallpaperGalleryView : StackPanel
         var left = new StackPanel { Orientation = Orientation.Horizontal };
         if (pages > 1)
         {
-            left.Children.Add(PagerButton("", "Previous", _page > 1, () => { _page--; Build(); }));
+            left.Children.Add(PagerButton("", Loc.T("Previous"), _page > 1, () => { _page--; Build(); }));
             var label = UiKit.Text($"{_page} / {pages}", 10.5, FontWeights.Normal, ThemeKeys.TextSecondary);
             label.FontFamily = UiKit.DisplayFont;
             label.Margin = new Thickness(12, 0, 12, 0);
             label.VerticalAlignment = VerticalAlignment.Center;
             left.Children.Add(label);
-            left.Children.Add(PagerButton("", "Next", _page < pages, () => { _page++; Build(); }));
+            left.Children.Add(PagerButton("", Loc.T("Next"), _page < pages, () => { _page++; Build(); }));
         }
 
         grid.Children.Add(left);
-        var link = UiKit.Text("Open Wallpaper settings", 10, FontWeights.Normal, ThemeKeys.TextSecondary);
+        var link = UiKit.Text(Loc.T("Open Wallpaper settings"), 10, FontWeights.Normal, ThemeKeys.TextSecondary);
         link.HorizontalAlignment = HorizontalAlignment.Right;
         link.VerticalAlignment = VerticalAlignment.Center;
         link.Cursor = Cursors.Hand;

@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text.RegularExpressions;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Tools;
 
@@ -195,7 +196,7 @@ internal static class CommandBarDates
         }
 
         var days = Math.Abs((date - now.Date).Days);
-        var title = days == 1 ? "1 day" : days.ToString("#,##0", culture) + " days";
+        var title = days == 1 ? Loc.T("1 day") : days.ToString("#,##0", culture) + " days";
         return new DateAnswer(title, LongDate(date, culture));
     }
 

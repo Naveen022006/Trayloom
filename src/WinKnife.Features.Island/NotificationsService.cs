@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Windows.Automation;
 using System.Windows.Media;
 using System.Windows.Threading;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Island;
 
@@ -339,7 +340,7 @@ internal sealed class NotificationsService : IDisposable
     {
         if (string.IsNullOrEmpty(item.Aumid))
         {
-            item.Unavailable = "This notification can no longer accept this action.";
+            item.Unavailable = Loc.T("This notification can no longer accept this action.");
             Changed?.Invoke();
             return false;
         }
@@ -351,7 +352,7 @@ internal sealed class NotificationsService : IDisposable
         }
         catch
         {
-            item.Unavailable = "This notification can no longer accept this action.";
+            item.Unavailable = Loc.T("This notification can no longer accept this action.");
             Changed?.Invoke();
             return false;
         }

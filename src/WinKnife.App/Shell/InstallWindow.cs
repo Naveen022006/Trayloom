@@ -40,7 +40,7 @@ internal sealed class InstallWindow : Window
         _log = log;
         _installedVersion = InstallManager.InstalledVersion;
         var update = _installedVersion is not null;
-        Title = update ? "Update WinKnife" : "Install WinKnife";
+        Title = update ? Loc.T("Update WinKnife") : Loc.T("Install WinKnife");
         Width = 500;
         SizeToContent = SizeToContent.Height;
         ResizeMode = ResizeMode.NoResize;
@@ -52,7 +52,7 @@ internal sealed class InstallWindow : Window
 
         var root = new StackPanel();
         root.SetResourceReference(Panel.BackgroundProperty, ThemeKeys.SettingsWindow);
-        root.Children.Add(UiParts.Hero(138, 70, update ? "Update WinKnife" : "Install WinKnife", null));
+        root.Children.Add(UiParts.Hero(138, 70, update ? Loc.T("Update WinKnife") : Loc.T("Install WinKnife"), null));
         root.Children.Add(_body);
         var background = new Border { Child = root };
         background.SetResourceReference(Border.BackgroundProperty, ThemeKeys.SettingsWindow);
@@ -98,11 +98,11 @@ internal sealed class InstallWindow : Window
         _body.Children.Add(UiParts.Paragraph("Installs to " + InstallManager.InstallRoot, 11.5, ThemeKeys.TextTertiary, 14));
 
         var card = new SettingsCard();
-        card.Add(Row("", "Start menu shortcut", "Press the Windows key and type “WinKnife” to open it.", _startMenu, on => _startMenu = on));
+        card.Add(Row("", Loc.T("Start menu shortcut"), Loc.T("Press the Windows key and type “WinKnife” to open it."), _startMenu, on => _startMenu = on));
         card.AddDivider();
-        card.Add(Row("", "Desktop shortcut", "A WinKnife icon on your desktop.", _desktop, on => _desktop = on));
+        card.Add(Row("", Loc.T("Desktop shortcut"), Loc.T("A WinKnife icon on your desktop."), _desktop, on => _desktop = on));
         card.AddDivider();
-        card.Add(Row("", "Start WinKnife when I sign in", "Recommended: the tray icon is always there when you need it.", _login, on => _login = on));
+        card.Add(Row("", Loc.T("Start WinKnife when I sign in"), Loc.T("Recommended: the tray icon is always there when you need it."), _login, on => _login = on));
         _body.Children.Add(card);
 
         if (error is not null)
@@ -118,18 +118,18 @@ internal sealed class InstallWindow : Window
         var ask = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         var dont = new MacSwitch(DontAskAgain, SwitchSize.Mini, on => DontAskAgain = on);
         ask.Children.Add(dont);
-        var askText = UiKit.Text("Don’t ask again", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary);
+        var askText = UiKit.Text(Loc.T("Don’t ask again"), 11.5, FontWeights.Normal, ThemeKeys.TextSecondary);
         askText.Margin = new Thickness(8, 0, 0, 0);
         ask.Children.Add(askText);
         footer.Children.Add(ask);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal };
-        var justRun = UiKit.Button("Just run it", ButtonKind.Bordered, 13, onClick: () =>
+        var justRun = UiKit.Button(Loc.T("Just run it"), ButtonKind.Bordered, 13, onClick: () =>
         {
             Choice = InstallChoice.JustRun;
             Close();
         });
         justRun.Padding = new Thickness(14, 6, 14, 6);
-        var install = UiKit.Button(update ? "Update" : "Install", ButtonKind.Prominent, 13, onClick: StartInstall);
+        var install = UiKit.Button(update ? Loc.T("Update") : Loc.T("Install"), ButtonKind.Prominent, 13, onClick: StartInstall);
         install.Padding = new Thickness(18, 6, 18, 6);
         install.Margin = new Thickness(8, 0, 0, 0);
         install.IsDefault = true;
@@ -181,7 +181,7 @@ internal sealed class UninstallWindow : Window
 
     public UninstallWindow()
     {
-        Title = "Uninstall WinKnife";
+        Title = Loc.T("Uninstall WinKnife");
         Width = 480;
         SizeToContent = SizeToContent.Height;
         ResizeMode = ResizeMode.NoResize;
@@ -191,18 +191,18 @@ internal sealed class UninstallWindow : Window
         ThemeManager.BindWindow(this);
 
         var body = new StackPanel { Margin = new Thickness(24, 22, 24, 20) };
-        body.Children.Add(UiKit.Text("Uninstall WinKnife?", 17, FontWeights.Bold, ThemeKeys.TextPrimary));
+        body.Children.Add(UiKit.Text(Loc.T("Uninstall WinKnife?"), 17, FontWeights.Bold, ThemeKeys.TextPrimary));
         var text = UiParts.Paragraph("This quits WinKnife and removes its program files, the Start menu and Desktop shortcuts, the Apps & features entry and the start-at-sign-in entry.", 13, ThemeKeys.TextSecondary, 14);
         text.Margin = new Thickness(0, 8, 0, 14);
         body.Children.Add(text);
         var card = new SettingsCard();
-        card.Add(new SettingsRow("", "Also delete my settings", "Your feature choices, shortcuts and Scratchpad notes. Keep them if you might reinstall later.", new MacSwitch(false, SwitchSize.Regular, on => _removeSettings = on)));
+        card.Add(new SettingsRow("", Loc.T("Also delete my settings"), Loc.T("Your feature choices, shortcuts and Scratchpad notes. Keep them if you might reinstall later."), new MacSwitch(false, SwitchSize.Regular, on => _removeSettings = on)));
         body.Children.Add(card);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
-        var cancel = UiKit.Button("Cancel", ButtonKind.Bordered, 13, onClick: Close);
+        var cancel = UiKit.Button(Loc.T("Cancel"), ButtonKind.Bordered, 13, onClick: Close);
         cancel.Padding = new Thickness(16, 6, 16, 6);
         cancel.IsCancel = true;
-        var go = UiKit.Button("Uninstall", ButtonKind.Destructive, 13, onClick: () =>
+        var go = UiKit.Button(Loc.T("Uninstall"), ButtonKind.Destructive, 13, onClick: () =>
         {
             Confirmed = true;
             Close();

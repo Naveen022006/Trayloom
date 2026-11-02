@@ -28,31 +28,32 @@ public static class PanelTabs
     public const string CategoryFiles = "files";
 
     /// <summary>All tabs in canonical order. <c>FanControl</c> is listed but never available on Windows.</summary>
-    public static IReadOnlyList<PanelTabInfo> All { get; } =
-    [
-        new(KeepAwake, "Keep awake", "", "Keeps your PC awake for as long as you want.", ["keep-awake"], false),
-        new(Brightness, "Displays", "", "Brightness of your displays.", ["brightness"], false),
-        new(Mixer, "Volume mixer", "", "Volume of each app, one slider each.", ["mixer", "audio-priority"], false),
-        new(System, "System", "", "Processor, graphics and memory at a glance.", ["monitor-cpu", "monitor-gpu", "monitor-memory", "connected-devices"], true),
-        new(Network, "Network", "", "Internet speed and which apps are using it.", ["monitor-network"], true),
-        new(Disk, "Disks", "", "Free space and disk activity.", ["monitor-disk"], true),
-        new(Power, "Power", "", "Battery, charging and power use.", ["monitor-power"], true),
-        new(FanControl, "Fan control", "", "Fan speeds and your own fan curve.", ["fan-control"], false, AvailableOnWindows: false),
-        new(Utilities, "Utilities", "", "Screenshots, cleaner, updates and other tools.",
+    public static IReadOnlyList<PanelTabInfo> All => _loc_All.Value;
+
+    private static readonly LocValue<IReadOnlyList<PanelTabInfo>> _loc_All = new(() => [
+        new(KeepAwake, Loc.T("Keep awake"), "", Loc.T("Keeps your PC awake for as long as you want."), ["keep-awake"], false),
+        new(Brightness, Loc.T("Displays"), "", Loc.T("Brightness of your displays."), ["brightness"], false),
+        new(Mixer, Loc.T("Volume mixer"), "", Loc.T("Volume of each app, one slider each."), ["mixer", "audio-priority"], false),
+        new(System, Loc.T("System"), "", Loc.T("Processor, graphics and memory at a glance."), ["monitor-cpu", "monitor-gpu", "monitor-memory", "connected-devices"], true),
+        new(Network, Loc.T("Network"), "", Loc.T("Internet speed and which apps are using it."), ["monitor-network"], true),
+        new(Disk, Loc.T("Disks"), "", Loc.T("Free space and disk activity."), ["monitor-disk"], true),
+        new(Power, Loc.T("Power"), "", Loc.T("Battery, charging and power use."), ["monitor-power"], true),
+        new(FanControl, Loc.T("Fan control"), "", Loc.T("Fan speeds and your own fan curve."), ["fan-control"], false, AvailableOnWindows: false),
+        new(Utilities, Loc.T("Utilities"), "", Loc.T("Screenshots, cleaner, updates and other tools."),
         [
             "quick-launcher", "cleaner", "homebrew", "app-updates", "media-tools", "clipboard-history", "window-layout", "uninstaller",
             "url-cleaner", "cleaning-mode", "screen-ocr", "color-picker", "screenshot", "screen-recorder", "camera-preview", "scratchpad",
             "command-bar", "port-manager",
         ], true),
-        new(Controls, "Controls", "", "Switches for mouse, keyboard and window features.",
+        new(Controls, Loc.T("Controls"), "", Loc.T("Switches for mouse, keyboard and window features."),
         [
             "scroll-inverter", "linear-scroll", "focus-follows-mouse", "mouse-acceleration", "mouse-navigation", "mouse-button-shortcuts", "switcher",
             "finder-cut-paste", "auto-quit", "shelf", "window-maximizer", "dock-preview", "keyboard-debounce", "dock-click", "spaces-order",
             "middle-click", "text-snippets", "super-key", "radial-menu", "mouse-click-debounce", "notch",
         ], true),
-        new(Toggles, "Quick toggles", "", "One-click actions like dark mode and muting the mic.", ["quick-toggles", "mic-mute", "quit-apps"], true),
-        new(Wallpaper, "Wallpaper", "", "Pick a still wallpaper without opening Settings.", ["wallpaper"], false),
-    ];
+        new(Toggles, Loc.T("Quick toggles"), "", Loc.T("One-click actions like dark mode and muting the mic."), ["quick-toggles", "mic-mute", "quit-apps"], true),
+        new(Wallpaper, Loc.T("Wallpaper"), "", Loc.T("Pick a still wallpaper without opening Settings."), ["wallpaper"], false),
+    ]);
 
     /// <summary>Looks up a tab.</summary>
     public static PanelTabInfo? Get(string id) => All.FirstOrDefault(t => t.Id == id);

@@ -6,23 +6,25 @@ using System.Text.Json.Serialization;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Capture;
 
 /// <summary>Shared colour palette of the editor, watermark and recorder text (sRGB).</summary>
 internal static class Palette
 {
-    public static readonly (string Name, string Label, Color Color)[] Colors =
-    [
-        ("red", "Red", Color.FromRgb(237, 66, 54)),
-        ("orange", "Orange", Color.FromRgb(255, 148, 0)),
-        ("yellow", "Yellow", Color.FromRgb(255, 204, 0)),
-        ("green", "Green", Color.FromRgb(51, 199, 89)),
-        ("blue", "Blue", Color.FromRgb(10, 133, 255)),
-        ("purple", "Purple", Color.FromRgb(176, 82, 222)),
-        ("black", "Black", Color.FromRgb(23, 23, 28)),
-        ("white", "White", Color.FromRgb(255, 255, 255)),
-    ];
+    public static (string Name, string Label, Color Color)[] Colors => _loc_Colors.Value;
+
+    private static readonly LocValue<(string Name, string Label, Color Color)[]> _loc_Colors = new(() => [
+        ("red", Loc.T("Red"), Color.FromRgb(237, 66, 54)),
+        ("orange", Loc.T("Orange"), Color.FromRgb(255, 148, 0)),
+        ("yellow", Loc.T("Yellow"), Color.FromRgb(255, 204, 0)),
+        ("green", Loc.T("Green"), Color.FromRgb(51, 199, 89)),
+        ("blue", Loc.T("Blue"), Color.FromRgb(10, 133, 255)),
+        ("purple", Loc.T("Purple"), Color.FromRgb(176, 82, 222)),
+        ("black", Loc.T("Black"), Color.FromRgb(23, 23, 28)),
+        ("white", Loc.T("White"), Color.FromRgb(255, 255, 255)),
+    ]);
 
     public static Color Get(string? name) => (Colors.FirstOrDefault(c => c.Name == name) is { Name: not null } c ? c : Colors[0]).Color;
 
@@ -105,14 +107,15 @@ internal sealed class BackdropStyle
     [JsonIgnore]
     public bool IsNone => Kind == "none";
 
-    public static readonly (string Id, string Label, double[] A, double[] B)[] Presets =
-    [
+    public static (string Id, string Label, double[] A, double[] B)[] Presets => _loc_Presets.Value;
+
+    private static readonly LocValue<(string Id, string Label, double[] A, double[] B)[]> _loc_Presets = new(() => [
         ("ocean", "Ocean", [0.20, 0.47, 0.96], [0.45, 0.83, 0.98]),
         ("sunset", "Sunset", [0.99, 0.36, 0.42], [1.00, 0.75, 0.35]),
         ("forest", "Forest", [0.07, 0.56, 0.43], [0.62, 0.87, 0.50]),
         ("candy", "Candy", [0.66, 0.32, 0.95], [0.99, 0.56, 0.65]),
-        ("graphite", "Graphite", [0.23, 0.25, 0.31], [0.55, 0.60, 0.70]),
-    ];
+        ("graphite", Loc.T("Graphite"), [0.23, 0.25, 0.31], [0.55, 0.60, 0.70]),
+    ]);
 
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
@@ -225,7 +228,9 @@ internal sealed class WatermarkStyle
 
     public static readonly string[] Anchors = ["topLeading", "top", "topTrailing", "leading", "center", "trailing", "bottomLeading", "bottom", "bottomTrailing"];
 
-    public static readonly string[] AnchorNames = ["Top left", "Top center", "Top right", "Center left", "Center", "Center right", "Bottom left", "Bottom center", "Bottom right"];
+    public static string[] AnchorNames => _loc_AnchorNames.Value;
+
+    private static readonly LocValue<string[]> _loc_AnchorNames = new(() => [Loc.T("Top left"), Loc.T("Top center"), Loc.T("Top right"), Loc.T("Center left"), "Center", Loc.T("Center right"), Loc.T("Bottom left"), Loc.T("Bottom center"), Loc.T("Bottom right")]);
 
     public static WatermarkStyle Parse(string? json)
     {

@@ -215,7 +215,7 @@ internal sealed class ToolOrderPanel : StackPanel
         string text;
         if (recording)
         {
-            text = "Press keys";
+            text = Loc.T("Press keys");
         }
         else if (custom.TryGetValue(tool.RawId, out var k))
         {
@@ -334,7 +334,7 @@ internal sealed class ToolOrderPanel : StackPanel
             }
             else if (custom.FirstOrDefault(kv => kv.Value == key && kv.Key != tool.RawId) is { Key: not null } other)
             {
-                reason = $"This shortcut is already used by {ToolCatalog.ByRaw(other.Key)?.Title}.";
+                reason = Loc.F("This shortcut is already used by {0}.", ToolCatalog.ByRaw(other.Key)?.Title);
             }
 
             if (reason is not null)

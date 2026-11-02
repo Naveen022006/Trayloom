@@ -17,15 +17,15 @@ namespace WinKnife.Features.Tools;
 /// <summary>Strings of Cleaning Mode (Vorssaint <c>Localization</c>, enUS).</summary>
 internal static class CleaningStrings
 {
-    public const string Title = "Cleaning Mode";
-    public const string PanelCaption = "Locks the keyboard so you can clean safely.";
-    public const string OverlayTitle = "Keyboard locked for cleaning";
-    public const string OverlaySubtitle = "Press Escape 5 times to unlock";
-    public const string Unlock = "Unlock";
-    public const string MouseHint = "Your mouse and trackpad still work";
-    public const string KeepVisible = "Keep screen visible";
-    public const string KeepVisibleCaption = "Shows a discreet indicator in the corner of the screen instead of blacking out content.";
-    public const string StartNow = "Lock keyboard now";
+    public static  string Title => Loc.T("Cleaning Mode");
+    public static  string PanelCaption => Loc.T("Locks the keyboard so you can clean safely.");
+    public static  string OverlayTitle => Loc.T("Keyboard locked for cleaning");
+    public static  string OverlaySubtitle => Loc.T("Press Escape 5 times to unlock");
+    public static  string Unlock => Loc.T("Unlock");
+    public static  string MouseHint => Loc.T("Your mouse and trackpad still work");
+    public static  string KeepVisible => Loc.T("Keep screen visible");
+    public static  string KeepVisibleCaption => Loc.T("Shows a discreet indicator in the corner of the screen instead of blacking out content.");
+    public static  string StartNow => Loc.T("Lock keyboard now");
 }
 
 /// <summary>The visual content of the cleaning overlays (no hooks: usable from tests).</summary>

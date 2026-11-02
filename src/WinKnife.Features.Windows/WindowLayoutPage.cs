@@ -131,8 +131,8 @@ public sealed class WindowLayoutSettingsSection : ISettingsSection
             list => app.Set(Keys.LayoutIgnored, list))));
 
         // 4. gaps
-        var gapItems = new (int, string)[] { (0, "None"), (8, "Tiny (8 px)"), (16, "Small (16 px)"), (32, "Medium (32 px)"), (64, "Large (64 px)"), (128, "Extra large (128 px)") };
-        (int, string)[] WithCurrent(int value) => gapItems.Any(g => g.Item1 == value) ? gapItems : [.. gapItems, (value, $"{value} px")];
+        var gapItems = new (int, string)[] { (0, Loc.T("None")), (8, Loc.T("Tiny (8 px)")), (16, Loc.T("Small (16 px)")), (32, Loc.T("Medium (32 px)")), (64, Loc.T("Large (64 px)")), (128, Loc.T("Extra large (128 px)")) };
+        (int, string)[] WithCurrent(int value) => gapItems.Any(g => g.Item1 == value) ? gapItems : [.. gapItems, (value, Loc.F("{0} px", value))];
         var windowGap = app.Get<int>(Keys.WindowGap);
         var screenGap = app.Get<int>(Keys.ScreenGap);
         var gaps = new StackPanel();
@@ -153,7 +153,7 @@ public sealed class WindowLayoutSettingsSection : ISettingsSection
         shortcuts.Children.Add(directional);
         if (context.Shortcuts.Role(Keys.DirectionalRole) is not null)
         {
-            directionalOpts.Children.Add(ShortcutUi.LabelledRow(context.Shortcuts, Keys.DirectionalRole, null, "Shortcut"));
+            directionalOpts.Children.Add(ShortcutUi.LabelledRow(context.Shortcuts, Keys.DirectionalRole, null, Loc.T("Shortcut")));
         }
 
         directionalOpts.Margin = new Thickness(0, 13, 0, 0);
@@ -163,7 +163,7 @@ public sealed class WindowLayoutSettingsSection : ISettingsSection
 
         // 6. pointer to next display
         var pointer = new StackPanel();
-        var pointerRow = ShortcutUi.LabelledRow(context.Shortcuts, "pointerNextDisplay", null, "Shortcut", app.Get<bool>(Keys.PointerDisplayEnabled));
+        var pointerRow = ShortcutUi.LabelledRow(context.Shortcuts, "pointerNextDisplay", null, Loc.T("Shortcut"), app.Get<bool>(Keys.PointerDisplayEnabled));
         pointerRow.Margin = new Thickness(0, 13, 0, 0);
         pointer.Children.Add(FormUi.Toggle(app, Keys.PointerDisplayEnabled, null, Strings.PointerDisplay, Strings.PointerDisplayCaption, on => pointerRow.IsEnabled = on));
         pointerRow.IsEnabled = app.Get<bool>(Keys.PointerDisplayEnabled);
@@ -172,7 +172,7 @@ public sealed class WindowLayoutSettingsSection : ISettingsSection
 
         // 7. mirror of the taskbar clicks toggle
         Add(FormUi.Section(null, new FeatureSwitchRow(context.Runtime, context.Shell, "dock-click", null, Strings.ClickCycle, Strings.ClickCycleCaption,
-            app.Get<bool>(Keys.DockClickCycle), on => app.Set(Keys.DockClickCycle, on), "Install Taskbar clicks to use this.")));
+            app.Get<bool>(Keys.DockClickCycle), on => app.Set(Keys.DockClickCycle, on), Loc.T("Install Taskbar clicks to use this."))));
 
         // 8. placement sections
         placements.IsEnabled = app.Get<bool>(Keys.LayoutShortcutsEnabled);

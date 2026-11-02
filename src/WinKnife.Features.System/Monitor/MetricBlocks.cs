@@ -190,7 +190,7 @@ internal static class MetricBlocks
                         break;
                     }
 
-                    blocks.Add(new TrayBlock(id, cpu ? "cpu" : "gpu", cpu ? "CPU" : "GPU", cpu ? MetricKind.Cpu : MetricKind.Gpu, BlockStyle.Text, (cpu ? "CPU" : "GPU") + (fahrenheit ? "°F" : "°C"), Degrees(temp.Value, fahrenheit), "999°"));
+                    blocks.Add(new TrayBlock(id, cpu ? "cpu" : "gpu", cpu ? Loc.T("CPU") : Loc.T("GPU"), cpu ? MetricKind.Cpu : MetricKind.Gpu, BlockStyle.Text, (cpu ? "CPU" : "GPU") + (fahrenheit ? "°F" : "°C"), Degrees(temp.Value, fahrenheit), "999°"));
                     break;
                 }
 
@@ -207,11 +207,11 @@ internal static class MetricBlocks
                     var dotColor = m.Pressure switch { Pressure.Critical => ThemeKeys.Red, Pressure.Caution => ThemeKeys.Yellow, _ => ThemeKeys.Green };
                     if (bars)
                     {
-                        blocks.Add(new TrayBlock(id, id, "Memory", MetricKind.Memory, BlockStyle.Gauge, "RAM", Fmt.Percent(pct), "100%", Fraction: pct / 100, PressureDot: style != "percent", DotColor: dotColor));
+                        blocks.Add(new TrayBlock(id, id, Loc.T("Memory"), MetricKind.Memory, BlockStyle.Gauge, "RAM", Fmt.Percent(pct), "100%", Fraction: pct / 100, PressureDot: style != "percent", DotColor: dotColor));
                     }
                     else
                     {
-                        blocks.Add(new TrayBlock(id, id, "Memory", MetricKind.Memory, BlockStyle.Text, "RAM", style == "dot" ? string.Empty : Fmt.Percent(pct), "100%", PressureDot: style != "percent", DotColor: dotColor));
+                        blocks.Add(new TrayBlock(id, id, Loc.T("Memory"), MetricKind.Memory, BlockStyle.Text, "RAM", style == "dot" ? string.Empty : Fmt.Percent(pct), "100%", PressureDot: style != "percent", DotColor: dotColor));
                     }
 
                     break;
@@ -228,11 +228,11 @@ internal static class MetricBlocks
                     if (id == "battery")
                     {
                         var color = p.Percent <= 10 ? ThemeKeys.Red : p.Percent <= 20 ? ThemeKeys.Orange : null;
-                        blocks.Add(new TrayBlock(id, "battery", "Battery", MetricKind.Battery, BlockStyle.Battery, "BAT", p.Percent + "%", "100%", ValueColor: color, BatteryPercent: p.Percent, Charging: p.Charging || p.OnAc));
+                        blocks.Add(new TrayBlock(id, "battery", Loc.T("Battery"), MetricKind.Battery, BlockStyle.Battery, "BAT", p.Percent + "%", "100%", ValueColor: color, BatteryPercent: p.Percent, Charging: p.Charging || p.OnAc));
                     }
                     else if (p.TemperatureC is { } bt)
                     {
-                        blocks.Add(new TrayBlock(id, "battery", "Battery", MetricKind.Battery, BlockStyle.Text, "BAT" + (fahrenheit ? "°F" : "°C"), Degrees(bt, fahrenheit), "999°"));
+                        blocks.Add(new TrayBlock(id, "battery", Loc.T("Battery"), MetricKind.Battery, BlockStyle.Text, "BAT" + (fahrenheit ? "°F" : "°C"), Degrees(bt, fahrenheit), "999°"));
                     }
 
                     break;
@@ -245,7 +245,7 @@ internal static class MetricBlocks
                         break;
                     }
 
-                    blocks.Add(new TrayBlock(id, id, "Battery time remaining", MetricKind.Power, BlockStyle.Text, "BAT", p.SecondsRemaining > 0 ? Fmt.HoursMinutes(p.SecondsRemaining) : "...", "99h 59m"));
+                    blocks.Add(new TrayBlock(id, id, Loc.T("Battery time remaining"), MetricKind.Power, BlockStyle.Text, "BAT", p.SecondsRemaining > 0 ? Fmt.HoursMinutes(p.SecondsRemaining) : "...", "99h 59m"));
                     break;
                 }
 
@@ -259,7 +259,7 @@ internal static class MetricBlocks
                     var low = s.Peripherals.OrderBy(x => x.Percent).First();
                     var label = low.Kind switch { "keyboard" => "KBD", "mouse" => "MOU", "trackpad" => "TRK", "audio" => "AUD", _ => "PER" };
                     var extra = s.Peripherals.Count - 1;
-                    blocks.Add(new TrayBlock(id, id, "Peripheral battery", MetricKind.Battery, BlockStyle.Text, label, low.Percent + "%" + (extra > 0 ? "+" + Math.Min(9, extra) : string.Empty), "100%+9"));
+                    blocks.Add(new TrayBlock(id, id, Loc.T("Peripheral battery"), MetricKind.Battery, BlockStyle.Text, label, low.Percent + "%" + (extra > 0 ? "+" + Math.Min(9, extra) : string.Empty), "100%+9"));
                     break;
                 }
 
@@ -273,7 +273,7 @@ internal static class MetricBlocks
                     var down = "↓" + Fmt.RateCompact(s.NetDown, bits);
                     var up = "↑" + Fmt.RateCompact(s.NetUp, bits);
                     var first = app.Get<bool>("menuBarNetworkUploadFirst");
-                    blocks.Add(new TrayBlock(id, id, "Network", MetricKind.Network, BlockStyle.TwoLines, string.Empty, string.Empty, "↓999Kb", first ? up : down, first ? down : up));
+                    blocks.Add(new TrayBlock(id, id, Loc.T("Network"), MetricKind.Network, BlockStyle.TwoLines, string.Empty, string.Empty, "↓999Kb", first ? up : down, first ? down : up));
                     break;
                 }
 
@@ -289,12 +289,12 @@ internal static class MetricBlocks
                     var pct = v.UsedFraction * 100;
                     if (bars && style == "percent")
                     {
-                        blocks.Add(new TrayBlock(id, id, "Disks", MetricKind.Disk, BlockStyle.Gauge, "DSK", Fmt.Percent(pct), "100%", Fraction: pct / 100));
+                        blocks.Add(new TrayBlock(id, id, Loc.T("Disks"), MetricKind.Disk, BlockStyle.Gauge, "DSK", Fmt.Percent(pct), "100%", Fraction: pct / 100));
                     }
                     else
                     {
                         var value = style switch { "free" => Fmt.BytesDecimal(v.Free), "used" => Fmt.BytesDecimal(v.Total - v.Free), _ => Fmt.Percent(pct) };
-                        blocks.Add(new TrayBlock(id, id, "Disks", MetricKind.Disk, BlockStyle.Text, "DSK", value, style == "percent" ? "100%" : "1000 GB"));
+                        blocks.Add(new TrayBlock(id, id, Loc.T("Disks"), MetricKind.Disk, BlockStyle.Text, "DSK", value, style == "percent" ? "100%" : "1000 GB"));
                     }
 
                     break;
@@ -302,12 +302,12 @@ internal static class MetricBlocks
 
                 case "diskActivity":
                 {
-                    blocks.Add(new TrayBlock(id, id, "Disks", MetricKind.Disk, BlockStyle.TwoLines, string.Empty, string.Empty, "R8888M", "R" + Fmt.RateCompact(s.DiskRead, false), "W" + Fmt.RateCompact(s.DiskWrite, false)));
+                    blocks.Add(new TrayBlock(id, id, Loc.T("Disks"), MetricKind.Disk, BlockStyle.TwoLines, string.Empty, string.Empty, "R8888M", "R" + Fmt.RateCompact(s.DiskRead, false), "W" + Fmt.RateCompact(s.DiskWrite, false)));
                     break;
                 }
 
                 case "connectedDevices":
-                    blocks.Add(new TrayBlock(id, id, Strings.Monitor.ConnectedDevices, MetricKind.Devices, BlockStyle.Text, "USB", s.Devices.Count.ToString(), "99"));
+                    blocks.Add(new TrayBlock(id, id, Strings.Monitor.ConnectedDevices, MetricKind.Devices, BlockStyle.Text, Loc.T("USB"), s.Devices.Count.ToString(), "99"));
                     break;
 
                 case "power":
@@ -318,7 +318,7 @@ internal static class MetricBlocks
                         break;
                     }
 
-                    blocks.Add(new TrayBlock(id, id, "Power", MetricKind.Power, BlockStyle.Text, "PWR", Math.Round(w.Value) + "W", "99W"));
+                    blocks.Add(new TrayBlock(id, id, Loc.T("Power"), MetricKind.Power, BlockStyle.Text, "PWR", Math.Round(w.Value) + "W", "99W"));
                     break;
                 }
             }

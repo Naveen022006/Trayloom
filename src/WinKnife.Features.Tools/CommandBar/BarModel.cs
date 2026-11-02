@@ -4,57 +4,58 @@
 using System.Globalization;
 using System.Text;
 using System.Windows.Media;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Tools;
 
 /// <summary>Verbatim English strings of the Command Bar (spec 1.3).</summary>
 internal static class BarStrings
 {
-    public const string PageTitle = "Command Bar";
-    public const string SearchPlaceholder = "Type what you want to do";
-    public const string Suggestions = "Suggestions";
-    public const string NoResultsTitle = "Nothing here by that name.";
-    public const string NoResultsAction = "See suggestions";
-    public const string ArgumentHint = "Return applies · Esc goes back";
-    public const string ConfirmHint = "Return confirms · Esc cancels";
-    public const string KindApp = "App";
-    public const string KindClipboard = "Paste from history";
-    public const string KindSnippet = "Insert snippet";
-    public const string KindWindow = "Window";
-    public const string KindMenu = "Menu command";
-    public const string KindEmoji = "Emoji";
-    public const string KindFolder = "Folder";
-    public const string KindAnswer = "Answer";
-    public const string KindSelection = "Selection";
-    public const string KindLink = "Your shortcut";
-    public const string SettingsSubtitle = "WinKnife Settings";
-    public const string PanesSubtitle = "Windows Settings pages";
-    public const string ActionsTitle = "Actions";
-    public const string Pin = "Pin to the top";
-    public const string Unpin = "Unpin";
-    public const string Name = "Give it your own name";
-    public const string Rename = "Change the name it answers to";
-    public const string Hide = "Never show this";
-    public const string Forget = "Forget how often I use this";
-    public const string AliasPlaceholder = "The name you call it";
-    public const string Shortcut = "Give it a shortcut";
-    public const string ShortcutChange = "Change the shortcut";
-    public const string ShortcutRemove = "Take the shortcut off";
-    public const string ShortcutCaptureHint = "Press the keys you want · Delete clears it · Esc goes back";
-    public const string DragHint = "Drag to move · Double-click to recenter";
-    public const string TryLabel = "Try";
-    public const string Everything = "Everything it can do";
-    public const string PastFromHistory = "Paste from history";
-    public const string ShowInExplorer = "Show in File Explorer";
-    public const string OpenInBrowser = "Open in browser";
-    public const string Cancel = "Cancel";
-    public const string Confirm = "Confirm";
-    public const string ReturnCopies = "Return copies";
-    public const string Continue = "Continue";
+    public static  string PageTitle => Loc.T("Command Bar");
+    public static  string SearchPlaceholder => Loc.T("Type what you want to do");
+    public static  string Suggestions => Loc.T("Suggestions");
+    public static  string NoResultsTitle => Loc.T("Nothing here by that name.");
+    public static  string NoResultsAction => Loc.T("See suggestions");
+    public static  string ArgumentHint => Loc.T("Return applies · Esc goes back");
+    public static  string ConfirmHint => Loc.T("Return confirms · Esc cancels");
+    public static  string KindApp => Loc.T("App");
+    public static  string KindClipboard => Loc.T("Paste from history");
+    public static  string KindSnippet => Loc.T("Insert snippet");
+    public static  string KindWindow => Loc.T("Window");
+    public static  string KindMenu => Loc.T("Menu command");
+    public static  string KindEmoji => Loc.T("Emoji");
+    public static  string KindFolder => Loc.T("Folder");
+    public static  string KindAnswer => Loc.T("Answer");
+    public static  string KindSelection => Loc.T("Selection");
+    public static  string KindLink => Loc.T("Your shortcut");
+    public static  string SettingsSubtitle => Loc.T("WinKnife Settings");
+    public static  string PanesSubtitle => Loc.T("Windows Settings pages");
+    public static  string ActionsTitle => Loc.T("Actions");
+    public static  string Pin => Loc.T("Pin to the top");
+    public static  string Unpin => Loc.T("Unpin");
+    public static  string Name => Loc.T("Give it your own name");
+    public static  string Rename => Loc.T("Change the name it answers to");
+    public static  string Hide => Loc.T("Never show this");
+    public static  string Forget => Loc.T("Forget how often I use this");
+    public static  string AliasPlaceholder => Loc.T("The name you call it");
+    public static  string Shortcut => Loc.T("Give it a shortcut");
+    public static  string ShortcutChange => Loc.T("Change the shortcut");
+    public static  string ShortcutRemove => Loc.T("Take the shortcut off");
+    public static  string ShortcutCaptureHint => Loc.T("Press the keys you want · Delete clears it · Esc goes back");
+    public static  string DragHint => Loc.T("Drag to move · Double-click to recenter");
+    public static  string TryLabel => Loc.T("Try");
+    public static  string Everything => Loc.T("Everything it can do");
+    public static  string PastFromHistory => Loc.T("Paste from history");
+    public static  string ShowInExplorer => Loc.T("Show in File Explorer");
+    public static  string OpenInBrowser => Loc.T("Open in browser");
+    public static  string Cancel => Loc.T("Cancel");
+    public static  string Confirm => Loc.T("Confirm");
+    public static  string ReturnCopies => Loc.T("Return copies");
+    public static  string Continue => Loc.T("Continue");
 
-    public static string NeedsSetup(string feature) => $"Turn on {feature} in Settings";
+    public static string NeedsSetup(string feature) => Loc.F("Turn on {0} in Settings", feature);
 
-    public static string AliasTaken(string title) => $"{title} already answers to that";
+    public static string AliasTaken(string title) => Loc.F("{0} already answers to that", title);
 }
 
 /// <summary>A category / source of rows (spec 1.5.1).</summary>
@@ -67,27 +68,28 @@ internal static class BarStrings
 /// <param name="AcceptsAlias">Rows can get an alias / shortcut.</param>
 internal sealed record BarSource(string Raw, string Label, string Glyph, string Prefix, int Bias, bool AcceptsPin, bool AcceptsAlias)
 {
-    public static readonly BarSource[] All =
-    [
-        new("actions", "WinKnife actions", "\uE945", "", 0, true, true),
-        new("apps", "Apps", "\uE80A", "app.", 80, true, true),
-        new("menus", "Menu commands of the app in front", "\uE700", "menu.", -80, false, false),
-        new("windows", "Open windows", "\uE737", "window.", 0, true, false),
-        new("quitApps", "Quit an app", "\uE711", "quit.", 0, false, true),
-        new("uninstallApps", "Uninstaller", "\uE74D", "uninstall.", 0, false, false),
-        new("settingsPages", "Settings pages", "\uE713", "settings.", -40, true, true),
-        new("macSettings", "Windows Settings pages", "\uE713", "macsettings.", 0, true, true),
-        new("snippets", "Snippets", "\uE8D2", "snippet.", 0, true, true),
-        new("clipboard", "Clipboard history", "\uE77F", "clipboard.", 0, false, false),
-        new("emoji", "Emoji", "\uE76E", "emoji.", 0, false, true),
-        new("folders", "Folders", "\uE8B7", "folder.", 0, true, true),
-        new("answers", "Answers about this PC", "\uE946", "answer.", 0, true, true),
-        new("calculator", "Sums and conversions", "\uE8EF", "", 0, true, true),
-        new("selection", "What is selected", "\uE8E9", "selection.", 0, false, false),
-        new("links", "Your shortcuts", "\uE8A4", "link.", 0, true, true),
-        new("files", "Files", "\uE721", "file.", -40, false, false),
-        new("killProcess", "Kill Process", "\uEA39", "kill.", 0, false, false),
-    ];
+    public static BarSource[] All => _loc_All.Value;
+
+    private static readonly LocValue<BarSource[]> _loc_All = new(() => [
+        new("actions", Loc.T("WinKnife actions"), "\uE945", "", 0, true, true),
+        new("apps", Loc.T("Apps"), "\uE80A", "app.", 80, true, true),
+        new("menus", Loc.T("Menu commands of the app in front"), "\uE700", "menu.", -80, false, false),
+        new("windows", Loc.T("Open windows"), "\uE737", "window.", 0, true, false),
+        new("quitApps", Loc.T("Quit an app"), "\uE711", "quit.", 0, false, true),
+        new("uninstallApps", Loc.T("Uninstaller"), "\uE74D", "uninstall.", 0, false, false),
+        new("settingsPages", Loc.T("Settings pages"), "\uE713", "settings.", -40, true, true),
+        new("macSettings", Loc.T("Windows Settings pages"), "\uE713", "macsettings.", 0, true, true),
+        new("snippets", Loc.T("Snippets"), "\uE8D2", "snippet.", 0, true, true),
+        new("clipboard", Loc.T("Clipboard history"), "\uE77F", "clipboard.", 0, false, false),
+        new("emoji", Loc.T("Emoji"), "\uE76E", "emoji.", 0, false, true),
+        new("folders", Loc.T("Folders"), "\uE8B7", "folder.", 0, true, true),
+        new("answers", Loc.T("Answers about this PC"), "\uE946", "answer.", 0, true, true),
+        new("calculator", Loc.T("Sums and conversions"), "\uE8EF", "", 0, true, true),
+        new("selection", Loc.T("What is selected"), "\uE8E9", "selection.", 0, false, false),
+        new("links", Loc.T("Your shortcuts"), "\uE8A4", "link.", 0, true, true),
+        new("files", Loc.T("Files"), "\uE721", "file.", -40, false, false),
+        new("killProcess", Loc.T("Kill Process"), "\uEA39", "kill.", 0, false, false),
+    ]);
 
     /// <summary>Category chip order.</summary>
     public static readonly string[] ChipOrder = ["actions", "apps", "clipboard", "windows", "menus", "settingsPages", "macSettings", "snippets", "emoji", "folders", "links"];
@@ -95,22 +97,22 @@ internal sealed record BarSource(string Raw, string Label, string Glyph, string 
     /// <summary>Titles of the browse headings.</summary>
     public static string CategoryTitle(string raw) => raw switch
     {
-        "actions" => "WinKnife actions",
-        "apps" => "Apps",
+        "actions" => Loc.T("WinKnife actions"),
+        "apps" => Loc.T("Apps"),
         "menus" => KindMenuTitle,
-        "windows" => "Open windows",
-        "settingsPages" => "Settings pages",
-        "macSettings" => "Windows Settings pages",
-        "snippets" => "Snippets",
-        "clipboard" => "Clipboard history",
-        "emoji" => "Emoji",
-        "folders" => "Folders",
-        "links" => "Your shortcuts",
-        "killProcess" => "Kill Process",
+        "windows" => Loc.T("Open windows"),
+        "settingsPages" => Loc.T("Settings pages"),
+        "macSettings" => Loc.T("Windows Settings pages"),
+        "snippets" => Loc.T("Snippets"),
+        "clipboard" => Loc.T("Clipboard history"),
+        "emoji" => Loc.T("Emoji"),
+        "folders" => Loc.T("Folders"),
+        "links" => Loc.T("Your shortcuts"),
+        "killProcess" => Loc.T("Kill Process"),
         _ => raw,
     };
 
-    private const string KindMenuTitle = "Menu command";
+    private static  string KindMenuTitle => Loc.T("Menu command");
 
     private static readonly HashSet<string> ActionBrowse = ["emoji.browse", "kill.browse", "uninstall.browse", "uninstall.finder"];
 

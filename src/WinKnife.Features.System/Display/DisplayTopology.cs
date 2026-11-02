@@ -3,6 +3,7 @@
 
 using System.Runtime.InteropServices;
 using System.Text;
+using WinKnife.Core;
 
 namespace WinKnife.Features.SystemTools;
 
@@ -91,7 +92,7 @@ internal static class DisplayTopology
                 }
 
                 var internalPanel = tech is 0x80000000 or 11 or 13;
-                var info = new DisplayInfo(gdi, string.IsNullOrWhiteSpace(name) ? (internalPanel ? "Built-in display" : "Display") : name, internalPanel, active, targetId, targetAdapter);
+                var info = new DisplayInfo(gdi, string.IsNullOrWhiteSpace(name) ? (internalPanel ? Loc.T("Built-in display") : Loc.T("Display")) : name, internalPanel, active, targetId, targetAdapter);
                 var existing = result.FindIndex(r => r.Key == key);
                 if (existing >= 0)
                 {

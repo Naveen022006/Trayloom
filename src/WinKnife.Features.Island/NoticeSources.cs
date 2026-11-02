@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Island;
 
@@ -73,7 +74,7 @@ internal sealed class NoticeSources : IDisposable
         {
             Event = NoticeEvents.Volume,
             Glyph = m || v <= 0.001 ? G.SpeakerOff : G.Speaker,
-            Title = "Volume",
+            Title = Loc.T("Volume"),
             Level = m ? 0 : v,
             Detail = $"{(int)Math.Round((m ? 0 : v) * 100)}%",
         });
@@ -93,7 +94,7 @@ internal sealed class NoticeSources : IDisposable
             return;
         }
 
-        _core.ShowNotice(new Notice { Event = NoticeEvents.Microphone, Glyph = m ? G.MicOff : G.Mic, Title = m ? "Mic Mute on" : "Mic Mute off", Detail = "", Tint = m ? Color.FromRgb(0xFF, 0x45, 0x3A) : null, Reaction = m ? "hush" : "perk" });
+        _core.ShowNotice(new Notice { Event = NoticeEvents.Microphone, Glyph = m ? G.MicOff : G.Mic, Title = m ? Loc.T("Mic Mute on") : Loc.T("Mic Mute off"), Detail = "", Tint = m ? Color.FromRgb(0xFF, 0x45, 0x3A) : null, Reaction = m ? "hush" : "perk" });
         _core.Mascot.React(m ? "hush" : "perk");
     }
 
@@ -121,7 +122,7 @@ internal sealed class NoticeSources : IDisposable
             return;
         }
 
-        _core.ShowNotice(new Notice { Event = NoticeEvents.Track, Glyph = G.Music, Title = "New track", Detail = p.Display, Image = p.Artwork });
+        _core.ShowNotice(new Notice { Event = NoticeEvents.Track, Glyph = G.Music, Title = Loc.T("New track"), Detail = p.Display, Image = p.Artwork });
     }
 
     private void OnTimerFinished(TimerPhase phase, bool cycle)
@@ -130,7 +131,7 @@ internal sealed class NoticeSources : IDisposable
         {
             Event = NoticeEvents.Timer,
             Glyph = G.Timer,
-            Title = cycle ? "Pomodoro complete" : "Time is up",
+            Title = cycle ? Loc.T("Pomodoro complete") : Loc.T("Time is up"),
             Detail = TimerService.PhaseTitle(phase),
             Tint = Color.FromRgb(0xFF, 0x9F, 0x0A),
             Reaction = phase == TimerPhase.Focus ? "celebrate" : (phase is TimerPhase.ShortBreak or TimerPhase.LongBreak ? "ready" : "surprised"),
@@ -157,7 +158,7 @@ internal sealed class NoticeSources : IDisposable
             _core.Ui.BeginInvoke(async () =>
             {
                 await Task.Delay(300);
-                _core.ShowNotice(new Notice { Event = NoticeEvents.Unlock, Glyph = G.Unlock, Title = _core.Timer.Completed ? "Time is up" : "Welcome back", Detail = "", Reaction = "wakeUp" });
+                _core.ShowNotice(new Notice { Event = NoticeEvents.Unlock, Glyph = G.Unlock, Title = _core.Timer.Completed ? Loc.T("Time is up") : Loc.T("Welcome back"), Detail = "", Reaction = "wakeUp" });
             });
         }
     }
@@ -195,7 +196,7 @@ internal sealed class NoticeSources : IDisposable
                     name = "";
                 }
 
-                _core.ShowNotice(new Notice { Event = NoticeEvents.InputSource, Glyph = G.Keyboard, Title = "Input source", Detail = name });
+                _core.ShowNotice(new Notice { Event = NoticeEvents.InputSource, Glyph = G.Keyboard, Title = Loc.T("Input source"), Detail = name });
             }
         }
 
@@ -220,7 +221,7 @@ internal sealed class NoticeSources : IDisposable
             {
                 Event = NoticeEvents.Battery,
                 Glyph = plugged ? G.BatteryCharging : G.Battery,
-                Title = plugged ? (pct >= 100 ? "Fully charged" : "Charging") : "On battery",
+                Title = plugged ? (pct >= 100 ? Loc.T("Fully charged") : Loc.T("Charging")) : Loc.T("On battery"),
                 Level = pct / 100.0,
                 Detail = $"{pct}%",
                 Reaction = plugged ? "love" : null,
@@ -231,7 +232,7 @@ internal sealed class NoticeSources : IDisposable
         if (!plugged && pct <= 20 && _lowArmed && _lastPercent > 20 && _core.Ctx.Runtime.IsAvailable("monitor-power"))
         {
             _lowArmed = false;
-            _core.ShowNotice(new Notice { Event = NoticeEvents.Battery, Glyph = G.Battery, Title = "Low battery", Level = pct / 100.0, Detail = $"{pct}%", Tint = Color.FromRgb(0xFF, 0x9F, 0x0A), Reaction = "yawn" });
+            _core.ShowNotice(new Notice { Event = NoticeEvents.Battery, Glyph = G.Battery, Title = Loc.T("Low battery"), Level = pct / 100.0, Detail = $"{pct}%", Tint = Color.FromRgb(0xFF, 0x9F, 0x0A), Reaction = "yawn" });
             _core.Mascot.React("yawn");
         }
 

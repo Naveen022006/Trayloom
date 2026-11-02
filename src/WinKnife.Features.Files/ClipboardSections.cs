@@ -34,7 +34,7 @@ public sealed class ClipboardSettingsSection : ISettingsSection
 
     public string? Anchor => "clipboardHistory";
 
-    public string? Title => "Clipboard";
+    public string? Title => Loc.T("Clipboard");
 
     public IReadOnlyList<string> Keywords =>
         ["history", "Save clipboard history", "History shortcut", "History layout", "List", "Cards", "Limit", "Keep items for", "Apps to skip", "sensitive", "Auto clear", "Show in panel", "images and files"];
@@ -73,7 +73,7 @@ public sealed class ClipboardSettingsSection : ISettingsSection
         var h2Rows = new List<UIElement?>
         {
             SettingsKit.Disable(SettingsKit.Toggle(app, "clipboardHistoryShortcutEnabled", Strings.Clipboard.Shortcut, null, _ => c.RequestRebuild()), !enabled),
-            SettingsKit.Disable(SettingsKit.ShortcutRow(c, "clipboardHistory", "Shortcut", enabled && shortcutEnabled), !(enabled && shortcutEnabled)),
+            SettingsKit.Disable(SettingsKit.ShortcutRow(c, "clipboardHistory", Loc.T("Shortcut"), enabled && shortcutEnabled), !(enabled && shortcutEnabled)),
             Ui.Caption(Strings.Clipboard.ShortcutCaption),
             SettingsKit.FieldRow(Strings.Clipboard.HistoryLayout, layoutPicker, null),
             SettingsKit.Toggle(app, "clipboardHistoryShowSourceAppIcons", Strings.Clipboard.ShowSourceIcons, null),
@@ -175,7 +175,7 @@ public sealed class ClipboardImageFileSection : ISettingsSection
 
     public string? Anchor => "pasteImageAsFile";
 
-    public string? Title => "Paste copied images as files";
+    public string? Title => Loc.T("Paste copied images as files");
 
     public IReadOnlyList<string> Keywords => ["image", "PNG", "Explorer", "folder"];
 
@@ -220,7 +220,7 @@ public sealed class PastePlainSettingsSection : ISettingsSection
         return SettingsKit.Section(
             Strings.PastePlain.Name,
             SettingsKit.Toggle(c.App, "pastePlainEnabled", Strings.PastePlain.Name, Strings.PastePlain.Caption, _ => c.RequestRebuild()),
-            SettingsKit.Disable(SettingsKit.ShortcutRow(c, "pastePlain", "Shortcut", enabled), !enabled));
+            SettingsKit.Disable(SettingsKit.ShortcutRow(c, "pastePlain", Loc.T("Shortcut"), enabled), !enabled));
     }
 }
 
@@ -291,7 +291,7 @@ public sealed class ClipboardUtility : IPanelUtility
 
     public string Id => "clipboard";
 
-    public string Title => "Clipboard";
+    public string Title => Loc.T("Clipboard");
 
     public string Glyph => "";
 

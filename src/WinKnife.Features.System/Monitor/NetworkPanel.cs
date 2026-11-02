@@ -150,7 +150,7 @@ internal static class NetworkBlocks
         var unit = UiKit.Text(Bits_(app) ? "bit/s" : "B/s", 10.5, FontWeights.SemiBold, ThemeKeys.TextSecondary);
         unit.FontFamily = UiKit.DisplayFont;
         unit.VerticalAlignment = VerticalAlignment.Center;
-        var pill = new Border { Height = 22, CornerRadius = new CornerRadius(7), Padding = new Thickness(7, 0, 7, 0), Cursor = Cursors.Hand, Child = unit, VerticalAlignment = VerticalAlignment.Center, ToolTip = "Network speed unit · B/s → bit/s" };
+        var pill = new Border { Height = 22, CornerRadius = new CornerRadius(7), Padding = new Thickness(7, 0, 7, 0), Cursor = Cursors.Hand, Child = unit, VerticalAlignment = VerticalAlignment.Center, ToolTip = Loc.T("Network speed unit · B/s → bit/s") };
         pill.SetResourceReference(Border.BackgroundProperty, ThemeKeys.ControlFill);
         Grid.SetColumn(pill, 5);
         row.Children.Add(pill);
@@ -310,7 +310,7 @@ internal static class NetworkBlocks
 
             string F(double v) => v >= 100 ? v.ToString("0", CultureInfo.CurrentCulture) : v.ToString("0.0", CultureInfo.CurrentCulture);
             result.Text = $"↓{F(r.DownloadMbps)} ↑{F(r.UploadMbps)} Mbps";
-            latency.Text = $"Latency: {r.LatencyMs:0} ms";
+            latency.Text = Loc.F("Latency: {0} ms", Loc.Fmt(r.LatencyMs, "0"));
             latency.SetResourceReference(TextBlock.ForegroundProperty, ThemeKeys.TextTertiary);
         }
 

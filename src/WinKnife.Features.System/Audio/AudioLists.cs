@@ -28,7 +28,7 @@ internal static class ShortcutRows
         problem.Margin = new Thickness(0, 4, 0, 0);
         problem.Visibility = Visibility.Collapsed;
         Button? reset = null;
-        reset = Bits.FlatIcon(Gl.Reset, "Reset", () =>
+        reset = Bits.FlatIcon(Gl.Reset, Loc.T("Reset"), () =>
         {
             c.Shortcuts.Reset(roleId);
             recorder.Hotkey = c.Shortcuts.GetHotkey(roleId);

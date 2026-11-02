@@ -313,7 +313,7 @@ internal static class BarProviders
     {
         if (exe is null)
         {
-            return "Window";
+            return Loc.T("Window");
         }
 
         try

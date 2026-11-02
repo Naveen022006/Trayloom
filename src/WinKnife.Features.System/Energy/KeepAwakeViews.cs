@@ -74,16 +74,18 @@ internal sealed class Chip : Border
 /// <summary>The Keep awake views: tray panel card, the two settings cards and the shared pieces (icon picker, automation editor, Until picker).</summary>
 internal static class KeepAwakeViews
 {
-    private static readonly (string Id, string Name)[] Icons =
-    [
-        ("vorssaint", "WinKnife"), ("coffee", "Coffee"), ("eye", "Eye"), ("moon", "Moon"), ("light", "Lightbulb"),
-    ];
+    private static (string Id, string Name)[] Icons => _loc_Icons.Value;
 
-    private static readonly (string Id, string Name, string Hex)[] Tints =
-    [
-        ("orange", "Orange", "#FF9500"), ("green", "Green", "#34C759"), ("blue", "Blue", "#0A84FF"),
-        ("purple", "Purple", "#BF5AF2"), ("pink", "Pink", "#FF375F"), ("none", "No color", ""),
-    ];
+    private static readonly LocValue<(string Id, string Name)[]> _loc_Icons = new(() => [
+        ("vorssaint", "WinKnife"), ("coffee", Loc.T("Coffee")), ("eye", Loc.T("Eye")), ("moon", Loc.T("Moon")), ("light", Loc.T("Lightbulb")),
+    ]);
+
+    private static (string Id, string Name, string Hex)[] Tints => _loc_Tints.Value;
+
+    private static readonly LocValue<(string Id, string Name, string Hex)[]> _loc_Tints = new(() => [
+        ("orange", Loc.T("Orange"), "#FF9500"), ("green", Loc.T("Green"), "#34C759"), ("blue", Loc.T("Blue"), "#0A84FF"),
+        ("purple", Loc.T("Purple"), "#BF5AF2"), ("pink", Loc.T("Pink"), "#FF375F"), ("none", Loc.T("No color"), ""),
+    ]);
 
     // ------------------------------------------------------------------------------------------------ panel card
 
@@ -381,7 +383,7 @@ internal static class KeepAwakeViews
             var icon = app.Get<string>("keepAwakeActiveIcon");
             var tint = app.Get<string>("keepAwakeIconTint");
             iconName.Text = Icons.FirstOrDefault(i => i.Id == icon).Name ?? "WinKnife";
-            tintName.Text = Tints.FirstOrDefault(t => t.Id == tint).Name ?? "Orange";
+            tintName.Text = Tints.FirstOrDefault(t => t.Id == tint).Name ?? Loc.T("Orange");
             foreach (var (id, cell) in iconCells)
             {
                 Select(cell, id == icon);
@@ -912,7 +914,7 @@ internal sealed class UntilPopup
         _minPrev.Text = ((_minute + 59) % 60).ToString("00");
         _minNext.Text = ((_minute + 1) % 60).ToString("00");
         var target = Resolve();
-        var day = target.Date == DateTime.Today ? "Today" : "Tomorrow";
+        var day = target.Date == DateTime.Today ? Loc.T("Today") : "Tomorrow";
         _summary.Text = Strings.KeepAwake.UntilSummary(day, target - DateTime.Now);
     }
 

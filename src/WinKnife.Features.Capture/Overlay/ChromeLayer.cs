@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
 using WinKnife.Core.Ui;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Capture;
 
@@ -80,7 +81,7 @@ internal sealed class ChromeLayer : Grid
 
         var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(14, 0, 14, 0), VerticalAlignment = VerticalAlignment.Center };
         row.Children.Add(Icon("", 13, Fg));
-        row.Children.Add(Label("Full screen", 13, FontWeights.SemiBold, Fg, new Thickness(7, 0, 0, 0)));
+        row.Children.Add(Label(Loc.T("Full screen"), 13, FontWeights.SemiBold, Fg, new Thickness(7, 0, 0, 0)));
         _pill.Child = row;
         _pill.Height = 32;
         _pill.MinHeight = 32;
@@ -163,11 +164,11 @@ internal sealed class ChromeLayer : Grid
 
             if (tool == CaptureTool.Screenshot && !_s.ScrollingOnly)
             {
-                chips.Add(Chip(G.Stack, _s.Scrolling ? "S on" : "S"));
+                chips.Add(Chip(G.Stack, _s.Scrolling ? Loc.T("S on") : "S"));
             }
         }
 
-        chips.Add(Chip(G.Zoom, _s.LoupeOn ? "Z on" : "Z"));
+        chips.Add(Chip(G.Zoom, _s.LoupeOn ? Loc.T("Z on") : "Z"));
         if (_s.LoupeOn)
         {
             chips.Add(Chip(G.Copy, "C"));
@@ -287,8 +288,8 @@ internal sealed class ChromeLayer : Grid
     {
         var app = _s.Services.App;
         var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(4) };
-        row.Children.Add(AudioToggle(G.Speaker, "PC sound", K.RecSystemAudio, app));
-        row.Children.Add(AudioToggle(G.Mic, "Microphone", K.RecMicrophone, app));
+        row.Children.Add(AudioToggle(G.Speaker, Loc.T("PC sound"), K.RecSystemAudio, app));
+        row.Children.Add(AudioToggle(G.Mic, Loc.T("Microphone"), K.RecMicrophone, app));
         var pill = new Border { CornerRadius = new CornerRadius(18), Background = Glass, BorderBrush = Stroke, BorderThickness = new Thickness(1), Child = row, HorizontalAlignment = HorizontalAlignment.Center };
         pill.Effect = new DropShadowEffect { BlurRadius = 10, ShadowDepth = 4, Direction = 270, Opacity = 0.16 };
         return pill;

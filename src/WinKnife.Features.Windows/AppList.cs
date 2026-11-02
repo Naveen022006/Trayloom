@@ -318,7 +318,7 @@ internal sealed class AppBundleList : StackPanel
         string caption,
         Func<List<string>> read,
         Action<List<string>> write,
-        string addTitle = Strings.AddAnApp,
+        string? addTitle = null,
         Func<string, UIElement?>? accessory = null,
         Func<IReadOnlyList<AppEntry>>? loader = null,
         bool allowBrowse = true,
@@ -332,7 +332,7 @@ internal sealed class AppBundleList : StackPanel
         _caption = caption;
         _read = read;
         _write = write;
-        _addTitle = addTitle;
+        _addTitle = addTitle ?? Strings.AddAnApp;
         _accessory = accessory;
         _loader = loader;
         _allowBrowse = allowBrowse;

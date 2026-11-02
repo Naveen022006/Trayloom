@@ -58,7 +58,7 @@ internal static class SystemBlocks
         unavailable.Margin = new Thickness(0, 6, 0, 0);
         var grid = new UniformGrid { Rows = 1 };
         var values = new List<(TextBlock Value, string Kind)>();
-        foreach (var (kind, label, glyph, feature) in new[] { ("cpu", "CPU", Gl.Cpu, "monitor-cpu"), ("gpu", "GPU", Gl.Gpu, "monitor-gpu") })
+        foreach (var (kind, label, glyph, feature) in new[] { ("cpu", Loc.T("CPU"), Gl.Cpu, "monitor-cpu"), ("gpu", Loc.T("GPU"), Gl.Gpu, "monitor-gpu") })
         {
             if (!c.Runtime.IsAvailable(feature))
             {
@@ -134,12 +134,12 @@ internal static class SystemBlocks
         var live = new LiveHost(stack, Needs.Cpu | Needs.CpuCores | Needs.Gpu);
         if (c.Runtime.IsAvailable("monitor-cpu") && app.Get<bool>("monitorSysCPU"))
         {
-            stack.AddSpaced(UsageRow(c, live, "CPU", ThemeKeys.Accent, "cpu", "monitorGraphCPU", expandCores: app.Get<bool>("monitorSysCPUCores"), kind: UsageKind.Cpu), 6);
+            stack.AddSpaced(UsageRow(c, live, Loc.T("CPU"), ThemeKeys.Accent, "cpu", "monitorGraphCPU", expandCores: app.Get<bool>("monitorSysCPUCores"), kind: UsageKind.Cpu), 6);
         }
 
         if (c.Runtime.IsAvailable("monitor-gpu") && app.Get<bool>("monitorSysGPU"))
         {
-            stack.AddSpaced(UsageRow(c, live, "GPU", ThemeKeys.Cyan, "gpu", "monitorGraphGPU", expandCores: false, kind: UsageKind.Gpu), 6);
+            stack.AddSpaced(UsageRow(c, live, Loc.T("GPU"), ThemeKeys.Cyan, "gpu", "monitorGraphGPU", expandCores: false, kind: UsageKind.Gpu), 6);
         }
 
         return stack.Children.Count > 1 ? stack : null;

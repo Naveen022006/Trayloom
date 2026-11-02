@@ -385,7 +385,7 @@ internal sealed class TrayPanel : Window
         tile.VerticalAlignment = VerticalAlignment.Top;
         head.Children.Add(tile);
         var text = new StackPanel { Margin = new Thickness(11, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-        text.Children.Add(UiKit.Text("Add features", empty ? 14 : 12.5, FontWeights.SemiBold, ThemeKeys.TextPrimary));
+        text.Children.Add(UiKit.Text(Loc.T("Add features"), empty ? 14 : 12.5, FontWeights.SemiBold, ThemeKeys.TextPrimary));
         var caption = message ?? (empty
             ? "Nothing to show yet. This panel is built from the features you install: monitors, a volume mixer, window tools and more."
             : $"{installed} of {total} features installed. The panel grows with every feature you add.");
@@ -393,7 +393,7 @@ internal sealed class TrayPanel : Window
         Grid.SetColumn(text, 1);
         head.Children.Add(text);
         stack.Children.Add(head);
-        var button = UiKit.Button("Open the Features hub", ButtonKind.Prominent, 12, Glyphs.Add, () =>
+        var button = UiKit.Button(Loc.T("Open the Features hub"), ButtonKind.Prominent, 12, Glyphs.Add, () =>
         {
             ClosePanel();
             _s.Shell.OpenFeatures();
@@ -492,7 +492,7 @@ internal sealed class TrayPanel : Window
             var hasContent = stack.Children.Count > 1;
             if (!hasContent)
             {
-                stack.Children.Add(Spaced(AddFeaturesCard(empty: true, message: $"Nothing to show in {tab.Title} yet. Install a feature that belongs here, or hide this tab in Settings."), 10));
+                stack.Children.Add(Spaced(AddFeaturesCard(empty: true, message: Loc.F("Nothing to show in {0} yet. Install a feature that belongs here, or hide this tab in Settings.", tab.Title)), 10));
             }
             else if (ShowAddFeaturesNudge)
             {
@@ -511,7 +511,7 @@ internal sealed class TrayPanel : Window
             if (_editing)
             {
                 var bar = new StackPanel { Orientation = Orientation.Horizontal };
-                var reset = new Button { Content = UiKit.Icon(Glyphs.Reset, 10.5, ThemeKeys.TextSecondary, FontWeights.SemiBold), Width = 22, Height = 22, ToolTip = "Default", Margin = new Thickness(0, 0, 6, 0) };
+                var reset = new Button { Content = UiKit.Icon(Glyphs.Reset, 10.5, ThemeKeys.TextSecondary, FontWeights.SemiBold), Width = 22, Height = 22, ToolTip = Loc.T("Default"), Margin = new Thickness(0, 0, 6, 0) };
                 reset.SetResourceReference(FrameworkElement.StyleProperty, ThemeKeys.ButtonPlain);
                 reset.Click += (_, _) =>
                 {
@@ -524,7 +524,7 @@ internal sealed class TrayPanel : Window
                 ok.SetResourceReference(Border.BackgroundProperty, ThemeKeys.Accent);
                 var okRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
                 okRow.Children.Add(UiKit.Icon(Glyphs.Check, 10, ThemeKeys.OnAccent, FontWeights.Bold));
-                var okText = UiKit.Text("OK", 10.5, FontWeights.Bold, ThemeKeys.OnAccent);
+                var okText = UiKit.Text(Loc.T("OK"), 10.5, FontWeights.Bold, ThemeKeys.OnAccent);
                 okText.Margin = new Thickness(4, 0, 0, 0);
                 okRow.Children.Add(okText);
                 ok.Child = okRow;
@@ -538,7 +538,7 @@ internal sealed class TrayPanel : Window
             }
             else
             {
-                var edit = new Button { Content = UiKit.Icon(Glyphs.Edit, 11, ThemeKeys.TextSecondary, FontWeights.SemiBold), Width = 22, Height = 18, ToolTip = "Edit" };
+                var edit = new Button { Content = UiKit.Icon(Glyphs.Edit, 11, ThemeKeys.TextSecondary, FontWeights.SemiBold), Width = 22, Height = 18, ToolTip = Loc.T("Edit") };
                 edit.SetResourceReference(FrameworkElement.StyleProperty, ThemeKeys.ButtonPlain);
                 edit.Padding = new Thickness(0);
                 edit.Click += (_, _) =>
@@ -632,7 +632,7 @@ internal sealed class TrayPanel : Window
         if (host.Children.Count == 0)
         {
             // Everything is hidden (or nothing installed): say so instead of leaving a blank tab.
-            return new PanelCard(UiKit.Text("Every utility is hidden. Click the pencil to show some again, or add more features.", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true), 12);
+            return new PanelCard(UiKit.Text(Loc.T("Every utility is hidden. Click the pencil to show some again, or add more features."), 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true), 12);
         }
 
         var card = new PanelCard(host, 0);
@@ -664,7 +664,7 @@ internal sealed class TrayPanel : Window
         if (_editing)
         {
             var layout = row.Layout;
-            var eye = new Button { Content = UiKit.Icon(shown ? Glyphs.EyeOff : Glyphs.Eye, 11, shown ? ThemeKeys.TextSecondary : ThemeKeys.Accent, FontWeights.Bold), Width = 24, Height = 22, ToolTip = shown ? "Hide from panel" : "Show in panel" };
+            var eye = new Button { Content = UiKit.Icon(shown ? Glyphs.EyeOff : Glyphs.Eye, 11, shown ? ThemeKeys.TextSecondary : ThemeKeys.Accent, FontWeights.Bold), Width = 24, Height = 22, ToolTip = shown ? Loc.T("Hide from panel") : Loc.T("Show in panel") };
             eye.SetResourceReference(FrameworkElement.StyleProperty, ThemeKeys.ButtonPlain);
             eye.Click += (_, e) =>
             {
@@ -703,10 +703,10 @@ internal sealed class TrayPanel : Window
         var buttons = new StackPanel { Orientation = Orientation.Horizontal };
         if (u.ShowsSettingsGear && u.SettingsDestination is { } dest)
         {
-            buttons.Children.Add(IconButton(Glyphs.Settings, "Settings…", () => _s.Shell.OpenSettings(dest)));
+            buttons.Children.Add(IconButton(Glyphs.Settings, Loc.T("Settings…"), () => _s.Shell.OpenSettings(dest)));
         }
 
-        buttons.Children.Add(IconButton(Glyphs.CloseCircle, "Cancel", () =>
+        buttons.Children.Add(IconButton(Glyphs.CloseCircle, Loc.T("Cancel"), () =>
         {
             _hostedUtility = null;
             _hostedSettings = null;
@@ -754,9 +754,9 @@ internal sealed class TrayPanel : Window
     {
         var title = category switch
         {
-            PanelTabs.CategoryWindows => "Windows",
-            PanelTabs.CategoryInput => "Mouse and keyboard",
-            PanelTabs.CategoryFiles => "Files",
+            PanelTabs.CategoryWindows => Loc.T("Windows"),
+            PanelTabs.CategoryInput => Loc.T("Mouse and keyboard"),
+            PanelTabs.CategoryFiles => Loc.T("Files"),
             _ => string.Empty,
         };
         var key = category switch
@@ -856,8 +856,8 @@ internal sealed class TrayPanel : Window
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var settings = FooterButton("Settings", Glyphs.Settings, () => _s.Shell.OpenSettings(_hostedSettings ?? SettingsPages.Last));
-        var quit = FooterButton("Quit", Glyphs.Power, () => _s.Shell.Quit());
+        var settings = FooterButton(Loc.T("Settings"), Glyphs.Settings, () => _s.Shell.OpenSettings(_hostedSettings ?? SettingsPages.Last));
+        var quit = FooterButton(Loc.T("Quit"), Glyphs.Power, () => _s.Shell.Quit());
         Grid.SetColumn(quit, 2);
         grid.Children.Add(settings);
         grid.Children.Add(quit);

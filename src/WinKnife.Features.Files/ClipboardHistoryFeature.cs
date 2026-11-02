@@ -78,8 +78,8 @@ public sealed class ClipboardHistoryFeature : IFeature, IClipboardHost, IClipboa
 
     public IReadOnlyList<FeatureAction> Actions =>
     [
-        new FeatureAction("open", "Clipboard history", () => ToggleWindow(), ""),
-        new FeatureAction("clear", "Clear unpinned", ClearUnpinnedWithConfirmation, ""),
+        new FeatureAction("open", Loc.T("Clipboard history"), () => ToggleWindow(), ""),
+        new FeatureAction("clear", Loc.T("Clear unpinned"), ClearUnpinnedWithConfirmation, ""),
     ];
 
     public event Action? StateChanged;
@@ -647,7 +647,7 @@ public sealed class ClipboardHistoryFeature : IFeature, IClipboardHost, IClipboa
                 completed?.Invoke(false);
                 if (paste)
                 {
-                    context.Notifier.Show("Clipboard", "Could not put the item on the clipboard.", NotificationLevel.Warning);
+                    context.Notifier.Show(Loc.T("Clipboard"), "Could not put the item on the clipboard.", NotificationLevel.Warning);
                 }
 
                 return;
@@ -665,7 +665,7 @@ public sealed class ClipboardHistoryFeature : IFeature, IClipboardHost, IClipboa
 
             if (target == 0 || !WinApi.IsWindow(target))
             {
-                context.Notifier.Show("Clipboard", "Copied. Press Ctrl+V to paste.");
+                context.Notifier.Show(Loc.T("Clipboard"), "Copied. Press Ctrl+V to paste.");
                 return;
             }
 

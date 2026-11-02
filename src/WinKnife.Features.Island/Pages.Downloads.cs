@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Island;
 
@@ -89,13 +90,13 @@ internal sealed class DownloadsPage : IslandPage
 
         var menu = PageUi.BandMenu(S.FolderName, G.Folder, () =>
         [
-            new IslandMenu.Item("Choose Folder…", Choose),
-            new IslandMenu.Item("Forget Folder", () => S.Forget()),
+            new IslandMenu.Item(Loc.T("Choose Folder…"), Choose),
+            new IslandMenu.Item(Loc.T("Forget Folder"), () => S.Forget()),
         ], () => HasWindow ? Window.HoldOpen() : null, S.FolderName);
         _leading.Children.Add(menu);
         if (S.Items.Count == 0)
         {
-            _view.Children.Add(D.EmptyView(G.Download, "No files in this folder"));
+            _view.Children.Add(D.EmptyView(G.Download, Loc.T("No files in this folder")));
             return;
         }
 
@@ -112,7 +113,7 @@ internal sealed class DownloadsPage : IslandPage
     {
         using var hold = HasWindow ? Window.HoldOpen() : null;
         var downloads = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + "\\Downloads";
-        using var dlg = new System.Windows.Forms.FolderBrowserDialog { Description = "Choose the folder where your browser saves downloads. Only that folder is watched.", SelectedPath = Directory.Exists(S.Folder) ? S.Folder : downloads, UseDescriptionForTitle = true };
+        using var dlg = new System.Windows.Forms.FolderBrowserDialog { Description = Loc.T("Choose the folder where your browser saves downloads. Only that folder is watched."), SelectedPath = Directory.Exists(S.Folder) ? S.Folder : downloads, UseDescriptionForTitle = true };
         if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
         {
             S.Choose(dlg.SelectedPath);
@@ -126,10 +127,10 @@ internal sealed class DownloadsPage : IslandPage
         var enabled = Core.App.Get<bool>(K.DownloadsEnabled);
         var tile = new Border { Width = 56, Height = 56, CornerRadius = new CornerRadius(18), Background = D.White(0.05), Child = D.I(unavailable ? G.Warning : G.Download, 26, D.White(0.65)) };
         tile.HorizontalAlignment = HorizontalAlignment.Center;
-        string text = unavailable ? "This folder is unavailable. Choose it again to restore access."
-            : (!installed && !enabled ? "Downloads"
-            : (enabled ? "Choose the folder where your browser saves downloads. Only that folder is watched."
-            : "See files arriving in a folder you choose, directly in the Dynamic Island."));
+        string text = unavailable ? Loc.T("This folder is unavailable. Choose it again to restore access.")
+            : (!installed && !enabled ? Loc.T("Downloads")
+            : (enabled ? Loc.T("Choose the folder where your browser saves downloads. Only that folder is watched.")
+            : Loc.T("See files arriving in a folder you choose, directly in the Dynamic Island.")));
         var copy = D.T(text, 12, null, unavailable ? D.Orange : D.White(0.65), true);
         copy.TextAlignment = TextAlignment.Center;
         copy.MaxWidth = 300;
@@ -141,7 +142,7 @@ internal sealed class DownloadsPage : IslandPage
         if (!enabled && installed)
         {
             var row = new StackPanel { Orientation = Orientation.Horizontal };
-            row.Children.Add(D.T("Downloads", 12, FontWeights.Medium, D.Text));
+            row.Children.Add(D.T(Loc.T("Downloads"), 12, FontWeights.Medium, D.Text));
             var tg = new IslandToggle(false, on => { Core.App.Set(K.DownloadsEnabled, on); Build(); });
             tg.Margin = new Thickness(10, 0, 0, 0);
             row.Children.Add(tg);
@@ -149,10 +150,10 @@ internal sealed class DownloadsPage : IslandPage
         }
         else if (enabled || installed)
         {
-            actions.Children.Add(D.PillButton("Choose Folder…", Choose, true));
+            actions.Children.Add(D.PillButton(Loc.T("Choose Folder…"), Choose, true));
             if (unavailable)
             {
-                var forget = D.PillButton("Forget Folder", () => S.Forget());
+                var forget = D.PillButton(Loc.T("Forget Folder"), () => S.Forget());
                 forget.Margin = new Thickness(6, 0, 0, 0);
                 actions.Children.Add(forget);
             }
@@ -178,13 +179,13 @@ internal sealed class DownloadsPage : IslandPage
         if (item.Completed)
         {
             var b = new HoverButton(() => OpenPath(item.Path)) { MinHeight = 28, CornerRadius = new CornerRadius(6), Child = nameRow, Padding = new Thickness(4, 0, 4, 0), Lifts = false, HorizontalAlignment = HorizontalAlignment.Left };
-            D.Tip(b, "Open");
+            D.Tip(b, Loc.T("Open"));
             row.Children.Add(b);
             var actions = new StackPanel { Orientation = Orientation.Horizontal };
-            actions.Children.Add(D.IconButton(G.Folder, "Show in folder", () => Reveal(item.Path), size: 26));
+            actions.Children.Add(D.IconButton(G.Folder, Loc.T("Show in folder"), () => Reveal(item.Path), size: 26));
             if (Core.Ctx.Runtime.IsAvailable("shelf"))
             {
-                var add = D.IconButton("", "Files", () => IslandShelf.Add([item.Path]), size: 26);
+                var add = D.IconButton("", Loc.T("Files"), () => IslandShelf.Add([item.Path]), size: 26);
                 add.Margin = new Thickness(4, 0, 0, 0);
                 actions.Children.Add(add);
             }
@@ -206,7 +207,7 @@ internal sealed class DownloadsPage : IslandPage
         col.Children.Add(row);
         if (item.Completed)
         {
-            col.Children.Add(D.T("Saved", 11, null, D.Secondary));
+            col.Children.Add(D.T(Loc.T("Saved"), 11, null, D.Secondary));
         }
         else
         {
@@ -225,8 +226,8 @@ internal sealed class DownloadsPage : IslandPage
             }
 
             var line = new Grid();
-            line.Children.Add(D.T(item.Active ? "Downloading" : "", 10, null, D.Secondary));
-            var size = D.T(item.Bytes > 0 ? FormatBytes(item.Bytes) : "Total size unavailable", 10, null, D.Secondary);
+            line.Children.Add(D.T(item.Active ? Loc.T("Downloading") : "", 10, null, D.Secondary));
+            var size = D.T(item.Bytes > 0 ? FormatBytes(item.Bytes) : Loc.T("Total size unavailable"), 10, null, D.Secondary);
             size.HorizontalAlignment = HorizontalAlignment.Right;
             line.Children.Add(size);
             col.Children.Add(line);

@@ -164,7 +164,7 @@ public sealed class InputControlsPanelSection : IPanelSection
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 row.Children.Add(UiKit.Text(Strings.GlobalWindow, 11, FontWeights.Normal, ThemeKeys.TextSecondary));
-                var stepper = InputUi.Stepper(0, 500, window, v => $"{v} ms", v => app.Set(K.KeyDebounceWindow, v));
+                var stepper = InputUi.Stepper(0, 500, window, v => Loc.F("{0} ms", v), v => app.Set(K.KeyDebounceWindow, v));
                 Grid.SetColumn(stepper, 1);
                 row.Children.Add(stepper);
                 stack.Children.Add(row);

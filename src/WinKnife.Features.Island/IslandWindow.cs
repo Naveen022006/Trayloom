@@ -69,7 +69,7 @@ internal sealed partial class IslandWindow : OverlayWindow
     public IslandWindow(IslandCore core)
     {
         _core = core;
-        Title = "WinKnife Island";
+        Title = Loc.T("WinKnife Island");
         Content = _stage;
         UseLayoutRounding = false;
         SnapsToDevicePixels = false;

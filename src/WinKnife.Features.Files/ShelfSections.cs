@@ -141,7 +141,7 @@ public sealed class ShelfSettingsSection : ISettingsSection
             Strings.Shelf.ExclusionsCaption,
             () => app.Get<List<string>>("shelfAutomaticExclusions") ?? [],
             list => app.Set("shelfAutomaticExclusions", list),
-            "Remove",
+            Loc.T("Remove"),
             useExpander: false);
         var exclusionsCard = new SettingsCard();
         exclusionsCard.Add(exclusions);

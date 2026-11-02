@@ -33,13 +33,13 @@ internal sealed class AppPickerView : StackPanel
         var header = new Grid { Margin = new Thickness(0, 0, 0, compact ? 9 : 12) };
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        header.Children.Add(UiKit.Text("Choose program", compact ? 12 : 16, FontWeights.SemiBold, ThemeKeys.TextPrimary));
-        var cancel = UiKit.Button("Cancel", ButtonKind.Bordered, compact ? 11 : 12, null, onCancel);
+        header.Children.Add(UiKit.Text(Loc.T("Choose program"), compact ? 12 : 16, FontWeights.SemiBold, ThemeKeys.TextPrimary));
+        var cancel = UiKit.Button(Loc.T("Cancel"), ButtonKind.Bordered, compact ? 11 : 12, null, onCancel);
         Grid.SetColumn(cancel, 1);
         header.Children.Add(cancel);
         Children.Add(header);
 
-        var search = V.SearchField("Search apps", out var box, compact ? 11 : 13, 8, compact ? 6 : 9);
+        var search = V.SearchField(Loc.T("Search apps"), out var box, compact ? 11 : 13, 8, compact ? 6 : 9);
         search.Margin = new Thickness(0, 0, 0, compact ? 9 : 12);
         box.TextChanged += (_, _) =>
         {
@@ -66,7 +66,7 @@ internal sealed class AppPickerView : StackPanel
     {
         if (_loading)
         {
-            var spinner = V.Centered(8, new Spinner(compactSpinner()), V.Secondary("Scanning files…", _compact ? 10 : 13, false));
+            var spinner = V.Centered(8, new Spinner(compactSpinner()), V.Secondary(Loc.T("Scanning files…"), _compact ? 10 : 13, false));
             spinner.VerticalAlignment = VerticalAlignment.Center;
             _state.Content = spinner;
             _state.Visibility = Visibility.Visible;
@@ -81,7 +81,7 @@ internal sealed class AppPickerView : StackPanel
         {
             var glyph = UiKit.Icon(G.AppIcon, 34, ThemeKeys.TextSecondary);
             glyph.FontWeight = FontWeights.Light;
-            var empty = V.Centered(8, glyph, V.Secondary("No apps found", _compact ? 11 : 13, false), V.Tertiary("Programs that are part of Windows or made by Microsoft aren’t listed.", _compact ? 9.5 : 11));
+            var empty = V.Centered(8, glyph, V.Secondary(Loc.T("No apps found"), _compact ? 11 : 13, false), V.Tertiary(Loc.T("Programs that are part of Windows or made by Microsoft aren’t listed."), _compact ? 9.5 : 11));
             empty.VerticalAlignment = VerticalAlignment.Center;
             _state.Content = empty;
             _state.Visibility = Visibility.Visible;
@@ -195,7 +195,7 @@ internal sealed class UninstallerView : ContentControl
                 Content = _picking ? Picker() : Empty();
                 break;
             case UnPhase.Scanning:
-                Content = Busy("Scanning files…", true);
+                Content = Busy(Loc.T("Scanning files…"), true);
                 break;
             case UnPhase.Removing:
                 Content = Busy(_m.RemovingMessage, false);
@@ -263,10 +263,10 @@ internal sealed class UninstallerView : ContentControl
         var glyph = UiKit.Icon(G.Trash, _compact ? 28 : 44, _dragOver ? ThemeKeys.Accent : ThemeKeys.TextSecondary);
         glyph.FontWeight = FontWeights.Light;
         inner.Children.Add(glyph);
-        var title = UiKit.Text("Drag a program here", _compact ? 12 : 16, FontWeights.SemiBold, ThemeKeys.TextPrimary);
+        var title = UiKit.Text(Loc.T("Drag a program here"), _compact ? 12 : 16, FontWeights.SemiBold, ThemeKeys.TextPrimary);
         title.HorizontalAlignment = HorizontalAlignment.Center;
         inner.AddSpaced(title, _compact ? 6 : 12);
-        var subtitle = UiKit.Text("or choose one to scan", _compact ? 10 : 12, FontWeights.Normal, ThemeKeys.TextSecondary);
+        var subtitle = UiKit.Text(Loc.T("or choose one to scan"), _compact ? 10 : 12, FontWeights.Normal, ThemeKeys.TextSecondary);
         subtitle.HorizontalAlignment = HorizontalAlignment.Center;
         inner.AddSpaced(subtitle, _compact ? 2 : 12);
         zone.Children.Add(inner);
@@ -285,7 +285,7 @@ internal sealed class UninstallerView : ContentControl
             column.AddSpaced(note, _compact ? 10 : 20);
         }
 
-        var choose = UiKit.Button("Choose program…", _compact ? ButtonKind.Bordered : ButtonKind.Bordered, _compact ? 11 : 13, _compact ? Glyphs.Add : null, () =>
+        var choose = UiKit.Button(Loc.T("Choose program…"), _compact ? ButtonKind.Bordered : ButtonKind.Bordered, _compact ? 11 : 13, _compact ? Glyphs.Add : null, () =>
         {
             if (_compact)
             {
@@ -299,14 +299,14 @@ internal sealed class UninstallerView : ContentControl
         choose.HorizontalAlignment = HorizontalAlignment.Center;
         choose.Padding = new Thickness(_compact ? 9 : 16, _compact ? 4 : 6, _compact ? 9 : 16, _compact ? 4 : 6);
         column.AddSpaced(choose, _compact ? 10 : 20);
-        var empty = V.Tertiary("Nothing is removed without your confirmation.", _compact ? 9.5 : 11, false);
+        var empty = V.Tertiary(Loc.T("Nothing is removed without your confirmation."), _compact ? 9.5 : 11, false);
         empty.HorizontalAlignment = HorizontalAlignment.Center;
         column.AddSpaced(empty, _compact ? 8 : 20);
 
         if (!_compact)
         {
             var form = new SettingsCard();
-            form.Add(new SettingsRow(null, "Show in Command Bar", "Choose and uninstall apps in the Command Bar.",
+            form.Add(new SettingsRow(null, Loc.T("Show in Command Bar"), Loc.T("Choose and uninstall apps in the Command Bar."),
                 new MacSwitch(Host.App.Get<bool>("uninstallerCommandBarEnabled"), SwitchSize.Regular, on => Host.App.Set("uninstallerCommandBarEnabled", on))));
             form.Width = width;
             column.AddSpaced(form, 20);
@@ -314,7 +314,7 @@ internal sealed class UninstallerView : ContentControl
 
         if (!FileOps.IsElevated)
         {
-            column.AddSpaced(AdminNote(width, "Some leftovers live in ProgramData, Program Files and HKEY_LOCAL_MACHINE and can only be removed by an administrator."), _compact ? 10 : 20);
+            column.AddSpaced(AdminNote(width, Loc.T("Some leftovers live in ProgramData, Program Files and HKEY_LOCAL_MACHINE and can only be removed by an administrator.")), _compact ? 10 : 20);
         }
 
         return column;
@@ -327,11 +327,11 @@ internal sealed class UninstallerView : ContentControl
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         var infoIcon = UiKit.Icon(G.Info, 13, ThemeKeys.TextSecondary); infoIcon.VerticalAlignment = VerticalAlignment.Top; infoIcon.HorizontalAlignment = HorizontalAlignment.Left; infoIcon.Margin = new Thickness(0, 1, 0, 0); grid.Children.Add(infoIcon);
         var text = new StackPanel();
-        text.Children.Add(UiKit.Text("Run as administrator for a more thorough scan.", 12, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true));
+        text.Children.Add(UiKit.Text(Loc.T("Run as administrator for a more thorough scan."), 12, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true));
         var h = V.Secondary(hint, 10);
         h.Margin = new Thickness(0, 4, 0, 0);
         text.Children.Add(h);
-        var button = V.Mini("Relaunch as administrator", () =>
+        var button = V.Mini(Loc.T("Relaunch as administrator"), () =>
         {
             if (Elevated.RelaunchAsAdministrator())
             {
@@ -351,7 +351,7 @@ internal sealed class UninstallerView : ContentControl
         _keepOpen?.Invoke(true);
         var window = new Window
         {
-            Title = "Choose program",
+            Title = Loc.T("Choose program"),
             Width = 520,
             Height = 560,
             WindowStartupLocation = WindowStartupLocation.CenterScreen,
@@ -395,7 +395,7 @@ internal sealed class UninstallerView : ContentControl
 
         if (cancel)
         {
-            var button = UiKit.Button("Cancel", ButtonKind.Bordered, _compact ? 11 : 13, null, _m.Cancel);
+            var button = UiKit.Button(Loc.T("Cancel"), ButtonKind.Bordered, _compact ? 11 : 13, null, _m.Cancel);
             button.HorizontalAlignment = HorizontalAlignment.Center;
             column.AddSpaced(button, 14);
         }
@@ -407,14 +407,14 @@ internal sealed class UninstallerView : ContentControl
 
     private static string CategoryTitle(UnCategory category) => category switch
     {
-        UnCategory.Application => "Application",
-        UnCategory.Support => "Support",
-        UnCategory.Caches => "Caches",
-        UnCategory.Preferences => "Preferences",
-        UnCategory.Containers => "Containers",
-        UnCategory.Logs => "Logs",
-        UnCategory.SavedState => "Saved state",
-        _ => "Other",
+        UnCategory.Application => Loc.T("Application"),
+        UnCategory.Support => Loc.T("Support"),
+        UnCategory.Caches => Loc.T("Caches"),
+        UnCategory.Preferences => Loc.T("Preferences"),
+        UnCategory.Containers => Loc.T("Containers"),
+        UnCategory.Logs => Loc.T("Logs"),
+        UnCategory.SavedState => Loc.T("Saved state"),
+        _ => Loc.T("Other"),
     };
 
     private FrameworkElement Results()
@@ -440,12 +440,12 @@ internal sealed class UninstallerView : ContentControl
         size.FontFamily = UiKit.DisplayFont;
         size.HorizontalAlignment = HorizontalAlignment.Right;
         total.Children.Add(size);
-        var found = UiKit.Text("found", _compact ? 9 : 10, FontWeights.Normal, ThemeKeys.TextSecondary);
+        var found = UiKit.Text(Loc.T("found"), _compact ? 9 : 10, FontWeights.Normal, ThemeKeys.TextSecondary);
         found.HorizontalAlignment = HorizontalAlignment.Right;
         total.Children.Add(found);
         Grid.SetColumn(total, 2);
         header.Children.Add(total);
-        var close = V.IconButton(Glyphs.CloseCircle, "Cancel", _m.Reset, 16, ThemeKeys.TextSecondary, 28);
+        var close = V.IconButton(Glyphs.CloseCircle, Loc.T("Cancel"), _m.Reset, 16, ThemeKeys.TextSecondary, 28);
         close.IsEnabled = !_m.PackageBusy;
         Grid.SetColumn(close, 3);
         header.Children.Add(close);
@@ -483,17 +483,17 @@ internal sealed class UninstallerView : ContentControl
         else if (_m.Package == PackageCheck.Failed)
         {
             var failed = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(pad, 10, pad, 10) };
-            var text = V.Orange("Could not verify whether winget manages this app. Refresh to try again, or uninstall it from winget.", _compact ? 9.5 : 11);
+            var text = V.Orange(Loc.T("Could not verify whether winget manages this app. Refresh to try again, or uninstall it from winget."), _compact ? 9.5 : 11);
             text.MaxWidth = _compact ? 200 : 420;
             failed.Children.Add(text);
-            var refresh = V.Mini("Refresh", () => _ = _m.CheckPackageAsync());
+            var refresh = V.Mini(Loc.T("Refresh"), () => _ = _m.CheckPackageAsync());
             refresh.Margin = new Thickness(8, 0, 0, 0);
             failed.Children.Add(refresh);
             root.Children.Add(failed);
         }
         else if (_m.Package == PackageCheck.Managed && _m.ApplicationChecked)
         {
-            var strip = V.Label(G.Package, $"{_m.WingetName ?? target.Name} will also be removed from winget.", _compact ? 9.5 : 11, FontWeights.Normal, ThemeKeys.TextSecondary, ThemeKeys.TextSecondary);
+            var strip = V.Label(G.Package, Loc.F("{0} will also be removed from winget.", _m.WingetName ?? target.Name), _compact ? 9.5 : 11, FontWeights.Normal, ThemeKeys.TextSecondary, ThemeKeys.TextSecondary);
             strip.Margin = new Thickness(pad, 10, pad, 10);
             root.Children.Add(strip);
         }
@@ -503,26 +503,26 @@ internal sealed class UninstallerView : ContentControl
         footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var left = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        left.Children.Add(UiKit.Text($"{_m.SelectedCount} of {_m.Items.Count} selected", _compact ? 10.5 : 12, FontWeights.Medium, ThemeKeys.TextPrimary));
+        left.Children.Add(UiKit.Text(Loc.F("{0} of {1} selected", _m.SelectedCount, _m.Items.Count), _compact ? 10.5 : 12, FontWeights.Medium, ThemeKeys.TextPrimary));
         left.Children.Add(UiKit.Text(Fmt.Bytes(_m.SelectedSize), _compact ? 9.5 : 11, FontWeights.Normal, ThemeKeys.TextSecondary));
         if (_m.ApplicationChecked && target.QuietUninstallString.Length > 0 && !target.IsAppx && _m.Package != PackageCheck.Managed)
         {
             var quiet = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
             quiet.Children.Add(new CheckMark(Host.App.Get<bool>("uninstallerSilent"), on => Host.App.Set("uninstallerSilent", on)));
-            var quietLabel = UiKit.Text("Quiet uninstall", 10.5, FontWeights.Normal, ThemeKeys.TextSecondary);
+            var quietLabel = UiKit.Text(Loc.T("Quiet uninstall"), 10.5, FontWeights.Normal, ThemeKeys.TextSecondary);
             quietLabel.Margin = new Thickness(6, 0, 0, 0);
             quiet.Children.Add(quietLabel);
             left.Children.Add(quiet);
         }
 
         footer.Children.Add(left);
-        var cancel = UiKit.Button("Cancel", ButtonKind.Bordered, _compact ? 11 : 13, null, _m.Reset);
+        var cancel = UiKit.Button(Loc.T("Cancel"), ButtonKind.Bordered, _compact ? 11 : 13, null, _m.Reset);
         cancel.IsEnabled = !_m.PackageBusy;
         cancel.Margin = new Thickness(8, 0, 0, 0);
         Grid.SetColumn(cancel, 1);
         footer.Children.Add(cancel);
         var managed = _m.Package == PackageCheck.Managed && _m.ApplicationChecked;
-        var title2 = _m.ApplicationChecked ? "Uninstall" : "Move to Recycle Bin";
+        var title2 = _m.ApplicationChecked ? Loc.T("Uninstall") : Loc.T("Move to Recycle Bin");
         var remove = UiKit.Button(title2, ButtonKind.Destructive, _compact ? 11 : 13, G.Trash, () => Remove(managed, target));
         remove.IsEnabled = _m.CanRemove;
         remove.FontWeight = FontWeights.SemiBold;
@@ -537,7 +537,7 @@ internal sealed class UninstallerView : ContentControl
     {
         if (managed)
         {
-            var ok = Dialogs.Confirm("Uninstall with winget?", $"winget will uninstall {_m.WingetName ?? target.Name}. Configuration files may remain on the system.", "Uninstall", true, "Cancel", _keepOpen);
+            var ok = Dialogs.Confirm(Loc.T("Uninstall with winget?"), Loc.F("winget will uninstall {0}. Configuration files may remain on the system.", _m.WingetName ?? target.Name), Loc.T("Uninstall"), true, Loc.T("Cancel"), _keepOpen);
             if (!ok)
             {
                 return;
@@ -580,7 +580,7 @@ internal sealed class UninstallerView : ContentControl
         var sub = new StackPanel { Orientation = Orientation.Horizontal };
         if (item.Match == UnMatch.Related)
         {
-            var related = V.Label(G.Help, "Optional, review first", _compact ? 9.5 : 10.5, FontWeights.Normal, ThemeKeys.Orange, ThemeKeys.Orange, 3);
+            var related = V.Label(G.Help, Loc.T("Optional, review first"), _compact ? 9.5 : 10.5, FontWeights.Normal, ThemeKeys.Orange, ThemeKeys.Orange, 3);
             related.Margin = new Thickness(0, 0, 6, 0);
             sub.Children.Add(related);
         }
@@ -593,7 +593,7 @@ internal sealed class UninstallerView : ContentControl
         Grid.SetColumn(text, 2);
         grid.Children.Add(text);
 
-        var reveal = V.IconButton(G.Folder, item.IsRegistry ? "Open in Registry Editor" : "Reveal in File Explorer", () => Reveal(item), _compact ? 11 : 12, ThemeKeys.TextSecondary, 22);
+        var reveal = V.IconButton(G.Folder, item.IsRegistry ? Loc.T("Open in Registry Editor") : Loc.T("Reveal in File Explorer"), () => Reveal(item), _compact ? 11 : 12, ThemeKeys.TextSecondary, 22);
         reveal.IsEnabled = item.Kind is UnKind.Path or UnKind.Program or UnKind.RegistryKey or UnKind.RegistryValue;
         Grid.SetColumn(reveal, 3);
         grid.Children.Add(reveal);
@@ -634,15 +634,15 @@ internal sealed class UninstallerView : ContentControl
         var column = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(_compact ? 10 : 28, _compact ? 16 : 70, _compact ? 10 : 28, _compact ? 16 : 70) };
         var failed = _m.Failed.Count > 0;
         column.Children.Add(UiKit.Icon(failed ? G.Warning : G.CheckCircle, _compact ? 32 : 54, failed ? ThemeKeys.Orange : ThemeKeys.Green));
-        var done = UiKit.Text("Done!", _compact ? 14 : 20, FontWeights.Bold, ThemeKeys.TextPrimary);
+        var done = UiKit.Text(Loc.T("Done!"), _compact ? 14 : 20, FontWeights.Bold, ThemeKeys.TextPrimary);
         done.HorizontalAlignment = HorizontalAlignment.Center;
         column.AddSpaced(done, 16);
-        var freed = UiKit.Text($"{Fmt.Bytes(_m.Freed)} removed", _compact ? 11 : 13, FontWeights.Normal, ThemeKeys.TextSecondary);
+        var freed = UiKit.Text(Loc.F("{0} removed", Fmt.Bytes(_m.Freed)), _compact ? 11 : 13, FontWeights.Normal, ThemeKeys.TextSecondary);
         freed.HorizontalAlignment = HorizontalAlignment.Center;
         column.AddSpaced(freed, 16);
         if (_m.RebootRequired)
         {
-            var reboot = V.Orange("A restart is required to finish.", 11);
+            var reboot = V.Orange(Loc.T("A restart is required to finish."), 11);
             reboot.HorizontalAlignment = HorizontalAlignment.Center;
             column.AddSpaced(reboot, 10);
         }
@@ -650,7 +650,7 @@ internal sealed class UninstallerView : ContentControl
         if (failed)
         {
             var note = new StackPanel { Width = _compact ? 250 : 360 };
-            note.Children.Add(V.Orange("Some items couldn’t be removed.", _compact ? 10 : 12));
+            note.Children.Add(V.Orange(Loc.T("Some items couldn’t be removed."), _compact ? 10 : 12));
             foreach (var item in _m.Failed.Take(4))
             {
                 var name = UiKit.Text(item.Name, _compact ? 9 : 10, FontWeights.Normal, ThemeKeys.TextSecondary, trimming: TextTrimming.CharacterEllipsis);
@@ -660,17 +660,17 @@ internal sealed class UninstallerView : ContentControl
 
             if (_m.Failed.Count > 4)
             {
-                var more = V.Tertiary($"and {_m.Failed.Count - 4} more", 10, false);
+                var more = V.Tertiary(Loc.F("and {0} more", _m.Failed.Count - 4), 10, false);
                 more.Margin = new Thickness(0, 2, 0, 0);
                 note.Children.Add(more);
             }
 
             if (_m.FailedNeedsAdmin)
             {
-                var admin = V.Secondary("These items are in protected locations. Relaunch WinKnife as administrator to remove them.", _compact ? 9.5 : 11);
+                var admin = V.Secondary(Loc.T("These items are in protected locations. Relaunch WinKnife as administrator to remove them."), _compact ? 9.5 : 11);
                 admin.Margin = new Thickness(0, 8, 0, 0);
                 note.Children.Add(admin);
-                var button = V.Mini("Relaunch as administrator", () =>
+                var button = V.Mini(Loc.T("Relaunch as administrator"), () =>
                 {
                     if (Elevated.RelaunchAsAdministrator())
                     {
@@ -687,12 +687,12 @@ internal sealed class UninstallerView : ContentControl
 
         if (_m.BackupFolder is { } backup)
         {
-            var open = V.Link("Open backup folder", () => FileOps.OpenFolder(backup), 11);
+            var open = V.Link(Loc.T("Open backup folder"), () => FileOps.OpenFolder(backup), 11);
             open.HorizontalAlignment = HorizontalAlignment.Center;
             column.AddSpaced(open, 10);
         }
 
-        var another = UiKit.Button("Uninstall another", ButtonKind.Prominent, _compact ? 11 : 13, null, _m.Reset);
+        var another = UiKit.Button(Loc.T("Uninstall another"), ButtonKind.Prominent, _compact ? 11 : 13, null, _m.Reset);
         another.HorizontalAlignment = HorizontalAlignment.Center;
         another.Padding = new Thickness(_compact ? 12 : 22, _compact ? 4 : 7, _compact ? 12 : 22, _compact ? 4 : 7);
         column.AddSpaced(another, 22);

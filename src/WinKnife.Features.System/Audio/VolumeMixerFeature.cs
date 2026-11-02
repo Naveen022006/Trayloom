@@ -35,7 +35,7 @@ public sealed class VolumeMixerFeature : IFeature
 
     public IReadOnlyList<FeatureAction> Actions =>
     [
-        new FeatureAction("open", "Volume mixer", () => _ctx?.Shell.OpenPanel(PanelTabs.Mixer), ""),
+        new FeatureAction("open", Loc.T("Volume mixer"), () => _ctx?.Shell.OpenPanel(PanelTabs.Mixer), ""),
     ];
 
     public void Start(IFeatureContext context)
@@ -286,7 +286,7 @@ public sealed class MixerSettingsSection : ISettingsSection
 
     public string? Anchor => "mixer";
 
-    public string? Title => "Volume mixer";
+    public string? Title => Loc.T("Volume mixer");
 
     public int Order => 100;
 

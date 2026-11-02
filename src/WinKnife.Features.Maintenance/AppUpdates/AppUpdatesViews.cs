@@ -78,19 +78,19 @@ internal sealed class AppUpdatesListView : ContentControl
 
         // 1. summary row
         var last = _s.LastCheck;
-        var lastText = UiKit.Text(last is null ? "Not checked yet" : $"Last checked {Fmt.Ago(last.Value)}", _compact ? 10.5 : 12, FontWeights.Normal, ThemeKeys.TextSecondary);
+        var lastText = UiKit.Text(last is null ? Loc.T("Not checked yet") : Loc.F("Last checked {0}", Fmt.Ago(last.Value)), _compact ? 10.5 : 12, FontWeights.Normal, ThemeKeys.TextSecondary);
         lastText.VerticalAlignment = VerticalAlignment.Center;
         FrameworkElement check;
         if (_s.IsChecking)
         {
-            check = V.Row(6, new Spinner(12), UiKit.Text("Checking", _compact ? 10.5 : 12, FontWeights.Medium, ThemeKeys.TextPrimary));
+            check = V.Row(6, new Spinner(12), UiKit.Text(Loc.T("Checking"), _compact ? 10.5 : 12, FontWeights.Medium, ThemeKeys.TextPrimary));
             var wrap = new Border { Padding = new Thickness(10, 4, 10, 4), CornerRadius = new CornerRadius(6), Child = check };
             wrap.SetResourceReference(Border.BackgroundProperty, ThemeKeys.SettingsControl);
             check = wrap;
         }
         else
         {
-            var button = UiKit.Button("Check now", ButtonKind.Bordered, _compact ? 10.5 : 12, G.Refresh, () => _ = _s.CheckAsync(false));
+            var button = UiKit.Button(Loc.T("Check now"), ButtonKind.Bordered, _compact ? 10.5 : 12, G.Refresh, () => _ = _s.CheckAsync(false));
             button.FontWeight = FontWeights.Medium;
             button.IsEnabled = !_s.IsBusy;
             check = button;
@@ -105,19 +105,19 @@ internal sealed class AppUpdatesListView : ContentControl
             if (_s.HasCheckedThisSession && !_s.IsChecking)
             {
                 var (glyph, text, brush) = _s.VersionsUncompared || _s.CoverageIncomplete
-                    ? (Glyphs.Info, "No updates found in this partial check", ThemeKeys.TextSecondary)
+                    ? (Glyphs.Info, Loc.T("No updates found in this partial check"), ThemeKeys.TextSecondary)
                     : _s.Rules.Count > 0
-                        ? (Glyphs.Info, "No updates outside your rules", ThemeKeys.TextSecondary)
-                        : (Glyphs.CheckCircle, "No updates found", ThemeKeys.Green);
+                        ? (Glyphs.Info, Loc.T("No updates outside your rules"), ThemeKeys.TextSecondary)
+                        : (Glyphs.CheckCircle, Loc.T("No updates found"), ThemeKeys.Green);
                 empty.Children.Add(V.Label(glyph, text, _compact ? 10.5 : 12, FontWeights.Medium, brush, ThemeKeys.TextPrimary));
             }
 
-            var note = V.Secondary("Checks the original sources of installed apps and a public catalog. Updates install through their original source.", _compact ? 9.5 : 11);
+            var note = V.Secondary(Loc.T("Checks the original sources of installed apps and a public catalog. Updates install through their original source."), _compact ? 9.5 : 11);
             note.Margin = new Thickness(0, empty.Children.Count > 0 ? 6 : 0, 0, 0);
             empty.Children.Add(note);
             if (_s.HasCheckedThisSession && !WingetCli.IsAvailable)
             {
-                var missing = V.Secondary("winget is not installed, so apps cannot be updated from here yet.", _compact ? 9.5 : 11);
+                var missing = V.Secondary(Loc.T("winget is not installed, so apps cannot be updated from here yet."), _compact ? 9.5 : 11);
                 missing.Margin = new Thickness(0, 6, 0, 0);
                 empty.Children.Add(missing);
             }
@@ -130,8 +130,8 @@ internal sealed class AppUpdatesListView : ContentControl
             if (anySelectable)
             {
                 var selectable = _s.Items.Where(i => i.Selectable).ToList();
-                var all = V.Link("Select all", _s.SelectAll, _compact ? 10 : 11, selectable.Any(i => !_s.SelectedIds.Contains(i.Id)));
-                var none = V.Link("Clear", _s.SelectNone, _compact ? 10 : 11, _s.SelectedIds.Count > 0);
+                var all = V.Link(Loc.T("Select all"), _s.SelectAll, _compact ? 10 : 11, selectable.Any(i => !_s.SelectedIds.Contains(i.Id)));
+                var none = V.Link(Loc.T("Clear"), _s.SelectNone, _compact ? 10 : 11, _s.SelectedIds.Count > 0);
                 Add(V.Row(12, all, none));
             }
 
@@ -157,7 +157,7 @@ internal sealed class AppUpdatesListView : ContentControl
             if (anySelectable)
             {
                 var selected = _s.Items.Count(i => i.Selectable && _s.SelectedIds.Contains(i.Id));
-                var update = UiKit.Button($"Update {selected}", ButtonKind.Prominent, _compact ? 11 : 12, null, _s.UpdateSelected);
+                var update = UiKit.Button(Loc.F("Update {0}", selected), ButtonKind.Prominent, _compact ? 11 : 12, null, _s.UpdateSelected);
                 update.FontWeight = FontWeights.SemiBold;
                 update.IsEnabled = selected > 0 && !_s.IsBusy;
                 update.HorizontalAlignment = _compact ? HorizontalAlignment.Stretch : HorizontalAlignment.Left;
@@ -167,7 +167,7 @@ internal sealed class AppUpdatesListView : ContentControl
         }
 
         // 4. exceptions disclosure
-        var title = UiKit.Text("Update exceptions", _compact ? 10.5 : 12, FontWeights.Normal, ThemeKeys.TextPrimary);
+        var title = UiKit.Text(Loc.T("Update exceptions"), _compact ? 10.5 : 12, FontWeights.Normal, ThemeKeys.TextPrimary);
         var disclosure = V.Disclosure(title, RulesBody, _rulesOpen, open => _rulesOpen = open);
         Add(disclosure);
 
@@ -175,7 +175,7 @@ internal sealed class AppUpdatesListView : ContentControl
         if (_s.CoverageIncomplete)
         {
             var block = new StackPanel();
-            block.Children.Add(V.Label(Glyphs.Warning, "Check incomplete", 11.5, FontWeights.Medium, ThemeKeys.Orange, ThemeKeys.Orange));
+            block.Children.Add(V.Label(Glyphs.Warning, Loc.T("Check incomplete"), 11.5, FontWeights.Medium, ThemeKeys.Orange, ThemeKeys.Orange));
             if (_s.UncheckedAppNames.Count > 0)
             {
                 var names = V.Secondary(string.Join(", ", _s.UncheckedAppNames), _compact ? 9.5 : 11);
@@ -189,12 +189,12 @@ internal sealed class AppUpdatesListView : ContentControl
                 block.Children.Add(names);
             }
 
-            var failed = V.Secondary("The online check could not be completed. Other results are still shown.", _compact ? 9.5 : 11);
+            var failed = V.Secondary(Loc.T("The online check could not be completed. Other results are still shown."), _compact ? 9.5 : 11);
             failed.Margin = new Thickness(0, 4, 0, 0);
             block.Children.Add(failed);
             if (!_s.StoreComplete)
             {
-                var open = V.Link("Open the Microsoft Store", _s.OpenStoreUpdates, 11);
+                var open = V.Link(Loc.T("Open the Microsoft Store"), _s.OpenStoreUpdates, 11);
                 open.HorizontalAlignment = HorizontalAlignment.Left;
                 open.Margin = new Thickness(0, 4, 0, 0);
                 block.Children.Add(open);
@@ -207,11 +207,11 @@ internal sealed class AppUpdatesListView : ContentControl
         if (_s.VersionsUncompared)
         {
             var block = new StackPanel();
-            block.Children.Add(V.Label(Glyphs.Info, "Versions not compared", 11.5, FontWeights.Medium, ThemeKeys.TextSecondary, ThemeKeys.TextSecondary));
+            block.Children.Add(V.Label(Glyphs.Info, Loc.T("Versions not compared"), 11.5, FontWeights.Medium, ThemeKeys.TextSecondary, ThemeKeys.TextSecondary));
             var names = V.Secondary(string.Join(", ", _s.UncomparableAppNames), _compact ? 9.5 : 11);
             names.Margin = new Thickness(0, 4, 0, 0);
             block.Children.Add(names);
-            var note = V.Tertiary("No update is shown when an app’s own version can’t be compared with the catalog. Check for updates in the app itself.", _compact ? 9.5 : 11);
+            var note = V.Tertiary(Loc.T("No update is shown when an app’s own version can’t be compared with the catalog. Check for updates in the app itself."), _compact ? 9.5 : 11);
             note.Margin = new Thickness(0, 4, 0, 0);
             block.Children.Add(note);
             Add(block);
@@ -242,8 +242,8 @@ internal sealed class AppUpdatesListView : ContentControl
     private FrameworkElement RulesBody()
     {
         var body = new StackPanel { Margin = new Thickness(16, 6, 0, 0) };
-        var hint = V.Secondary("Skipping a version still allows newer releases. After removing an app exclusion, use Check now to refresh it.", _compact ? 9.5 : 11);
-        var add = V.IconButton(Glyphs.Add, "Add an app that should not be checked", AddException, 11, ThemeKeys.TextPrimary, 24);
+        var hint = V.Secondary(Loc.T("Skipping a version still allows newer releases. After removing an app exclusion, use Check now to refresh it."), _compact ? 9.5 : 11);
+        var add = V.IconButton(Glyphs.Add, Loc.T("Add an app that should not be checked"), AddException, 11, ThemeKeys.TextPrimary, 24);
         add.IsEnabled = !_s.IsBusy;
         body.Children.Add(V.Split(hint, add));
         var rules = _s.Rules;
@@ -254,8 +254,8 @@ internal sealed class AppUpdatesListView : ContentControl
             var name = UiKit.Text(rule.Name, _compact ? 11 : 12, FontWeights.Medium, ThemeKeys.TextPrimary, trimming: TextTrimming.CharacterEllipsis);
             name.ToolTip = rule.BundleId;
             left.Children.Add(name);
-            left.Children.Add(UiKit.Text(rule.Version is null ? "Not checked until this rule is removed" : $"Skipped version {rule.Version}", _compact ? 9.5 : 11, FontWeights.Normal, ThemeKeys.TextSecondary));
-            var remove = V.Mini("Remove", () => _s.RemoveRule(rule));
+            left.Children.Add(UiKit.Text(rule.Version is null ? Loc.T("Not checked until this rule is removed") : Loc.F("Skipped version {0}", rule.Version), _compact ? 9.5 : 11, FontWeights.Normal, ThemeKeys.TextSecondary));
+            var remove = V.Mini(Loc.T("Remove"), () => _s.RemoveRule(rule));
             remove.IsEnabled = !_s.IsBusy;
             System.Windows.Automation.AutomationProperties.SetName(remove, $"Remove: {rule.Name}");
             var row = V.Split(left, remove);
@@ -281,7 +281,7 @@ internal sealed class AppUpdatesListView : ContentControl
 
     private void AddException()
     {
-        var picked = Dialogs.OpenFiles("Add an app that should not be checked", "Programs (*.exe)|*.exe", false);
+        var picked = Dialogs.OpenFiles(Loc.T("Add an app that should not be checked"), Loc.T("Programs (*.exe)|*.exe"), false);
         if (picked.Length == 0)
         {
             return;
@@ -326,7 +326,7 @@ internal sealed class AppUpdatesListView : ContentControl
         var name = UiKit.Text(item.Name, _compact ? 11.5 : 12.5, FontWeights.Medium, ThemeKeys.TextPrimary, trimming: TextTrimming.CharacterEllipsis);
         name.MaxWidth = _compact ? 120 : 260;
         line1.Children.Add(name);
-        var pill = V.Pill(item.Source switch { UpdateSource.Package => "winget", UpdateSource.Store => "Microsoft Store", _ => "Online" });
+        var pill = V.Pill(item.Source switch { UpdateSource.Package => Loc.T("winget"), UpdateSource.Store => Loc.T("Microsoft Store"), _ => Loc.T("Online") });
         pill.Margin = new Thickness(5, 0, 0, 0);
         line1.Children.Add(pill);
         text.Children.Add(line1);
@@ -336,9 +336,9 @@ internal sealed class AppUpdatesListView : ContentControl
 
         var (label, tip) = item.Source switch
         {
-            UpdateSource.Package => ("Update", "Update"),
-            UpdateSource.Store => ("Microsoft Store", "Opens the Microsoft Store, where this update is installed"),
-            _ => ("Open", "Opens the app so its own updater can finish"),
+            UpdateSource.Package => (Loc.T("Update"), Loc.T("Update")),
+            UpdateSource.Store => (Loc.T("Microsoft Store"), Loc.T("Opens the Microsoft Store, where this update is installed")),
+            _ => (Loc.T("Open"), Loc.T("Opens the app so its own updater can finish")),
         };
         var action = UiKit.Button(label, ButtonKind.Bordered, _compact ? 10 : 11, null, () => _s.Update(item));
         action.FontWeight = FontWeights.Medium;
@@ -350,12 +350,12 @@ internal sealed class AppUpdatesListView : ContentControl
         grid.Children.Add(action);
 
         var menu = V.Menu(
-            ($"Skip version {item.Latest}", () => _s.SkipVersion(item), !_s.IsChecking && !VersionCompare.IsUncomparable(item.Latest)),
-            ("Don’t check this app", () => _s.ExcludeApp(item), !_s.IsChecking));
+            (Loc.F("Skip version {0}", item.Latest), () => _s.SkipVersion(item), !_s.IsChecking && !VersionCompare.IsUncomparable(item.Latest)),
+            (Loc.T("Don’t check this app"), () => _s.ExcludeApp(item), !_s.IsChecking));
         border.ContextMenu = menu;
         if (!_compact)
         {
-            var more = new Button { Content = UiKit.Icon(Glyphs.More, 13, ThemeKeys.TextSecondary), ToolTip = $"More options: {item.Name}", Margin = new Thickness(4, 0, 0, 0), Width = 24, Height = 24, VerticalAlignment = VerticalAlignment.Center };
+            var more = new Button { Content = UiKit.Icon(Glyphs.More, 13, ThemeKeys.TextSecondary), ToolTip = Loc.F("More options: {0}", item.Name), Margin = new Thickness(4, 0, 0, 0), Width = 24, Height = 24, VerticalAlignment = VerticalAlignment.Center };
             more.SetResourceReference(FrameworkElement.StyleProperty, ThemeKeys.ButtonPlain);
             more.Padding = new Thickness(0);
             more.Click += (_, _) =>
@@ -379,7 +379,7 @@ public sealed class AppUpdatesSettingsSection : ISettingsSection
 
     public string PageId => SettingsPages.AppUpdates;
 
-    public string? Title => "App updates";
+    public string? Title => Loc.T("App updates");
 
     public IReadOnlyList<string> Keywords => ["Check now", "Check in the background", "Microsoft Store", "winget", "Sources", "Update exceptions"];
 
@@ -393,22 +393,22 @@ public sealed class AppUpdatesSettingsSection : ISettingsSection
         var page = new StackPanel();
 
         // 1. list
-        var list = new SettingsCard("App updates");
-        list.AddCaption("Looks for newer versions of the apps on this PC and helps you finish each update from its original source.");
+        var list = new SettingsCard(Loc.T("App updates"));
+        list.AddCaption(Loc.T("Looks for newer versions of the apps on this PC and helps you finish each update from its original source."));
         list.Add(new AppUpdatesListView(false));
         page.Children.Add(list);
 
         // 2. background
-        var background = new SettingsCard("Check in the background");
+        var background = new SettingsCard(Loc.T("Check in the background"));
         var frequency = new[] { "off", "daily", "weekly" }.ToList().IndexOf(service.Frequency);
-        var segmented = new SegmentedControl(["Off", "Every day", "Every week"], Math.Max(frequency, 0), false, 12);
+        var segmented = new SegmentedControl([Loc.T("Off"), Loc.T("Every day"), Loc.T("Every week")], Math.Max(frequency, 0), false, 12);
         var next = V.Secondary(string.Empty, 11.5);
         var notify = new MacSwitch(c.App.Get<bool>("appUpdatesNotify"), SwitchSize.Regular, on => c.App.Set("appUpdatesNotify", on));
-        var notifyRow = new SettingsRow(null, "Tell me when an app has an update", null, notify);
+        var notifyRow = new SettingsRow(null, Loc.T("Tell me when an app has an update"), null, notify);
         void UpdateNext()
         {
             var date = AppUpdatesService.Shared.NextCheck;
-            next.Text = date is null ? string.Empty : $"Next check {Fmt.ShortDateTime(date.Value)}";
+            next.Text = date is null ? string.Empty : Loc.F("Next check {0}", Fmt.ShortDateTime(date.Value));
             next.Visibility = date is null ? Visibility.Collapsed : Visibility.Visible;
             notify.IsEnabled = service.Frequency != "off";
             notifyRow.Opacity = notify.IsEnabled ? 1 : 0.45;
@@ -430,7 +430,7 @@ public sealed class AppUpdatesSettingsSection : ISettingsSection
         page.AddSpaced(background, 14);
 
         // 3. sources
-        var sources = new SettingsCard("Sources");
+        var sources = new SettingsCard(Loc.T("Sources"));
         var toggles = new List<(string Key, MacSwitch Switch)>();
         void Refresh()
         {
@@ -454,17 +454,17 @@ public sealed class AppUpdatesSettingsSection : ISettingsSection
             return sw;
         }
 
-        Source("appUpdatesIncludeHomebrewApps", "Include winget apps", null);
+        Source("appUpdatesIncludeHomebrewApps", Loc.T("Include winget apps"), null);
         sources.AddDivider();
-        Source("appUpdatesIncludeAppStore", "Include apps from the Microsoft Store", "Checks store versions using this PC’s region. Microsoft installs these updates.");
+        Source("appUpdatesIncludeAppStore", Loc.T("Include apps from the Microsoft Store"), "Checks store versions using this PC’s region. Microsoft installs these updates.");
         sources.AddDivider();
-        Source("appUpdatesIncludeOnlineCatalog", "Include other installed apps", "Checks directly with app developers when supported, then uses a public catalog. The app’s own updater installs the update.");
+        Source("appUpdatesIncludeOnlineCatalog", Loc.T("Include other installed apps"), Loc.T("Checks directly with app developers when supported, then uses a public catalog. The app’s own updater installs the update."));
         Refresh();
         page.AddSpaced(sources, 14);
 
         // 4. panel
         var panel = new SettingsCard();
-        panel.Add(new SettingsRow(null, "Show in panel", null, new MacSwitch(c.App.Get<bool>("panelUtilityAppUpdates"), SwitchSize.Regular, on => c.App.Set("panelUtilityAppUpdates", on))));
+        panel.Add(new SettingsRow(null, Loc.T("Show in panel"), null, new MacSwitch(c.App.Get<bool>("panelUtilityAppUpdates"), SwitchSize.Regular, on => c.App.Set("panelUtilityAppUpdates", on))));
         page.AddSpaced(panel, 14);
 
         service.CheckIfNeeded();
@@ -481,11 +481,11 @@ public sealed class AppUpdatesUtility : IPanelUtility
 
     public string Id => "appUpdates";
 
-    public string Title => "App updates";
+    public string Title => Loc.T("App updates");
 
     public string Glyph => G.Download;
 
-    public string? Caption => "See which apps have a newer version";
+    public string? Caption => Loc.T("See which apps have a newer version");
 
     public string? SettingsDestination => SettingsPages.AppUpdates;
 

@@ -185,7 +185,7 @@ internal sealed class WatchService : IDisposable
             return;
         }
 
-        var selector = new RegionSelectWindow("Choose what to watch");
+        var selector = new RegionSelectWindow(Loc.T("Choose what to watch"));
         selector.Selected += rect =>
         {
             Begin(rect);
@@ -223,7 +223,7 @@ internal sealed class WatchService : IDisposable
         _displayRegion = true;
         _hwnd = 0;
         _region = screenRect;
-        AppName = "Display";
+        AppName = Loc.T("Display");
         WindowTitle = "";
         AppIcon = null;
         StartLoop();
@@ -282,7 +282,7 @@ internal sealed class WatchService : IDisposable
         var sb = new StringBuilder(256);
         GetWindowText(hwnd, sb, 256);
         WindowTitle = sb.ToString();
-        AppName = "App";
+        AppName = Loc.T("App");
         AppIcon = null;
         GetWindowThreadProcessId(hwnd, out var pid);
         try
@@ -371,7 +371,7 @@ internal sealed class WatchService : IDisposable
 
         if (!_displayRegion && (_hwnd == 0 || !IsWindow(_hwnd)))
         {
-            Finish("The window closed", "closed", closed: true);
+            Finish(Loc.T("The window closed"), "closed", closed: true);
             return;
         }
 
@@ -654,7 +654,7 @@ internal sealed class WatchService : IDisposable
                     _differingSince ??= now;
                     if ((now - _differingSince.Value).TotalSeconds >= 3)
                     {
-                        Finish("It changed", "perk");
+                        Finish(Loc.T("It changed"), "perk");
                     }
                 }
                 else
@@ -679,14 +679,14 @@ internal sealed class WatchService : IDisposable
                 }
                 else if (_everChanged && _lastChange is { } lc && (now - lc).TotalSeconds >= 30)
                 {
-                    Finish("It stopped changing", "celebrate");
+                    Finish(Loc.T("It stopped changing"), "celebrate");
                 }
 
                 break;
             case WatchCondition.Contains:
                 if (!string.IsNullOrWhiteSpace(TypedText) && Normalise(FullText).Contains(Normalise(TypedText), StringComparison.Ordinal))
                 {
-                    Finish($"It shows {TypedText.Trim()}", "celebrate");
+                    Finish(Loc.F("It shows {0}", TypedText.Trim()), "celebrate");
                 }
 
                 break;
@@ -697,7 +697,7 @@ internal sealed class WatchService : IDisposable
                     _countingUp = target >= _startNumber.Value;
                     if ((_countingUp && value >= target) || (!_countingUp && value <= target) || Math.Abs(value - target) < 1e-9)
                     {
-                        Finish($"It reached {TypedNumber.Trim()}", "celebrate");
+                        Finish(Loc.F("It reached {0}", TypedNumber.Trim()), "celebrate");
                     }
                 }
 

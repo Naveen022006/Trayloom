@@ -18,7 +18,7 @@ public sealed class DiskExclusionsSection : ISettingsSection
 
     public string? Anchor => "diskExclusions";
 
-    public string? Title => "Excluded drives";
+    public string? Title => Loc.T("Excluded drives");
 
     public int Order => 900;
 
@@ -57,7 +57,7 @@ public sealed class DiskExclusionsSection : ISettingsSection
                 var label = UiKit.Text(entry, 12, FontWeights.Normal, ThemeKeys.TextPrimary, trimming: TextTrimming.CharacterEllipsis);
                 Grid.SetColumn(label, 1);
                 row.Children.Add(label);
-                var remove = Bits.FlatIcon(Gl.CloseCircle, "Remove", () => Save(app.Get<List<string>>("diskEjectExcludedVolumes").Where(x => !string.Equals(x, entry, StringComparison.OrdinalIgnoreCase)).ToList()), 12, 22);
+                var remove = Bits.FlatIcon(Gl.CloseCircle, Loc.T("Remove"), () => Save(app.Get<List<string>>("diskEjectExcludedVolumes").Where(x => !string.Equals(x, entry, StringComparison.OrdinalIgnoreCase)).ToList()), 12, 22);
                 Grid.SetColumn(remove, 2);
                 row.Children.Add(remove);
                 rows.Children.Add(row);
@@ -77,7 +77,7 @@ public sealed class DiskExclusionsSection : ISettingsSection
                     .Where(n => !list.Contains(n, StringComparer.OrdinalIgnoreCase))
                     .OrderBy(n => n, StringComparer.CurrentCultureIgnoreCase)
                     .ToList();
-                var button = UiKit.Button("Add drive…", ButtonKind.Bordered, 12, Gl.Add, null);
+                var button = UiKit.Button(Loc.T("Add drive…"), ButtonKind.Bordered, 12, Gl.Add, null);
                 button.HorizontalAlignment = HorizontalAlignment.Left;
                 button.Click += (_, _) =>
                 {
@@ -97,7 +97,7 @@ public sealed class DiskExclusionsSection : ISettingsSection
                     }
 
                     menu.Items.Add(new Separator());
-                    var other = new MenuItem { Header = "Other drive name…" };
+                    var other = new MenuItem { Header = Loc.T("Other drive name…") };
                     other.Click += (_, _) => ShowAdd(true);
                     menu.Items.Add(other);
                     menu.PlacementTarget = button;
@@ -110,7 +110,7 @@ public sealed class DiskExclusionsSection : ISettingsSection
             var row = new StackPanel { Orientation = Orientation.Horizontal };
             var box = new TextBox { Width = 200, MinHeight = 26 };
             box.SetResourceReference(FrameworkElement.StyleProperty, ThemeKeys.TextBoxStyle);
-            var add = UiKit.Button("Add drive…", ButtonKind.Bordered, 12, null, null);
+            var add = UiKit.Button(Loc.T("Add drive…"), ButtonKind.Bordered, 12, null, null);
             add.IsEnabled = false;
             void Commit()
             {
@@ -130,7 +130,7 @@ public sealed class DiskExclusionsSection : ISettingsSection
                 }
             };
             add.Click += (_, _) => Commit();
-            var cancel = UiKit.Button("Cancel", ButtonKind.Plain, 12, null, () => ShowAdd(false));
+            var cancel = UiKit.Button(Loc.T("Cancel"), ButtonKind.Plain, 12, null, () => ShowAdd(false));
             box.Margin = new Thickness(0, 0, 8, 0);
             add.Margin = new Thickness(0, 0, 4, 0);
             row.Children.Add(box);
@@ -138,10 +138,10 @@ public sealed class DiskExclusionsSection : ISettingsSection
             row.Children.Add(cancel);
             addHost.Content = row;
             box.Loaded += (_, _) => box.Focus();
-            box.ToolTip = "Drive or volume name";
+            box.ToolTip = Loc.T("Drive or volume name");
         }
 
-        var disclosure = Bits.Disclosure("Excluded drives", () =>
+        var disclosure = Bits.Disclosure(Loc.T("Excluded drives"), () =>
         {
             var body = new StackPanel();
             body.Children.Add(rows);
@@ -151,7 +151,7 @@ public sealed class DiskExclusionsSection : ISettingsSection
         host.Children.Add(disclosure);
         Render();
         card.Add(host);
-        card.AddCaption("Drives in this list are never unmounted when using Eject all disks.");
+        card.AddCaption(Loc.T("Drives in this list are never unmounted when using Eject all disks."));
         return card;
     }
 }

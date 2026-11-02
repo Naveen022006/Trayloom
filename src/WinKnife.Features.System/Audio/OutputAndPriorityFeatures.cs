@@ -21,7 +21,7 @@ public sealed class OutputSwitcherFeature : IFeature
 
     public IReadOnlyList<FeatureAction> Actions =>
     [
-        new FeatureAction("cycle", "Switch sound output", Cycle, ""),
+        new FeatureAction("cycle", Loc.T("Switch sound output"), Cycle, ""),
     ];
 
     public void Start(IFeatureContext context)
@@ -115,7 +115,7 @@ public sealed class OutputSwitcherSettingsSection : ISettingsSection
 
     public string? Anchor => "soundOutputSwitcher";
 
-    public string? Title => "Output switcher";
+    public string? Title => Loc.T("Output switcher");
 
     public int Order => 200;
 
@@ -152,7 +152,7 @@ public sealed class AudioPriorityFeature : IFeature
 
     public IReadOnlyList<FeatureAction> Actions =>
     [
-        new FeatureAction("apply", "Apply audio priority now", () => Sync(settle: false), ""),
+        new FeatureAction("apply", Loc.T("Apply audio priority now"), () => Sync(settle: false), ""),
     ];
 
     public void Start(IFeatureContext context)
@@ -357,7 +357,7 @@ public sealed class AudioPrioritySettingsSection : ISettingsSection
 
     public string? Anchor => "audioPriority";
 
-    public string? Title => "Audio priority";
+    public string? Title => Loc.T("Audio priority");
 
     public int Order => 300;
 

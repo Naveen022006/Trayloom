@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using WinKnife.Core.Ui;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Agents;
 
@@ -31,17 +32,17 @@ internal sealed class AgentAttentionSettings : StackPanel
         _status = UiKit.Text("", 12.5, FontWeights.Medium, ThemeKeys.TextPrimary, wrap: true);
         _result = UiKit.Text("", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
 
-        var toggle = new SettingsRow("", "Tell me when an agent needs me",
-            "Shows “Claude needs your permission - project: tool” on the island, and an amber “Waiting for you” state in the Now card and the closed island. Applies to Claude Code (terminal and Claude app) and Codex.",
+        var toggle = new SettingsRow("", Loc.T("Tell me when an agent needs me"),
+            Loc.T("Shows “Claude needs your permission - project: tool” on the island, and an amber “Waiting for you” state in the Now card and the closed island. Applies to Claude Code (terminal and Claude app) and Codex."),
             new MacSwitch(app.Get(AgentKeys.Attention, true), SwitchSize.Regular, on => app.Set(AgentKeys.Attention, on)));
         Children.Add(toggle);
 
-        var how = UiKit.Text("Without any change to Claude Code, WinKnife notices a tool call that has had no result for about 8 seconds while nothing is running for it and nothing is being written (20 seconds for web and MCP tools). That is shown as “probably a permission prompt”, because a slow tool looks the same. The hook below makes it exact and immediate.", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+        var how = UiKit.Text(Loc.T("Without any change to Claude Code, WinKnife notices a tool call that has had no result for about 8 seconds while nothing is running for it and nothing is being written (20 seconds for web and MCP tools). That is shown as “probably a permission prompt”, because a slow tool looks the same. The hook below makes it exact and immediate."), 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
         how.Margin = new Thickness(SettingsRow.TextInset, 8, 0, 0);
         Children.Add(how);
 
         var group = new StackPanel { Margin = new Thickness(SettingsRow.TextInset, 12, 0, 0) };
-        group.Children.Add(UiKit.Text("Reliable alerts (optional)", 13, FontWeights.Medium, ThemeKeys.TextPrimary));
+        group.Children.Add(UiKit.Text(Loc.T("Reliable alerts (optional)"), 13, FontWeights.Medium, ThemeKeys.TextPrimary));
         _status.Margin = new Thickness(0, 4, 0, 0);
         group.Children.Add(_status);
         var what = UiKit.Text("Adds a Notification and a PermissionRequest hook to " + _settingsPath + ". Each runs a small script that saves the session id, the tool name and a short hint to a file in WinKnife's own folder; it prints nothing and never changes what Claude Code decides. Your other settings and hooks are kept, and a copy of settings.json is saved first. Running sessions pick it up when they restart.", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
@@ -53,7 +54,7 @@ internal sealed class AgentAttentionSettings : StackPanel
         _result.Margin = new Thickness(0, 6, 0, 0);
         group.Children.Add(_result);
 
-        var showPreview = UiKit.Button("Show exactly what will be added", ButtonKind.Plain, 11.5);
+        var showPreview = UiKit.Button(Loc.T("Show exactly what will be added"), ButtonKind.Plain, 11.5);
         showPreview.HorizontalAlignment = HorizontalAlignment.Left;
         showPreview.Margin = new Thickness(0, 6, 0, 0);
         _preview = new Border { Visibility = Visibility.Collapsed, Padding = new Thickness(10, 8, 10, 8), CornerRadius = new CornerRadius(8), Margin = new Thickness(0, 4, 0, 0) };
@@ -75,14 +76,14 @@ internal sealed class AgentAttentionSettings : StackPanel
     private void Refresh()
     {
         var (installed, problem) = AgentHooks.Status(_settingsPath);
-        _status.Text = problem ?? (installed ? "On: Claude Code reports permission requests to WinKnife." : "Off: WinKnife relies on the automatic detection above.");
+        _status.Text = problem ?? (installed ? Loc.T("On: Claude Code reports permission requests to WinKnife.") : Loc.T("Off: WinKnife relies on the automatic detection above."));
         _status.SetResourceReference(TextBlock.ForegroundProperty, problem is not null ? ThemeKeys.Orange : installed ? ThemeKeys.Green : ThemeKeys.TextPrimary);
         _buttons.Children.Clear();
         if (problem is null)
         {
             _buttons.Children.Add(installed
-                ? UiKit.Button("Remove the hook", ButtonKind.Bordered, 12, null, Remove)
-                : UiKit.Button("Get notified when Claude asks for permission", ButtonKind.Prominent, 12, null, Install));
+                ? UiKit.Button(Loc.T("Remove the hook"), ButtonKind.Bordered, 12, null, Remove)
+                : UiKit.Button(Loc.T("Get notified when Claude asks for permission"), ButtonKind.Prominent, 12, null, Install));
         }
     }
 
@@ -117,7 +118,7 @@ internal sealed class LimitDiagnosticsView : StackPanel
         var header = new Grid { Cursor = Cursors.Hand, Background = Brushes.Transparent };
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        header.Children.Add(UiKit.Text("Where these numbers come from", 13, FontWeights.Medium, ThemeKeys.TextPrimary));
+        header.Children.Add(UiKit.Text(Loc.T("Where these numbers come from"), 13, FontWeights.Medium, ThemeKeys.TextPrimary));
         _chevron = UiKit.Icon(_open ? Glyphs.ChevronDownSmall : Glyphs.ChevronRight, 10, ThemeKeys.TextTertiary);
         Grid.SetColumn(_chevron, 1);
         header.Children.Add(_chevron);
@@ -168,11 +169,11 @@ internal sealed class LimitDiagnosticsView : StackPanel
 
         var now = DateTime.UtcNow;
         var sources = _runtime?.Service.Snapshot.LimitSources ?? [];
-        var intro = UiKit.Text("Each source below is shown as it reads right now, so you can check it against Claude (Settings > Usage) and the Codex app. The newest reading is the one WinKnife shows; a source is never mixed with another. Reset times appear only when a source reports one.", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+        var intro = UiKit.Text(Loc.T("Each source below is shown as it reads right now, so you can check it against Claude (Settings > Usage) and the Codex app. The newest reading is the one WinKnife shows; a source is never mixed with another. Reset times appear only when a source reports one."), 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
         _list.Children.Add(intro);
         if (sources.Count == 0)
         {
-            var none = UiKit.Text("No readings yet. Open the AI Agents page in the island, or press Read now.", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+            var none = UiKit.Text(Loc.T("No readings yet. Open the AI Agents page in the island, or press Read now."), 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
             none.Margin = new Thickness(0, 8, 0, 0);
             _list.Children.Add(none);
         }
@@ -182,7 +183,7 @@ internal sealed class LimitDiagnosticsView : StackPanel
             _list.Children.Add(Block(s, now));
         }
 
-        var button = UiKit.Button("Read now", ButtonKind.Bordered, 12, Glyphs.Refresh, () =>
+        var button = UiKit.Button(Loc.T("Read now"), ButtonKind.Bordered, 12, Glyphs.Refresh, () =>
         {
             if (_runtime is null)
             {
@@ -207,7 +208,7 @@ internal sealed class LimitDiagnosticsView : StackPanel
         title.Children.Add(UiKit.Text(s.Provider.DisplayName() + " · " + s.Name, 12.5, FontWeights.SemiBold, ThemeKeys.TextPrimary));
         if (s.InUse)
         {
-            var pill = new BadgePill("In use", BadgeStyle.Green) { Margin = new Thickness(8, 0, 0, 0) };
+            var pill = new BadgePill(Loc.T("In use"), BadgeStyle.Green) { Margin = new Thickness(8, 0, 0, 0) };
             title.Children.Add(pill);
         }
 
@@ -219,9 +220,9 @@ internal sealed class LimitDiagnosticsView : StackPanel
             stack.Children.Add(t);
         }
 
-        Line("Read from", s.Where);
+        Line(Loc.T("Read from"), s.Where);
         Line("Observed", s.ObservedAt is { } at ? Local(at) + " (" + AgentFormat.Relative(at, now, false) + ")" : "never");
-        Line("Status", s.Status, s.InUse ? ThemeKeys.TextPrimary : ThemeKeys.TextSecondary);
+        Line(Loc.T("Status"), s.Status, s.InUse ? ThemeKeys.TextPrimary : ThemeKeys.TextSecondary);
         foreach (var raw in s.Raw)
         {
             var t = UiKit.Text(raw, 11, FontWeights.Normal, ThemeKeys.TextPrimary, wrap: true);

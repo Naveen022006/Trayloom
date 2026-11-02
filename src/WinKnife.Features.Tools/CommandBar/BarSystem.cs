@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using Windows.Devices.Radios;
 using WinKnife.Core.Native;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Tools;
 
@@ -51,7 +52,7 @@ internal static class BarSystem
             return null;
         }
 
-        var state = (s.BatteryFlag & 8) != 0 ? "charging" : s.ACLineStatus == 1 ? "on power" : "Battery";
+        var state = (s.BatteryFlag & 8) != 0 ? "charging" : s.ACLineStatus == 1 ? "on power" : Loc.T("Battery");
         return (s.BatteryLifePercent, state);
     }
 

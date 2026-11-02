@@ -66,9 +66,9 @@ internal static class PermissionsPage
         var status = PermissionService.Check(permission);
         var (colorKey, label) = status.State switch
         {
-            PermissionState.Granted => (ThemeKeys.Green, "Granted"),
-            PermissionState.Missing => (ThemeKeys.Orange, "Not granted"),
-            _ => (ThemeKeys.TextSecondary, "The app can’t check this one"),
+            PermissionState.Granted => (ThemeKeys.Green, Loc.T("Granted")),
+            PermissionState.Missing => (ThemeKeys.Orange, Loc.T("Not granted")),
+            _ => (ThemeKeys.TextSecondary, Loc.T("The app can’t check this one")),
         };
 
         var grid = new Grid();
@@ -105,12 +105,12 @@ internal static class PermissionsPage
         }
         else
         {
-            col.Children.Add(Spaced(UiKit.Text("Nothing that is on uses this permission right now.", 12, FontWeights.Normal, ThemeKeys.TextTertiary, wrap: true), 4));
+            col.Children.Add(Spaced(UiKit.Text(Loc.T("Nothing that is on uses this permission right now."), 12, FontWeights.Normal, ThemeKeys.TextTertiary, wrap: true), 4));
             if (status.State == PermissionState.Granted && permission is not (AppPermission.Accessibility or AppPermission.ScreenRecording or AppPermission.AudioCapture))
             {
                 var banner = new Border { CornerRadius = new CornerRadius(7), Padding = new Thickness(8), Margin = new Thickness(0, 6, 0, 0) };
                 banner.SetResourceReference(Border.BackgroundProperty, ThemeKeys.TileFill);
-                banner.Child = UiKit.Text("You granted this permission, but nothing that is on needs it. If you like, revoke it in Windows Settings.", 12, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+                banner.Child = UiKit.Text(Loc.T("You granted this permission, but nothing that is on needs it. If you like, revoke it in Windows Settings."), 12, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
                 col.Children.Add(banner);
             }
         }
@@ -123,7 +123,7 @@ internal static class PermissionsPage
 
         if (PermissionService.SettingsUri(permission) is not null)
         {
-            var open = UiKit.Button("Open Windows Settings", ButtonKind.Bordered, 12.5, onClick: () => PermissionService.OpenSettings(permission));
+            var open = UiKit.Button(Loc.T("Open Windows Settings"), ButtonKind.Bordered, 12.5, onClick: () => PermissionService.OpenSettings(permission));
             open.Margin = new Thickness(buttons.Children.Count > 0 ? 8 : 0, 0, 0, 0);
             buttons.Children.Add(open);
         }

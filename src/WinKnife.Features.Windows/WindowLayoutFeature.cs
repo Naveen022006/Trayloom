@@ -95,7 +95,7 @@ public sealed class WindowLayoutFeature : IFeature
             FeatureGroup.WindowsTaskbar,
             new Hotkey(HotkeyModifiers.Control | HotkeyModifiers.Alt | HotkeyModifiers.Shift, Key.Space),
             [Keys.DirectionalEnabled],
-            Section: "Window layout",
+            Section: Loc.T("Window layout"),
             HookBased: true));
 
         _engine = new WindowLayoutEngine(app, context.Log, context.Ui);

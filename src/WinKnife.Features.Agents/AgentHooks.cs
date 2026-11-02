@@ -4,6 +4,7 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Agents;
 
@@ -189,14 +190,14 @@ public static class AgentHooks
 
             if (Load(settingsPath) is not { } root)
             {
-                return (false, "settings.json has comments or is not plain JSON, so WinKnife will not edit it. Add the entries shown below by hand.");
+                return (false, Loc.T("settings.json has comments or is not plain JSON, so WinKnife will not edit it. Add the entries shown below by hand."));
             }
 
             return (Events.All(e => Ours(root, e).Count > 0), null);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            return (false, "settings.json cannot be read.");
+            return (false, Loc.T("settings.json cannot be read."));
         }
     }
 

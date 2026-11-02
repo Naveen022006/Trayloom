@@ -7,6 +7,7 @@ using System.Text;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using WinKnife.Core;
 
 namespace WinKnife.Features.SystemTools;
 
@@ -21,7 +22,7 @@ internal static class AppIdentity
     {
         if (isSystemSounds || processId == 0)
         {
-            return (SystemSoundsKey, "System sounds", null);
+            return (SystemSoundsKey, Loc.T("System sounds"), null);
         }
 
         var path = PathOf(processId);
@@ -34,7 +35,7 @@ internal static class AppIdentity
             }
             catch (Exception)
             {
-                return ($"pid:{processId}", $"Process {processId}", null);
+                return ($"pid:{processId}", Loc.F("Process {0}", processId), null);
             }
         }
 

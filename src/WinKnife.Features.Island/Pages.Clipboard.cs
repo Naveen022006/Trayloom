@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Island;
 
@@ -104,15 +105,15 @@ internal sealed class ClipboardPage : IslandPage
         _trailing.Children.Clear();
         if (!_searchOpen)
         {
-            _leading.Children.Add(D.IconButton(G.Search, "Search copied text", () => { _searchOpen = true; Build(); _search.Focus(); }));
+            _leading.Children.Add(D.IconButton(G.Search, Loc.T("Search copied text"), () => { _searchOpen = true; Build(); _search.Focus(); }));
         }
 
-        _trailing.Children.Add(D.IconButton("", "Pinned", () => { _pinnedOnly = !_pinnedOnly; RebuildList(); Build(); }, _pinnedOnly));
-        var clear = D.IconButton(G.Trash, "Clear unpinned", ClearUnpinned);
+        _trailing.Children.Add(D.IconButton("", Loc.T("Pinned"), () => { _pinnedOnly = !_pinnedOnly; RebuildList(); Build(); }, _pinnedOnly));
+        var clear = D.IconButton(G.Trash, Loc.T("Clear unpinned"), ClearUnpinned);
         clear.Margin = new Thickness(6, 0, 0, 0);
         clear.IsEnabled = Core.Clipboard.Items.Any(i => !i.Pinned);
         _trailing.Children.Add(clear);
-        var open = D.IconButton(G.OpenApp, "Clipboard", () => Core.Perform(() => Core.Ctx.Shell.OpenPanel(WinKnife.Core.PanelTabs.Utilities)));
+        var open = D.IconButton(G.OpenApp, Loc.T("Clipboard"), () => Core.Perform(() => Core.Ctx.Shell.OpenPanel(WinKnife.Core.PanelTabs.Utilities)));
         open.Margin = new Thickness(6, 0, 0, 0);
         _trailing.Children.Add(open);
         var root = new Grid();
@@ -141,7 +142,7 @@ internal sealed class ClipboardPage : IslandPage
         {
             var enable = new Button();
             _ = enable;
-            var empty = D.EmptyView(G.Clipboard, "Enable history to start saving copied text.", D.PillButton("Save clipboard history", () => { Core.App.Set(K.ClipboardHistoryEnabled, true); Build(); }, true));
+            var empty = D.EmptyView(G.Clipboard, Loc.T("Enable history to start saving copied text."), D.PillButton(Loc.T("Save clipboard history"), () => { Core.App.Set(K.ClipboardHistoryEnabled, true); Build(); }, true));
             Grid.SetRow(empty, 1);
             root.Children.Add(empty);
             _view.Children.Add(root);
@@ -169,7 +170,7 @@ internal sealed class ClipboardPage : IslandPage
         var items = Items().ToList();
         if (items.Count == 0)
         {
-            var empty = D.EmptyView(_pinnedOnly ? G.Pin : G.Clipboard, _search.Text.Length > 0 ? "No results" : "No saved text");
+            var empty = D.EmptyView(_pinnedOnly ? G.Pin : G.Clipboard, _search.Text.Length > 0 ? Loc.T("No results") : Loc.T("No saved text"));
             empty.Height = Math.Max(100, _h - 60);
             _list.Children.Add(empty);
             return;
@@ -207,7 +208,7 @@ internal sealed class ClipboardPage : IslandPage
         }
         else
         {
-            var t = D.T(item.Text.Length == 0 ? "Image" : item.Text, 12, null, D.Text, true, TextTrimming.CharacterEllipsis);
+            var t = D.T(item.Text.Length == 0 ? Loc.T("Image") : item.Text, 12, null, D.Text, true, TextTrimming.CharacterEllipsis);
             t.MaxHeight = compact ? 30 : 48;
             preview = t;
         }
@@ -220,7 +221,7 @@ internal sealed class ClipboardPage : IslandPage
             footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var info = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             info.Children.Add(D.I(item.IsImage ? G.Photo : "", 10, D.Secondary));
-            var date = D.T(item.Created.ToString("MMM d, h:mm tt"), 9.5, null, D.Tertiary);
+            var date = D.T(item.Created.ToString("MMM d, " + Loc.ShortTime), 9.5, null, D.Tertiary);
             date.Margin = new Thickness(6, 0, 0, 0);
             info.Children.Add(date);
             if (index < 9)
@@ -233,7 +234,7 @@ internal sealed class ClipboardPage : IslandPage
             footer.Children.Add(info);
             var buttons = new StackPanel { Orientation = Orientation.Horizontal };
             var copied = _copiedIndex == index;
-            buttons.Children.Add(D.IconButton(copied ? G.Check : G.Copy, copied ? "Copied" : "Copy", () => { Core.Clipboard.Copy(item); _copiedIndex = index; RebuildList(); PageUi.After(_view.Dispatcher, 1.6, () => { _copiedIndex = -1; RebuildList(); }); }, size: 24, glyphSize: 11));
+            buttons.Children.Add(D.IconButton(copied ? G.Check : G.Copy, copied ? Loc.T("Copied") : Loc.T("Copy"), () => { Core.Clipboard.Copy(item); _copiedIndex = index; RebuildList(); PageUi.After(_view.Dispatcher, 1.6, () => { _copiedIndex = -1; RebuildList(); }); }, size: 24, glyphSize: 11));
             Grid.SetColumn(buttons, 1);
             footer.Children.Add(buttons);
             Grid.SetRow(footer, 1);
@@ -251,7 +252,7 @@ internal sealed class ClipboardPage : IslandPage
     {
         var n = Core.Clipboard.Items.Count(i => !i.Pinned);
         using var hold = HasWindow ? Window.HoldOpen() : null;
-        var r = MessageBox.Show($"Pinned items stay, and so does anything copied after this. This can’t be undone.", $"Clear unpinned ({n})?", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+        var r = MessageBox.Show($"Pinned items stay, and so does anything copied after this. This can’t be undone.", Loc.F("Clear unpinned ({0})?", n), MessageBoxButton.OKCancel, MessageBoxImage.Warning);
         if (r == MessageBoxResult.OK)
         {
             Core.InvokeFeatureAction("clipboard-history", "clear");

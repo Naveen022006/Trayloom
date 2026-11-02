@@ -269,7 +269,7 @@ public sealed class MicMuteSettingsSection : ISettingsSection
 
     public string? Anchor => "micMute";
 
-    public string? Title => "Mute microphone";
+    public string? Title => Loc.T("Mute microphone");
 
     public int Order => 100;
 

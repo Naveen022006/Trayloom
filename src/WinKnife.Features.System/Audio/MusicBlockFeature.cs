@@ -281,7 +281,7 @@ public sealed class MusicBlockSettingsSection : ISettingsSection
 
     public string? Anchor => "musicBlocking";
 
-    public string? Title => "Media keys";
+    public string? Title => Loc.T("Media keys");
 
     public int Order => 400;
 

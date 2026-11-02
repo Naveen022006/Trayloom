@@ -80,7 +80,7 @@ internal sealed class SettingsWindow : Window
     public SettingsWindow(ShellServices services)
     {
         _s = services;
-        Title = "WinKnife Settings";
+        Title = Loc.T("WinKnife Settings");
         MinWidth = MinWidthDip;
         MinHeight = MinHeightDip;
         UseLayoutRounding = true;
@@ -99,8 +99,8 @@ internal sealed class SettingsWindow : Window
         _hubState.Tab = Math.Clamp(_s.App.Get<int>(AppKeys.FeaturesTabSelected), 0, 1);
         _router = new SettingsRouter(v => SidebarModel.IsPageVisible(_s.Runtime, v));
         _router.Navigated += OnNavigated;
-        _backButton = ToolbarButton(Glyphs.Back, "Back", () => _router.Back());
-        _forwardButton = ToolbarButton(Glyphs.Forward, "Forward", () => _router.Forward());
+        _backButton = ToolbarButton(Glyphs.Back, Loc.T("Back"), () => _router.Back());
+        _forwardButton = ToolbarButton(Glyphs.Forward, Loc.T("Forward"), () => _router.Forward());
         BuildChrome();
         _s.Runtime.Changed += OnRuntimeChanged;
         _s.Contributions.Changed += OnContributionsChanged;
@@ -196,7 +196,7 @@ internal sealed class SettingsWindow : Window
 
         // Toolbar: sidebar toggle, back, forward.
         var toolbar = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(10, 6, 0, 0) };
-        toolbar.Children.Add(ToolbarButton(Glyphs.SidebarToggle, "Hide Sidebar", ToggleSidebar));
+        toolbar.Children.Add(ToolbarButton(Glyphs.SidebarToggle, Loc.T("Hide Sidebar"), ToggleSidebar));
         toolbar.Children.Add(_backButton);
         toolbar.Children.Add(_forwardButton);
         Grid.SetColumnSpan(toolbar, 2);
@@ -246,7 +246,7 @@ internal sealed class SettingsWindow : Window
         _search.VerticalContentAlignment = VerticalAlignment.Center;
         _search.SetResourceReference(TextBox.ForegroundProperty, ThemeKeys.TextPrimary);
         _search.SetResourceReference(TextBox.CaretBrushProperty, ThemeKeys.TextPrimary);
-        var placeholder = UiKit.Text("Search settings", 13, FontWeights.Normal, ThemeKeys.TextSecondary);
+        var placeholder = UiKit.Text(Loc.T("Search settings"), 13, FontWeights.Normal, ThemeKeys.TextSecondary);
         placeholder.IsHitTestVisible = false;
         placeholder.VerticalAlignment = VerticalAlignment.Center;
         var host = new Grid();
@@ -510,10 +510,10 @@ internal sealed class SettingsWindow : Window
         _resultsList.Children.Clear();
         if (_results.Count == 0)
         {
-            var none = UiKit.Text("No results", 12, FontWeights.Normal, ThemeKeys.TextSecondary);
+            var none = UiKit.Text(Loc.T("No results"), 12, FontWeights.Normal, ThemeKeys.TextSecondary);
             none.Margin = new Thickness(8, 10, 8, 0);
             _resultsList.Children.Add(none);
-            var browse = UiKit.Button("Browse all features", ButtonKind.Bordered, 11.5, onClick: () =>
+            var browse = UiKit.Button(Loc.T("Browse all features"), ButtonKind.Bordered, 11.5, onClick: () =>
             {
                 _search.Text = string.Empty;
                 Navigate(SettingsPages.Features);
@@ -551,7 +551,7 @@ internal sealed class SettingsWindow : Window
             if (entry.CanInstall && entry.FeatureId is { } installId)
             {
                 // Not installed yet: install straight from the result.
-                var install = UiKit.Button("Install", ButtonKind.Bordered, 11, onClick: () => InstallFromResult(installId));
+                var install = UiKit.Button(Loc.T("Install"), ButtonKind.Bordered, 11, onClick: () => InstallFromResult(installId));
                 install.Padding = new Thickness(8, 2, 8, 2);
                 install.MinHeight = 0;
                 install.Margin = new Thickness(0, 5, 0, 1);

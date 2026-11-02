@@ -166,14 +166,14 @@ internal sealed class CalendarPage : IslandPage
         {
             var b = new HoverButton(() => { _monthShort = !_monthShort; Build(); }) { Height = 28, CornerRadius = new CornerRadius(9), Padding = new Thickness(7, 0, 7, 0), Selected = _monthShort, Lifts = false };
             b.Child = D.T(title, 13, FontWeights.SemiBold);
-            D.Tip(b, "Month");
+            D.Tip(b, Loc.T("Month"));
             _leading.Children.Add(b);
         }
 
-        var prevTitle = Tall || _monthShort ? "Previous month" : "Previous week";
-        var nextTitle = Tall || _monthShort ? "Next month" : "Next week";
+        var prevTitle = Tall || _monthShort ? Loc.T("Previous month") : Loc.T("Previous week");
+        var nextTitle = Tall || _monthShort ? Loc.T("Next month") : Loc.T("Next week");
         _trailing.Children.Add(D.IconButton(G.ChevronLeft, prevTitle, () => Step(-1)));
-        var todayBtn = D.IconButton("x", "Today", GoToday);
+        var todayBtn = D.IconButton("x", Loc.T("Today"), GoToday);
         var ringGrid = new Grid { Width = 14, Height = 14 };
         ringGrid.Children.Add(new System.Windows.Shapes.Ellipse { Stroke = D.White(0.75), StrokeThickness = 1.3 });
         ringGrid.Children.Add(new System.Windows.Shapes.Ellipse { Width = 4, Height = 4, Fill = D.White(0.75) });
@@ -182,7 +182,7 @@ internal sealed class CalendarPage : IslandPage
         _trailing.Children.Add(D.IconButton(G.ChevronRight, nextTitle, () => Step(1)));
         if (!Tall || true)
         {
-            var open = D.IconButton(G.OpenApp, "Open Calendar", () => OpenCalendar());
+            var open = D.IconButton(G.OpenApp, Loc.T("Open Calendar"), () => OpenCalendar());
             open.Margin = new Thickness(6, 0, 0, 0);
             _trailing.Children.Add(open);
         }
@@ -380,14 +380,14 @@ internal sealed class CalendarPage : IslandPage
     private FrameworkElement AgendaHeader()
     {
         var g = new Grid { MinHeight = 32 };
-        var text = _selected is { } d ? d.ToString("ddd d MMM", CultureInfo.CurrentCulture) : "Next 7 days";
+        var text = _selected is { } d ? d.ToString("ddd d MMM", CultureInfo.CurrentCulture) : Loc.T("Next 7 days");
         var t = D.T(text, 13, FontWeights.SemiBold, D.Text, true);
         t.VerticalAlignment = VerticalAlignment.Center;
         t.MaxHeight = 36;
         g.Children.Add(t);
         if (_selected is not null)
         {
-            var back = D.IconButton("", "Next 7 days", () => { _selected = null; Build(); });
+            var back = D.IconButton("", Loc.T("Next 7 days"), () => { _selected = null; Build(); });
             back.HorizontalAlignment = HorizontalAlignment.Right;
             g.Children.Add(back);
         }
@@ -432,13 +432,13 @@ internal sealed class CalendarPage : IslandPage
             var ic = D.I(G.Calendar, 26, D.White(0.45));
             ic.FontWeight = FontWeights.Light;
             box.Children.Add(ic);
-            var tx = D.T(_selected is null ? "No upcoming appointments" : "No appointments on this day", 12, null, D.White(0.65));
+            var tx = D.T(_selected is null ? Loc.T("No upcoming appointments") : Loc.T("No appointments on this day"), 12, null, D.White(0.65));
             tx.Margin = new Thickness(0, 8, 0, 0);
             tx.HorizontalAlignment = HorizontalAlignment.Center;
             box.Children.Add(tx);
             if (!Tall)
             {
-                var open = D.PillButton("Open Calendar", OpenCalendar, true);
+                var open = D.PillButton(Loc.T("Open Calendar"), OpenCalendar, true);
                 open.Margin = new Thickness(0, 8, 0, 0);
                 open.HorizontalAlignment = HorizontalAlignment.Center;
                 box.Children.Add(open);
@@ -452,7 +452,7 @@ internal sealed class CalendarPage : IslandPage
         {
             var label = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, stack.Children.Count > 0 ? 14 : 0, 0, 6) };
             var isToday = day == DateTime.Today;
-            label.Children.Add(D.T(isToday ? "Today" : day.ToString("ddd", CultureInfo.CurrentCulture), 11, FontWeights.Medium, isToday ? D.Text : D.White(0.5)));
+            label.Children.Add(D.T(isToday ? Loc.T("Today") : day.ToString("ddd", CultureInfo.CurrentCulture), 11, FontWeights.Medium, isToday ? D.Text : D.White(0.5)));
             var dm = D.T("  " + day.ToString("d MMM", CultureInfo.CurrentCulture), 11, FontWeights.Medium, D.White(0.5));
             label.Children.Add(dm);
             stack.Children.Add(label);
@@ -483,23 +483,23 @@ internal sealed class CalendarPage : IslandPage
         var col = new StackPanel { Margin = new Thickness(0, 0, 0, 0) };
         if (ongoing || (next is not null && ReferenceEquals(next, e) && !e.AllDay))
         {
-            col.Children.Add(D.T(ongoing ? "Happening now" : "Up next", 9, FontWeights.SemiBold, ongoing ? D.Mint : D.White(0.7)));
+            col.Children.Add(D.T(ongoing ? Loc.T("Happening now") : Loc.T("Up next"), 9, FontWeights.SemiBold, ongoing ? D.Mint : D.White(0.7)));
         }
 
         var ended = !e.AllDay && e.End <= now;
-        col.Children.Add(D.T(e.Title.Length == 0 ? "Untitled event" : e.Title, 13, FontWeights.SemiBold, D.White(ended ? 0.65 : 1), true));
+        col.Children.Add(D.T(e.Title.Length == 0 ? Loc.T("Untitled event") : e.Title, 13, FontWeights.SemiBold, D.White(ended ? 0.65 : 1), true));
         string time;
         if (e.AllDay)
         {
-            time = "All day";
+            time = Loc.T("All day");
         }
         else if (e.Start.Date == e.End.AddSeconds(-1).Date)
         {
-            time = $"{e.Start:h:mm tt} · {e.End:h:mm tt}";
+            time = $"{e.Start:t} · {e.End:t}";
         }
         else
         {
-            time = $"{e.Start:d MMM h:mm tt} → {e.End:d MMM h:mm tt}";
+            time = $"{e.Start:d MMM} {e.Start:t} → {e.End:d MMM} {e.End:t}";
         }
 
         var timeRow = new StackPanel { Orientation = Orientation.Horizontal };
@@ -531,13 +531,13 @@ internal sealed class CalendarPage : IslandPage
         grid.Children.Add(col);
         card.Child = grid;
         b.Child = card;
-        D.Tip(b, "Open Calendar");
+        D.Tip(b, Loc.T("Open Calendar"));
         if (!e.AllDay && e.Start > now && !Core.App.Get<bool>(K.CalendarCountdown))
         {
             b.MouseRightButtonUp += (_, ev) =>
             {
                 var chosen = Core.Calendar.IsChosen(e);
-                IslandMenu.Show(b, [new IslandMenu.Item(chosen ? "Remove Countdown" : "Add Countdown", () => { Core.Calendar.ToggleChosen(e); Build(); })], () => HasWindow ? Window.HoldOpen() : null);
+                IslandMenu.Show(b, [new IslandMenu.Item(chosen ? Loc.T("Remove Countdown") : Loc.T("Add Countdown"), () => { Core.Calendar.ToggleChosen(e); Build(); })], () => HasWindow ? Window.HoldOpen() : null);
                 ev.Handled = true;
             };
         }
@@ -552,7 +552,7 @@ internal sealed class CalendarPage : IslandPage
         var ic = D.I("", 28, D.White(0.7));
         ic.HorizontalAlignment = HorizontalAlignment.Center;
         stack.Children.Add(ic);
-        var msg = D.T(denied ? "Allow calendar access in Windows Settings to see your appointments." : "Read your calendars to show upcoming appointments. Events stay on this PC.", 12, null, D.Secondary, true);
+        var msg = D.T(denied ? Loc.T("Allow calendar access in Windows Settings to see your appointments.") : Loc.T("Read your calendars to show upcoming appointments. Events stay on this PC."), 12, null, D.Secondary, true);
         msg.TextAlignment = TextAlignment.Center;
         msg.MaxWidth = 300;
         msg.Margin = new Thickness(0, 10, 0, 10);
@@ -560,10 +560,10 @@ internal sealed class CalendarPage : IslandPage
         var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
         if (denied)
         {
-            row.Children.Add(D.PillButton("Open Windows Settings", () => OpenSettingsUri(), true));
+            row.Children.Add(D.PillButton(Loc.T("Open Windows Settings"), () => OpenSettingsUri(), true));
         }
 
-        var allow = D.PillButton(_requesting ? "…" : "Allow Calendar Access", async () =>
+        var allow = D.PillButton(_requesting ? "…" : Loc.T("Allow Calendar Access"), async () =>
         {
             _requesting = true;
             Build();
@@ -576,7 +576,7 @@ internal sealed class CalendarPage : IslandPage
         stack.Children.Add(row);
         if (Core.Calendar.RequestFailed)
         {
-            var f = D.T("Could not request calendar access. Please try again.", 11, null, D.Orange);
+            var f = D.T(Loc.T("Could not request calendar access. Please try again."), 11, null, D.Orange);
             f.Margin = new Thickness(0, 8, 0, 0);
             f.HorizontalAlignment = HorizontalAlignment.Center;
             stack.Children.Add(f);

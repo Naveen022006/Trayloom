@@ -26,7 +26,7 @@ internal enum RadialNowPlayingState
 internal sealed record RadialNowPlayingSnapshot(string? Title, string? Artist, string? Album, string AppId, BitmapSource? Artwork)
 {
     /// <summary>Title and artist joined by a newline; "Now Playing" when both are absent.</summary>
-    public string Label => string.Join("\n", new[] { Title, Artist }.Where(s => !string.IsNullOrEmpty(s))) is { Length: > 0 } s ? s : "Now Playing";
+    public string Label => string.Join("\n", new[] { Title, Artist }.Where(s => !string.IsNullOrEmpty(s))) is { Length: > 0 } s ? s : Loc.T("Now Playing");
 }
 
 /// <summary>Reads the current media session (GSMTC) and shows the Now Playing card. Session scoped; the wheel works without it.</summary>
@@ -49,9 +49,9 @@ internal sealed class RadialNowPlayingService
     /// <summary>The wheel label of the Now Playing slice.</summary>
     public string Label => State switch
     {
-        RadialNowPlayingState.Loading => "Now Playing",
-        RadialNowPlayingState.NothingPlaying => "Nothing playing",
-        _ => Snapshot?.Label ?? "Now Playing",
+        RadialNowPlayingState.Loading => Loc.T("Now Playing"),
+        RadialNowPlayingState.NothingPlaying => Loc.T("Nothing playing"),
+        _ => Snapshot?.Label ?? Loc.T("Now Playing"),
     };
 
     public void Reset()

@@ -145,14 +145,14 @@ internal sealed class TimerService : IDisposable
 
     public string PhaseName => Phase switch
     {
-        TimerPhase.Stopwatch => "Stopwatch",
-        TimerPhase.Focus => "Focus",
-        TimerPhase.ShortBreak => "Short break",
-        TimerPhase.LongBreak => "Long break",
-        _ => "Timer",
+        TimerPhase.Stopwatch => Loc.T("Stopwatch"),
+        TimerPhase.Focus => Loc.T("Focus"),
+        TimerPhase.ShortBreak => Loc.T("Short break"),
+        TimerPhase.LongBreak => Loc.T("Long break"),
+        _ => Loc.T("Timer"),
     };
 
-    public string HeaderName => CycleFinished ? "Pomodoro complete" : (Completed && Mode != TimerMode.Pomodoro ? "Time is up" : (Completed ? "Time is up" : PhaseName));
+    public string HeaderName => CycleFinished ? Loc.T("Pomodoro complete") : (Completed && Mode != TimerMode.Pomodoro ? Loc.T("Time is up") : (Completed ? Loc.T("Time is up") : PhaseName));
 
     public TimerPhase NextPhase => Phase == TimerPhase.Focus
         ? (CompletedFocuses % Math.Max(1, LongInterval) == 0 ? TimerPhase.LongBreak : TimerPhase.ShortBreak)
@@ -160,11 +160,11 @@ internal sealed class TimerService : IDisposable
 
     public static string PhaseTitle(TimerPhase p) => p switch
     {
-        TimerPhase.Focus => "Focus",
-        TimerPhase.ShortBreak => "Short break",
-        TimerPhase.LongBreak => "Long break",
-        TimerPhase.Stopwatch => "Stopwatch",
-        _ => "Timer",
+        TimerPhase.Focus => Loc.T("Focus"),
+        TimerPhase.ShortBreak => Loc.T("Short break"),
+        TimerPhase.LongBreak => Loc.T("Long break"),
+        TimerPhase.Stopwatch => Loc.T("Stopwatch"),
+        _ => Loc.T("Timer"),
     };
 
     public void Start(TimerMode mode)

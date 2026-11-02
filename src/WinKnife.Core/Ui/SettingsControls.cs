@@ -280,7 +280,7 @@ public sealed class FeatureSwitchRow : StackPanel
         {
             var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(glyph is null ? 0 : SettingsRow.TextInset, 6, 0, 0) };
             line.Children.Add(UiKit.Text(enableReason, 11.5, FontWeights.Normal, ThemeKeys.TextSecondary));
-            var open = UiKit.Button("Open Features", ButtonKind.Bordered, 11.5, onClick: () => shell.OpenFeatures(featureId));
+            var open = UiKit.Button(Loc.T("Open Features"), ButtonKind.Bordered, 11.5, onClick: () => shell.OpenFeatures(featureId));
             open.Margin = new Thickness(10, 0, 0, 0);
             line.Children.Add(open);
             Children.Add(line);

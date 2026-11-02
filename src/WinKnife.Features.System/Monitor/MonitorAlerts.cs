@@ -10,24 +10,24 @@ internal static partial class Strings
 {
     public static class Alerts
     {
-        public const string Section = "Alerts";
-        public const string Caption = "Alerts fire when their selected limits are reached. CPU use and temperature alerts ignore spikes shorter than about 12 seconds. The repeat setting only limits repeats of the same alert.";
-        public const string Repeat = "Repeat the same alert after";
-        public const string Denied = "Notifications for WinKnife are off in Windows Settings, so alerts cannot appear.";
-        public const string HighCpu = "High CPU";
-        public const string HighCpuTemp = "High CPU temperature";
-        public const string CriticalMemory = "Critical memory pressure";
-        public const string LowDisk = "Low disk space";
-        public const string HighBatteryTemp = "High battery temperature";
-        public const string LowBattery = "Low battery";
-        public const string CpuAbove = "CPU above";
-        public const string TemperatureAbove = "Temperature above";
-        public const string FreeBelow = "Free space below";
-        public const string BatteryBelow = "Battery below";
+        public static  string Section => Loc.T("Alerts");
+        public static  string Caption => Loc.T("Alerts fire when their selected limits are reached. CPU use and temperature alerts ignore spikes shorter than about 12 seconds. The repeat setting only limits repeats of the same alert.");
+        public static  string Repeat => Loc.T("Repeat the same alert after");
+        public static  string Denied => Loc.T("Notifications for WinKnife are off in Windows Settings, so alerts cannot appear.");
+        public static  string HighCpu => Loc.T("High CPU");
+        public static  string HighCpuTemp => Loc.T("High CPU temperature");
+        public static  string CriticalMemory => Loc.T("Critical memory pressure");
+        public static  string LowDisk => Loc.T("Low disk space");
+        public static  string HighBatteryTemp => Loc.T("High battery temperature");
+        public static  string LowBattery => Loc.T("Low battery");
+        public static  string CpuAbove => Loc.T("CPU above");
+        public static  string TemperatureAbove => Loc.T("Temperature above");
+        public static  string FreeBelow => Loc.T("Free space below");
+        public static  string BatteryBelow => Loc.T("Battery below");
 
-        public static string CpuBody(int percent) => $"CPU stayed above {percent}% for a few seconds.";
+        public static string CpuBody(int percent) => Loc.F("CPU stayed above {0}% for a few seconds.", percent);
 
-        public static string DiskBody(string volume, int percent) => $"{volume} has less than {percent}% free.";
+        public static string DiskBody(string volume, int percent) => Loc.F("{0} has less than {1}% free.", volume, percent);
     }
 }
 
@@ -158,7 +158,7 @@ internal sealed class MonitorAlerts
             var threshold = Clamp(app.Get<int>("monitorAlertCPUThreshold"), 50, 100, 90);
             if (_cpu.Update(cpu >= threshold, s.At))
             {
-                Fire("cpu", cooldown, "High CPU", Strings.Alerts.CpuBody(threshold));
+                Fire("cpu", cooldown, Loc.T("High CPU"), Strings.Alerts.CpuBody(threshold));
             }
         }
 
@@ -167,7 +167,7 @@ internal sealed class MonitorAlerts
             var threshold = Clamp(app.Get<int>("monitorAlertCPUTemperatureThreshold"), 70, 105, 90);
             if (s.CpuTemp is { } t && _cpuTemp.Update(t >= threshold, s.TempReadAt))
             {
-                Fire("cpuTemp", cooldown, "Hot CPU", $"CPU reached {Fmt.Temperature(t, app.Get<string>("temperatureUnit") == "fahrenheit", false)}.");
+                Fire("cpuTemp", cooldown, Loc.T("Hot CPU"), Loc.F("CPU reached {0}.", Fmt.Temperature(t, app.Get<string>("temperatureUnit") == "fahrenheit", false)));
             }
             else if (s.CpuTemp is null)
             {
@@ -177,7 +177,7 @@ internal sealed class MonitorAlerts
 
         if (app.Get<bool>("monitorAlertMemory") && s.Memory is { Pressure: Pressure.Critical })
         {
-            Fire("memory", cooldown, "Critical memory", "Memory pressure reached the critical level.");
+            Fire("memory", cooldown, Loc.T("Critical memory"), Loc.T("Memory pressure reached the critical level."));
         }
 
         if (app.Get<bool>("monitorAlertDisk"))
@@ -187,7 +187,7 @@ internal sealed class MonitorAlerts
             {
                 if (v.Total > 0 && (double)v.Free / v.Total * 100 < threshold)
                 {
-                    Fire("disk:" + v.Letter, cooldown, "Low disk space", Strings.Alerts.DiskBody(v.DisplayName, threshold));
+                    Fire("disk:" + v.Letter, cooldown, Loc.T("Low disk space"), Strings.Alerts.DiskBody(v.DisplayName, threshold));
                 }
             }
         }
@@ -199,7 +199,7 @@ internal sealed class MonitorAlerts
                 var threshold = Clamp(app.Get<int>("monitorAlertBatteryPercent"), 5, 50, 15);
                 if (p.Percent <= threshold && !p.Charging && !p.OnAc)
                 {
-                    Fire("battery", cooldown, "Low battery", $"Battery is at {p.Percent}%.");
+                    Fire("battery", cooldown, Loc.T("Low battery"), Loc.F("Battery is at {0}%.", p.Percent));
                 }
             }
 
@@ -208,7 +208,7 @@ internal sealed class MonitorAlerts
                 var threshold = Clamp(app.Get<int>("monitorAlertBatteryTemperatureThreshold"), 30, 50, 40);
                 if (_batteryTemp.Update(bt >= threshold, s.At))
                 {
-                    Fire("batteryTemp", cooldown, "Hot battery", $"Battery reached {Fmt.Temperature(bt, app.Get<string>("temperatureUnit") == "fahrenheit", false)}.");
+                    Fire("batteryTemp", cooldown, Loc.T("Hot battery"), Loc.F("Battery reached {0}.", Fmt.Temperature(bt, app.Get<string>("temperatureUnit") == "fahrenheit", false)));
                 }
             }
         }

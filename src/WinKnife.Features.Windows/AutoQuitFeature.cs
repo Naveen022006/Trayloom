@@ -320,7 +320,7 @@ public sealed class AutoQuitFeature : IFeature
 
     private void Quit(uint pid, Watched watched)
     {
-        _context?.Log.Info($"Quit on close: asking {Path.GetFileName(watched.Path)} (pid {pid}) to quit");
+        _context?.Log.Info(Loc.F("Quit on close: asking {0} (pid {1}) to quit", Path.GetFileName(watched.Path), pid));
         WinApi.EnumWindows((hwnd, _) =>
         {
             NativeMethods.GetWindowThreadProcessId(hwnd, out var windowPid);

@@ -25,14 +25,14 @@ public static class FeatureGroupExtensions
     /// <summary>Human readable group title used by the Features hub.</summary>
     public static string DisplayName(this FeatureGroup group) => group switch
     {
-        FeatureGroup.WindowsTaskbar => "Windows and taskbar",
-        FeatureGroup.MouseKeyboard => "Mouse and keyboard",
-        FeatureGroup.ClipboardFiles => "Clipboard and files",
-        FeatureGroup.Sound => "Sound",
-        FeatureGroup.EnergyDisplay => "Energy and display",
-        FeatureGroup.Tools => "Tools",
-        FeatureGroup.Island => "Dynamic Island",
-        FeatureGroup.Monitor => "System monitor",
+        FeatureGroup.WindowsTaskbar => Loc.T("Windows and taskbar"),
+        FeatureGroup.MouseKeyboard => Loc.T("Mouse and keyboard"),
+        FeatureGroup.ClipboardFiles => Loc.T("Clipboard and files"),
+        FeatureGroup.Sound => Loc.T("Sound"),
+        FeatureGroup.EnergyDisplay => Loc.T("Energy and display"),
+        FeatureGroup.Tools => Loc.T("Tools"),
+        FeatureGroup.Island => Loc.T("Dynamic Island"),
+        FeatureGroup.Monitor => Loc.T("System monitor"),
         _ => group.ToString(),
     };
 }

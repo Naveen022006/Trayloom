@@ -335,7 +335,7 @@ internal sealed class ControlsPage : IslandPage
                 break;
             case "microphone":
                 var muted = Core.Audio.MicMuted;
-                title = muted ? "Unmute microphone" : "Mute microphone";
+                title = muted ? Loc.T("Unmute microphone") : Loc.T("Mute microphone");
                 glyph = muted ? G.MicOff : G.Mic;
                 accent = muted ? TileAccent.Alert : TileAccent.None;
                 break;
@@ -345,7 +345,7 @@ internal sealed class ControlsPage : IslandPage
                     accent = TileAccent.Timer;
                     reading = Core.Timer.ClockText;
                     title = Core.Timer.PhaseName;
-                    compact = "Timer";
+                    compact = Loc.T("Timer");
                     glyph = Core.Timer.Completed ? G.Check : (Core.Timer.Paused ? G.Pause : (Core.Timer.IsStopwatch ? G.Stopwatch : G.Timer));
                 }
 
@@ -353,9 +353,9 @@ internal sealed class ControlsPage : IslandPage
             case "calendar":
                 if (Core.Calendar.Next(DateTime.Now) is { } next && next.Start > DateTime.Now)
                 {
-                    title = next.Title.Length == 0 ? "Calendar" : next.Title;
-                    reading = next.Start.Date == DateTime.Today ? next.Start.ToString("h:mm tt") : next.Start.ToString("ddd h:mm tt");
-                    compact = "Calendar";
+                    title = next.Title.Length == 0 ? Loc.T("Calendar") : next.Title;
+                    reading = next.Start.Date == DateTime.Today ? next.Start.ToString("t") : next.Start.ToString("ddd " + Loc.ShortTime);
+                    compact = Loc.T("Calendar");
                 }
 
                 break;

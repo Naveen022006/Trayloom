@@ -19,26 +19,27 @@ internal static class QuickItems
     public const string OrderKey = "quickLauncherItemOrder";
     public const string HiddenKey = "quickLauncherHiddenItems";
 
-    public static readonly QuickItem[] All =
-    [
-        new("keepAwake", "keep-awake", "Keep awake", "", true),
-        new("cleaner", "cleaner", "Cleaner", null),
-        new("toggles", "quick-toggles", "Quick toggles", ""),
-        new("micMute", "mic-mute", "Mute microphone", "", true),
-        new("screenOCR", "screen-ocr", "Copy text from screen", null),
-        new("colorPicker", "color-picker", "Color picker", "", true),
-        new("clipboard", "clipboard-history", "Clipboard", null, true),
-        new("windowLayout", "window-layout", "Window layout", null),
-        new("cleaning", "cleaning-mode", "Cleaning Mode", ""),
+    public static QuickItem[] All => _loc_All.Value;
+
+    private static readonly LocValue<QuickItem[]> _loc_All = new(() => [
+        new("keepAwake", "keep-awake", Loc.T("Keep awake"), "", true),
+        new("cleaner", "cleaner", Loc.T("Cleaner"), null),
+        new("toggles", "quick-toggles", Loc.T("Quick toggles"), ""),
+        new("micMute", "mic-mute", Loc.T("Mute microphone"), "", true),
+        new("screenOCR", "screen-ocr", Loc.T("Copy text from screen"), null),
+        new("colorPicker", "color-picker", Loc.T("Color picker"), "", true),
+        new("clipboard", "clipboard-history", Loc.T("Clipboard"), null, true),
+        new("windowLayout", "window-layout", Loc.T("Window layout"), null),
+        new("cleaning", "cleaning-mode", Loc.T("Cleaning Mode"), ""),
         new("homebrew", "homebrew", "Packages", null),
-        new("media", "media-tools", "Media", null),
-        new("urlCleaner", "url-cleaner", "Clean URL", ""),
-        new("uninstaller", "uninstaller", "Uninstaller", ""),
-        new("screenshot", "screenshot", "Screenshot", ""),
-        new("screenRecorder", "screen-recorder", "Screen recording", ""),
-        new("cameraPreview", "camera-preview", "Camera preview", ""),
-        new("scratchpad", "scratchpad", "Scratchpad", ""),
-    ];
+        new("media", "media-tools", Loc.T("Media"), null),
+        new("urlCleaner", "url-cleaner", Loc.T("Clean URL"), ""),
+        new("uninstaller", "uninstaller", Loc.T("Uninstaller"), ""),
+        new("screenshot", "screenshot", Loc.T("Screenshot"), ""),
+        new("screenRecorder", "screen-recorder", Loc.T("Screen recording"), ""),
+        new("cameraPreview", "camera-preview", Loc.T("Camera preview"), ""),
+        new("scratchpad", "scratchpad", Loc.T("Scratchpad"), ""),
+    ]);
 
     public static QuickItem? Get(string id) => All.FirstOrDefault(i => i.Id == id);
 

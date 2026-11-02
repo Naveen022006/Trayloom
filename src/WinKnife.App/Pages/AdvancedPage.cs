@@ -17,15 +17,15 @@ internal static class AdvancedPage
     public static FrameworkElement Build(ShellServices s)
     {
         var stack = new StackPanel();
-        stack.AddSpaced(new SettingsPageHeader("Advanced"), 20);
+        stack.AddSpaced(new SettingsPageHeader(Loc.T("Advanced")), 20);
 
         // Backup
         var status = new StackPanel();
-        var backup = new SettingsCard("Backup");
-        backup.AddCaption("Take your setup to another PC: export every preference to a file and import it there. Your Scratchpad notes, clipboard history, Shelf items and system permissions never leave this PC.");
+        var backup = new SettingsCard(Loc.T("Backup"));
+        backup.AddCaption(Loc.T("Take your setup to another PC: export every preference to a file and import it there. Your Scratchpad notes, clipboard history, Shelf items and system permissions never leave this PC."));
         var buttons = new StackPanel { Orientation = Orientation.Horizontal };
-        buttons.Children.Add(UiKit.Button("Export settings…", ButtonKind.Bordered, 13, "", () => Export(s, status)));
-        var import = UiKit.Button("Import settings…", ButtonKind.Bordered, 13, "", () => Import(s, status));
+        buttons.Children.Add(UiKit.Button(Loc.T("Export settings…"), ButtonKind.Bordered, 13, "", () => Export(s, status)));
+        var import = UiKit.Button(Loc.T("Import settings…"), ButtonKind.Bordered, 13, "", () => Import(s, status));
         import.Margin = new Thickness(10, 0, 0, 0);
         buttons.Children.Add(import);
         backup.Add(buttons);
@@ -33,13 +33,13 @@ internal static class AdvancedPage
         stack.AddSpaced(backup, 20);
 
         // Reset
-        var reset = new SettingsCard("Reset");
-        reset.AddCaption("Removes the startup entry and the closed-lid rule WinKnife may have added. Useful to start fresh or before uninstalling. The app stays installed.");
+        var reset = new SettingsCard(Loc.T("Reset"));
+        reset.AddCaption(Loc.T("Removes the startup entry and the closed-lid rule WinKnife may have added. Useful to start fresh or before uninstalling. The app stays installed."));
         var resetResult = new StackPanel();
-        reset.Add(UiKit.Button("Reset startup and power rules", ButtonKind.Destructive, 13, "", () =>
+        reset.Add(UiKit.Button(Loc.T("Reset startup and power rules"), ButtonKind.Destructive, 13, "", () =>
         {
             var owner = Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault();
-            var choice = Dialogs.Show(owner, "Reset startup and power rules?", "WinKnife will stop starting with Windows and give back any power setting it changed. Your settings are kept.", ["Cancel", "Reset"], destructiveIndex: 1);
+            var choice = Dialogs.Show(owner, Loc.T("Reset startup and power rules?"), Loc.T("WinKnife will stop starting with Windows and give back any power setting it changed. Your settings are kept."), [Loc.T("Cancel"), Loc.T("Reset")], destructiveIndex: 1);
             if (choice != 1)
             {
                 return;
@@ -55,19 +55,19 @@ internal static class AdvancedPage
             catch (Exception ex)
             {
                 s.Log.Error("Reset failed", ex);
-                resetResult.Children.Add(Result("Some entries could not be removed. Try again.", false));
+                resetResult.Children.Add(Result(Loc.T("Some entries could not be removed. Try again."), false));
             }
         }));
         reset.Add(resetResult);
         stack.AddSpaced(reset, 20);
 
         // Uninstall
-        var uninstall = new SettingsCard("Uninstall");
-        uninstall.AddCaption("Does all of the above, then removes the preferences and the app data folder, leaving nothing behind. The app quits when done. Delete the app folder afterwards to finish. You can reinstall anytime.");
-        uninstall.Add(UiKit.Button("Uninstall WinKnife completely", ButtonKind.Destructive, 13, "", () =>
+        var uninstall = new SettingsCard(Loc.T("Uninstall"));
+        uninstall.AddCaption(Loc.T("Does all of the above, then removes the preferences and the app data folder, leaving nothing behind. The app quits when done. Delete the app folder afterwards to finish. You can reinstall anytime."));
+        uninstall.Add(UiKit.Button(Loc.T("Uninstall WinKnife completely"), ButtonKind.Destructive, 13, "", () =>
         {
             var owner = Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault();
-            var choice = Dialogs.Show(owner, "Uninstall WinKnife?", "WinKnife will remove its startup entry and preferences, then quit. This can’t be undone from the app.", ["Cancel", "Uninstall WinKnife completely"], destructiveIndex: 1);
+            var choice = Dialogs.Show(owner, Loc.T("Uninstall WinKnife?"), Loc.T("WinKnife will remove its startup entry and preferences, then quit. This can’t be undone from the app."), [Loc.T("Cancel"), Loc.T("Uninstall WinKnife completely")], destructiveIndex: 1);
             if (choice != 1)
             {
                 return;
@@ -82,7 +82,7 @@ internal static class AdvancedPage
             catch (Exception ex)
             {
                 s.Log.Error("Uninstall failed", ex);
-                Dialogs.Show(owner, "Uninstall stopped", ex.Message, ["OK"]);
+                Dialogs.Show(owner, Loc.T("Uninstall stopped"), ex.Message, [Loc.T("OK")]);
             }
         }));
         stack.AddSpaced(uninstall, 20);
@@ -123,12 +123,12 @@ internal static class AdvancedPage
                 ["settings"] = scopes,
             };
             File.WriteAllText(dialog.FileName, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-            status.Children.Add(Result("Backup saved", true));
+            status.Children.Add(Result(Loc.T("Backup saved"), true));
         }
         catch (Exception ex)
         {
             s.Log.Error("Export failed", ex);
-            status.Children.Add(Result("Could not save the backup.", false));
+            status.Children.Add(Result(Loc.T("Could not save the backup."), false));
         }
     }
 
@@ -154,12 +154,12 @@ internal static class AdvancedPage
 
         if (settings is null || settings["scopes"] is not JsonObject)
         {
-            status.Children.Add(Result("This file is not a valid WinKnife backup.", false));
+            status.Children.Add(Result(Loc.T("This file is not a valid WinKnife backup."), false));
             return;
         }
 
         var owner = Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault();
-        var choice = Dialogs.Show(owner, "Import these settings?", "Your current settings are replaced by the file’s and the app restarts. Nothing else on this PC is touched.", ["Import and restart", "Cancel"]);
+        var choice = Dialogs.Show(owner, Loc.T("Import these settings?"), Loc.T("Your current settings are replaced by the file’s and the app restarts. Nothing else on this PC is touched."), [Loc.T("Import and restart"), Loc.T("Cancel")]);
         if (choice != 0)
         {
             return;
@@ -174,7 +174,7 @@ internal static class AdvancedPage
         catch (Exception ex)
         {
             s.Log.Error("Import failed", ex);
-            status.Children.Add(Result("This file is not a valid WinKnife backup.", false));
+            status.Children.Add(Result(Loc.T("This file is not a valid WinKnife backup."), false));
         }
     }
 }

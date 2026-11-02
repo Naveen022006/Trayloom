@@ -102,7 +102,7 @@ internal static class PortList
     {
         if (pid == 4)
         {
-            return "System";
+            return Loc.T("System");
         }
 
         try
@@ -186,7 +186,7 @@ internal sealed class PortManagerView : StackPanel
     private readonly Action? _relayout;
     private readonly Action<bool>? _keepOpen;
     private readonly ContentControl _body = new();
-    private readonly TextBlock _openCount = UiKit.Text("0 open", 9.5, FontWeights.SemiBold, ThemeKeys.TextSecondary);
+    private readonly TextBlock _openCount = UiKit.Text(Loc.T("0 open"), 9.5, FontWeights.SemiBold, ThemeKeys.TextSecondary);
     private readonly Spinner _spinner = new(12);
     private List<PortEntry> _entries = [];
     private string _query = string.Empty;
@@ -205,18 +205,18 @@ internal sealed class PortManagerView : StackPanel
 
     private void BuildChrome()
     {
-        var search = V.SearchField("Filter by port, process, or PID", out var box, _compact ? 11 : 12, _compact ? 7 : 9, _compact ? 6 : 9);
+        var search = V.SearchField(Loc.T("Filter by port, process, or PID"), out var box, _compact ? 11 : 12, _compact ? 7 : 9, _compact ? 6 : 9);
         box.TextChanged += (_, _) =>
         {
             _query = box.Text.Trim().ToLowerInvariant();
             Render();
         };
-        var refresh = V.IconButton(G.Refresh, "Refresh", () => _ = RefreshAsync(), 11, ThemeKeys.TextPrimary, _compact ? 24 : 22);
+        var refresh = V.IconButton(G.Refresh, Loc.T("Refresh"), () => _ = RefreshAsync(), 11, ThemeKeys.TextPrimary, _compact ? 24 : 22);
         _spinner.Visibility = Visibility.Collapsed;
 
         if (_compact)
         {
-            var caption = V.Row(0, UiKit.Text("Your listening ports", 10, FontWeights.Normal, ThemeKeys.TextSecondary));
+            var caption = V.Row(0, UiKit.Text(Loc.T("Your listening ports"), 10, FontWeights.Normal, ThemeKeys.TextSecondary));
             var head = V.Split(caption, _openCount);
             var fieldRow = new Grid { Margin = new Thickness(0, 6, 0, 0) };
             fieldRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -281,11 +281,11 @@ internal sealed class PortManagerView : StackPanel
         var filtered = string.IsNullOrEmpty(_query)
             ? _entries
             : _entries.Where(e => $"{e.Port} {e.ProcessName} {e.Pid} {e.Address}".ToLowerInvariant().Contains(_query)).ToList();
-        _openCount.Text = $"{filtered.Count} open";
+        _openCount.Text = Loc.F("{0} open", filtered.Count);
         var content = new StackPanel();
         if (_failed)
         {
-            var warning = V.Label(Glyphs.Warning, "Could not read listening ports. Try refreshing.", _compact ? 10.5 : 13, FontWeights.Normal, ThemeKeys.TextSecondary, ThemeKeys.TextSecondary);
+            var warning = V.Label(Glyphs.Warning, Loc.T("Could not read listening ports. Try refreshing."), _compact ? 10.5 : 13, FontWeights.Normal, ThemeKeys.TextSecondary, ThemeKeys.TextSecondary);
             foreach (var t in warning.Children.OfType<TextBlock>().Skip(1))
             {
                 t.TextWrapping = TextWrapping.Wrap;
@@ -304,11 +304,11 @@ internal sealed class PortManagerView : StackPanel
             var empty = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             var icon = UiKit.Icon(G.Network, _compact ? 16 : 25, ThemeKeys.TextTertiary);
             empty.Children.Add(icon);
-            var text = UiKit.Text("No listening ports found", _compact ? 10.5 : 13, _compact ? FontWeights.Medium : FontWeights.Normal, ThemeKeys.TextSecondary);
+            var text = UiKit.Text(Loc.T("No listening ports found"), _compact ? 10.5 : 13, _compact ? FontWeights.Medium : FontWeights.Normal, ThemeKeys.TextSecondary);
             text.HorizontalAlignment = HorizontalAlignment.Center;
             text.Margin = new Thickness(0, 6, 0, 0);
             empty.Children.Add(text);
-            var hint = V.Tertiary("Try refreshing or changing your search.", _compact ? 9.5 : 11.5);
+            var hint = V.Tertiary(Loc.T("Try refreshing or changing your search."), _compact ? 9.5 : 11.5);
             hint.HorizontalAlignment = HorizontalAlignment.Center;
             hint.Margin = new Thickness(0, 2, 0, 0);
             empty.Children.Add(hint);
@@ -367,25 +367,25 @@ internal sealed class PortManagerView : StackPanel
         line1.Children.Add(proto);
         if (entry.ListensOnAllInterfaces)
         {
-            var badge = new Border { CornerRadius = new CornerRadius(20), Padding = new Thickness(4, 1.5, 4, 1.5), Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, ToolTip = "Listening on every network interface, so other devices on the network may be able to connect." };
+            var badge = new Border { CornerRadius = new CornerRadius(20), Padding = new Thickness(4, 1.5, 4, 1.5), Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, ToolTip = Loc.T("Listening on every network interface, so other devices on the network may be able to connect.") };
             badge.SetResourceReference(Border.BackgroundProperty, ThemeKeys.OrangeFill);
             var content = new StackPanel { Orientation = Orientation.Horizontal };
             content.Children.Add(UiKit.Icon(Glyphs.Globe, _compact ? 8.5 : 9, ThemeKeys.Orange, FontWeights.Bold));
             if (!_compact)
             {
-                var label = UiKit.Text("All interfaces", 9, FontWeights.Bold, ThemeKeys.Orange);
+                var label = UiKit.Text(Loc.T("All interfaces"), 9, FontWeights.Bold, ThemeKeys.Orange);
                 label.Margin = new Thickness(2.5, 0, 0, 0);
                 content.Children.Add(label);
             }
 
             badge.Child = content;
-            System.Windows.Automation.AutomationProperties.SetName(badge, "All interfaces");
+            System.Windows.Automation.AutomationProperties.SetName(badge, Loc.T("All interfaces"));
             line1.Children.Add(badge);
         }
 
         text.Children.Add(line1);
         text.Children.Add(UiKit.Text(entry.ProcessName, _compact ? 10.5 : 11, FontWeights.Normal, ThemeKeys.TextPrimary, trimming: TextTrimming.CharacterEllipsis));
-        var pid = UiKit.Text($"PID {entry.Pid}  •  {entry.Address}", _compact ? 8.5 : 9, FontWeights.Normal, ThemeKeys.TextTertiary, trimming: TextTrimming.CharacterEllipsis);
+        var pid = UiKit.Text(Loc.F("PID {0}  •  {1}", entry.Pid, entry.Address), _compact ? 8.5 : 9, FontWeights.Normal, ThemeKeys.TextTertiary, trimming: TextTrimming.CharacterEllipsis);
         pid.FontFamily = new FontFamily("Cascadia Mono, Consolas");
         text.Children.Add(pid);
         Grid.SetColumn(text, 1);
@@ -394,12 +394,12 @@ internal sealed class PortManagerView : StackPanel
         if (Host.Runtime.IsAvailable("kill-process"))
         {
             var disabled = entry.StartedAt == 0 || entry.IsProtected;
-            var kill = V.Mini("Kill", () => Terminate(entry, false), null, _compact ? 10 : 10.5);
+            var kill = V.Mini(Loc.T("Kill"), () => Terminate(entry, false), null, _compact ? 10 : 10.5);
             kill.IsEnabled = !disabled;
             var bolt = V.Mini(string.Empty, () => Terminate(entry, true), G.Bolt, _compact ? 10 : 10.5);
             bolt.IsEnabled = !disabled;
-            bolt.ToolTip = "Force Kill";
-            System.Windows.Automation.AutomationProperties.SetName(bolt, "Force Kill");
+            bolt.ToolTip = Loc.T("Force Kill");
+            System.Windows.Automation.AutomationProperties.SetName(bolt, Loc.T("Force Kill"));
             var buttons = V.Row(4, kill, bolt);
             Grid.SetColumn(buttons, 2);
             grid.Children.Add(buttons);
@@ -420,14 +420,14 @@ internal sealed class PortManagerView : StackPanel
         var url = entry.BrowserUrl;
         var menu = new List<(string? Title, Action? Action, bool Enabled)>
         {
-            ("Copy port", () => Copy(entry.Port.ToString()), true),
-            ("Copy PID", () => Copy(entry.Pid.ToString()), true),
-            ("Copy address:port", () => Copy(entry.Endpoint), true),
+            (Loc.T("Copy port"), () => Copy(entry.Port.ToString()), true),
+            (Loc.T("Copy PID"), () => Copy(entry.Pid.ToString()), true),
+            (Loc.T("Copy address:port"), () => Copy(entry.Endpoint), true),
         };
         if (url is not null)
         {
             menu.Add((null, null, true));
-            menu.Add(("Open in browser", () => UiKit.OpenUrl(url), true));
+            menu.Add((Loc.T("Open in browser"), () => UiKit.OpenUrl(url), true));
         }
 
         border.ContextMenu = V.Menu([.. menu]);
@@ -453,7 +453,7 @@ internal sealed class PortManagerView : StackPanel
             return;
         }
 
-        if (!Dialogs.Confirm($"Terminate {entry.ProcessName}?", $"This closes port {entry.Port} by terminating PID {entry.Pid}.", force ? "Force Kill" : "Kill", true, "Cancel", _keepOpen))
+        if (!Dialogs.Confirm(Loc.F("Terminate {0}?", entry.ProcessName), Loc.F("This closes port {0} by terminating PID {1}.", entry.Port, entry.Pid), force ? Loc.T("Force Kill") : Loc.T("Kill"), true, Loc.T("Cancel"), _keepOpen))
         {
             return;
         }
@@ -473,7 +473,7 @@ public sealed class PortManagerFeature : IFeature
 
     public IReadOnlyList<FeatureAction> Actions =>
     [
-        new FeatureAction("open", "Port Manager", () => _context?.Shell.OpenSettings(SettingsPages.PortManager), G.Network),
+        new FeatureAction("open", Loc.T("Port Manager"), () => _context?.Shell.OpenSettings(SettingsPages.PortManager), G.Network),
     ];
 
     public void Start(IFeatureContext context)
@@ -495,7 +495,7 @@ public sealed class PortManagerSettingsSection : ISettingsSection
 
     public string PageId => SettingsPages.PortManager;
 
-    public string? Title => "Port Manager";
+    public string? Title => Loc.T("Port Manager");
 
     public IReadOnlyList<string> Keywords => ["port", "ports", "listening", "socket", "PID", "kill port"];
 
@@ -517,11 +517,11 @@ public sealed class PortManagerUtility : IPanelUtility
 
     public string Id => "portManager";
 
-    public string Title => "Port Manager";
+    public string Title => Loc.T("Port Manager");
 
     public string Glyph => G.Network;
 
-    public string? Caption => "Your listening ports";
+    public string? Caption => Loc.T("Your listening ports");
 
     public string? SettingsDestination => SettingsPages.PortManager;
 

@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Maintenance;
 
@@ -55,16 +56,16 @@ internal sealed class MediaException : Exception
 
     public string Text => Kind switch
     {
-        MediaFailureKind.NoInput => "Choose a file first.",
-        MediaFailureKind.NoVideoTrack => "This file has no video track.",
-        MediaFailureKind.SameOutput => "Choose a destination different from the original file.",
-        MediaFailureKind.Unsupported => "Format not supported by Windows.",
-        MediaFailureKind.ImageTooLarge => "These dimensions are too large to process safely. Choose a smaller size.",
-        MediaFailureKind.GifTooLong => $"A GIF can be up to {MaxSeconds} seconds long",
-        MediaFailureKind.TargetTooSmall => "Target size too small for this clip. Trim it or raise the limit.",
-        MediaFailureKind.WatermarkUnavailable => "No logo",
-        MediaFailureKind.Cancelled => "Cancelled.",
-        _ => string.IsNullOrWhiteSpace(Message) ? "Format not supported by Windows." : Message,
+        MediaFailureKind.NoInput => Loc.T("Choose a file first."),
+        MediaFailureKind.NoVideoTrack => Loc.T("This file has no video track."),
+        MediaFailureKind.SameOutput => Loc.T("Choose a destination different from the original file."),
+        MediaFailureKind.Unsupported => Loc.T("Format not supported by Windows."),
+        MediaFailureKind.ImageTooLarge => Loc.T("These dimensions are too large to process safely. Choose a smaller size."),
+        MediaFailureKind.GifTooLong => Loc.F("A GIF can be up to {0} seconds long", MaxSeconds),
+        MediaFailureKind.TargetTooSmall => Loc.T("Target size too small for this clip. Trim it or raise the limit."),
+        MediaFailureKind.WatermarkUnavailable => Loc.T("No logo"),
+        MediaFailureKind.Cancelled => Loc.T("Cancelled."),
+        _ => string.IsNullOrWhiteSpace(Message) ? Loc.T("Format not supported by Windows.") : Message,
     };
 }
 
@@ -156,7 +157,7 @@ internal static class MediaNaming
     public static string BaseName(string input)
     {
         var name = Path.GetFileNameWithoutExtension(input).Trim().TrimStart('.');
-        return string.IsNullOrWhiteSpace(name) ? "Output" : name;
+        return string.IsNullOrWhiteSpace(name) ? Loc.T("Output") : name;
     }
 
     /// <summary>Appends " 2", " 3"... to the base until the file does not exist and is not reserved.</summary>
@@ -333,7 +334,7 @@ internal sealed class MediaService
             if (id == _operation)
             {
                 State = MediaStateKind.Failed;
-                Message = string.IsNullOrWhiteSpace(ex.Message) ? "Format not supported by Windows." : ex.Message;
+                Message = string.IsNullOrWhiteSpace(ex.Message) ? Loc.T("Format not supported by Windows.") : ex.Message;
                 Host.Log("Media operation failed", ex);
             }
         }

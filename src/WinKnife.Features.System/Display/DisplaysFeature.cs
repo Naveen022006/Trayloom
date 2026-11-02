@@ -20,9 +20,9 @@ public sealed class DisplaysFeature : IFeature
 
     public IReadOnlyList<FeatureAction> Actions =>
     [
-        new FeatureAction("panel", "Display brightness", () => _ctx?.Shell.OpenPanel(PanelTabs.Brightness), ""),
-        new FeatureAction("brighter", "Brightness up", () => _service?.Step(+1, followPointer: true), ""),
-        new FeatureAction("dimmer", "Brightness down", () => _service?.Step(-1, followPointer: true), ""),
+        new FeatureAction("panel", Loc.T("Display brightness"), () => _ctx?.Shell.OpenPanel(PanelTabs.Brightness), ""),
+        new FeatureAction("brighter", Loc.T("Brightness up"), () => _service?.Step(+1, followPointer: true), ""),
+        new FeatureAction("dimmer", Loc.T("Brightness down"), () => _service?.Step(-1, followPointer: true), ""),
     ];
 
     public void Start(IFeatureContext context)
@@ -66,7 +66,7 @@ public sealed class DisplaysSettingsSection : ISettingsSection
 
     public string? Anchor => "brightness";
 
-    public string? Title => "Displays";
+    public string? Title => Loc.T("Displays");
 
     public int Order => 100;
 
@@ -206,7 +206,7 @@ public sealed class BluetoothSleepSettingsSection : ISettingsSection
 
     public string? Anchor => "bluetoothSleep";
 
-    public string? Title => "Bluetooth on sleep";
+    public string? Title => Loc.T("Bluetooth on sleep");
 
     public int Order => 300;
 

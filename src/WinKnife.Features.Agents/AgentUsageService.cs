@@ -1034,11 +1034,11 @@ public sealed class AgentUsageService : IDisposable
                 };
                 if (reading is null)
                 {
-                    info.Status = origin == LimitOrigins.CodexServer ? "Not asked yet, or Codex could not answer" : "No token_count event with limits in the logs";
+                    info.Status = origin == LimitOrigins.CodexServer ? Loc.T("Not asked yet, or Codex could not answer") : Loc.T("No token_count event with limits in the logs");
                 }
                 else
                 {
-                    info.Status = info.InUse ? "In use: the newest reading" : "Not used: an older reading than the one in use";
+                    info.Status = info.InUse ? Loc.T("In use: the newest reading") : Loc.T("Not used: an older reading than the one in use");
                     foreach (var w in reading.Windows)
                     {
                         info.Raw.Add($"window {w.Minutes?.ToString() ?? "?"} min: used {w.UsedPercent:0.#}%, reset {(w.ResetsAt is { } r ? r.ToString("u") : "none given")}" + (w.Note is { } n ? " - " + n : ""));
@@ -1324,13 +1324,13 @@ public sealed class AgentUsageService : IDisposable
             {
                 Origin = LimitOrigins.ClaudeCli, Provider = AgentProvider.Claude, Name = "Claude Code (live check)", Where = "claude.exe, control request get_usage (no prompt is sent)",
                 ObservedAt = _claudeAccountLimits?.ObservedAt, Raw = _claudeAccountRaw, InUse = account is not null && ReferenceEquals(account, chosen),
-                Status = _claudeChecking ? "Checking now" : account is null ? (_claudeFailure is { } f ? AgentStrings.ClaudeCode(f) : "Not asked yet, or every window has since expired") : Why(account),
+                Status = _claudeChecking ? Loc.T("Checking now") : account is null ? (_claudeFailure is { } f ? AgentStrings.ClaudeCode(f) : Loc.T("Not asked yet, or every window has since expired")) : Why(account),
             },
             new()
             {
                 Origin = LimitOrigins.ClaudeCache, Provider = AgentProvider.Claude, Name = "Claude Code (saved copy)", Where = _readerClaudeProfile.ProfileFile(home) + " > cachedUsageUtilization",
                 ObservedAt = _claudeCachedFetched, Raw = _claudeCachedRaw, InUse = cached is not null && ReferenceEquals(cached, chosen),
-                Status = cached is null ? (_claudeCachedFetched is null ? "No saved copy in this profile" : "Saved copy has no window that is still running") : Why(cached),
+                Status = cached is null ? (_claudeCachedFetched is null ? Loc.T("No saved copy in this profile") : Loc.T("Saved copy has no window that is still running")) : Why(cached),
             },
         };
         var path = ClaudeAppUsage.HistoryPath();
@@ -1341,7 +1341,7 @@ public sealed class AgentUsageService : IDisposable
             ObservedAt = sample?.Date,
             Raw = sample is null ? [] : [string.Join(", ", sample.Used.Select(kv => kv.Key + " " + kv.Value.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%")) + " (percentages only: the app does not save reset times)"],
             InUse = desktop is not null && ReferenceEquals(desktop, chosen),
-            Status = path is null ? "Claude app not found on this PC" : desktop is null ? "Latest sample is too old or has no running window" : Why(desktop),
+            Status = path is null ? Loc.T("Claude app not found on this PC") : desktop is null ? Loc.T("Latest sample is too old or has no running window") : Why(desktop),
         });
         return list;
     }

@@ -10,6 +10,7 @@ using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Threading;
 using Microsoft.Win32;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Maintenance;
 
@@ -646,7 +647,7 @@ internal sealed class AppUpdatesService
         var store = selected.Where(i => i.Source == UpdateSource.Store).ToList();
         if (packages.Count > 0)
         {
-            var commands = packages.Select(p => WingetOperations.UpgradeArgs(p.Token!, "winget")).ToList();
+            var commands = packages.Select(p => WingetOperations.UpgradeArgs(p.Token!, Loc.T("winget"))).ToList();
             var target = packages.Count == 1 ? packages[0].Name : "packages";
             var action = packages.Count == 1 ? PkgAction.Upgrade : PkgAction.UpgradeMany;
             WingetOperations.Shared.Start(new OperationRequest(action, target, packages.Count == 1 ? packages[0].Token : null, commands));
@@ -672,7 +673,7 @@ internal sealed class AppUpdatesService
         switch (item.Source)
         {
             case UpdateSource.Package when item.Token is not null && WingetCli.ValidToken(item.Token):
-                WingetOperations.Shared.Start(new OperationRequest(PkgAction.Upgrade, item.Name, item.Token, [WingetOperations.UpgradeArgs(item.Token, "winget")]));
+                WingetOperations.Shared.Start(new OperationRequest(PkgAction.Upgrade, item.Name, item.Token, [WingetOperations.UpgradeArgs(item.Token, Loc.T("winget"))]));
                 break;
             case UpdateSource.Store:
                 OpenStore(item);
@@ -740,7 +741,7 @@ internal sealed class AppUpdatesService
             var fresh = current.Where(id => !kept.Contains(id)).ToList();
             if (Host.App.Get<bool>("appUpdatesNotify") && fresh.Count > 0)
             {
-                Host.Notify("App updates", current.Count == 1 ? "One app has a newer version." : $"{current.Count} apps have a newer version.");
+                Host.Notify(Loc.T("App updates"), current.Count == 1 ? Loc.T("One app has a newer version.") : Loc.F("{0} apps have a newer version.", current.Count));
                 kept.AddRange(fresh);
             }
 

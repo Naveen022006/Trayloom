@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Agents;
 
@@ -553,7 +554,7 @@ internal static class ClaudeServer
         return windows.Count == 0 ? null : new AgentLimits(AgentProvider.Claude, windows, observed, LimitSource.Account) { Origin = origin, Breakdown = breakdown, BreakdownAsOf = asOf };
     }
 
-    private static string Pretty(string key) => key.Length == 0 ? "Other" : char.ToUpperInvariant(key[0]) + key[1..].Replace('_', ' ');
+    private static string Pretty(string key) => key.Length == 0 ? Loc.T("Other") : char.ToUpperInvariant(key[0]) + key[1..].Replace('_', ' ');
 
     /// <summary>The figures of an answer exactly as the source gave them, one line each (the diagnostics list).</summary>
     public static List<string> Describe(JsonElement rateLimits)

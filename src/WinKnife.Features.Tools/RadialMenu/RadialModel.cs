@@ -62,7 +62,7 @@ internal sealed class RadialProfile
 
     public List<RadialItem> Items { get; set; } = [];
 
-    public string DisplayName => string.IsNullOrWhiteSpace(Name) ? "General" : Name;
+    public string DisplayName => string.IsNullOrWhiteSpace(Name) ? Loc.T("General") : Name;
 
     public bool HasTrigger => !string.IsNullOrEmpty(Shortcut) || MouseButton != "off" || TrackpadTap;
 
@@ -96,15 +96,15 @@ internal static class RadialKinds
 
     public static string Label(string kind) => kind switch
     {
-        App => "Open an app",
-        File => "Open a file or folder",
-        Url => "Open a link",
-        Shortcut => "Press a shortcut",
-        Tool => "WinKnife tool",
-        QuickToggle => "Quick toggles",
-        WindowLayout => "Window layout",
-        Media => "Media control",
-        Submenu => "Submenu",
+        App => Loc.T("Open an app"),
+        File => Loc.T("Open a file or folder"),
+        Url => Loc.T("Open a link"),
+        Shortcut => Loc.T("Press a shortcut"),
+        Tool => Loc.T("WinKnife tool"),
+        QuickToggle => Loc.T("Quick toggles"),
+        WindowLayout => Loc.T("Window layout"),
+        Media => Loc.T("Media control"),
+        Submenu => Loc.T("Submenu"),
         _ => kind,
     };
 }
@@ -112,9 +112,9 @@ internal static class RadialKinds
 /// <summary>Strings of the feature (spec 04-tools 3.11).</summary>
 internal static class RadialStrings
 {
-    public const string PageTitle = "Radial menu";
-    public const string HubDescription = "Opens a wheel of your favorite actions around the pointer";
-    public const string PanelCaption = "Your favorite actions on a wheel";
+    public static  string PageTitle => Loc.T("Radial menu");
+    public static  string HubDescription => Loc.T("Opens a wheel of your favorite actions around the pointer");
+    public static  string PanelCaption => Loc.T("Your favorite actions on a wheel");
 }
 
 /// <summary>Quick toggle / media / layout tables.</summary>
@@ -126,11 +126,11 @@ internal static class RadialCatalog
 
     public static string MediaLabel(string key) => key switch
     {
-        "playPause" => "Play or pause",
-        "previousTrack" => "Previous track",
-        "nextTrack" => "Next track",
-        "nowPlaying" => "Now Playing",
-        _ => "Media control",
+        "playPause" => Loc.T("Play or pause"),
+        "previousTrack" => Loc.T("Previous track"),
+        "nextTrack" => Loc.T("Next track"),
+        "nowPlaying" => Loc.T("Now Playing"),
+        _ => Loc.T("Media control"),
     };
 
     public static string MediaGlyph(string key) => key switch
@@ -141,18 +141,20 @@ internal static class RadialCatalog
         _ => "",
     };
 
-    private static readonly Dictionary<string, (string Title, string Glyph)> ToggleFallback = new()
+    private static Dictionary<string, (string Title, string Glyph)> ToggleFallback => _loc_ToggleFallback.Value;
+
+    private static readonly LocValue<Dictionary<string, (string Title, string Glyph)>> _loc_ToggleFallback = new(() => new()
     {
-        ["darkMode"] = ("Switch to dark mode", ""),
-        ["emptyTrash"] = ("Empty the Recycle Bin", ""),
-        ["quitAllApps"] = ("Quit all apps", ""),
-        ["ejectDisks"] = ("Eject all disks", ""),
-        ["hiddenFiles"] = ("Show hidden files", ""),
-        ["desktopIcons"] = ("Hide desktop icons", ""),
-        ["lockScreen"] = ("Lock the screen", ""),
-        ["displayOff"] = ("Turn off the display", ""),
-        ["screenSaver"] = ("Start the screen saver", ""),
-    };
+        ["darkMode"] = (Loc.T("Switch to dark mode"), ""),
+        ["emptyTrash"] = (Loc.T("Empty the Recycle Bin"), ""),
+        ["quitAllApps"] = (Loc.T("Quit all apps"), ""),
+        ["ejectDisks"] = (Loc.T("Eject all disks"), ""),
+        ["hiddenFiles"] = (Loc.T("Show hidden files"), ""),
+        ["desktopIcons"] = (Loc.T("Hide desktop icons"), ""),
+        ["lockScreen"] = (Loc.T("Lock the screen"), ""),
+        ["displayOff"] = (Loc.T("Turn off the display"), ""),
+        ["screenSaver"] = (Loc.T("Start the screen saver"), ""),
+    });
 
     public static string ToggleTitle(string id)
     {
@@ -167,27 +169,28 @@ internal static class RadialCatalog
     }
 
     /// <summary>Window layout actions in enum order: (raw id, title, role-style id of the Windows project).</summary>
-    public static readonly (string Raw, string Title, string Role)[] Layouts =
-    [
-        ("leftHalf", "Left", "left"), ("rightHalf", "Right", "right"), ("topHalf", "Top", "top"), ("bottomHalf", "Bottom", "bottom"),
-        ("centerHalf", "Center half", "centerHalf"), ("leftThird", "Left 1/3", "leftThird"), ("centerThird", "Center 1/3", "centerThird"),
-        ("rightThird", "Right 1/3", "rightThird"), ("leftTwoThirds", "Left 2/3", "leftTwoThirds"), ("rightTwoThirds", "Right 2/3", "rightTwoThirds"),
-        ("centerTwoThirds", "Center 2/3", "centerTwoThirds"), ("topThird", "Top 1/3", "topThird"), ("middleThird", "Middle 1/3", "middleThird"),
-        ("bottomThird", "Bottom 1/3", "bottomThird"), ("topTwoThirds", "Top 2/3", "topTwoThirds"), ("bottomTwoThirds", "Bottom 2/3", "bottomTwoThirds"),
-        ("topQuarter", "Top 1/4", "topQuarter"), ("upperMiddleQuarter", "Upper middle 1/4", "upperMiddleQuarter"),
-        ("lowerMiddleQuarter", "Lower middle 1/4", "lowerMiddleQuarter"), ("bottomQuarter", "Bottom 1/4", "bottomQuarter"),
-        ("leftQuarter", "Left 1/4", "leftQuarter"), ("leftMiddleQuarter", "Left middle 1/4", "leftMiddleQuarter"),
-        ("rightMiddleQuarter", "Right middle 1/4", "rightMiddleQuarter"), ("rightQuarter", "Right 1/4", "rightQuarter"),
-        ("topLeftSixth", "Top left 1/6", "topLeftSixth"), ("topCenterSixth", "Top center 1/6", "topCenterSixth"),
-        ("topRightSixth", "Top right 1/6", "topRightSixth"), ("bottomLeftSixth", "Bottom left 1/6", "bottomLeftSixth"),
-        ("bottomCenterSixth", "Bottom center 1/6", "bottomCenterSixth"), ("bottomRightSixth", "Bottom right 1/6", "bottomRightSixth"),
-        ("topLeft", "Top left", "topLeft"), ("topRight", "Top right", "topRight"), ("bottomLeft", "Bottom left", "bottomLeft"),
-        ("bottomRight", "Bottom right", "bottomRight"), ("maximize", "Maximize", "maximize"),
-        ("marginMaximize", "Maximize with Margin", "maximizeWithMargin"), ("fullScreen", "Full Screen", "fullScreen"), ("center", "Center", "center"),
-        ("previousDisplay", "Previous display", "previousDisplay"), ("nextDisplay", "Next display", "nextDisplay"), ("restore", "Restore", "restore"),
-    ];
+    public static (string Raw, string Title, string Role)[] Layouts => _loc_Layouts.Value;
 
-    public static string LayoutTitle(string raw) => Layouts.FirstOrDefault(l => l.Raw == raw).Title ?? "Window layout";
+    private static readonly LocValue<(string Raw, string Title, string Role)[]> _loc_Layouts = new(() => [
+        ("leftHalf", Loc.T("Left"), "left"), ("rightHalf", Loc.T("Right"), "right"), ("topHalf", Loc.T("Top"), "top"), ("bottomHalf", Loc.T("Bottom"), "bottom"),
+        ("centerHalf", Loc.T("Center half"), "centerHalf"), ("leftThird", Loc.T("Left 1/3"), "leftThird"), ("centerThird", Loc.T("Center 1/3"), "centerThird"),
+        ("rightThird", Loc.T("Right 1/3"), "rightThird"), ("leftTwoThirds", Loc.T("Left 2/3"), "leftTwoThirds"), ("rightTwoThirds", Loc.T("Right 2/3"), "rightTwoThirds"),
+        ("centerTwoThirds", Loc.T("Center 2/3"), "centerTwoThirds"), ("topThird", Loc.T("Top 1/3"), "topThird"), ("middleThird", Loc.T("Middle 1/3"), "middleThird"),
+        ("bottomThird", Loc.T("Bottom 1/3"), "bottomThird"), ("topTwoThirds", Loc.T("Top 2/3"), "topTwoThirds"), ("bottomTwoThirds", Loc.T("Bottom 2/3"), "bottomTwoThirds"),
+        ("topQuarter", Loc.T("Top 1/4"), "topQuarter"), ("upperMiddleQuarter", Loc.T("Upper middle 1/4"), "upperMiddleQuarter"),
+        ("lowerMiddleQuarter", Loc.T("Lower middle 1/4"), "lowerMiddleQuarter"), ("bottomQuarter", Loc.T("Bottom 1/4"), "bottomQuarter"),
+        ("leftQuarter", Loc.T("Left 1/4"), "leftQuarter"), ("leftMiddleQuarter", Loc.T("Left middle 1/4"), "leftMiddleQuarter"),
+        ("rightMiddleQuarter", Loc.T("Right middle 1/4"), "rightMiddleQuarter"), ("rightQuarter", Loc.T("Right 1/4"), "rightQuarter"),
+        ("topLeftSixth", Loc.T("Top left 1/6"), "topLeftSixth"), ("topCenterSixth", Loc.T("Top center 1/6"), "topCenterSixth"),
+        ("topRightSixth", Loc.T("Top right 1/6"), "topRightSixth"), ("bottomLeftSixth", Loc.T("Bottom left 1/6"), "bottomLeftSixth"),
+        ("bottomCenterSixth", Loc.T("Bottom center 1/6"), "bottomCenterSixth"), ("bottomRightSixth", Loc.T("Bottom right 1/6"), "bottomRightSixth"),
+        ("topLeft", Loc.T("Top left"), "topLeft"), ("topRight", Loc.T("Top right"), "topRight"), ("bottomLeft", Loc.T("Bottom left"), "bottomLeft"),
+        ("bottomRight", Loc.T("Bottom right"), "bottomRight"), ("maximize", Loc.T("Maximize"), "maximize"),
+        ("marginMaximize", Loc.T("Maximize with Margin"), "maximizeWithMargin"), ("fullScreen", Loc.T("Full Screen"), "fullScreen"), ("center", Loc.T("Center"), "center"),
+        ("previousDisplay", Loc.T("Previous display"), "previousDisplay"), ("nextDisplay", Loc.T("Next display"), "nextDisplay"), ("restore", Loc.T("Restore"), "restore"),
+    ]);
+
+    public static string LayoutTitle(string raw) => Layouts.FirstOrDefault(l => l.Raw == raw).Title ?? Loc.T("Window layout");
 
     /// <summary>A small glyph for a layout action (no font glyph exists; the rectangles family is approximated).</summary>
     public static string LayoutGlyph(string raw) => raw switch
@@ -208,8 +211,8 @@ internal static class RadialColors
 
     public static string Name(string id) => id switch
     {
-        "accent" => "Accent", "blue" => "Blue", "purple" => "Purple", "pink" => "Pink", "red" => "Red", "orange" => "Orange",
-        "yellow" => "Yellow", "green" => "Green", "mint" => "Mint", "cyan" => "Cyan", "indigo" => "Indigo", "graphite" => "Graphite",
+        "accent" => Loc.T("Accent"), "blue" => Loc.T("Blue"), "purple" => Loc.T("Purple"), "pink" => Loc.T("Pink"), "red" => Loc.T("Red"), "orange" => Loc.T("Orange"),
+        "yellow" => Loc.T("Yellow"), "green" => Loc.T("Green"), "mint" => Loc.T("Mint"), "cyan" => Loc.T("Cyan"), "indigo" => Loc.T("Indigo"), "graphite" => Loc.T("Graphite"),
         _ => id,
     };
 
@@ -276,7 +279,7 @@ internal static class RadialModel
 
     public static string PresetTitle(string id) => id switch
     {
-        "general" => "General", "media" => "Media", "tools" => "Tools", "windowLayout" => "Window layout", "quickToggles" => "Quick toggles", _ => "Blank",
+        "general" => Loc.T("General"), "media" => Loc.T("Media"), "tools" => Loc.T("Tools"), "windowLayout" => Loc.T("Window layout"), "quickToggles" => Loc.T("Quick toggles"), _ => Loc.T("Blank"),
     };
 
     public static string PresetColor(string id) => id switch
@@ -676,17 +679,17 @@ internal static class RadialModel
             case RadialKinds.Url:
                 return Uri.TryCreate(NormalizedUrl(item.Payload) ?? item.Payload, UriKind.Absolute, out var u) && u.Host.Length > 0 ? u.Host : item.Payload;
             case RadialKinds.Shortcut:
-                return Hotkey.TryParse(item.Payload, out var hk) ? hk.ToString() : "Press a shortcut";
+                return Hotkey.TryParse(item.Payload, out var hk) ? hk.ToString() : Loc.T("Press a shortcut");
             case RadialKinds.Tool:
-                return ToolActions.RadialOrder.Contains(item.Payload) ? ToolActions.TitleOf(item.Payload) : "WinKnife tool";
+                return ToolActions.RadialOrder.Contains(item.Payload) ? ToolActions.TitleOf(item.Payload) : Loc.T("WinKnife tool");
             case RadialKinds.QuickToggle:
-                return RadialCatalog.QuickToggles.Contains(item.Payload) ? RadialCatalog.ToggleTitle(item.Payload) : "Quick toggles";
+                return RadialCatalog.QuickToggles.Contains(item.Payload) ? RadialCatalog.ToggleTitle(item.Payload) : Loc.T("Quick toggles");
             case RadialKinds.WindowLayout:
-                return RadialCatalog.Layouts.Any(l => l.Raw == item.Payload) ? RadialCatalog.LayoutTitle(item.Payload) : "Window layout";
+                return RadialCatalog.Layouts.Any(l => l.Raw == item.Payload) ? RadialCatalog.LayoutTitle(item.Payload) : Loc.T("Window layout");
             case RadialKinds.Media:
                 return item.Payload == "nowPlaying" && nowPlayingLabel is not null ? nowPlayingLabel : RadialCatalog.MediaLabel(item.Payload);
             default:
-                return "Submenu";
+                return Loc.T("Submenu");
         }
     }
 

@@ -242,7 +242,7 @@ internal sealed class ScratchpadPage : IslandPage
 
             tab.MouseRightButtonUp += (_, ev) =>
             {
-                IslandMenu.Show(tab, [new IslandMenu.Item("Rename scratchpad", () => Rename(pp)), new IslandMenu.Item("Close scratchpad", () => ClosePad(pp), Enabled: _doc.Pads.Count > 1, Destructive: true)], () => HasWindow ? Window.HoldOpen() : null);
+                IslandMenu.Show(tab, [new IslandMenu.Item(Loc.T("Rename scratchpad"), () => Rename(pp)), new IslandMenu.Item(Loc.T("Close scratchpad"), () => ClosePad(pp), Enabled: _doc.Pads.Count > 1, Destructive: true)], () => HasWindow ? Window.HoldOpen() : null);
                 ev.Handled = true;
             };
             tabs.Children.Add(tab);
@@ -251,15 +251,15 @@ internal sealed class ScratchpadPage : IslandPage
         var scrollTabs = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = tabs, MaxWidth = 250 };
         _leading.Children.Add(scrollTabs);
         var full = _doc.Pads.Count >= ScratchDocument.MaxPads;
-        var plus = D.IconButton(G.Plus, full ? $"You can keep up to {ScratchDocument.MaxPads} scratchpads" : "New scratchpad", NewPad);
+        var plus = D.IconButton(G.Plus, full ? Loc.F("You can keep up to {0} scratchpads", ScratchDocument.MaxPads) : Loc.T("New scratchpad"), NewPad);
         plus.IsEnabled = !full;
         _leading.Children.Add(plus);
-        _trailing.Children.Add(D.IconButton("", "Formatting", () => { _formatting = !_formatting; Build(); }, _formatting));
-        var eye = D.IconButton(_preview ? G.Edit : G.Eye, _preview ? "Edit text" : "Show formatting", () => { _preview = !_preview; Build(); }, _preview);
+        _trailing.Children.Add(D.IconButton("", Loc.T("Formatting"), () => { _formatting = !_formatting; Build(); }, _formatting));
+        var eye = D.IconButton(_preview ? G.Edit : G.Eye, _preview ? Loc.T("Edit text") : Loc.T("Show formatting"), () => { _preview = !_preview; Build(); }, _preview);
         eye.Margin = new Thickness(6, 0, 0, 0);
         eye.IsEnabled = pad.Text.Length > 0;
         _trailing.Children.Add(eye);
-        var copy = D.IconButton(_copied ? G.Check : G.Copy, _copied ? "Copied" : "Copy all", () => { try { Clipboard.SetText(pad.Text); } catch { } _copied = true; Build(); PageUi.After(_view.Dispatcher, 1.6, () => { _copied = false; Build(); }); });
+        var copy = D.IconButton(_copied ? G.Check : G.Copy, _copied ? Loc.T("Copied") : Loc.T("Copy all"), () => { try { Clipboard.SetText(pad.Text); } catch { } _copied = true; Build(); PageUi.After(_view.Dispatcher, 1.6, () => { _copied = false; Build(); }); });
         copy.Margin = new Thickness(6, 0, 0, 0);
         copy.IsEnabled = pad.Text.Length > 0;
         _trailing.Children.Add(copy);
@@ -295,7 +295,7 @@ internal sealed class ScratchpadPage : IslandPage
             _loading = false;
             var holder = new Grid();
             holder.Children.Add(_editor);
-            var ph = D.T("Type anything. It saves by itself.", _editor.FontSize, null, D.White(0.35));
+            var ph = D.T(Loc.T("Type anything. It saves by itself."), _editor.FontSize, null, D.White(0.35));
             ph.IsHitTestVisible = false;
             ph.Visibility = pad.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
             _editor.TextChanged += (_, _) => ph.Visibility = _editor.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -314,8 +314,8 @@ internal sealed class ScratchpadPage : IslandPage
         var bar = new StackPanel { Orientation = Orientation.Horizontal, Height = 28 };
         (string Glyph, string Name, string Prefix, string Suffix)[] marks =
         [
-            (G.Bold, "Bold", "**", "**"), (G.Italic, "Italic", "*", "*"), (G.Strike, "Strikethrough", "~~", "~~"), (G.Heading, "Heading", "# ", ""),
-            (G.Bullets, "Bulleted list", "- ", ""), (G.Numbers, "Numbered list", "1. ", ""), (G.Quote, "Quote", "> ", ""), (G.Code, "Code", "`", "`"), (G.Link, "Link", "[", "](url)"),
+            (G.Bold, Loc.T("Bold"), "**", "**"), (G.Italic, Loc.T("Italic"), "*", "*"), (G.Strike, Loc.T("Strikethrough"), "~~", "~~"), (G.Heading, Loc.T("Heading"), "# ", ""),
+            (G.Bullets, Loc.T("Bulleted list"), "- ", ""), (G.Numbers, Loc.T("Numbered list"), "1. ", ""), (G.Quote, Loc.T("Quote"), "> ", ""), (G.Code, Loc.T("Code"), "`", "`"), (G.Link, Loc.T("Link"), "[", "](url)"),
         ];
         foreach (var (g, name, pre, suf) in marks)
         {
@@ -387,14 +387,14 @@ internal sealed class ScratchpadPage : IslandPage
         var pad = _doc.Selected;
         IslandMenu.Show(anchor,
         [
-            new IslandMenu.Item("New scratchpad", NewPad, Enabled: _doc.Pads.Count < ScratchDocument.MaxPads),
-            new IslandMenu.Item("Rename scratchpad", () => Rename(pad)),
-            new IslandMenu.Item("Close scratchpad", () => ClosePad(pad), Enabled: _doc.Pads.Count > 1),
+            new IslandMenu.Item(Loc.T("New scratchpad"), NewPad, Enabled: _doc.Pads.Count < ScratchDocument.MaxPads),
+            new IslandMenu.Item(Loc.T("Rename scratchpad"), () => Rename(pad)),
+            new IslandMenu.Item(Loc.T("Close scratchpad"), () => ClosePad(pad), Enabled: _doc.Pads.Count > 1),
             IslandMenu.Sep(),
-            new IslandMenu.Item("Save as file", () => SaveFile(pad)),
-            new IslandMenu.Item("Clear", () => { pad.Text = ""; Commit(); Build(); }),
+            new IslandMenu.Item(Loc.T("Save as file"), () => SaveFile(pad)),
+            new IslandMenu.Item(Loc.T("Clear"), () => { pad.Text = ""; Commit(); Build(); }),
             IslandMenu.Sep(),
-            new IslandMenu.Item("Open scratchpad", () => Core.Perform(() => Core.InvokeFeatureAction("scratchpad", "open", "new", "show"))),
+            new IslandMenu.Item(Loc.T("Open scratchpad"), () => Core.Perform(() => Core.InvokeFeatureAction("scratchpad", "open", "new", "show"))),
         ], () => HasWindow ? Window.HoldOpen() : null);
     }
 
@@ -416,10 +416,10 @@ internal sealed class ScratchpadPage : IslandPage
     private void Rename(ScratchPad pad)
     {
         using var hold = HasWindow ? Window.HoldOpen() : null;
-        var dlg = new Window { Title = "Rename scratchpad", Width = 300, Height = 130, WindowStartupLocation = WindowStartupLocation.CenterScreen, Topmost = true, ResizeMode = ResizeMode.NoResize, Background = new SolidColorBrush(Color.FromRgb(0x1C, 0x1C, 0x1E)) };
+        var dlg = new Window { Title = Loc.T("Rename scratchpad"), Width = 300, Height = 130, WindowStartupLocation = WindowStartupLocation.CenterScreen, Topmost = true, ResizeMode = ResizeMode.NoResize, Background = new SolidColorBrush(Color.FromRgb(0x1C, 0x1C, 0x1E)) };
         var box = new TextBox { Text = pad.Name, Width = 240, Height = 24, Margin = new Thickness(0, 12, 0, 8), MaxLength = 40 };
-        var ok = new Button { Content = "Save", Width = 70, IsDefault = true, Margin = new Thickness(0, 0, 8, 0) };
-        var cancel = new Button { Content = "Cancel", Width = 70, IsCancel = true };
+        var ok = new Button { Content = Loc.T("Save"), Width = 70, IsDefault = true, Margin = new Thickness(0, 0, 8, 0) };
+        var cancel = new Button { Content = Loc.T("Cancel"), Width = 70, IsCancel = true };
         ok.Click += (_, _) => dlg.DialogResult = true;
         var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
         row.Children.Add(ok);
@@ -451,7 +451,7 @@ internal sealed class ScratchpadPage : IslandPage
         if (pad.Text.Length > 0)
         {
             using var hold = HasWindow ? Window.HoldOpen() : null;
-            var r = MessageBox.Show($"Delete “{pad.Name}” and everything in it?", "Close scratchpad", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+            var r = MessageBox.Show(Loc.F("Delete “{0}” and everything in it?", pad.Name), Loc.T("Close scratchpad"), MessageBoxButton.OKCancel, MessageBoxImage.Warning);
             if (r != MessageBoxResult.OK)
             {
                 return;
@@ -478,7 +478,7 @@ internal sealed class ScratchpadPage : IslandPage
             }
             catch
             {
-                MessageBox.Show("The file could not be saved", "Scratchpad");
+                MessageBox.Show(Loc.T("The file could not be saved"), Loc.T("Scratchpad"));
             }
         }
     }

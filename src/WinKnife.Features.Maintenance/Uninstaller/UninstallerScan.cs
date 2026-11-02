@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.Win32;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Maintenance;
 
@@ -87,13 +88,13 @@ internal sealed record UnRefusal(RefusalKind Kind, string Name)
 {
     public string Message => Kind switch
     {
-        RefusalKind.NotAnApp => "Only programs can be uninstalled.",
-        RefusalKind.SystemApp => $"{Name} can’t be uninstalled because it’s part of Windows.",
-        RefusalKind.Shared => $"{Name} can’t be uninstalled here because it shares files with Windows or other apps.",
-        RefusalKind.Nested => $"{Name} can’t be uninstalled on its own because it’s part of another app.",
-        RefusalKind.ThisApp => "WinKnife can’t uninstall itself here. Use Settings › Advanced instead.",
-        RefusalKind.Link => $"{Name} can’t be uninstalled because it’s a link to an app stored elsewhere.",
-        _ => $"{Name} can’t be uninstalled because it can’t be identified as a program.",
+        RefusalKind.NotAnApp => Loc.T("Only programs can be uninstalled."),
+        RefusalKind.SystemApp => Loc.F("{0} can’t be uninstalled because it’s part of Windows.", Name),
+        RefusalKind.Shared => Loc.F("{0} can’t be uninstalled here because it shares files with Windows or other apps.", Name),
+        RefusalKind.Nested => Loc.F("{0} can’t be uninstalled on its own because it’s part of another app.", Name),
+        RefusalKind.ThisApp => Loc.T("WinKnife can’t uninstall itself here. Use Settings › Advanced instead."),
+        RefusalKind.Link => Loc.F("{0} can’t be uninstalled because it’s a link to an app stored elsewhere.", Name),
+        _ => Loc.F("{0} can’t be uninstalled because it can’t be identified as a program.", Name),
     };
 }
 

@@ -100,7 +100,7 @@ internal sealed class ProblemReporter
         var body = new StackPanel { Margin = new Thickness(24, 22, 24, 20) };
         var head = new StackPanel { Orientation = Orientation.Horizontal };
         head.Children.Add(UiKit.Icon(Glyphs.Warning, 20, ThemeKeys.Orange));
-        var title = UiKit.Text(isBlock ? "Windows blocked part of WinKnife" : "Some features could not start", 16, FontWeights.Bold, ThemeKeys.TextPrimary);
+        var title = UiKit.Text(isBlock ? Loc.T("Windows blocked part of WinKnife") : Loc.T("Some features could not start"), 16, FontWeights.Bold, ThemeKeys.TextPrimary);
         title.Margin = new Thickness(10, 0, 0, 0);
         head.Children.Add(title);
         body.Children.Add(head);
@@ -130,25 +130,25 @@ internal sealed class ProblemReporter
 
         if (problems.Count > 6)
         {
-            list.AddCaption($"…and {problems.Count - 6} more. See the log.");
+            list.AddCaption(Loc.F("…and {0} more. See the log.", problems.Count - 6));
         }
 
         var listHost = new Border { Margin = new Thickness(0, 14, 0, 0), Child = list };
         body.Children.Add(listHost);
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
-        var open = UiKit.Button("Open log", ButtonKind.Bordered, 13, onClick: UiParts.OpenLogFolder);
+        var open = UiKit.Button(Loc.T("Open log"), ButtonKind.Bordered, 13, onClick: UiParts.OpenLogFolder);
         open.Padding = new Thickness(14, 6, 14, 6);
         buttons.Children.Add(open);
         if (isBlock)
         {
-            var security = UiKit.Button("Open Windows Security", ButtonKind.Bordered, 13, onClick: () => UiKit.OpenUrl("windowsdefender://smartscreenpua"));
+            var security = UiKit.Button(Loc.T("Open Windows Security"), ButtonKind.Bordered, 13, onClick: () => UiKit.OpenUrl("windowsdefender://smartscreenpua"));
             security.Padding = new Thickness(14, 6, 14, 6);
             security.Margin = new Thickness(8, 0, 0, 0);
             buttons.Children.Add(security);
         }
 
-        var ok = UiKit.Button("OK", ButtonKind.Prominent, 13, onClick: window.Close);
+        var ok = UiKit.Button(Loc.T("OK"), ButtonKind.Prominent, 13, onClick: window.Close);
         ok.Padding = new Thickness(22, 6, 22, 6);
         ok.Margin = new Thickness(8, 0, 0, 0);
         ok.IsDefault = true;

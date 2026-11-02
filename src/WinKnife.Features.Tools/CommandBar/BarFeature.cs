@@ -32,7 +32,7 @@ public sealed class BarFeature : ToolsFeatureBase
 
     public override IReadOnlyList<FeatureAction> Actions =>
     [
-        new FeatureAction("open", "Open the Command Bar", () => Safe(() => Show()), ""),
+        new FeatureAction("open", Loc.T("Open the Command Bar"), () => Safe(() => Show()), ""),
     ];
 
     protected override void RegisterDefaults(IAppSettings app)
@@ -214,11 +214,11 @@ public sealed class CommandBarUtility : IPanelUtility
 
     public string Id => "commandBar";
 
-    public string Title => "Command Bar";
+    public string Title => Loc.T("Command Bar");
 
     public string Glyph => "";
 
-    public string? Caption => "Type to find and run anything";
+    public string? Caption => Loc.T("Type to find and run anything");
 
     public string? ShortcutText => BarHost.Feature?.Services is { } s ? global::WinKnife.Features.Tools.ShortcutText.Of(s, "commandBar") : null;
 

@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using WinKnife.Core.Ui;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Maintenance;
 
@@ -34,24 +35,24 @@ internal static class PackageParts
     {
         var (title, body, ok, destructive) = action switch
         {
-            PkgAction.Install => ("Install with winget?", $"winget will download and install {name}. Dependencies may also be installed.", "Install", false),
-            PkgAction.Uninstall => ("Uninstall with winget?", $"winget will uninstall {name}. Configuration files may remain on the system.", "Uninstall", true),
-            PkgAction.Upgrade => ("Update with winget?", $"winget will download and apply the latest version of {name}. Dependencies may also be updated.", "Update", false),
-            PkgAction.UpgradeAll => ("Update all with winget?", "winget will download and apply the latest versions for packages with updates available. Dependencies may also be updated.", "Update all", false),
-            _ => ("Update winget?", "winget will refresh its package sources and then reload your packages.", "Update sources", false),
+            PkgAction.Install => (Loc.T("Install with winget?"), Loc.F("winget will download and install {0}. Dependencies may also be installed.", name), Loc.T("Install"), false),
+            PkgAction.Uninstall => (Loc.T("Uninstall with winget?"), Loc.F("winget will uninstall {0}. Configuration files may remain on the system.", name), Loc.T("Uninstall"), true),
+            PkgAction.Upgrade => (Loc.T("Update with winget?"), Loc.F("winget will download and apply the latest version of {0}. Dependencies may also be updated.", name), Loc.T("Update"), false),
+            PkgAction.UpgradeAll => (Loc.T("Update all with winget?"), Loc.T("winget will download and apply the latest versions for packages with updates available. Dependencies may also be updated."), Loc.T("Update all"), false),
+            _ => (Loc.T("Update winget?"), Loc.T("winget will refresh its package sources and then reload your packages."), Loc.T("Update sources"), false),
         };
-        return Dialogs.Confirm(title, body, ok, destructive, "Cancel", keepOpen);
+        return Dialogs.Confirm(title, body, ok, destructive, Loc.T("Cancel"), keepOpen);
     }
 
     /// <summary>The orange "source terms" card (winget's agreement gate).</summary>
     public static FrameworkElement TrustCard(PackagesModel model, bool compact)
     {
         var column = new StackPanel();
-        column.Children.Add(V.Label(G.Shield, "Source terms not accepted yet", compact ? 11 : 13, FontWeights.SemiBold, ThemeKeys.Orange, ThemeKeys.TextPrimary));
-        var caption = V.Secondary($"winget needs your confirmation before using the {model.AgreementSource ?? "winget"} source. Accept to continue.", compact ? 9.5 : 11);
+        column.Children.Add(V.Label(G.Shield, Loc.T("Source terms not accepted yet"), compact ? 11 : 13, FontWeights.SemiBold, ThemeKeys.Orange, ThemeKeys.TextPrimary));
+        var caption = V.Secondary(Loc.F("winget needs your confirmation before using the {0} source. Accept to continue.", model.AgreementSource ?? "winget"), compact ? 9.5 : 11);
         caption.Margin = new Thickness(0, 4, 0, 8);
         column.Children.Add(caption);
-        var button = UiKit.Button("Accept and continue", ButtonKind.Prominent, compact ? 10.5 : 12, null, model.AcceptAgreements);
+        var button = UiKit.Button(Loc.T("Accept and continue"), ButtonKind.Prominent, compact ? 10.5 : 12, null, model.AcceptAgreements);
         button.HorizontalAlignment = HorizontalAlignment.Left;
         column.Children.Add(button);
         var card = new Border { CornerRadius = new CornerRadius(10), Padding = new Thickness(compact ? 8 : 12), BorderThickness = new Thickness(1), Child = column };
@@ -68,30 +69,30 @@ internal static class PackageParts
         var glyph = UiKit.Icon(G.Package, compact ? 30 : 44, ThemeKeys.TextSecondary);
         glyph.FontWeight = FontWeights.Light;
         column.Children.Add(glyph);
-        var title = UiKit.Text("winget not found", compact ? 13 : 16, FontWeights.SemiBold, ThemeKeys.TextPrimary);
+        var title = UiKit.Text(Loc.T("winget not found"), compact ? 13 : 16, FontWeights.SemiBold, ThemeKeys.TextPrimary);
         title.HorizontalAlignment = HorizontalAlignment.Center;
         title.Margin = new Thickness(0, 12, 0, 0);
         column.Children.Add(title);
-        var body = UiKit.Text("WinKnife can open the Microsoft Store page for App Installer, which provides winget. Install or update it there, then come back.", compact ? 10.5 : 13, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+        var body = UiKit.Text(Loc.T("WinKnife can open the Microsoft Store page for App Installer, which provides winget. Install or update it there, then come back."), compact ? 10.5 : 13, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
         body.TextAlignment = TextAlignment.Center;
         body.MaxWidth = 360;
         body.Margin = new Thickness(0, 12, 0, 0);
         column.Children.Add(body);
         var wasOpened = opened;
-        var captionText = V.Secondary(wasOpened ? "Microsoft Store opened." : "When the installer finishes, come back here and click Refresh.", compact ? 9.5 : 12);
+        var captionText = V.Secondary(wasOpened ? Loc.T("Microsoft Store opened.") : Loc.T("When the installer finishes, come back here and click Refresh."), compact ? 9.5 : 12);
         captionText.TextAlignment = TextAlignment.Center;
         captionText.MaxWidth = 360;
-        var install = UiKit.Button("Install winget", ButtonKind.Prominent, compact ? 11 : 13, G.Terminal, () =>
+        var install = UiKit.Button(Loc.T("Install winget"), ButtonKind.Prominent, compact ? 11 : 13, G.Terminal, () =>
         {
             UiKit.OpenUrl("ms-windows-store://pdp/?ProductId=9NBLGGH4NNS1");
-            captionText.Text = "Microsoft Store opened.";
+            captionText.Text = Loc.T("Microsoft Store opened.");
         });
         install.Margin = new Thickness(0, 12, 0, 0);
         install.HorizontalAlignment = HorizontalAlignment.Center;
         column.Children.Add(install);
         captionText.Margin = new Thickness(0, 12, 0, 0);
         column.Children.Add(captionText);
-        var refreshButton = UiKit.Button("Refresh", ButtonKind.Bordered, compact ? 10.5 : 12, G.Refresh, refresh);
+        var refreshButton = UiKit.Button(Loc.T("Refresh"), ButtonKind.Bordered, compact ? 10.5 : 12, G.Refresh, refresh);
         refreshButton.Margin = new Thickness(0, 12, 0, 0);
         refreshButton.HorizontalAlignment = HorizontalAlignment.Center;
         column.Children.Add(refreshButton);
@@ -140,7 +141,7 @@ internal static class PackageParts
         else if (status == "update")
         {
             var current = m.Outdated[p.Id];
-            var up = new Button { Content = UiKit.Icon(G.ArrowUpCircle, 13, ThemeKeys.Orange), ToolTip = $"Update: {p.Version} → {current.Available}", Width = 22, Height = 20, IsEnabled = !m.IsBusy };
+            var up = new Button { Content = UiKit.Icon(G.ArrowUpCircle, 13, ThemeKeys.Orange), ToolTip = Loc.F("Update: {0} → {1}", p.Version, current.Available), Width = 22, Height = 20, IsEnabled = !m.IsBusy };
             up.SetResourceReference(FrameworkElement.StyleProperty, ThemeKeys.ButtonPlain);
             up.Padding = new Thickness(0);
             up.Click += (_, e) => onAction(PkgAction.Upgrade, p);
@@ -189,9 +190,9 @@ internal static class PackageParts
         };
         var busy = m.IsBusy;
         border.ContextMenu = V.Menu(
-            ("Package details", () => onSelect(p), true),
-            (status == "update" ? "Update" : null, () => onAction(PkgAction.Upgrade, p), !busy),
-            (status != "none" ? "Uninstall" : "Install", () => onAction(status != "none" ? PkgAction.Uninstall : PkgAction.Install, p), !busy));
+            (Loc.T("Package details"), () => onSelect(p), true),
+            (status == "update" ? Loc.T("Update") : null, () => onAction(PkgAction.Upgrade, p), !busy),
+            (status != "none" ? Loc.T("Uninstall") : Loc.T("Install"), () => onAction(status != "none" ? PkgAction.Uninstall : PkgAction.Install, p), !busy));
         return border;
     }
 
@@ -220,17 +221,17 @@ internal static class PackageParts
 
         if (!installedOnly && (m.Searching || m.Results.Count > 0 || (m.SearchedQuery is not null && m.SearchedQuery.Length > 0)))
         {
-            var header = SectionHeader("Results", m.Searching ? null : m.Results.Count, compact);
+            var header = SectionHeader(Loc.T("Results"), m.Searching ? null : m.Results.Count, compact);
             stack.AddSpaced(header, 0);
             if (m.Searching)
             {
-                var loading = V.Row(6, new Spinner(12), UiKit.Text("Loading…", compact ? 10 : 11.5, FontWeights.Normal, ThemeKeys.TextSecondary));
+                var loading = V.Row(6, new Spinner(12), UiKit.Text(Loc.T("Loading…"), compact ? 10 : 11.5, FontWeights.Normal, ThemeKeys.TextSecondary));
                 loading.Margin = new Thickness(6, 7, 0, 0);
                 stack.Children.Add(loading);
             }
             else if (m.Results.Count == 0)
             {
-                var none = Message("No results");
+                var none = Message(Loc.T("No results"));
                 none.Margin = new Thickness(6, 7, 0, 0);
                 stack.Children.Add(none);
             }
@@ -248,18 +249,18 @@ internal static class PackageParts
         if (!resultsOnly)
         {
             var installed = m.FilteredInstalled.ToList();
-            var header = SectionHeader("Installed", m.LoadingInstalled && installed.Count == 0 ? null : installed.Count, compact);
+            var header = SectionHeader(Loc.T("Installed"), m.LoadingInstalled && installed.Count == 0 ? null : installed.Count, compact);
             header.Margin = new Thickness(0, stack.Children.Count > 0 ? 14 : 0, 0, 0);
             stack.Children.Add(header);
             if (m.LoadingInstalled && installed.Count == 0)
             {
-                var loading = V.Row(6, new Spinner(12), UiKit.Text("Loading…", compact ? 10 : 11.5, FontWeights.Normal, ThemeKeys.TextSecondary));
+                var loading = V.Row(6, new Spinner(12), UiKit.Text(Loc.T("Loading…"), compact ? 10 : 11.5, FontWeights.Normal, ThemeKeys.TextSecondary));
                 loading.Margin = new Thickness(6, 7, 0, 0);
                 stack.Children.Add(loading);
             }
             else if (installed.Count == 0)
             {
-                var none = Message("No packages found");
+                var none = Message(Loc.T("No packages found"));
                 none.Margin = new Thickness(6, 7, 0, 0);
                 stack.Children.Add(none);
             }
@@ -296,9 +297,9 @@ internal static class PackageParts
             ? (operation.PhaseText, ThemeKeys.Accent, ThemeKeys.AccentFill12)
             : status switch
             {
-                "update" => ("Update available", ThemeKeys.Orange, ThemeKeys.OrangeFill),
-                "installed" => ("Installed", ThemeKeys.Green, ThemeKeys.TileFill),
-                _ => ("Not installed", ThemeKeys.TextSecondary, ThemeKeys.ControlFill),
+                "update" => (Loc.T("Update available"), ThemeKeys.Orange, ThemeKeys.OrangeFill),
+                "installed" => (Loc.T("Installed"), ThemeKeys.Green, ThemeKeys.TileFill),
+                _ => (Loc.T("Not installed"), ThemeKeys.TextSecondary, ThemeKeys.ControlFill),
             };
         var badge = V.Badge(badgeText, badgeFore, badgeFill, compact ? 9 : 10);
         badge.Margin = new Thickness(8, compact ? 0 : 6, 0, 0);
@@ -312,7 +313,7 @@ internal static class PackageParts
 
         if (m.LoadingDetails)
         {
-            var loading = V.Row(6, new Spinner(12), UiKit.Text("Loading…", 11, FontWeights.Normal, ThemeKeys.TextSecondary));
+            var loading = V.Row(6, new Spinner(12), UiKit.Text(Loc.T("Loading…"), 11, FontWeights.Normal, ThemeKeys.TextSecondary));
             loading.Margin = new Thickness(0, 10, 0, 0);
             column.Children.Add(loading);
         }
@@ -346,13 +347,13 @@ internal static class PackageParts
 
         var installedVersion = m.InstalledEntry(p.Id)?.Version;
         column.Children.Add(new Border { Height = 8 });
-        column.Children.Add(Info("Version", !string.IsNullOrEmpty(installedVersion) ? installedVersion : (details?.Version is { Length: > 0 } v ? v : p.Version)));
+        column.Children.Add(Info(Loc.T("Version"), !string.IsNullOrEmpty(installedVersion) ? installedVersion : (details?.Version is { Length: > 0 } v ? v : p.Version)));
         if (status == "update" && m.Outdated.TryGetValue(p.Id, out var latest))
         {
-            column.Children.Add(Info("Latest", latest.Available));
+            column.Children.Add(Info(Loc.T("Latest"), latest.Available));
         }
 
-        column.Children.Add(Info("Type", m.IsTool(p) ? "Tools" : "Apps"));
+        column.Children.Add(Info(Loc.T("Type"), m.IsTool(p) ? Loc.T("Tools") : Loc.T("Apps")));
         if (details is { Publisher.Length: > 0 })
         {
             column.Children.Add(Info("Publisher", details.Publisher));
@@ -360,7 +361,7 @@ internal static class PackageParts
 
         if (details is { Homepage.Length: > 0 } && Uri.TryCreate(details.Homepage, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https")
         {
-            var link = V.Link("Open website", () => UiKit.OpenUrl(uri.ToString()), compact ? 10 : 12);
+            var link = V.Link(Loc.T("Open website"), () => UiKit.OpenUrl(uri.ToString()), compact ? 10 : 12);
             link.HorizontalAlignment = HorizontalAlignment.Left;
             link.Margin = new Thickness(0, 8, 0, 0);
             column.Children.Add(link);
@@ -376,21 +377,21 @@ internal static class PackageParts
             var busy = m.IsBusy;
             if (status == "update")
             {
-                var update = UiKit.Button("Update", ButtonKind.Prominent, compact ? 10.5 : 12, G.ArrowUpCircle, () => onAction(PkgAction.Upgrade, p));
+                var update = UiKit.Button(Loc.T("Update"), ButtonKind.Prominent, compact ? 10.5 : 12, G.ArrowUpCircle, () => onAction(PkgAction.Upgrade, p));
                 update.IsEnabled = !busy;
                 buttons.Children.Add(update);
             }
 
             if (status != "none")
             {
-                var uninstall = UiKit.Button("Uninstall", ButtonKind.Destructive, compact ? 10.5 : 12, G.Trash, () => onAction(PkgAction.Uninstall, p));
+                var uninstall = UiKit.Button(Loc.T("Uninstall"), ButtonKind.Destructive, compact ? 10.5 : 12, G.Trash, () => onAction(PkgAction.Uninstall, p));
                 uninstall.IsEnabled = !busy;
                 uninstall.Margin = new Thickness(status == "update" ? 8 : 0, 0, 0, 0);
                 buttons.Children.Add(uninstall);
             }
             else
             {
-                var install = UiKit.Button("Install", ButtonKind.Prominent, compact ? 10.5 : 12, G.Download, () => onAction(PkgAction.Install, p));
+                var install = UiKit.Button(Loc.T("Install"), ButtonKind.Prominent, compact ? 10.5 : 12, G.Download, () => onAction(PkgAction.Install, p));
                 install.IsEnabled = !busy;
                 buttons.Children.Add(install);
             }
@@ -484,7 +485,7 @@ internal sealed class PackagesPageView : StackPanel
         var root = new StackPanel();
         var toolbar = new StackPanel { Margin = new Thickness(16, 16, 16, 12) };
         var row1 = new WrapPanel { Orientation = Orientation.Horizontal };
-        var hintField = PackageParts.HintField("Search packages", out var box);
+        var hintField = PackageParts.HintField(Loc.T("Search packages"), out var box);
         hintField.MinWidth = 200;
         hintField.Width = 220;
         box.Text = _m.Query;
@@ -507,7 +508,7 @@ internal sealed class PackagesPageView : StackPanel
         };
         _search = box;
         row1.Children.Add(hintField);
-        var source = V.Drop(["winget", "Microsoft Store"], _m.SourceIndex, i =>
+        var source = V.Drop([Loc.T("winget"), Loc.T("Microsoft Store")], _m.SourceIndex, i =>
         {
             _m.SourceIndex = i;
             _m.ClearSelectionQuiet();
@@ -516,16 +517,16 @@ internal sealed class PackagesPageView : StackPanel
         source.Width = 116;
         source.Margin = new Thickness(8, 0, 0, 0);
         row1.Children.Add(source);
-        _searchButton = UiKit.Button("Search", ButtonKind.Bordered, 12, G.Search, () => _ = _m.SearchAsync());
+        _searchButton = UiKit.Button(Loc.T("Search"), ButtonKind.Bordered, 12, G.Search, () => _ = _m.SearchAsync());
         _searchButton.Margin = new Thickness(8, 0, 0, 0);
         row1.Children.Add(_searchButton);
-        var refresh = V.IconButton(G.Refresh, "Refresh", () => _ = _m.RefreshInstalledAsync(), 12, ThemeKeys.TextPrimary, 28);
+        var refresh = V.IconButton(G.Refresh, Loc.T("Refresh"), () => _ = _m.RefreshInstalledAsync(), 12, ThemeKeys.TextPrimary, 28);
         refresh.Margin = new Thickness(4, 0, 0, 0);
         refresh.Tag = "refresh";
         row1.Children.Add(refresh);
-        var update = UiKit.Button("Update sources", ButtonKind.Bordered, 12, G.Refresh, () =>
+        var update = UiKit.Button(Loc.T("Update sources"), ButtonKind.Bordered, 12, G.Refresh, () =>
         {
-            if (PackageParts.Confirm(PkgAction.UpdateSources, "winget", null))
+            if (PackageParts.Confirm(PkgAction.UpdateSources, Loc.T("winget"), null))
             {
                 _m.Run(PkgAction.UpdateSources, null);
             }
@@ -600,7 +601,7 @@ internal sealed class PackagesPageView : StackPanel
         var busy = _m.IsBusy;
 
         // Row 2: filter + outdated summary
-        var seg = new SegmentedControl([$"All {_m.Installed.Count}", $"Apps {_m.AppCount}", $"Tools {_m.ToolCount}"], _m.Filter, false, 12) { Width = 300 };
+        var seg = new SegmentedControl([Loc.F("All {0}", _m.Installed.Count), Loc.F("Apps {0}", _m.AppCount), Loc.F("Tools {0}", _m.ToolCount)], _m.Filter, false, 12) { Width = 300 };
         seg.SelectionChanged += i =>
         {
             if (i == _m.Filter)
@@ -625,19 +626,19 @@ internal sealed class PackagesPageView : StackPanel
         row2.Children.Add(seg);
         if (_m.LoadingOutdated)
         {
-            var loading = V.Row(6, new Spinner(12), UiKit.Text("Updates", 12, FontWeights.Normal, ThemeKeys.TextSecondary));
+            var loading = V.Row(6, new Spinner(12), UiKit.Text(Loc.T("Updates"), 12, FontWeights.Normal, ThemeKeys.TextSecondary));
             loading.Margin = new Thickness(12, 0, 0, 0);
             row2.Children.Add(loading);
         }
         else if (_m.OutdatedCount > 0)
         {
-            var summary = V.Label(G.ArrowUpCircle, $"Updates {_m.OutdatedCount}", 12, FontWeights.Normal, ThemeKeys.Orange, ThemeKeys.Orange);
+            var summary = V.Label(G.ArrowUpCircle, Loc.F("Updates {0}", _m.OutdatedCount), 12, FontWeights.Normal, ThemeKeys.Orange, ThemeKeys.Orange);
             summary.Margin = new Thickness(12, 0, 8, 0);
             summary.VerticalAlignment = VerticalAlignment.Center;
             row2.Children.Add(summary);
-            var all = UiKit.Button("Update all", ButtonKind.Bordered, 11, G.ArrowUpCircle, () =>
+            var all = UiKit.Button(Loc.T("Update all"), ButtonKind.Bordered, 11, G.ArrowUpCircle, () =>
             {
-                if (PackageParts.Confirm(PkgAction.UpgradeAll, "packages", null))
+                if (PackageParts.Confirm(PkgAction.UpgradeAll, Loc.T("packages"), null))
                 {
                     _m.Run(PkgAction.UpgradeAll, null);
                 }
@@ -660,11 +661,11 @@ internal sealed class PackagesPageView : StackPanel
             glyph.HorizontalAlignment = HorizontalAlignment.Left;
             grid.Children.Add(glyph);
             var text = new StackPanel();
-            text.Children.Add(UiKit.Text("Finish terminal setup", 12, FontWeights.SemiBold, ThemeKeys.TextPrimary));
-            text.Children.Add(V.Secondary("winget is installed, but your terminal may not find the winget command yet. WinKnife can add its folder to your PATH.", 11));
+            text.Children.Add(UiKit.Text(Loc.T("Finish terminal setup"), 12, FontWeights.SemiBold, ThemeKeys.TextPrimary));
+            text.Children.Add(V.Secondary(Loc.T("winget is installed, but your terminal may not find the winget command yet. WinKnife can add its folder to your PATH."), 11));
             Grid.SetColumn(text, 1);
             grid.Children.Add(text);
-            var setup = UiKit.Button("Set up terminal", ButtonKind.Prominent, 11, G.Wrench, () =>
+            var setup = UiKit.Button(Loc.T("Set up terminal"), ButtonKind.Prominent, 11, G.Wrench, () =>
             {
                 WingetCli.AddToUserPath();
                 RefreshDynamic();
@@ -686,8 +687,8 @@ internal sealed class PackagesPageView : StackPanel
         var detailColumn = new StackPanel();
         if (selected is null)
         {
-            detailColumn.Children.Add(V.Label(G.Package, "Package details", 18, FontWeights.SemiBold, ThemeKeys.TextPrimary, ThemeKeys.TextPrimary));
-            var hint = V.Secondary("Select an installed package or search for a new one.", 13);
+            detailColumn.Children.Add(V.Label(G.Package, Loc.T("Package details"), 18, FontWeights.SemiBold, ThemeKeys.TextPrimary, ThemeKeys.TextPrimary));
+            var hint = V.Secondary(Loc.T("Select an installed package or search for a new one."), 13);
             hint.Margin = new Thickness(0, 8, 0, 0);
             detailColumn.Children.Add(hint);
         }
@@ -798,7 +799,7 @@ internal sealed class PackagesPanelView : StackPanel
         }
 
         var root = new StackPanel();
-        var mode = new SegmentedControl(["Search", $"Installed {_m.Installed.Count}"], _mode, true, 11);
+        var mode = new SegmentedControl([Loc.T("Search"), Loc.F("Installed {0}", _m.Installed.Count)], _mode, true, 11);
         mode.SelectionChanged += i =>
         {
             _mode = i;
@@ -812,7 +813,7 @@ internal sealed class PackagesPanelView : StackPanel
             var fieldRow = new Grid();
             fieldRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             fieldRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var field = PackageParts.HintField("Search packages", out var box, 11);
+            var field = PackageParts.HintField(Loc.T("Search packages"), out var box, 11);
             box.Text = _m.Query;
             box.TextChanged += (_, _) => _m.Query = box.Text;
             fieldRow.Children.Add(field);
@@ -831,26 +832,26 @@ internal sealed class PackagesPanelView : StackPanel
                 }
             };
             card.Children.Add(fieldRow);
-            var kind = new SegmentedControl(["winget", "Microsoft Store"], _m.SourceIndex, true, 10.5);
+            var kind = new SegmentedControl([Loc.T("winget"), Loc.T("Microsoft Store")], _m.SourceIndex, true, 10.5);
             kind.SelectionChanged += i => _m.SourceIndex = i;
             kind.Margin = new Thickness(0, 6, 0, 0);
             card.Children.Add(kind);
-            var hint = V.Tertiary("Press Enter to search.", 9);
+            var hint = V.Tertiary(Loc.T("Press Enter to search."), 9);
             hint.Margin = new Thickness(0, 5, 0, 0);
             card.Children.Add(hint);
         }
         else
         {
-            var filter = new SegmentedControl([$"All {_m.Installed.Count}", $"Apps {_m.AppCount}", $"Tools {_m.ToolCount}"], _m.Filter, true, 10.5);
+            var filter = new SegmentedControl([Loc.F("All {0}", _m.Installed.Count), Loc.F("Apps {0}", _m.AppCount), Loc.F("Tools {0}", _m.ToolCount)], _m.Filter, true, 10.5);
             filter.SelectionChanged += i =>
             {
                 _m.Filter = i;
                 Build();
             };
             card.Children.Add(filter);
-            var buttons = V.Row(6, PanelButtons.Mini("Check packages", G.Refresh, () => _ = _m.RefreshInstalledAsync()), PanelButtons.Mini("Update sources", G.Refresh, () =>
+            var buttons = V.Row(6, PanelButtons.Mini(Loc.T("Check packages"), G.Refresh, () => _ = _m.RefreshInstalledAsync()), PanelButtons.Mini(Loc.T("Update sources"), G.Refresh, () =>
             {
-                if (PackageParts.Confirm(PkgAction.UpdateSources, "winget", _keepOpen))
+                if (PackageParts.Confirm(PkgAction.UpdateSources, Loc.T("winget"), _keepOpen))
                 {
                     _m.Run(PkgAction.UpdateSources, null);
                 }
@@ -860,23 +861,23 @@ internal sealed class PackagesPanelView : StackPanel
             FrameworkElement summary;
             if (_m.LoadingOutdated)
             {
-                summary = V.Row(6, new Spinner(11), UiKit.Text("Updates", 10.5, FontWeights.Normal, ThemeKeys.TextSecondary));
+                summary = V.Row(6, new Spinner(11), UiKit.Text(Loc.T("Updates"), 10.5, FontWeights.Normal, ThemeKeys.TextSecondary));
             }
             else if (_m.OutdatedCount > 0)
             {
-                var all = PanelButtons.Mini("Update all", G.ArrowUpCircle, () =>
+                var all = PanelButtons.Mini(Loc.T("Update all"), G.ArrowUpCircle, () =>
                 {
-                    if (PackageParts.Confirm(PkgAction.UpgradeAll, "packages", _keepOpen))
+                    if (PackageParts.Confirm(PkgAction.UpgradeAll, Loc.T("packages"), _keepOpen))
                     {
                         _m.Run(PkgAction.UpgradeAll, null);
                     }
                 });
                 all.IsEnabled = !_m.IsBusy;
-                summary = V.Row(8, V.Label(G.ArrowUpCircle, $"Updates {_m.OutdatedCount}", 10.5, FontWeights.Normal, ThemeKeys.Orange, ThemeKeys.Orange), all);
+                summary = V.Row(8, V.Label(G.ArrowUpCircle, Loc.F("Updates {0}", _m.OutdatedCount), 10.5, FontWeights.Normal, ThemeKeys.Orange, ThemeKeys.Orange), all);
             }
             else
             {
-                summary = V.Label(G.CheckCircle, "Updates 0", 10.5, FontWeights.Normal, ThemeKeys.Green, ThemeKeys.TextSecondary);
+                summary = V.Label(G.CheckCircle, Loc.T("Updates 0"), 10.5, FontWeights.Normal, ThemeKeys.Green, ThemeKeys.TextSecondary);
             }
 
             summary.Margin = new Thickness(0, 6, 0, 0);
@@ -914,7 +915,7 @@ internal sealed class PackagesPanelView : StackPanel
         }
         else
         {
-            var hint = V.Secondary("Select an installed package or search for a new one.", 10.5);
+            var hint = V.Secondary(Loc.T("Select an installed package or search for a new one."), 10.5);
             hint.Margin = new Thickness(2, 10, 0, 0);
             root.Children.Add(hint);
         }

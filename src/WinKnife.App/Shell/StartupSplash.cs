@@ -107,10 +107,10 @@ internal static class StartupSplash
             Fill = Brushes.White,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        var title = new TextBlock { Text = "Starting WinKnife…", FontSize = 14, FontWeight = FontWeights.SemiBold, Foreground = Brushes.White };
+        var title = new TextBlock { Text = Loc.T("Starting WinKnife…"), FontSize = 14, FontWeight = FontWeights.SemiBold, Foreground = Brushes.White };
         var sub = new TextBlock
         {
-            Text = "The first start can take a few seconds while Windows checks the files.",
+            Text = Loc.T("The first start can take a few seconds while Windows checks the files."),
             FontSize = 11.5,
             Foreground = new SolidColorBrush(Color.FromArgb(0xB3, 255, 255, 255)),
             TextWrapping = TextWrapping.Wrap,

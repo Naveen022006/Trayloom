@@ -3,6 +3,7 @@
 
 using System.Text;
 using System.Text.Json;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Agents;
 
@@ -284,7 +285,7 @@ public sealed class AgentSessionMonitor : IDisposable
                 {
                     s.State = AgentSessionState.Working;
                     s.Basis = WaitingBasis.None;
-                    s.Activity = s.Tool is { } t ? "Running " + t : "Working";
+                    s.Activity = s.Tool is { } t ? "Running " + t : Loc.T("Working");
                     continue;
                 }
             }
@@ -495,7 +496,7 @@ public sealed class AgentSessionMonitor : IDisposable
             session.Basis = WaitingBasis.Hook;
             session.Tool = hook.Tool ?? tail.Pending.Values.FirstOrDefault()?.Display;
             session.Since = hook.At;
-            session.Activity = hook.Kind == HookKind.Input ? "Waiting for your reply" : "Waiting for permission" + (session.Tool is { } t ? ": " + t : "");
+            session.Activity = hook.Kind == HookKind.Input ? Loc.T("Waiting for your reply") : "Waiting for permission" + (session.Tool is { } t ? ": " + t : "");
             if (hook.Kind == HookKind.Input)
             {
                 session.Tool = "Question";
@@ -550,7 +551,7 @@ public sealed class AgentSessionMonitor : IDisposable
         else
         {
             session.State = AgentSessionState.Idle;
-            session.Activity = "Idle";
+            session.Activity = Loc.T("Idle");
             session.Since = last;
         }
 
@@ -586,7 +587,7 @@ public sealed class AgentSessionMonitor : IDisposable
             "assistant-thinking" => "Thinking",
             "tool-result" => "Thinking",
             "user" => "Thinking",
-            _ => "Working",
+            _ => Loc.T("Working"),
         };
     }
 
@@ -1058,12 +1059,12 @@ public sealed class AgentSessionMonitor : IDisposable
         if (state.Open && quiet < TimeSpan.FromMinutes(3) || quiet < TimeSpan.FromSeconds(20))
         {
             session.State = AgentSessionState.Working;
-            session.Activity = state.PendingCall is { } running2 ? "Running " + running2 : state.LastKind switch { "message" => "Replying", "reasoning" => "Thinking", _ => "Working" };
+            session.Activity = state.PendingCall is { } running2 ? "Running " + running2 : state.LastKind switch { "message" => "Replying", "reasoning" => "Thinking", _ => Loc.T("Working") };
             return session;
         }
 
         session.State = AgentSessionState.Idle;
-        session.Activity = "Idle";
+        session.Activity = Loc.T("Idle");
         session.Since = written;
         return session;
     }

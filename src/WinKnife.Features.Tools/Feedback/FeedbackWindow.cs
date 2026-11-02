@@ -17,32 +17,32 @@ namespace WinKnife.Features.Tools;
 /// <summary>Strings of the feedback window (Vorssaint <c>FeedbackStrings</c>, enUS; GitHub wording where a server was involved).</summary>
 internal static class FeedbackStrings
 {
-    public const string SectionTitle = "Feedback";
-    public const string SectionCaption = "Send a bug report or feature idea directly to the person who maintains WinKnife.";
-    public const string OpenButton = "Send feedback";
-    public const string WindowTitle = "Send feedback";
-    public const string BugTitle = "Bug";
-    public const string FeatureTitle = "Feature idea";
-    public const string MessageLabel = "What would you like to share?";
-    public const string BugPlaceholder = "Tell me what happened and what you expected.";
-    public const string FeaturePlaceholder = "Describe the idea and how it would help.";
-    public const string IncludeDiagnostics = "Include technical details";
-    public const string IncludeDiagnosticsCaption = "Adds only the technical details shown below. It does not include logs.";
-    public const string WhatSentTitle = "What will be sent";
-    public const string WhatSentBasic = "Your chosen category and the text above.";
-    public const string WhatSentDiagnostics = "The technical details listed below.";
-    public const string PrivacyNote = "No name, account, email, device identifier, logs, screenshots, files or clipboard content are included. The text goes to GitHub only when you submit the issue draft in your browser.";
-    public const string RetentionNote = "Nothing is sent by WinKnife itself. Issues on GitHub are public, so do not include private information.";
-    public const string SendButton = "Send feedback";
-    public const string SentTitle = "Feedback sent";
-    public const string SentCaption = "Your browser opened a new GitHub issue draft. Submit it there to send your feedback.";
-    public const string GenericError = "Could not send the feedback right now.";
-    public const string Done = "Done";
-    public const string CommandBug = "Report a bug";
-    public const string CommandFeature = "Suggest a feature";
-    public const string CommandSubtitle = "Send feedback";
+    public static  string SectionTitle => Loc.T("Feedback");
+    public static  string SectionCaption => Loc.T("Send a bug report or feature idea directly to the person who maintains WinKnife.");
+    public static  string OpenButton => Loc.T("Send feedback");
+    public static  string WindowTitle => Loc.T("Send feedback");
+    public static  string BugTitle => Loc.T("Bug");
+    public static  string FeatureTitle => Loc.T("Feature idea");
+    public static  string MessageLabel => Loc.T("What would you like to share?");
+    public static  string BugPlaceholder => Loc.T("Tell me what happened and what you expected.");
+    public static  string FeaturePlaceholder => Loc.T("Describe the idea and how it would help.");
+    public static  string IncludeDiagnostics => Loc.T("Include technical details");
+    public static  string IncludeDiagnosticsCaption => Loc.T("Adds only the technical details shown below. It does not include logs.");
+    public static  string WhatSentTitle => Loc.T("What will be sent");
+    public static  string WhatSentBasic => Loc.T("Your chosen category and the text above.");
+    public static  string WhatSentDiagnostics => Loc.T("The technical details listed below.");
+    public static  string PrivacyNote => Loc.T("No name, account, email, device identifier, logs, screenshots, files or clipboard content are included. The text goes to GitHub only when you submit the issue draft in your browser.");
+    public static  string RetentionNote => Loc.T("Nothing is sent by WinKnife itself. Issues on GitHub are public, so do not include private information.");
+    public static  string SendButton => Loc.T("Send feedback");
+    public static  string SentTitle => Loc.T("Feedback sent");
+    public static  string SentCaption => Loc.T("Your browser opened a new GitHub issue draft. Submit it there to send your feedback.");
+    public static  string GenericError => Loc.T("Could not send the feedback right now.");
+    public static  string Done => Loc.T("Done");
+    public static  string CommandBug => Loc.T("Report a bug");
+    public static  string CommandFeature => Loc.T("Suggest a feature");
+    public static  string CommandSubtitle => Loc.T("Send feedback");
 
-    public static string Characters(int count) => $"{count} of 2000 characters";
+    public static string Characters(int count) => Loc.F("{0} of 2000 characters", count);
 }
 
 /// <summary>Builds the GitHub issue URL and the technical details of a feedback message.</summary>
@@ -64,16 +64,16 @@ internal static class FeedbackIssue
         var rows = new List<(string, string)>
         {
             ("WinKnife", $"{version} ({build})"),
-            ("Windows", Environment.OSVersion.Version.ToString()),
+            (Loc.T("Windows"), Environment.OSVersion.Version.ToString()),
         };
         if (Model() is { Length: > 0 } model)
         {
             rows.Add(("PC", model));
         }
 
-        rows.Add(("Language", CultureInfo.CurrentUICulture.Name));
-        rows.Add(("Beta", beta ? "✓" : "○"));
-        rows.Add(("Update channel", beta ? "Beta" : "Stable"));
+        rows.Add((Loc.T("Language"), CultureInfo.CurrentUICulture.Name));
+        rows.Add((Loc.T("Beta"), beta ? "✓" : "○"));
+        rows.Add((Loc.T("Update channel"), beta ? Loc.T("Beta") : "Stable"));
         return rows;
     }
 

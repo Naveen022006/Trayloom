@@ -210,7 +210,7 @@ internal sealed class RadialVisualCanvas : Border
         _header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         if (_submenuName is { } name)
         {
-            var back = new Button { Cursor = Cursors.Hand, ToolTip = "Back", Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), HorizontalAlignment = HorizontalAlignment.Left };
+            var back = new Button { Cursor = Cursors.Hand, ToolTip = Loc.T("Back"), Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), HorizontalAlignment = HorizontalAlignment.Left };
             var row = new StackPanel { Orientation = Orientation.Horizontal };
             var chev = new TextBlock { Text = "", FontFamily = UiKit.IconFont, FontSize = 11, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush(_color), VerticalAlignment = VerticalAlignment.Center };
             var label = new TextBlock { Text = name, FontSize = 12, FontWeight = FontWeights.Medium, Foreground = new SolidColorBrush(_color), Margin = new Thickness(5, 0, 0, 0) };
@@ -223,15 +223,15 @@ internal sealed class RadialVisualCanvas : Border
         }
         else
         {
-            _header.Children.Add(new TextBlock { Text = "RADIAL MENU", FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = new SolidColorBrush(Color.FromArgb(153, 255, 255, 255)) });
+            _header.Children.Add(new TextBlock { Text = Loc.T("RADIAL MENU"), FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = new SolidColorBrush(Color.FromArgb(153, 255, 255, 255)) });
         }
 
         if (_hasPreset)
         {
-            var reset = new Button { Content = new TextBlock { Text = "Reset", FontSize = 12, Foreground = new SolidColorBrush(Color.FromArgb(179, 255, 255, 255)) }, Cursor = Cursors.Hand, Template = FlatButton(), Padding = new Thickness(6, 2, 6, 2) };
+            var reset = new Button { Content = new TextBlock { Text = Loc.T("Reset"), FontSize = 12, Foreground = new SolidColorBrush(Color.FromArgb(179, 255, 255, 255)) }, Cursor = Cursors.Hand, Template = FlatButton(), Padding = new Thickness(6, 2, 6, 2) };
             reset.Click += (_, _) =>
             {
-                if (RadialDialogs.Confirm(Window.GetWindow(this), "Reset actions", "Restore the default actions for this profile? Custom actions will be replaced.", "Reset actions", true))
+                if (RadialDialogs.Confirm(Window.GetWindow(this), Loc.T("Reset actions"), Loc.T("Restore the default actions for this profile? Custom actions will be replaced."), Loc.T("Reset actions"), true))
                 {
                     RadialState.Mutate(_ctx, (_, p) =>
                     {
@@ -479,18 +479,18 @@ internal sealed class RadialVisualCanvas : Border
 
         var item = _items[i];
         var menu = new ContextMenu();
-        var edit = new MenuItem { Header = "Radial menu" };
+        var edit = new MenuItem { Header = Loc.T("Radial menu") };
         edit.Click += (_, _) => RadialItemOps.Edit(this, _ctx, item.Id);
         menu.Items.Add(edit);
         if (item.Kind == RadialKinds.Submenu)
         {
-            var drill = new MenuItem { Header = "Edit actions" };
+            var drill = new MenuItem { Header = Loc.T("Edit actions") };
             drill.Click += (_, _) => RadialItemOps.DrillInto(_ctx, item.Id);
             menu.Items.Add(drill);
         }
 
         menu.Items.Add(new Separator());
-        var remove = new MenuItem { Header = "Remove" };
+        var remove = new MenuItem { Header = Loc.T("Remove") };
         remove.Click += (_, _) => RadialItemOps.Remove(_ctx, item.Id);
         menu.Items.Add(remove);
         menu.IsOpen = true;
@@ -565,12 +565,12 @@ internal sealed class RadialVisualCanvas : Border
         else if (_submenuName is not null)
         {
             stack.Children.Add(G("", 12));
-            stack.Children.Add(T("Back", 9, FontWeights.Medium, dim, 1));
+            stack.Children.Add(T(Loc.T("Back"), 9, FontWeights.Medium, dim, 1));
         }
         else if (_items.Count == 0)
         {
             stack.Children.Add(G("", 14));
-            stack.Children.Add(T("Add action", 8, FontWeights.Medium, dim, 1));
+            stack.Children.Add(T(Loc.T("Add action"), 8, FontWeights.Medium, dim, 1));
         }
         else
         {

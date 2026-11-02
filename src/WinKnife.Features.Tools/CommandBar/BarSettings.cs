@@ -167,7 +167,7 @@ public sealed class CommandBarMainSection : ISettingsSection
 
     public string? Anchor => "commandBar";
 
-    public string? Title => "Command Bar";
+    public string? Title => Loc.T("Command Bar");
 
     public IReadOnlyList<string> Keywords => ["compact mode", "skin tone", "global shortcut", "english layout", "recenter"];
 
@@ -175,11 +175,11 @@ public sealed class CommandBarMainSection : ISettingsSection
     {
         ToolsDefaults.Register(c.App);
         var prefs = new BarPreferences(c.App);
-        var card = new SettingsCard("Command Bar");
+        var card = new SettingsCard(Loc.T("Command Bar"));
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal };
-        buttons.Children.Add(UiKit.Button("Open the bar now", ButtonKind.Bordered, 13, null, () => c.Ui.BeginInvoke(() => BarHost.Feature?.Show(), System.Windows.Threading.DispatcherPriority.Background)));
-        var recenter = UiKit.Button("Recenter the bar", ButtonKind.Bordered, 13);
+        buttons.Children.Add(UiKit.Button(Loc.T("Open the bar now"), ButtonKind.Bordered, 13, null, () => c.Ui.BeginInvoke(() => BarHost.Feature?.Show(), System.Windows.Threading.DispatcherPriority.Background)));
+        var recenter = UiKit.Button(Loc.T("Recenter the bar"), ButtonKind.Bordered, 13);
         recenter.Margin = new Thickness(10, 0, 0, 0);
         recenter.IsEnabled = prefs.HasCustomPosition;
         recenter.Click += (_, _) =>
@@ -191,8 +191,8 @@ public sealed class CommandBarMainSection : ISettingsSection
         card.Add(buttons);
 
         var explain = new StackPanel();
-        explain.Children.Add(BarSettingsKit.Caption("Drag the mark at the left of the field to put the bar anywhere on the screen; double-click the mark to recenter it."));
-        var settingsCaption = BarSettingsKit.Caption("One shortcut opens a field over whatever you are doing. Type a few letters, press Return and it happens. Nothing you type is saved.");
+        explain.Children.Add(BarSettingsKit.Caption(Loc.T("Drag the mark at the left of the field to put the bar anywhere on the screen; double-click the mark to recenter it.")));
+        var settingsCaption = BarSettingsKit.Caption(Loc.T("One shortcut opens a field over whatever you are doing. Type a few letters, press Return and it happens. Nothing you type is saved."));
         settingsCaption.Margin = new Thickness(0, 6, 0, 0);
         explain.Children.Add(settingsCaption);
         var privacy = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
@@ -200,12 +200,12 @@ public sealed class CommandBarMainSection : ISettingsSection
         lockIcon.Margin = new Thickness(0, 2, 6, 0);
         lockIcon.VerticalAlignment = VerticalAlignment.Top;
         privacy.Children.Add(lockIcon);
-        var privacyText = BarSettingsKit.Caption("Search runs on this PC with no account or cloud, and what you type leaves it only through sites you open or scripts you add.");
+        var privacyText = BarSettingsKit.Caption(Loc.T("Search runs on this PC with no account or cloud, and what you type leaves it only through sites you open or scripts you add."));
         privacyText.MaxWidth = 560;
         privacy.Children.Add(privacyText);
         explain.Children.Add(privacy);
         var tryRow = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
-        var tryLabel = UiKit.Text("Try", 11.5, FontWeights.Normal, ThemeKeys.TextTertiary);
+        var tryLabel = UiKit.Text(Loc.T("Try"), 11.5, FontWeights.Normal, ThemeKeys.TextTertiary);
         tryLabel.Margin = new Thickness(0, 2, 8, 0);
         tryRow.Children.Add(tryLabel);
         var examples = new List<string> { "100 km to mi", "2+2*3", "brightness 40", "fire" };
@@ -227,7 +227,7 @@ public sealed class CommandBarMainSection : ISettingsSection
         explain.Children.Add(tryRow);
         card.Add(explain);
 
-        card.Add(new SettingsRow(null, "Compact mode", "Bar opens without suggestions. Results appear as you type.", new MacSwitch(c.App.Get<bool>("commandBarCompactMode"), SwitchSize.Regular, on => c.App.Set("commandBarCompactMode", on))));
+        card.Add(new SettingsRow(null, Loc.T("Compact mode"), Loc.T("Bar opens without suggestions. Results appear as you type."), new MacSwitch(c.App.Get<bool>("commandBarCompactMode"), SwitchSize.Regular, on => c.App.Set("commandBarCompactMode", on))));
 
         if (prefs.IsSourceEnabled("emoji"))
         {
@@ -236,19 +236,19 @@ public sealed class CommandBarMainSection : ISettingsSection
             var items = BarData.SkinToneModifiers.Select(m => "✋" + m).ToList();
             var seg = new SegmentedControl(items, Math.Max(0, Array.IndexOf(tones, prefs.SkinTone)), false, 14);
             seg.SelectionChanged += i => c.App.Set("commandBarEmojiSkinTone", tones[i]);
-            var head = new SettingsRow(null, "Skin tone", null, seg);
+            var head = new SettingsRow(null, Loc.T("Skin tone"), null, seg);
             row.Children.Add(head);
-            var cap = BarSettingsKit.Caption("By default, emoji that can take a tone use this one. Open the actions on an emoji row to choose a different one.");
+            var cap = BarSettingsKit.Caption(Loc.T("By default, emoji that can take a tone use this one. Open the actions on an emoji row to choose a different one."));
             cap.Margin = new Thickness(0, 6, 0, 0);
             row.Children.Add(cap);
             card.Add(row);
         }
 
-        ShortcutSettingsRows.AddGlobalShortcut(card, c, "commandBar", "commandBarShortcutEnabled", "Global shortcut to open the bar");
+        ShortcutSettingsRows.AddGlobalShortcut(card, c, "commandBar", "commandBarShortcutEnabled", Loc.T("Global shortcut to open the bar"));
 
         var more = new StackPanel();
-        more.Children.Add(new SettingsRow(null, "Switch to an English (US) layout while the bar is open", "The field types Latin characters whatever layout was active, and the previous layout comes back when the bar closes.", new MacSwitch(c.App.Get<bool>("commandBarASCIILayoutEnabled"), SwitchSize.Regular, on => c.App.Set("commandBarASCIILayoutEnabled", on))));
-        card.Add(BarSettingsKit.Disclosure("More options", more, out _));
+        more.Children.Add(new SettingsRow(null, Loc.T("Switch to an English (US) layout while the bar is open"), Loc.T("The field types Latin characters whatever layout was active, and the previous layout comes back when the bar closes."), new MacSwitch(c.App.Get<bool>("commandBarASCIILayoutEnabled"), SwitchSize.Regular, on => c.App.Set("commandBarASCIILayoutEnabled", on))));
+        card.Add(BarSettingsKit.Disclosure(Loc.T("More options"), more, out _));
         return card;
     }
 }
@@ -264,17 +264,17 @@ public sealed class CommandBarAppShortcutsSection : ISettingsSection
 
     public string? Anchor => "commandBarApps";
 
-    public string? Title => "App shortcuts";
+    public string? Title => Loc.T("App shortcuts");
 
     public IReadOnlyList<string> Keywords => ["alias", "pin", "app shortcut"];
 
     public FrameworkElement CreateView(ISettingsContext c)
     {
         var card = new SettingsCard();
-        var open = UiKit.Button("App shortcuts", ButtonKind.Bordered, 13, "", () => new BarAppShortcutsWindow(c).ShowDialog());
+        var open = UiKit.Button(Loc.T("App shortcuts"), ButtonKind.Bordered, 13, "", () => new BarAppShortcutsWindow(c).ShowDialog());
         open.HorizontalAlignment = HorizontalAlignment.Left;
         card.Add(open);
-        card.AddCaption("Open apps with their own shortcuts, even when the bar is closed. Set search names and pin favorites here.");
+        card.AddCaption(Loc.T("Open apps with their own shortcuts, even when the bar is closed. Set search names and pin favorites here."));
         return card;
     }
 }
@@ -290,23 +290,23 @@ public sealed class CommandBarSourcesSection : ISettingsSection
 
     public string? Anchor => "commandBarSources";
 
-    public string? Title => "What the bar searches";
+    public string? Title => Loc.T("What the bar searches");
 
     public IReadOnlyList<string> Keywords => ["apps", "windows", "emoji", "clipboard", "files", "sources"];
 
     public FrameworkElement CreateView(ISettingsContext c)
     {
         var prefs = new BarPreferences(c.App);
-        var card = new SettingsCard("What the bar searches");
+        var card = new SettingsCard(Loc.T("What the bar searches"));
         foreach (var source in BarSource.All)
         {
             var raw = source.Raw;
             var toggle = new MacSwitch(prefs.IsSourceEnabled(raw), SwitchSize.Regular, on => prefs.SetSourceEnabled(raw, on)) { IsEnabled = raw != "actions" };
-            var label = raw == "killProcess" ? "Kill Process" : source.Label;
+            var label = raw == "killProcess" ? Loc.T("Kill Process") : source.Label;
             card.Add(new SettingsRow(source.Glyph, label, null, toggle));
         }
 
-        card.AddCaption("Turn off what you never want to see. Your own actions always stay.");
+        card.AddCaption(Loc.T("Turn off what you never want to see. Your own actions always stay."));
         return card;
     }
 }
@@ -322,37 +322,37 @@ public sealed class CommandBarFilesSection : ISettingsSection
 
     public string? Anchor => "commandBarFiles";
 
-    public string? Title => "Search your files";
+    public string? Title => Loc.T("Search your files");
 
     public IReadOnlyList<string> Keywords => ["folders", "ignore", "files"];
 
     public FrameworkElement CreateView(ISettingsContext c)
     {
         var prefs = new BarPreferences(c.App);
-        var card = new SettingsCard("Search your files");
-        card.AddCaption("Name the folders to look in and the bar finds files by name as you type. Nothing is indexed and no permission is asked for: it uses Windows Search and offers only what you can already see in File Explorer.");
+        var card = new SettingsCard(Loc.T("Search your files"));
+        card.AddCaption(Loc.T("Name the folders to look in and the bar finds files by name as you type. Nothing is indexed and no permission is asked for: it uses Windows Search and offers only what you can already see in File Explorer."));
         var scopes = prefs.FileScopes();
         if (scopes.Count == 0)
         {
-            card.AddCaption("No folders yet, so the bar looks for no files.");
+            card.AddCaption(Loc.T("No folders yet, so the bar looks for no files."));
         }
 
         foreach (var scope in scopes)
         {
             var path = scope;
             var text = UiKit.Text(path, 12, FontWeights.Normal, ThemeKeys.TextPrimary, trimming: TextTrimming.CharacterEllipsis);
-            card.Add(BarSettingsKit.ListRow(UiKit.Icon("", 11, ThemeKeys.Accent), text, "Remove", () =>
+            card.Add(BarSettingsKit.ListRow(UiKit.Icon("", 11, ThemeKeys.Accent), text, Loc.T("Remove"), () =>
             {
                 prefs.SetFileScopes(prefs.FileScopes().Where(s => s != path));
                 c.RequestRebuild();
             }));
         }
 
-        var add = UiKit.Button("Add a folder", ButtonKind.Bordered, 12, "");
+        var add = UiKit.Button(Loc.T("Add a folder"), ButtonKind.Bordered, 12, "");
         add.HorizontalAlignment = HorizontalAlignment.Left;
         add.Click += (_, _) =>
         {
-            var dialog = new OpenFolderDialog { Multiselect = true, Title = "Add a folder" };
+            var dialog = new OpenFolderDialog { Multiselect = true, Title = Loc.T("Add a folder") };
             if (dialog.ShowDialog() != true)
             {
                 return;
@@ -375,12 +375,12 @@ public sealed class CommandBarFilesSection : ISettingsSection
         card.Add(add);
 
         var more = new StackPanel();
-        more.Children.Add(BarSettingsKit.Caption("Names never worth showing: a whole folder or file name, or an extension written as *.log."));
+        more.Children.Add(BarSettingsKit.Caption(Loc.T("Names never worth showing: a whole folder or file name, or an extension written as *.log.")));
         foreach (var ignore in prefs.FileIgnores())
         {
             var pattern = ignore;
             var text = UiKit.Text(pattern, 12, FontWeights.Normal, ThemeKeys.TextPrimary, trimming: TextTrimming.CharacterEllipsis);
-            var row = BarSettingsKit.ListRow(UiKit.Icon("", 11, ThemeKeys.TextSecondary), text, "Remove", () =>
+            var row = BarSettingsKit.ListRow(UiKit.Icon("", 11, ThemeKeys.TextSecondary), text, Loc.T("Remove"), () =>
             {
                 prefs.SetFileIgnores(prefs.FileIgnores().Where(s => s != pattern));
                 c.RequestRebuild();
@@ -394,7 +394,7 @@ public sealed class CommandBarFilesSection : ISettingsSection
         addRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var box = new TextBox { Padding = new Thickness(6, 4, 6, 4), FontSize = 12 };
         box.SetResourceReference(FrameworkElement.StyleProperty, ThemeKeys.TextBoxStyle);
-        var addButton = BarSettingsKit.Mini("Add", () => { });
+        var addButton = BarSettingsKit.Mini(Loc.T("Add"), () => { });
         addButton.IsEnabled = false;
         void Commit()
         {
@@ -419,7 +419,7 @@ public sealed class CommandBarFilesSection : ISettingsSection
                 Commit();
             }
         };
-        var hint = UiKit.Text("A folder or file name", 12, FontWeights.Normal, ThemeKeys.TextTertiary);
+        var hint = UiKit.Text(Loc.T("A folder or file name"), 12, FontWeights.Normal, ThemeKeys.TextTertiary);
         hint.IsHitTestVisible = false;
         hint.Margin = new Thickness(9, 0, 0, 0);
         hint.VerticalAlignment = VerticalAlignment.Center;
@@ -432,7 +432,7 @@ public sealed class CommandBarFilesSection : ISettingsSection
         Grid.SetColumn(addButton, 1);
         addRow.Children.Add(addButton);
         more.Children.Add(addRow);
-        card.Add(BarSettingsKit.Disclosure("More options", more, out var setOpen));
+        card.Add(BarSettingsKit.Disclosure(Loc.T("More options"), more, out var setOpen));
         setOpen(prefs.FileIgnores().Count > 0);
         return card;
     }
@@ -449,18 +449,18 @@ public sealed class CommandBarLinksSection : ISettingsSection
 
     public string? Anchor => "commandBarLinks";
 
-    public string? Title => "Your shortcuts";
+    public string? Title => Loc.T("Your shortcuts");
 
     public IReadOnlyList<string> Keywords => ["link", "script", "folder", "placeholder"];
 
     public FrameworkElement CreateView(ISettingsContext c)
     {
         var prefs = new BarPreferences(c.App);
-        var card = new SettingsCard("Your shortcuts");
+        var card = new SettingsCard(Loc.T("Your shortcuts"));
         var links = prefs.Links();
         if (links.Count == 0)
         {
-            card.AddCaption("Nothing saved yet. Add a site, folder, search or script you use every day.");
+            card.AddCaption(Loc.T("Nothing saved yet. Add a site, folder, search or script you use every day."));
         }
 
         foreach (var link in links)
@@ -472,7 +472,7 @@ public sealed class CommandBarLinksSection : ISettingsSection
             name.FontFamily = UiKit.DisplayFont;
             middle.Children.Add(name);
             middle.Children.Add(UiKit.Text(l.Destination, 11, FontWeights.Normal, ThemeKeys.TextSecondary, trimming: TextTrimming.CharacterEllipsis));
-            var edit = BarSettingsKit.Mini("Edit", () =>
+            var edit = BarSettingsKit.Mini(Loc.T("Edit"), () =>
             {
                 var dialog = new BarLinkEditor(l);
                 if (dialog.ShowDialog() == true)
@@ -488,14 +488,14 @@ public sealed class CommandBarLinksSection : ISettingsSection
                     c.RequestRebuild();
                 }
             });
-            card.Add(BarSettingsKit.ListRow(UiKit.Icon(glyph, 11, ThemeKeys.Accent), middle, "Remove", () =>
+            card.Add(BarSettingsKit.ListRow(UiKit.Icon(glyph, 11, ThemeKeys.Accent), middle, Loc.T("Remove"), () =>
             {
                 prefs.SaveLinks(prefs.Links().Where(x => x.Id != l.Id));
                 c.RequestRebuild();
             }, edit));
         }
 
-        var add = UiKit.Button("Add shortcut", ButtonKind.Bordered, 12, "");
+        var add = UiKit.Button(Loc.T("Add shortcut"), ButtonKind.Bordered, 12, "");
         add.HorizontalAlignment = HorizontalAlignment.Left;
         add.IsEnabled = links.Count < BarPreferences.MaxLinks;
         add.Click += (_, _) =>
@@ -525,16 +525,16 @@ public sealed class CommandBarRowShortcutsSection : ISettingsSection
 
     public string? Anchor => "commandBarRowShortcuts";
 
-    public string? Title => "Rows with their own shortcut";
+    public string? Title => Loc.T("Rows with their own shortcut");
 
     public FrameworkElement CreateView(ISettingsContext c)
     {
         var prefs = new BarPreferences(c.App);
-        var card = new SettingsCard("Rows with their own shortcut");
+        var card = new SettingsCard(Loc.T("Rows with their own shortcut"));
         var shortcuts = prefs.RowShortcuts();
         if (shortcuts.Count == 0)
         {
-            card.AddCaption("No row has its own shortcut yet. Open the actions on any row to give it one.");
+            card.AddCaption(Loc.T("No row has its own shortcut yet. Open the actions on any row to give it one."));
         }
 
         foreach (var (key, hotkey) in shortcuts.OrderBy(p => BarSettingsKit.TitleOf(c, p.Key), StringComparer.CurrentCultureIgnoreCase))
@@ -546,11 +546,11 @@ public sealed class CommandBarRowShortcutsSection : ISettingsSection
             UIElement? refused = null;
             if (BarHost.RefusedRowShortcuts.Contains(k))
             {
-                refused = UiKit.Text("Windows rejected this shortcut. Choose another one.", 11, FontWeights.Normal, ThemeKeys.Orange);
+                refused = UiKit.Text(Loc.T("Windows rejected this shortcut. Choose another one."), 11, FontWeights.Normal, ThemeKeys.Orange);
             }
 
             cap.MinWidth = 90;
-            card.Add(BarSettingsKit.ListRow(cap, title, "Remove", () =>
+            card.Add(BarSettingsKit.ListRow(cap, title, Loc.T("Remove"), () =>
             {
                 prefs.SetRowShortcut(k, null);
                 c.RequestRebuild();
@@ -572,16 +572,16 @@ public sealed class CommandBarNamedSection : ISettingsSection
 
     public string? Anchor => "commandBarNamed";
 
-    public string? Title => "Names you gave";
+    public string? Title => Loc.T("Names you gave");
 
     public FrameworkElement CreateView(ISettingsContext c)
     {
         var prefs = new BarPreferences(c.App);
-        var card = new SettingsCard("Names you gave");
+        var card = new SettingsCard(Loc.T("Names you gave"));
         var aliases = prefs.Aliases();
         if (aliases.Count == 0)
         {
-            card.AddCaption("Nothing named yet. Open the bar, pick a row and press the actions key.");
+            card.AddCaption(Loc.T("Nothing named yet. Open the bar, pick a row and press the actions key."));
         }
 
         foreach (var (key, alias) in aliases.OrderBy(p => p.Value, StringComparer.CurrentCultureIgnoreCase))
@@ -590,7 +590,7 @@ public sealed class CommandBarNamedSection : ISettingsSection
             var a = UiKit.Text(alias, 12, FontWeights.SemiBold, ThemeKeys.Accent);
             a.FontFamily = UiKit.DisplayFont;
             a.MinWidth = 90;
-            card.Add(BarSettingsKit.ListRow(a, UiKit.Text(BarSettingsKit.TitleOf(c, k), 12, FontWeights.Normal, ThemeKeys.TextSecondary, trimming: TextTrimming.CharacterEllipsis), "Remove", () =>
+            card.Add(BarSettingsKit.ListRow(a, UiKit.Text(BarSettingsKit.TitleOf(c, k), 12, FontWeights.Normal, ThemeKeys.TextSecondary, trimming: TextTrimming.CharacterEllipsis), Loc.T("Remove"), () =>
             {
                 prefs.SetAlias(k, null);
                 c.RequestRebuild();
@@ -612,22 +612,22 @@ public sealed class CommandBarPinnedSection : ISettingsSection
 
     public string? Anchor => "commandBarPinned";
 
-    public string? Title => "Pinned";
+    public string? Title => Loc.T("Pinned");
 
     public FrameworkElement CreateView(ISettingsContext c)
     {
         var prefs = new BarPreferences(c.App);
-        var card = new SettingsCard("Pinned");
+        var card = new SettingsCard(Loc.T("Pinned"));
         var pins = prefs.Pins();
         if (pins.Count == 0)
         {
-            card.AddCaption("Nothing pinned yet.");
+            card.AddCaption(Loc.T("Nothing pinned yet."));
         }
 
         foreach (var key in pins)
         {
             var k = key;
-            card.Add(BarSettingsKit.ListRow(UiKit.Icon("", 11, ThemeKeys.Accent), UiKit.Text(BarSettingsKit.TitleOf(c, k), 12, FontWeights.Normal, ThemeKeys.TextPrimary, trimming: TextTrimming.CharacterEllipsis), "Remove", () =>
+            card.Add(BarSettingsKit.ListRow(UiKit.Icon("", 11, ThemeKeys.Accent), UiKit.Text(BarSettingsKit.TitleOf(c, k), 12, FontWeights.Normal, ThemeKeys.TextPrimary, trimming: TextTrimming.CharacterEllipsis), Loc.T("Remove"), () =>
             {
                 prefs.SetPinned(k, false);
                 c.RequestRebuild();
@@ -649,29 +649,29 @@ public sealed class CommandBarHiddenSection : ISettingsSection
 
     public string? Anchor => "commandBarHidden";
 
-    public string? Title => "Never shown";
+    public string? Title => Loc.T("Never shown");
 
     public FrameworkElement CreateView(ISettingsContext c)
     {
         var prefs = new BarPreferences(c.App);
-        var card = new SettingsCard("Never shown");
+        var card = new SettingsCard(Loc.T("Never shown"));
         var hidden = prefs.Hidden();
         if (hidden.Count == 0)
         {
-            card.AddCaption("Nothing hidden.");
+            card.AddCaption(Loc.T("Nothing hidden."));
         }
 
         foreach (var key in hidden.OrderBy(k => BarSettingsKit.TitleOf(c, k), StringComparer.CurrentCultureIgnoreCase))
         {
             var k = key;
-            card.Add(BarSettingsKit.ListRow(UiKit.Icon("", 11, ThemeKeys.TextSecondary), UiKit.Text(BarSettingsKit.TitleOf(c, k), 12, FontWeights.Normal, ThemeKeys.TextPrimary, trimming: TextTrimming.CharacterEllipsis), "Remove", () =>
+            card.Add(BarSettingsKit.ListRow(UiKit.Icon("", 11, ThemeKeys.TextSecondary), UiKit.Text(BarSettingsKit.TitleOf(c, k), 12, FontWeights.Normal, ThemeKeys.TextPrimary, trimming: TextTrimming.CharacterEllipsis), Loc.T("Remove"), () =>
             {
                 prefs.SetHidden(k, false);
                 c.RequestRebuild();
             }));
         }
 
-        var forget = UiKit.Button("Forget what I use most", ButtonKind.Bordered, 12, null, () =>
+        var forget = UiKit.Button(Loc.T("Forget what I use most"), ButtonKind.Bordered, 12, null, () =>
         {
             new BarLearning(c.App).ForgetAll();
             BarHost.Service?.Learning.ForgetAll();
@@ -706,7 +706,7 @@ internal sealed class BarLinkEditor : Window
             RunsDirectly = existing.RunsDirectly,
         };
         _kind = _link.Kind;
-        Title = "Your shortcuts";
+        Title = Loc.T("Your shortcuts");
         Width = 440;
         SizeToContent = SizeToContent.Height;
         ResizeMode = ResizeMode.NoResize;
@@ -716,8 +716,8 @@ internal sealed class BarLinkEditor : Window
         SourceInitialized += (_, _) => ThemeManager.BindWindow(this);
 
         var root = new StackPanel { Margin = new Thickness(20) };
-        root.Children.Add(UiKit.Text("Your shortcuts", 15, FontWeights.SemiBold, ThemeKeys.TextPrimary));
-        var seg = new SegmentedControl(["Site or link", "Folder or file", "Script"], KindIndex(_kind), true, 12) { Margin = new Thickness(0, 14, 0, 0) };
+        root.Children.Add(UiKit.Text(Loc.T("Your shortcuts"), 15, FontWeights.SemiBold, ThemeKeys.TextPrimary));
+        var seg = new SegmentedControl([Loc.T("Site or link"), Loc.T("Folder or file"), Loc.T("Script")], KindIndex(_kind), true, 12) { Margin = new Thickness(0, 14, 0, 0) };
         seg.SelectionChanged += i =>
         {
             _kind = i switch { 1 => "place", 2 => "script", _ => "link" };
@@ -726,13 +726,13 @@ internal sealed class BarLinkEditor : Window
         };
         root.Children.Add(seg);
 
-        root.Children.Add(FieldLabel("Name"));
+        root.Children.Add(FieldLabel(Loc.T("Name")));
         _name.Text = _link.Name;
         _name.SetResourceReference(StyleProperty, ThemeKeys.TextBoxStyle);
         _name.TextChanged += (_, _) => Validate();
         root.Children.Add(_name);
 
-        root.Children.Add(FieldLabel("Where it goes"));
+        root.Children.Add(FieldLabel(Loc.T("Where it goes")));
         var destRow = new Grid();
         destRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         destRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -740,7 +740,7 @@ internal sealed class BarLinkEditor : Window
         _destination.SetResourceReference(StyleProperty, ThemeKeys.TextBoxStyle);
         _destination.TextChanged += (_, _) => Validate();
         destRow.Children.Add(_destination);
-        var choose = UiKit.Button("Choose…", ButtonKind.Bordered, 12);
+        var choose = UiKit.Button(Loc.T("Choose…"), ButtonKind.Bordered, 12);
         choose.Margin = new Thickness(8, 0, 0, 0);
         choose.Click += (_, _) =>
         {
@@ -766,8 +766,8 @@ internal sealed class BarLinkEditor : Window
         root.Children.Add(_kindContent);
 
         var footer = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 18, 0, 0) };
-        footer.Children.Add(UiKit.Button("Cancel", ButtonKind.Bordered, 13, null, () => DialogResult = false));
-        _save = UiKit.Button("Save", ButtonKind.Prominent, 13);
+        footer.Children.Add(UiKit.Button(Loc.T("Cancel"), ButtonKind.Bordered, 13, null, () => DialogResult = false));
+        _save = UiKit.Button(Loc.T("Save"), ButtonKind.Prominent, 13);
         _save.Margin = new Thickness(8, 0, 0, 0);
         _save.Click += (_, _) =>
         {
@@ -810,17 +810,17 @@ internal sealed class BarLinkEditor : Window
 
         if (_kind == "script")
         {
-            _kindContent.Children.Add(BarSettingsKit.Caption("Choose an executable file. Type its name followed by what you want to send. It runs when you pause and shows the result here."));
-            var a = new SettingsRow(null, "Also run when its name is typed on its own", null, new MacSwitch(_link.RunsWithoutArgument, SwitchSize.Mini, on => _link.RunsWithoutArgument = on)) { Margin = new Thickness(0, 10, 0, 0) };
-            var b = new SettingsRow(null, "Run from its global shortcut without opening the bar", null, new MacSwitch(_link.RunsDirectly, SwitchSize.Mini, on => _link.RunsDirectly = on)) { Margin = new Thickness(0, 8, 0, 0) };
+            _kindContent.Children.Add(BarSettingsKit.Caption(Loc.T("Choose an executable file. Type its name followed by what you want to send. It runs when you pause and shows the result here.")));
+            var a = new SettingsRow(null, Loc.T("Also run when its name is typed on its own"), null, new MacSwitch(_link.RunsWithoutArgument, SwitchSize.Mini, on => _link.RunsWithoutArgument = on)) { Margin = new Thickness(0, 10, 0, 0) };
+            var b = new SettingsRow(null, Loc.T("Run from its global shortcut without opening the bar"), null, new MacSwitch(_link.RunsDirectly, SwitchSize.Mini, on => _link.RunsDirectly = on)) { Margin = new Thickness(0, 8, 0, 0) };
             _kindContent.Children.Add(a);
             _kindContent.Children.Add(b);
             return;
         }
 
-        _kindContent.Children.Add(BarSettingsKit.Caption("Drop one of these in and it gets filled in when it opens"));
+        _kindContent.Children.Add(BarSettingsKit.Caption(Loc.T("Drop one of these in and it gets filled in when it opens")));
         var wrap = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
-        foreach (var (token, meaning) in new[] { ("{query}", "what you type"), ("{clipboard}", "what you copied"), ("{selection}", "what is selected"), ("{date}", "today") })
+        foreach (var (token, meaning) in new[] { ("{query}", Loc.T("what you type")), ("{clipboard}", Loc.T("what you copied")), ("{selection}", Loc.T("what is selected")), ("{date}", Loc.T("today")) })
         {
             var stack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
             var t = UiKit.Text(token, 10.5, FontWeights.SemiBold, ThemeKeys.TextPrimary);
@@ -860,7 +860,7 @@ internal sealed class BarAppShortcutsWindow : Window
         _ctx = ctx;
         _prefs = new BarPreferences(ctx.App);
         _svc = BarSettingsKit.ServiceFor(ctx);
-        Title = "App shortcuts";
+        Title = Loc.T("App shortcuts");
         Width = 780;
         Height = 560;
         ResizeMode = ResizeMode.NoResize;
@@ -884,8 +884,8 @@ internal sealed class BarAppShortcutsWindow : Window
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         var head = new StackPanel();
-        head.Children.Add(UiKit.Text("App shortcuts", 20, FontWeights.SemiBold, ThemeKeys.TextPrimary));
-        var sub = UiKit.Text("Open apps with their own shortcuts, even when the bar is closed. Set search names and pin favorites here.", 13, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+        head.Children.Add(UiKit.Text(Loc.T("App shortcuts"), 20, FontWeights.SemiBold, ThemeKeys.TextPrimary));
+        var sub = UiKit.Text(Loc.T("Open apps with their own shortcuts, even when the bar is closed. Set search names and pin favorites here."), 13, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
         sub.Margin = new Thickness(0, 4, 0, 0);
         head.Children.Add(sub);
         root.Children.Add(head);
@@ -897,14 +897,14 @@ internal sealed class BarAppShortcutsWindow : Window
         _search.TextChanged += (_, _) => Rebuild();
         var searchHost = new Grid();
         searchHost.Children.Add(_search);
-        var placeholder = UiKit.Text("Search apps", 12.5, FontWeights.Normal, ThemeKeys.TextTertiary);
+        var placeholder = UiKit.Text(Loc.T("Search apps"), 12.5, FontWeights.Normal, ThemeKeys.TextTertiary);
         placeholder.IsHitTestVisible = false;
         placeholder.Margin = new Thickness(9, 0, 0, 0);
         placeholder.VerticalAlignment = VerticalAlignment.Center;
         _search.TextChanged += (_, _) => placeholder.Visibility = _search.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         searchHost.Children.Add(placeholder);
         tools.Children.Add(searchHost);
-        var seg = new SegmentedControl(["All", "Pinned", "With shortcuts"], 0, false, 12) { Margin = new Thickness(12, 0, 0, 0) };
+        var seg = new SegmentedControl([Loc.T("All"), Loc.T("Pinned"), Loc.T("With shortcuts")], 0, false, 12) { Margin = new Thickness(12, 0, 0, 0) };
         seg.SelectionChanged += i =>
         {
             _filter = i;
@@ -924,10 +924,10 @@ internal sealed class BarAppShortcutsWindow : Window
         header.ColumnDefinitions[1].Width = new GridLength(160);
         header.ColumnDefinitions[2].Width = new GridLength(200);
         header.ColumnDefinitions[3].Width = new GridLength(64);
-        AddHeader(header, "Apps", "name", 0);
-        AddHeader(header, "Alias", "alias", 1);
-        AddHeader(header, "Shortcut", "shortcut", 2);
-        AddHeader(header, "Pinned", "pinned", 3);
+        AddHeader(header, Loc.T("Apps"), "name", 0);
+        AddHeader(header, Loc.T("Alias"), "alias", 1);
+        AddHeader(header, Loc.T("Shortcut"), "shortcut", 2);
+        AddHeader(header, Loc.T("Pinned"), "pinned", 3);
         Grid.SetRow(header, 2);
         root.Children.Add(header);
 
@@ -940,10 +940,10 @@ internal sealed class BarAppShortcutsWindow : Window
         var footer = new Grid { Margin = new Thickness(0, 14, 0, 0) };
         footer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        _message = UiKit.Text("Press the keys you want · Delete clears it · Esc goes back", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+        _message = UiKit.Text(Loc.T("Press the keys you want · Delete clears it · Esc goes back"), 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
         _message.VerticalAlignment = VerticalAlignment.Center;
         footer.Children.Add(_message);
-        var done = UiKit.Button("Done", ButtonKind.Bordered, 13, null, Close);
+        var done = UiKit.Button(Loc.T("Done"), ButtonKind.Bordered, 13, null, Close);
         Grid.SetColumn(done, 1);
         footer.Children.Add(done);
         Grid.SetRow(footer, 4);
@@ -1024,7 +1024,7 @@ internal sealed class BarAppShortcutsWindow : Window
 
         if (result.Count == 0)
         {
-            var empty = UiKit.Text(_apps.Count == 0 ? "Still looking" : "Nothing here by that name.", 13, FontWeights.Normal, ThemeKeys.TextSecondary);
+            var empty = UiKit.Text(_apps.Count == 0 ? Loc.T("Still looking") : Loc.T("Nothing here by that name."), 13, FontWeights.Normal, ThemeKeys.TextSecondary);
             empty.HorizontalAlignment = HorizontalAlignment.Center;
             empty.Margin = new Thickness(0, 60, 0, 0);
             _rows.Children.Add(empty);
@@ -1099,12 +1099,12 @@ internal sealed class BarAppShortcutsWindow : Window
             }
 
             _prefs.SetRowShortcut(key, hotkey);
-            _message.Text = "Press the keys you want · Delete clears it · Esc goes back";
+            _message.Text = Loc.T("Press the keys you want · Delete clears it · Esc goes back");
             _message.SetResourceReference(TextBlock.ForegroundProperty, ThemeKeys.TextSecondary);
         };
         var recHost = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         recHost.Children.Add(rec);
-        var clear = new Border { Child = UiKit.Icon("", 11, ThemeKeys.TextSecondary), Padding = new Thickness(6), Cursor = Cursors.Hand, ToolTip = "Take the shortcut off", Background = Brushes.Transparent };
+        var clear = new Border { Child = UiKit.Icon("", 11, ThemeKeys.TextSecondary), Padding = new Thickness(6), Cursor = Cursors.Hand, ToolTip = Loc.T("Take the shortcut off"), Background = Brushes.Transparent };
         clear.MouseLeftButtonUp += (_, _) =>
         {
             _prefs.SetRowShortcut(key, null);
@@ -1115,7 +1115,7 @@ internal sealed class BarAppShortcutsWindow : Window
         grid.Children.Add(recHost);
 
         var pinned = pins.Contains(key);
-        var pin = new Border { Padding = new Thickness(8), Cursor = Cursors.Hand, Background = Brushes.Transparent, ToolTip = pinned ? "Unpin" : "Pin to the top", HorizontalAlignment = HorizontalAlignment.Left };
+        var pin = new Border { Padding = new Thickness(8), Cursor = Cursors.Hand, Background = Brushes.Transparent, ToolTip = pinned ? Loc.T("Unpin") : Loc.T("Pin to the top"), HorizontalAlignment = HorizontalAlignment.Left };
         pin.Child = UiKit.Icon("", 13, pinned ? ThemeKeys.Accent : ThemeKeys.TextSecondary);
         pin.MouseLeftButtonUp += (_, _) =>
         {

@@ -50,7 +50,7 @@ public class HotkeyRecorder : TextBox
     protected override void OnGotKeyboardFocus(KeyboardFocusChangedEventArgs e)
     {
         base.OnGotKeyboardFocus(e);
-        Text = "Press keys";
+        Text = Loc.T("Press keys");
     }
 
     /// <inheritdoc />
@@ -134,7 +134,7 @@ public class HotkeyRecorder : TextBox
     {
         if (!IsKeyboardFocused)
         {
-            Text = Hotkey?.ToString() ?? "None";
+            Text = Hotkey?.ToString() ?? Loc.T("None");
         }
     }
 }

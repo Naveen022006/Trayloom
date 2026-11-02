@@ -2,6 +2,7 @@
 // WinKnife — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
 
 using System.Windows;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Maintenance;
 
@@ -264,10 +265,10 @@ internal sealed class PackagesModel
                 request = new(action, package.Name, package.Id, [WingetOperations.UpgradeArgs(package.Id, package.Source.Length > 0 ? package.Source : null)]);
                 break;
             case PkgAction.UpgradeAll:
-                request = new(action, "packages", null, [WingetOperations.UpgradeAllArgs(false)]);
+                request = new(action, Loc.T("packages"), null, [WingetOperations.UpgradeAllArgs(false)]);
                 break;
             case PkgAction.UpdateSources:
-                request = new(action, "winget", null, [WingetOperations.SourceUpdateArgs()]);
+                request = new(action, Loc.T("winget"), null, [WingetOperations.SourceUpdateArgs()]);
                 break;
             default:
                 return false;

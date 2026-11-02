@@ -44,15 +44,15 @@ internal sealed class CleanerView : ContentControl
 
     private static (string Glyph, string Title, string Caption) Meta(CleanerGroup group, int screenshotDays) => group switch
     {
-        CleanerGroup.LoginItems => (G.Power, "Orphaned startup items", "Startup entries left by apps that no longer exist."),
-        CleanerGroup.SafeCaches => (G.Package, "Caches", "Temporary files apps rebuild on their own."),
-        CleanerGroup.Logs => (G.Document, "Logs", "Old diagnostic logs."),
-        CleanerGroup.Developer => (G.Hammer, "Developer junk", "Build and tooling leftovers that are rebuilt on demand."),
-        CleanerGroup.Leftovers => (G.Puzzle, "Leftovers from uninstalled apps", "Files left behind by apps you uninstalled."),
-        CleanerGroup.OtherCaches => (G.Drive, "Other caches", "Safe to remove, nothing breaks. Apps may open slower once and downloaded content, like offline music, downloads again."),
-        CleanerGroup.DeviceBackups => (G.Phone, "iPhone backups", "Old iPhone and iPad backups take a big slice of the storage Windows counts as Other. Remove only the ones you no longer need; a new backup is made when you plug the device in again."),
-        CleanerGroup.Screenshots => (G.Camera, "Forgotten screenshots", $"Screenshots you have not opened in {screenshotDays} days that still have the name and folder Windows gave them. Ones you renamed or moved never show up here."),
-        _ => (G.Trash, "Recycle Bin", "Emptying the Recycle Bin is permanent."),
+        CleanerGroup.LoginItems => (G.Power, Loc.T("Orphaned startup items"), Loc.T("Startup entries left by apps that no longer exist.")),
+        CleanerGroup.SafeCaches => (G.Package, Loc.T("Caches"), Loc.T("Temporary files apps rebuild on their own.")),
+        CleanerGroup.Logs => (G.Document, Loc.T("Logs"), Loc.T("Old diagnostic logs.")),
+        CleanerGroup.Developer => (G.Hammer, Loc.T("Developer junk"), Loc.T("Build and tooling leftovers that are rebuilt on demand.")),
+        CleanerGroup.Leftovers => (G.Puzzle, Loc.T("Leftovers from uninstalled apps"), Loc.T("Files left behind by apps you uninstalled.")),
+        CleanerGroup.OtherCaches => (G.Drive, Loc.T("Other caches"), Loc.T("Safe to remove, nothing breaks. Apps may open slower once and downloaded content, like offline music, downloads again.")),
+        CleanerGroup.DeviceBackups => (G.Phone, Loc.T("iPhone backups"), Loc.T("Old iPhone and iPad backups take a big slice of the storage Windows counts as Other. Remove only the ones you no longer need; a new backup is made when you plug the device in again.")),
+        CleanerGroup.Screenshots => (G.Camera, Loc.T("Forgotten screenshots"), Loc.F("Screenshots you have not opened in {0} days that still have the name and folder Windows gave them. Ones you renamed or moved never show up here.", screenshotDays)),
+        _ => (G.Trash, Loc.T("Recycle Bin"), Loc.T("Emptying the Recycle Bin is permanent.")),
     };
 
     private void Rebuild()
@@ -63,10 +63,10 @@ internal sealed class CleanerView : ContentControl
                 Content = Idle();
                 break;
             case CleanerPhase.Scanning:
-                Content = Busy("Scanning…", _m.ScanningCategory, true);
+                Content = Busy(Loc.T("Scanning…"), _m.ScanningCategory, true);
                 break;
             case CleanerPhase.Cleaning:
-                Content = Busy("Cleaning…", null, false);
+                Content = Busy(Loc.T("Cleaning…"), null, false);
                 break;
             case CleanerPhase.Results:
                 Content = Results();
@@ -99,14 +99,14 @@ internal sealed class CleanerView : ContentControl
     {
         var column = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(_compact ? 14 : 28) };
         column.Children.Add(Sparkle(_compact ? 34 : 46, false));
-        var title = UiKit.Text("Clean up your PC", _compact ? 15 : 17, FontWeights.SemiBold, ThemeKeys.TextPrimary);
+        var title = UiKit.Text(Loc.T("Clean up your PC"), _compact ? 15 : 17, FontWeights.SemiBold, ThemeKeys.TextPrimary);
         title.HorizontalAlignment = HorizontalAlignment.Center;
         column.AddSpaced(title, _compact ? 12 : 18);
-        var caption = UiKit.Text("Scans for leftovers from uninstalled apps, caches, logs and the Recycle Bin. You review everything first and removed items go to the Recycle Bin or are deleted as described in the list.", 12, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+        var caption = UiKit.Text(Loc.T("Scans for leftovers from uninstalled apps, caches, logs and the Recycle Bin. You review everything first and removed items go to the Recycle Bin or are deleted as described in the list."), 12, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
         caption.TextAlignment = TextAlignment.Center;
         caption.MaxWidth = 380;
         column.AddSpaced(caption, _compact ? 12 : 18);
-        var scan = UiKit.Button("Scan", ButtonKind.Prominent, 13, null, () => _m.Scan(true));
+        var scan = UiKit.Button(Loc.T("Scan"), ButtonKind.Prominent, 13, null, () => _m.Scan(true));
         scan.Padding = new Thickness(22, 7, 22, 7);
         scan.HorizontalAlignment = HorizontalAlignment.Center;
         column.AddSpaced(scan, _compact ? 12 : 18);
@@ -146,7 +146,7 @@ internal sealed class CleanerView : ContentControl
 
         var labels = days.Select(d => d == 0 ? "Off" : $"After {d} days").ToList();
         var drop = V.Drop(labels, days.IndexOf(stored), i => Host.App.Set("cleanerScreenshotAgeDays", days[i]), 0, 11.5);
-        var label = V.Row(8, UiKit.Icon(G.Camera, 13, ThemeKeys.TextSecondary), UiKit.Text("Forgotten screenshots", 12, FontWeights.Medium, ThemeKeys.TextPrimary));
+        var label = V.Row(8, UiKit.Icon(G.Camera, 13, ThemeKeys.TextSecondary), UiKit.Text(Loc.T("Forgotten screenshots"), 12, FontWeights.Medium, ThemeKeys.TextPrimary));
         var column = new StackPanel();
         if (_compact)
         {
@@ -162,7 +162,7 @@ internal sealed class CleanerView : ContentControl
 
         if (!_compact)
         {
-            var note = V.Secondary("The scan lists the screenshots you have not opened for this long, unchecked, with their total size.", 10);
+            var note = V.Secondary(Loc.T("The scan lists the screenshots you have not opened for this long, unchecked, with their total size."), 10);
             note.Margin = new Thickness(0, 8, 0, 0);
             column.Children.Add(note);
         }
@@ -178,11 +178,11 @@ internal sealed class CleanerView : ContentControl
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         var infoIcon = UiKit.Icon(G.Info, 13, ThemeKeys.TextSecondary); infoIcon.VerticalAlignment = VerticalAlignment.Top; infoIcon.HorizontalAlignment = HorizontalAlignment.Left; infoIcon.Margin = new Thickness(0, 1, 0, 0); head.Children.Add(infoIcon);
         var text = new StackPanel();
-        text.Children.Add(UiKit.Text("Run as administrator for a more thorough scan.", 12, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true));
-        var hint = V.Secondary("System caches such as Windows Update downloads, Prefetch and Windows\\Temp are only visible to an administrator. Nothing is changed until you review the list.", 10);
+        text.Children.Add(UiKit.Text(Loc.T("Run as administrator for a more thorough scan."), 12, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true));
+        var hint = V.Secondary(Loc.T("System caches such as Windows Update downloads, Prefetch and Windows\\Temp are only visible to an administrator. Nothing is changed until you review the list."), 10);
         hint.Margin = new Thickness(0, 4, 0, 0);
         text.Children.Add(hint);
-        var button = V.Mini("Relaunch as administrator", () =>
+        var button = V.Mini(Loc.T("Relaunch as administrator"), () =>
         {
             if (Elevated.RelaunchAsAdministrator())
             {
@@ -203,7 +203,7 @@ internal sealed class CleanerView : ContentControl
         var app = Host.App;
         var freqIndex = new[] { "off", "daily", "weekly" }.ToList().IndexOf(app.Get<string>("cleanerScheduleFrequency"));
         var column = new StackPanel();
-        var labelRow = V.Row(8, UiKit.Icon(G.Clock, 13, ThemeKeys.TextSecondary), UiKit.Text("Automatic cleanup", 12, FontWeights.Medium, ThemeKeys.TextPrimary));
+        var labelRow = V.Row(8, UiKit.Icon(G.Clock, 13, ThemeKeys.TextSecondary), UiKit.Text(Loc.T("Automatic cleanup"), 12, FontWeights.Medium, ThemeKeys.TextPrimary));
 
         void OnPref()
         {
@@ -216,7 +216,7 @@ internal sealed class CleanerView : ContentControl
             var open = _scheduleOpen;
             var chevron = UiKit.Icon(open ? G.ChevronDown : G.Chevron, 9, ThemeKeys.TextSecondary, FontWeights.SemiBold);
             chevron.Width = 12;
-            var summary = UiKit.Text(new[] { "Off", "Daily", "Weekly" }[Math.Max(freqIndex, 0)], 10, FontWeights.Normal, ThemeKeys.TextSecondary);
+            var summary = UiKit.Text(new[] { Loc.T("Off"), Loc.T("Daily"), Loc.T("Weekly") }[Math.Max(freqIndex, 0)], 10, FontWeights.Normal, ThemeKeys.TextSecondary);
             var header = new Grid { Background = Brushes.Transparent, Cursor = System.Windows.Input.Cursors.Hand };
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -239,7 +239,7 @@ internal sealed class CleanerView : ContentControl
             }
         }
 
-        var drop = V.Drop(["Off", "Daily", "Weekly"], Math.Max(freqIndex, 0), i =>
+        var drop = V.Drop([Loc.T("Off"), Loc.T("Daily"), Loc.T("Weekly")], Math.Max(freqIndex, 0), i =>
         {
             app.Set("cleanerScheduleFrequency", i switch { 1 => "daily", 2 => "weekly", _ => "off" });
             OnPref();
@@ -316,7 +316,7 @@ internal sealed class CleanerView : ContentControl
                 Rebuild();
             });
             notify.Children.Add(check);
-            var notifyLabel = UiKit.Text("Notify when done", 11.5, FontWeights.Normal, ThemeKeys.TextPrimary);
+            var notifyLabel = UiKit.Text(Loc.T("Notify when done"), 11.5, FontWeights.Normal, ThemeKeys.TextPrimary);
             notifyLabel.Margin = new Thickness(7, 0, 0, 0);
             notifyLabel.VerticalAlignment = VerticalAlignment.Center;
             notify.Children.Add(notifyLabel);
@@ -324,10 +324,10 @@ internal sealed class CleanerView : ContentControl
 
             if (app.Get<bool>("cleanerScheduleNotify") && ToastsDisabled())
             {
-                var warn = V.Orange("WinKnife notifications are turned off in the system.", 10);
+                var warn = V.Orange(Loc.T("WinKnife notifications are turned off in the system."), 10);
                 warn.Margin = new Thickness(0, 6, 0, 0);
                 column.Children.Add(warn);
-                var open = V.Mini("Open Notification Settings…", () => UiKit.OpenUrl("ms-settings:notifications"), null, 10);
+                var open = V.Mini(Loc.T("Open Notification Settings…"), () => UiKit.OpenUrl("ms-settings:notifications"), null, 10);
                 open.HorizontalAlignment = HorizontalAlignment.Left;
                 open.Margin = new Thickness(0, 4, 0, 0);
                 column.Children.Add(open);
@@ -335,7 +335,7 @@ internal sealed class CleanerView : ContentControl
 
             if (_m.NextFire is { } next)
             {
-                var line = V.Secondary($"Next cleanup {Fmt.DayTime(next)}.", 10);
+                var line = V.Secondary(Loc.F("Next cleanup {0}.", Fmt.DayTime(next)), 10);
                 line.Margin = new Thickness(0, 6, 0, 0);
                 column.Children.Add(line);
             }
@@ -344,7 +344,7 @@ internal sealed class CleanerView : ContentControl
             if (last > 0)
             {
                 var freed = app.Get<int>("cleanerLastAutoFreed");
-                var text = freed > 0 ? $"The last automatic cleanup freed {Fmt.Bytes(freed)}." : $"Last automatic cleanup {Fmt.DayTime(Fmt.FromEpoch(last))}.";
+                var text = freed > 0 ? Loc.F("The last automatic cleanup freed {0}.", Fmt.Bytes(freed)) : Loc.F("Last automatic cleanup {0}.", Fmt.DayTime(Fmt.FromEpoch(last)));
                 if (app.Get<int>("cleanerLastAutoFailed") > 0)
                 {
                     text += " Some items couldn’t be removed.";
@@ -356,7 +356,7 @@ internal sealed class CleanerView : ContentControl
             }
         }
 
-        var cap = V.Secondary("Cleans only the safe part on its own at the chosen time. Items that must not be lost go to the Recycle Bin.", 10);
+        var cap = V.Secondary(Loc.T("Cleans only the safe part on its own at the chosen time. Items that must not be lost go to the Recycle Bin."), 10);
         cap.Margin = new Thickness(0, 8, 0, 0);
         column.Children.Add(cap);
         return V.Soft(column, _compact ? 9 : 11, 380);
@@ -393,7 +393,7 @@ internal sealed class CleanerView : ContentControl
 
         if (cancel)
         {
-            var button = UiKit.Button("Cancel", ButtonKind.Bordered, _compact ? 11 : 13, null, _m.Reset);
+            var button = UiKit.Button(Loc.T("Cancel"), ButtonKind.Bordered, _compact ? 11 : 13, null, _m.Reset);
             button.HorizontalAlignment = HorizontalAlignment.Center;
             column.AddSpaced(button, 16);
         }
@@ -417,11 +417,11 @@ internal sealed class CleanerView : ContentControl
         glyph.Margin = new Thickness(0, 0, 10, 0);
         header.Children.Add(glyph);
         var titles = new StackPanel();
-        titles.Children.Add(UiKit.Text("Cleaner", 15, FontWeights.SemiBold, ThemeKeys.TextPrimary));
-        titles.Children.Add(UiKit.Text($"{Fmt.Bytes(_m.TotalSize)} found", 12, FontWeights.Normal, ThemeKeys.TextSecondary));
+        titles.Children.Add(UiKit.Text(Loc.T("Cleaner"), 15, FontWeights.SemiBold, ThemeKeys.TextPrimary));
+        titles.Children.Add(UiKit.Text(Loc.F("{0} found", Fmt.Bytes(_m.TotalSize)), 12, FontWeights.Normal, ThemeKeys.TextSecondary));
         Grid.SetColumn(titles, 1);
         header.Children.Add(titles);
-        var close = V.IconButton(Glyphs.CloseCircle, "Cancel", _m.Reset, 16, ThemeKeys.TextSecondary, 28);
+        var close = V.IconButton(Glyphs.CloseCircle, Loc.T("Cancel"), _m.Reset, 16, ThemeKeys.TextSecondary, 28);
         Grid.SetColumn(close, 2);
         header.Children.Add(close);
         root.Children.Add(header);
@@ -433,7 +433,7 @@ internal sealed class CleanerView : ContentControl
             var seal = UiKit.Icon(G.CheckCircle, 34, ThemeKeys.Green);
             seal.FontWeight = FontWeights.Light;
             empty.Children.Add(seal);
-            var text = UiKit.Text("Nothing to clean. Your PC is tidy.", 13, FontWeights.Normal, ThemeKeys.TextSecondary);
+            var text = UiKit.Text(Loc.T("Nothing to clean. Your PC is tidy."), 13, FontWeights.Normal, ThemeKeys.TextSecondary);
             text.HorizontalAlignment = HorizontalAlignment.Center;
             empty.AddSpaced(text, 10);
             root.Children.Add(empty);
@@ -462,8 +462,8 @@ internal sealed class CleanerView : ContentControl
             }
         }
 
-        Section("Safe cleanup", CleanerGroup.LoginItems, CleanerGroup.SafeCaches, CleanerGroup.Logs, CleanerGroup.Developer);
-        Section("Optional, review first", CleanerGroup.Leftovers, CleanerGroup.OtherCaches, CleanerGroup.DeviceBackups, CleanerGroup.Screenshots, CleanerGroup.Trash);
+        Section(Loc.T("Safe cleanup"), CleanerGroup.LoginItems, CleanerGroup.SafeCaches, CleanerGroup.Logs, CleanerGroup.Developer);
+        Section(Loc.T("Optional, review first"), CleanerGroup.Leftovers, CleanerGroup.OtherCaches, CleanerGroup.DeviceBackups, CleanerGroup.Screenshots, CleanerGroup.Trash);
         FrameworkElement body = list;
         if (!_compact)
         {
@@ -477,14 +477,14 @@ internal sealed class CleanerView : ContentControl
         footer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var count = UiKit.Text($"{_m.SelectedCount} of {_m.Items.Count} selected", 12, FontWeights.Normal, ThemeKeys.TextSecondary);
+        var count = UiKit.Text(Loc.F("{0} of {1} selected", _m.SelectedCount, _m.Items.Count), 12, FontWeights.Normal, ThemeKeys.TextSecondary);
         count.VerticalAlignment = VerticalAlignment.Center;
         footer.Children.Add(count);
-        var cancel = UiKit.Button("Cancel", ButtonKind.Bordered, _compact ? 11 : 13, null, _m.Reset);
+        var cancel = UiKit.Button(Loc.T("Cancel"), ButtonKind.Bordered, _compact ? 11 : 13, null, _m.Reset);
         cancel.Margin = new Thickness(8, 0, 0, 0);
         Grid.SetColumn(cancel, 1);
         footer.Children.Add(cancel);
-        var clean = UiKit.Button($"Clean {Fmt.Bytes(_m.SelectedSize)}", ButtonKind.Prominent, _compact ? 11 : 13, null, () => _m.CleanSelected(true));
+        var clean = UiKit.Button(Loc.F("Clean {0}", Fmt.Bytes(_m.SelectedSize)), ButtonKind.Prominent, _compact ? 11 : 13, null, () => _m.CleanSelected(true));
         clean.IsEnabled = _m.SelectedCount > 0;
         clean.FontWeight = FontWeights.SemiBold;
         clean.Margin = new Thickness(8, 0, 0, 0);
@@ -532,13 +532,13 @@ internal sealed class CleanerView : ContentControl
             var body = new StackPanel { Margin = new Thickness(0, 4, 0, 6) };
             if (group == CleanerGroup.Leftovers)
             {
-                var note = V.Orange("Found by analysis and left unchecked. Check the path before ticking.", 10);
+                var note = V.Orange(Loc.T("Found by analysis and left unchecked. Check the path before ticking."), 10);
                 note.Margin = new Thickness(46, 0, 0, 6);
                 body.Children.Add(note);
             }
             else if (group == CleanerGroup.LoginItems)
             {
-                var note = V.Secondary("The entry under Startup apps disappears after you sign out and back in.", 10);
+                var note = V.Secondary(Loc.T("The entry under Startup apps disappears after you sign out and back in."), 10);
                 note.Margin = new Thickness(46, 0, 0, 6);
                 body.Children.Add(note);
             }
@@ -593,7 +593,7 @@ internal sealed class CleanerView : ContentControl
         size.VerticalAlignment = VerticalAlignment.Center;
         Grid.SetColumn(size, 2);
         grid.Children.Add(size);
-        grid.ContextMenu = V.Menu(("Reveal in File Explorer", () => FileOps.Reveal(item.Path), item.Kind != RemoveKind.EmptyBin && item.Kind != RemoveKind.RegistryValue));
+        grid.ContextMenu = V.Menu((Loc.T("Reveal in File Explorer"), () => FileOps.Reveal(item.Path), item.Kind != RemoveKind.EmptyBin && item.Kind != RemoveKind.RegistryValue));
         return grid;
     }
 
@@ -604,16 +604,16 @@ internal sealed class CleanerView : ContentControl
         var column = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(_compact ? 14 : 28, _compact ? 20 : 60, _compact ? 14 : 28, _compact ? 20 : 60) };
         var check = UiKit.Icon(G.CheckCircle, _compact ? 40 : 54, ThemeKeys.Green);
         column.Children.Add(check);
-        var done = UiKit.Text("Done!", _compact ? 17 : 20, FontWeights.Bold, ThemeKeys.TextPrimary);
+        var done = UiKit.Text(Loc.T("Done!"), _compact ? 17 : 20, FontWeights.Bold, ThemeKeys.TextPrimary);
         done.HorizontalAlignment = HorizontalAlignment.Center;
         column.AddSpaced(done, 16);
-        var freed = UiKit.Text($"{Fmt.Bytes(_m.Removed)} removed", 13, FontWeights.Normal, ThemeKeys.TextSecondary);
+        var freed = UiKit.Text(Loc.F("{0} removed", Fmt.Bytes(_m.Removed)), 13, FontWeights.Normal, ThemeKeys.TextSecondary);
         freed.HorizontalAlignment = HorizontalAlignment.Center;
         column.AddSpaced(freed, 16);
         var sentences = new List<string>();
         if (_m.RecycledAny)
         {
-            sentences.Add("Items went to the Recycle Bin and can be recovered from there.");
+            sentences.Add(Loc.T("Items went to the Recycle Bin and can be recovered from there."));
         }
 
         if (_m.DeletedAny)
@@ -637,13 +637,13 @@ internal sealed class CleanerView : ContentControl
 
         if (_m.Failed > 0)
         {
-            var fail = V.Orange("Some items couldn’t be removed.", 10.5);
+            var fail = V.Orange(Loc.T("Some items couldn’t be removed."), 10.5);
             fail.HorizontalAlignment = HorizontalAlignment.Center;
             fail.Margin = new Thickness(40, 0, 40, 0);
             column.AddSpaced(fail, 16);
         }
 
-        var again = UiKit.Button("Scan again", ButtonKind.Prominent, _compact ? 11 : 13, null, _m.Reset);
+        var again = UiKit.Button(Loc.T("Scan again"), ButtonKind.Prominent, _compact ? 11 : 13, null, _m.Reset);
         again.Padding = new Thickness(22, 7, 22, 7);
         again.HorizontalAlignment = HorizontalAlignment.Center;
         column.AddSpaced(again, 22);

@@ -264,7 +264,7 @@ internal sealed class TimerPage : IslandPage
         if (!t.HasSession)
         {
             var modes = new StackPanel { Orientation = Orientation.Horizontal };
-            foreach (var (mode, title) in new[] { (TimerMode.Timer, "Timer"), (TimerMode.Pomodoro, "Pomodoro"), (TimerMode.Stopwatch, "Stopwatch") })
+            foreach (var (mode, title) in new[] { (TimerMode.Timer, Loc.T("Timer")), (TimerMode.Pomodoro, Loc.T("Pomodoro")), (TimerMode.Stopwatch, Loc.T("Stopwatch")) })
             {
                 var m = mode;
                 var b = new HoverButton(() => { _mode = m; Core.App.Set(K.TimerMode, m.ToString().ToLowerInvariant()); BuildBand(); if (HasWindow) { Window.ReopenPage(); } }) { Height = 24, Padding = new Thickness(4, 0, 4, 0), Margin = new Thickness(0, 0, 10, 0), Lifts = false, CornerRadius = new CornerRadius(4) };
@@ -278,23 +278,23 @@ internal sealed class TimerPage : IslandPage
 
             _leading.Children.Add(modes);
             var start = new HoverButton(() => { Core.Timer.Start(_mode); }) { Height = 28, CornerRadius = new CornerRadius(14), Padding = new Thickness(10, 0, 10, 0), Fill = OrangeFill };
-            start.Child = D.T("Start", 12, FontWeights.SemiBold, D.Orange);
-            D.Tip(start, _mode == TimerMode.Pomodoro ? "Start each phase when you are ready. The cycle ends after the last focus session." : "Start");
+            start.Child = D.T(Loc.T("Start"), 12, FontWeights.SemiBold, D.Orange);
+            D.Tip(start, _mode == TimerMode.Pomodoro ? Loc.T("Start each phase when you are ready. The cycle ends after the last focus session.") : Loc.T("Start"));
             _trailing.Children.Add(start);
         }
         else
         {
-            var headline = t.CycleFinished ? "Pomodoro complete" : (t.Completed ? "Time is up" : t.PhaseName);
+            var headline = t.CycleFinished ? Loc.T("Pomodoro complete") : (t.Completed ? Loc.T("Time is up") : t.PhaseName);
             var col = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             col.Children.Add(D.T(headline, 13, FontWeights.SemiBold, D.Orange));
             if (t.Mode == TimerMode.Pomodoro && !t.CycleFinished)
             {
-                col.Children.Add(D.T($"Session {t.SessionNumber} of {t.TotalSessions}", 11, null, D.Secondary));
+                col.Children.Add(D.T(Loc.F("Session {0} of {1}", t.SessionNumber, t.TotalSessions), 11, null, D.Secondary));
             }
 
             _leading.Children.Add(col);
             var done = t.Completed;
-            var x = D.IconButton(G.Close, done ? "Done" : "Cancel", () => Core.Timer.Cancel(), size: 28, glyphSize: 12);
+            var x = D.IconButton(G.Close, done ? Loc.T("Done") : Loc.T("Cancel"), () => Core.Timer.Cancel(), size: 28, glyphSize: 12);
             _trailing.Children.Add(x);
         }
     }
@@ -326,7 +326,7 @@ internal sealed class TimerPage : IslandPage
             else
             {
                 glyph = t.Running ? G.Pause : G.Play;
-                tip = t.Running ? "Pause" : "Resume";
+                tip = t.Running ? Loc.T("Pause") : Loc.T("Resume");
                 click = t.TogglePause;
             }
 
@@ -360,7 +360,7 @@ internal sealed class TimerPage : IslandPage
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 var key = _mode == TimerMode.Pomodoro ? K.PomodoroFocus : K.TimerMinutes;
-                var ruler = new TimerRuler(_mode == TimerMode.Pomodoro ? "Focus" : "Timer", Core.App.Get<int>(key)) { Height = rulerH, Margin = new Thickness(0, 0, 12, 0) };
+                var ruler = new TimerRuler(_mode == TimerMode.Pomodoro ? Loc.T("Focus") : Loc.T("Timer"), Core.App.Get<int>(key)) { Height = rulerH, Margin = new Thickness(0, 0, 12, 0) };
                 var clock = Clock(MinutesText(Core.App.Get<int>(key)));
                 ruler.ValueChanged += v =>
                 {
@@ -396,10 +396,10 @@ internal sealed class TimerPage : IslandPage
         var row = new Grid { Height = 28, Margin = new Thickness(0, 8, 0, 0) };
         var defs = new (string Name, string Key, int Min, int Max, bool Duration)[]
         {
-            ("Short break", K.PomodoroShort, 1, 60, true),
-            ("Long break", K.PomodoroLong, 1, 60, true),
-            ("Sessions between long breaks", K.PomodoroInterval, 1, 24, false),
-            ("Total sessions", K.PomodoroTotal, 1, 24, false),
+            (Loc.T("Short break"), K.PomodoroShort, 1, 60, true),
+            (Loc.T("Long break"), K.PomodoroLong, 1, 60, true),
+            (Loc.T("Sessions between long breaks"), K.PomodoroInterval, 1, 24, false),
+            (Loc.T("Total sessions"), K.PomodoroTotal, 1, 24, false),
         };
         for (var i = 0; i < defs.Length; i++)
         {

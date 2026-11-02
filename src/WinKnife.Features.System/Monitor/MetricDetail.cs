@@ -40,13 +40,13 @@ internal static class MetricDetail
 
     public static (string Title, string Glyph) Describe(MetricKind kind) => kind switch
     {
-        MetricKind.Cpu => ("CPU", Gl.Cpu),
-        MetricKind.Gpu => ("GPU", Gl.Gpu),
-        MetricKind.Memory => ("Memory", Gl.Memory),
-        MetricKind.Network => ("Network", Gl.Network),
-        MetricKind.Disk => ("Disks", Gl.Disk),
-        MetricKind.Battery => ("Battery", Gl.Battery),
-        MetricKind.Power => ("Power", Gl.Bolt),
+        MetricKind.Cpu => (Loc.T("CPU"), Gl.Cpu),
+        MetricKind.Gpu => (Loc.T("GPU"), Gl.Gpu),
+        MetricKind.Memory => (Loc.T("Memory"), Gl.Memory),
+        MetricKind.Network => (Loc.T("Network"), Gl.Network),
+        MetricKind.Disk => (Loc.T("Disks"), Gl.Disk),
+        MetricKind.Battery => (Loc.T("Battery"), Gl.Battery),
+        MetricKind.Power => (Loc.T("Power"), Gl.Bolt),
         _ => (Strings.Monitor.ConnectedDevices, Gl.Usb),
     };
 
@@ -133,11 +133,11 @@ internal static class MetricDetail
             {
                 var usage = Line(Strings.Monitor.HardwareUsage);
                 var temps = Line(Strings.Monitor.Temperatures);
-                var up = Line("Up for");
+                var up = Line(Loc.T("Up for"));
                 live.Add(s =>
                 {
                     primary.Text = s.Cpu is { } v ? Fmt.Percent(v) : "-";
-                    secondary.Text = s.Cores.Length > 0 ? $"{s.Cores.Length} logical cores" : string.Empty;
+                    secondary.Text = s.Cores.Length > 0 ? Loc.F("{0} logical cores", s.Cores.Length) : string.Empty;
                     usage.Value.Text = s.Cpu is { } u ? Fmt.Percent(u) : "-";
                     temps.Value.Text = s.CpuTemp is { } t ? Fmt.Temperature(t, fahrenheit()) : "-";
                     up.Value.Text = s.Uptime is { } span ? Fmt.Uptime(span) : "-";
@@ -162,7 +162,7 @@ internal static class MetricDetail
 
             case MetricKind.Memory:
             {
-                var used = Line(app.Get<string>("monitorMemoryMetric") == "app" ? "App Memory" : "Memory Used");
+                var used = Line(app.Get<string>("monitorMemoryMetric") == "app" ? Loc.T("App Memory") : Loc.T("Memory Used"));
                 var pressure = Line(Strings.Monitor.Pressure);
                 var compressed = Line(Strings.Monitor.Compressed);
                 var cached = Line(Strings.Monitor.CachedFiles);
@@ -219,14 +219,14 @@ internal static class MetricDetail
 
             case MetricKind.Disk:
             {
-                var diskUsage = Line("Used");
+                var diskUsage = Line(Loc.T("Used"));
                 var read = Line(Strings.Monitor.Read);
                 var write = Line(Strings.Monitor.Write);
                 live.Add(s =>
                 {
                     var v = s.Volumes.FirstOrDefault();
                     primary.Text = v is null ? "-" : Fmt.Percent(v.UsedFraction * 100);
-                    secondary.Text = v is null ? string.Empty : $"{v.DisplayName}\n{Fmt.BytesDecimal(v.Free)} available";
+                    secondary.Text = v is null ? string.Empty : Loc.F("{0}\n{1} available", v.DisplayName, Fmt.BytesDecimal(v.Free));
                     diskUsage.Value.Text = primary.Text;
                     read.Value.Text = Fmt.Rate(s.DiskRead, false);
                     write.Value.Text = Fmt.Rate(s.DiskWrite, false);
@@ -240,11 +240,11 @@ internal static class MetricDetail
 
             case MetricKind.Battery:
             {
-                var charge = Line("Charge");
+                var charge = Line(Loc.T("Charge"));
                 var batt = Line(Strings.Monitor.BatteryRow);
                 var temps = Line(Strings.Monitor.Temperatures);
                 var health = Line(Strings.Monitor.Health);
-                var cycles = Line("Cycles");
+                var cycles = Line(Loc.T("Cycles"));
                 var peripherals = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
                 detail.Children.Add(peripherals);
                 live.Add(s =>

@@ -15,17 +15,19 @@ internal sealed record SearchEntry(string Title, string Glyph, string Destinatio
 /// <summary>The settings search index and matcher (spec 02-settings 1.4).</summary>
 internal static class SettingsSearch
 {
-    private static readonly Dictionary<string, string[]> PageKeywords = new(StringComparer.Ordinal)
+    private static Dictionary<string, string[]> PageKeywords => _loc_PageKeywords.Value;
+
+    private static readonly LocValue<Dictionary<string, string[]>> _loc_PageKeywords = new(() => new(StringComparer.Ordinal)
     {
-        ["general"] = ["Launch at login", "Language", "Appearance", "System", "Light", "Dark", "Feedback", "Send feedback", "Global shortcut"],
-        ["tray"] = ["Tray icon", "Show tray icon", "Panel", "Tabs", "Notification area", "Menu bar", "Reorder"],
-        ["features"] = ["Install", "Uninstall", "Permissions", "Bundle", "Essentials", "Install all", "Uninstall all"],
+        ["general"] = [Loc.T("Launch at login"), "Language", "Appearance", "System", "Light", "Dark", "Feedback", Loc.T("Send feedback"), Loc.T("Global shortcut")],
+        ["tray"] = [Loc.T("Tray icon"), Loc.T("Show tray icon"), "Panel", "Tabs", Loc.T("Notification area"), Loc.T("Menu bar"), "Reorder"],
+        ["features"] = ["Install", "Uninstall", "Permissions", "Bundle", "Essentials", Loc.T("Install all"), Loc.T("Uninstall all")],
         ["shortcuts"] = ["Shortcut", "Keyboard", "Hotkey", "Active", "Inactive", "Conflict"],
-        ["advanced"] = ["Backup", "Export settings", "Import settings", "Reset", "Uninstall WinKnife", "Clear all permissions"],
-        ["about"] = ["Version", "Check for updates", "Beta", "Review introduction", "GitHub", "Updates"],
+        ["advanced"] = ["Backup", "Export settings", "Import settings", "Reset", "Uninstall WinKnife", Loc.T("Clear all permissions")],
+        ["about"] = ["Version", "Check for updates", "Beta", Loc.T("Review introduction"), "GitHub", "Updates"],
         ["whats-new"] = ["Changelog", "Release notes", "Added", "Fixed", "Changed"],
         ["support"] = ["Star", "GitHub", "Donate", "Help"],
-    };
+    });
 
     public static List<SearchEntry> Search(ShellServices s, string query)
     {
@@ -155,13 +157,13 @@ internal static class PageComposer
 
             if (visit.Anchor is null)
             {
-                stack.AddSpaced(new SettingsPageHeader("General"), 20);
+                stack.AddSpaced(new SettingsPageHeader(Loc.T("General")), 20);
                 stack.AddSpaced(GeneralPage.Build(s, rebuild), 20);
             }
         }
         else if (page == SettingsPages.Energy)
         {
-            stack.AddSpaced(new SettingsPageHeader("Energy"), 20);
+            stack.AddSpaced(new SettingsPageHeader(Loc.T("Energy")), 20);
         }
         else
         {
@@ -187,7 +189,7 @@ internal static class PageComposer
             catch (Exception ex)
             {
                 s.Log.Error($"Settings section {section.GetType().Name} failed", ex);
-                view = new SettingsCard().Add(new SettingsRow("", "This section could not be shown", ex.Message));
+                view = new SettingsCard().Add(new SettingsRow("", Loc.T("This section could not be shown"), ex.Message));
             }
 
             if (view.Visibility == Visibility.Collapsed)
@@ -203,7 +205,7 @@ internal static class PageComposer
 
         if (count == 0 && !(page == SettingsPages.General && visit.Anchor is null))
         {
-            var note = UiKit.Text("Nothing to configure here yet.", 13, FontWeights.Normal, ThemeKeys.TextSecondary);
+            var note = UiKit.Text(Loc.T("Nothing to configure here yet."), 13, FontWeights.Normal, ThemeKeys.TextSecondary);
             stack.AddSpaced(note, 20);
         }
 

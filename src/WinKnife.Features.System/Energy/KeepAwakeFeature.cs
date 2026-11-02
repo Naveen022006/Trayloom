@@ -21,7 +21,7 @@ public sealed class KeepAwakeFeature : IFeature
             var service = _service;
             var list = new List<FeatureAction>
             {
-                new("toggle", service?.IsActive == true ? "Disable keep awake" : "Enable keep awake", () => service?.Toggle(), "\uE708"),
+                new("toggle", service?.IsActive == true ? Loc.T("Disable keep awake") : Loc.T("Enable keep awake"), () => service?.Toggle(), "\uE708"),
             };
             foreach (var d in Strings.KeepAwake.Durations.Where(d => d.Minutes > 0))
             {
@@ -30,7 +30,7 @@ public sealed class KeepAwakeFeature : IFeature
                 list.Add(new FeatureAction(id, "Keep awake for " + d.Name, () => service?.ActivateChip(minutes), "\uE916"));
             }
 
-            list.Add(new FeatureAction("forever", "Keep awake indefinitely", () => service?.ActivateChip(0), "\uE708"));
+            list.Add(new FeatureAction("forever", Loc.T("Keep awake indefinitely"), () => service?.ActivateChip(0), "\uE708"));
             return list;
         }
     }
@@ -75,7 +75,7 @@ public sealed class KeepAwakeSettingsSection : ISettingsSection
 
     public string? Anchor => "keepAwake";
 
-    public string? Title => "Keep awake";
+    public string? Title => Loc.T("Keep awake");
 
     public int Order => 10;
 

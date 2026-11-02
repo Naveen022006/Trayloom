@@ -257,7 +257,7 @@ public partial class App : Application
         {
             if (manual)
             {
-                Dialogs.Show(null, "WinKnife is installed", "This copy already runs from " + InstallManager.InstallRoot + ".", ["OK"]);
+                Dialogs.Show(null, Loc.T("WinKnife is installed"), "This copy already runs from " + InstallManager.InstallRoot + ".", [Loc.T("OK")]);
             }
 
             done?.Invoke();
@@ -305,7 +305,7 @@ public partial class App : Application
         catch (Exception ex)
         {
             host.Log.Error("Could not start the installed copy", ex);
-            Dialogs.Show(null, "WinKnife was installed", "It could not be started automatically. Open it from the Start menu, or run " + window.InstalledExe + ".", ["OK"]);
+            Dialogs.Show(null, Loc.T("WinKnife was installed"), "It could not be started automatically. Open it from the Start menu, or run " + window.InstalledExe + ".", [Loc.T("OK")]);
             return;
         }
 
@@ -343,16 +343,16 @@ public partial class App : Application
         catch (Exception ex)
         {
             log.Error("Uninstall failed", ex);
-            Dialogs.Show(null, "Uninstall stopped", ex.Message, ["OK"]);
+            Dialogs.Show(null, Loc.T("Uninstall stopped"), ex.Message, [Loc.T("OK")]);
             Shutdown();
             return;
         }
 
         if (!quiet)
         {
-            Dialogs.Show(null, "WinKnife was uninstalled", options.RemoveSettings
-                ? "The program files, shortcuts and your settings are being removed."
-                : "The program files and shortcuts are being removed. Your settings were kept, so a later install picks up where you left off.", ["OK"]);
+            Dialogs.Show(null, Loc.T("WinKnife was uninstalled"), options.RemoveSettings
+                ? Loc.T("The program files, shortcuts and your settings are being removed.")
+                : Loc.T("The program files and shortcuts are being removed. Your settings were kept, so a later install picks up where you left off."), [Loc.T("OK")]);
         }
 
         InstallManager.ScheduleDeletion(later, log);
@@ -435,7 +435,7 @@ public partial class App : Application
     /// <summary>
     /// Developer flags used by the screenshot scripts: <c>--open-settings &lt;page#anchor&gt;</c>, <c>--open-panel [tab]</c>, <c>--open-menu</c>,
     /// <c>--search &lt;text&gt;</c>, <c>--dev-uninstall &lt;id&gt;</c>, <c>--dev-install &lt;id&gt;</c>, <c>--action &lt;feature&gt; &lt;action&gt;</c>, <c>--dump-info &lt;file&gt;</c>,
-    /// <c>--close-panel</c>. A second launch with any of them hands them to the running instance (through <c>devcmd.txt</c>).
+    /// <c>--close-panel</c>, <c>--set-language &lt;code&gt;</c>. A second launch with any of them hands them to the running instance (through <c>devcmd.txt</c>).
     /// </summary>
     private void RunDevFlags(string[] args, bool startup)
     {
@@ -529,7 +529,7 @@ public partial class App : Application
                 var crash = new InvalidOperationException("The audio service did not answer.");
                 _problems?.Add(kind == "sac"
                     ? new StartupProblem("WinKnife.Features.Input.dll", blocked.Message, blocked, true)
-                    : new StartupProblem("Volume mixer", crash.Message, crash, false));
+                    : new StartupProblem(Loc.T("Volume mixer"), crash.Message, crash, false));
             });
         }
 
@@ -537,6 +537,12 @@ public partial class App : Application
         {
             var titlePart = Arg("--shot", 2) is { } t && !t.StartsWith("--", StringComparison.Ordinal) ? t : null;
             Dispatcher.BeginInvoke(priority, () => DevShot.Take(shotFile, titlePart));
+        }
+
+        if (Arg("--set-language") is { } languageCode)
+        {
+            // --set-language <code|system>: the same change as Settings > General > Language (checks the live language switch).
+            Dispatcher.BeginInvoke(priority, () => _host!.App.Set(AppKeys.AppLanguage, languageCode));
         }
 
         if (Arg("--dev-key") is { } keyName)
@@ -553,7 +559,7 @@ public partial class App : Application
         }
     }
 
-    private static readonly string[] DevFlags = ["--open-settings", "--open-panel", "--open-menu", "--search", "--dev-uninstall", "--dev-install", "--action", "--dump-info", "--close-panel", "--open-onboarding", "--open-install", "--show-toast", "--simulate-problem", "--dev-key", "--shot"];
+    private static readonly string[] DevFlags = ["--open-settings", "--open-panel", "--open-menu", "--search", "--dev-uninstall", "--dev-install", "--action", "--dump-info", "--close-panel", "--open-onboarding", "--open-install", "--show-toast", "--simulate-problem", "--dev-key", "--shot", "--set-language"];
 
     /// <summary>Raises a PreviewKeyDown for <paramref name="name"/> (e.g. "escape") on the active window, as if it had been typed there.</summary>
     private void RaiseKey(string name)
@@ -618,7 +624,7 @@ public partial class App : Application
         // Stops every feature (restoring system state), then releases hooks, hotkeys and flushes settings.
         try
         {
-            _host?.Log.Info("WinKnife shutting down");
+            _host?.Log.Info(Loc.T("WinKnife shutting down"));
             _host?.App.Set(AppKeys.StartupDidNotFinish, false);
             _shell?.Dispose();
             _host?.Dispose();
@@ -687,7 +693,7 @@ public partial class App : Application
         foreach (var f in host.Features.Features)
         {
             var assembly = f.GetType().Assembly.GetName().Name;
-            sb.AppendLine($"{f.Id} -> {f.CatalogId} [{assembly}] running={host.Runtime.IsRunning(f.CatalogId)}");
+            sb.AppendLine(Loc.F("{0} -> {1} [{2}] running={3}", f.Id, f.CatalogId, assembly, host.Runtime.IsRunning(f.CatalogId)));
             if (seen.TryGetValue(f.CatalogId, out var other))
             {
                 sb.AppendLine($"  !! DUPLICATE catalog id {f.CatalogId}: also {other}");
@@ -719,14 +725,14 @@ public partial class App : Application
         sb.AppendLine("# catalog entries without an IFeature class");
         foreach (var e in FeatureCatalog.All.Where(c => host.Features.Features.All(f => f.CatalogId != c.Id)))
         {
-            sb.AppendLine($"{e.Id} support={e.Support}");
+            sb.AppendLine(Loc.F("{0} support={1}", e.Id, e.Support));
         }
 
         sb.AppendLine();
         sb.AppendLine("# panel utilities");
         foreach (var u in host.Contributions.PanelUtilities())
         {
-            sb.AppendLine($"{u.Id} key={PanelKeys.Utility(u.Id)} hostedOnly={u.HostedOnly} gate={string.Join(",", u.FeatureIds)}");
+            sb.AppendLine(Loc.F("{0} key={1} hostedOnly={2} gate={3}", u.Id, PanelKeys.Utility(u.Id), u.HostedOnly, string.Join(",", u.FeatureIds)));
         }
 
         sb.AppendLine();

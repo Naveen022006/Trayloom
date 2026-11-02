@@ -255,7 +255,7 @@ public sealed class ScreenshotSection : ToolSectionBase
                 if (app.Get<bool>(K.PreviewEnabled))
                 {
                     card.AddDivider();
-                    var durations = new (string, string)[] { ("1", "1 s"), ("2", "2 s"), ("3", "3 s"), ("5", "5 s"), ("10", "10 s"), ("0", Strings.Screenshot.UntilDismissed) };
+                    var durations = new (string, string)[] { ("1", Loc.T("1 s")), ("2", Loc.T("2 s")), ("3", Loc.T("3 s")), ("5", Loc.T("5 s")), ("10", Loc.T("10 s")), ("0", Strings.Screenshot.UntilDismissed) };
                     var d = app.Get<int>(K.PreviewDuration).ToString(CultureInfo.InvariantCulture);
                     card.Add(Sk.Picker(Strings.Screenshot.ConfirmationDuration, durations, durations.Any(x => x.Item1 == d) ? d : "3", v => app.Set(K.PreviewDuration, int.Parse(v, CultureInfo.InvariantCulture)), null, 150));
                 }
@@ -456,7 +456,7 @@ public sealed class ScreenRecorderSection : ToolSectionBase
         r3.Add(Sk.FolderRow(app, K.RecSaveFolder));
         r3.AddDivider();
         var more = new StackPanel();
-        var qualities = new (string, string)[] { ("small", "Small file"), ("balanced", "Balanced"), ("high", "High") };
+        var qualities = new (string, string)[] { ("small", Loc.T("Small file")), ("balanced", Loc.T("Balanced")), ("high", Loc.T("High")) };
         more.Children.Add(Sk.Picker(Strings.Recorder.Quality, qualities, RecorderSupport.SanitizedQuality(app.Get<string>(K.RecQuality)), v => app.Set(K.RecQuality, v), null, 140));
         more.Children.Add(Sk.Caption(Strings.Recorder.QualityCaption));
         var fps = new[] { 30, 60 };
@@ -464,7 +464,7 @@ public sealed class ScreenRecorderSection : ToolSectionBase
         ((FrameworkElement)seg1).Margin = new Thickness(0, 12, 0, 0);
         more.Children.Add(seg1);
         var sizes = new[] { "small", "medium", "large" };
-        var seg2 = Sk.Segmented(Strings.Recorder.GifSize, ["Small", "Medium", "Large"], Math.Max(0, Array.IndexOf(sizes, app.Get<string>(K.RecGifSize))), i => app.Set(K.RecGifSize, sizes[i]));
+        var seg2 = Sk.Segmented(Strings.Recorder.GifSize, [Loc.T("Small"), Loc.T("Medium"), Loc.T("Large")], Math.Max(0, Array.IndexOf(sizes, app.Get<string>(K.RecGifSize))), i => app.Set(K.RecGifSize, sizes[i]));
         ((FrameworkElement)seg2).Margin = new Thickness(0, 12, 0, 0);
         more.Children.Add(seg2);
         var gifFps = new[] { 8, 12, 15 };

@@ -82,8 +82,8 @@ internal sealed class MediaWorkspaceView : StackPanel
             var header = new Grid();
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            header.Children.Add(V.Label(G.Photo, "Media", 16, FontWeights.SemiBold, ThemeKeys.Accent, ThemeKeys.TextPrimary, 9));
-            var note = UiKit.Text("Local. No network.", 11, FontWeights.Medium, ThemeKeys.TextSecondary);
+            header.Children.Add(V.Label(G.Photo, Loc.T("Media"), 16, FontWeights.SemiBold, ThemeKeys.Accent, ThemeKeys.TextPrimary, 9));
+            var note = UiKit.Text(Loc.T("Local. No network."), 11, FontWeights.Medium, ThemeKeys.TextSecondary);
             note.VerticalAlignment = VerticalAlignment.Center;
             Grid.SetColumn(note, 1);
             header.Children.Add(note);
@@ -91,12 +91,12 @@ internal sealed class MediaWorkspaceView : StackPanel
         }
         else
         {
-            var note = UiKit.Text("Local. No network.", 9.5, FontWeights.Medium, ThemeKeys.TextSecondary);
+            var note = UiKit.Text(Loc.T("Local. No network."), 9.5, FontWeights.Medium, ThemeKeys.TextSecondary);
             note.HorizontalAlignment = HorizontalAlignment.Right;
             Children.Add(note);
         }
 
-        var picker = new SegmentedControl(["Video", "GIF", "Image", "Text"], (int)MediaSession.Tool, true, compact ? 11 : 12);
+        var picker = new SegmentedControl([Loc.T("Video"), Loc.T("GIF"), Loc.T("Image"), Loc.T("Text")], (int)MediaSession.Tool, true, compact ? 11 : 12);
         picker.Margin = new Thickness(0, compact ? 6 : spacing, 0, 0);
         picker.SelectionChanged += i => ChangeTool((MediaTool)i);
         Children.Add(picker);
@@ -367,7 +367,7 @@ internal sealed class MediaWorkspaceView : StackPanel
 
     private void RefreshOutputLabels()
     {
-        var text = MediaSession.Output is { } output ? Path.GetFileName(output) : "Automatic";
+        var text = MediaSession.Output is { } output ? Path.GetFileName(output) : Loc.T("Automatic");
         if (_outputLabel is not null)
         {
             _outputLabel.Text = text;
@@ -375,7 +375,7 @@ internal sealed class MediaWorkspaceView : StackPanel
 
         if (_previewOutput is not null)
         {
-            _previewOutput.Text = $"Output: {text}";
+            _previewOutput.Text = Loc.F("Output: {0}", text);
         }
 
         RefreshPreview();
@@ -397,7 +397,7 @@ internal sealed class MediaWorkspaceView : StackPanel
         var column = new StackPanel();
         var multi = MediaSession.Inputs.Count > 1;
         var hasInput = FirstInput is not null;
-        var title = !hasInput ? "Choose file" : multi ? $"{MediaSession.Inputs.Count} files selected" : Path.GetFileName(FirstInput!);
+        var title = !hasInput ? Loc.T("Choose file") : multi ? Loc.F("{0} files selected", MediaSession.Inputs.Count) : Path.GetFileName(FirstInput!);
 
         var content = new Grid();
         content.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -409,7 +409,7 @@ internal sealed class MediaWorkspaceView : StackPanel
         var name = UiKit.Text(title, _compact ? 11.5 : 12.5, FontWeights.SemiBold, ThemeKeys.TextPrimary, trimming: TextTrimming.CharacterEllipsis);
         name.ToolTip = hasInput ? string.Join("\n", MediaSession.Inputs) : null;
         texts.Children.Add(name);
-        texts.Children.Add(UiKit.Text("Drop a file here or click to choose one.", _compact ? 9.5 : 10.5, FontWeights.Normal, ThemeKeys.TextSecondary, trimming: TextTrimming.CharacterEllipsis));
+        texts.Children.Add(UiKit.Text(Loc.T("Drop a file here or click to choose one."), _compact ? 9.5 : 10.5, FontWeights.Normal, ThemeKeys.TextSecondary, trimming: TextTrimming.CharacterEllipsis));
         Grid.SetColumn(texts, 1);
         content.Children.Add(texts);
 
@@ -445,7 +445,7 @@ internal sealed class MediaWorkspaceView : StackPanel
         holder.Children.Add(button);
         if (hasInput)
         {
-            var clear = V.IconButton(Glyphs.CloseCircle, "Cancel", ClearInputs, _compact ? 14 : 16, ThemeKeys.TextSecondary, _compact ? 24 : 28);
+            var clear = V.IconButton(Glyphs.CloseCircle, Loc.T("Cancel"), ClearInputs, _compact ? 14 : 16, ThemeKeys.TextSecondary, _compact ? 24 : 28);
             clear.HorizontalAlignment = HorizontalAlignment.Right;
             clear.Margin = new Thickness(0, 0, 4, 0);
             clear.IsEnabled = !Running;
@@ -455,7 +455,7 @@ internal sealed class MediaWorkspaceView : StackPanel
         column.Children.Add(holder);
 
         // output row
-        var outputLabel = UiKit.Text(MediaSession.Output is { } output ? Path.GetFileName(output) : "Automatic", 11, FontWeights.Normal, ThemeKeys.TextPrimary, trimming: TextTrimming.CharacterEllipsis);
+        var outputLabel = UiKit.Text(MediaSession.Output is { } output ? Path.GetFileName(output) : Loc.T("Automatic"), 11, FontWeights.Normal, ThemeKeys.TextPrimary, trimming: TextTrimming.CharacterEllipsis);
         outputLabel.ToolTip = MediaSession.Output;
         outputLabel.VerticalAlignment = VerticalAlignment.Center;
         _outputLabel = outputLabel;
@@ -463,13 +463,13 @@ internal sealed class MediaWorkspaceView : StackPanel
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var outTitle = UiKit.Text("Output", 10.5, FontWeights.SemiBold, ThemeKeys.TextSecondary);
+        var outTitle = UiKit.Text(Loc.T("Output"), 10.5, FontWeights.SemiBold, ThemeKeys.TextSecondary);
         outTitle.VerticalAlignment = VerticalAlignment.Center;
         outTitle.Margin = new Thickness(0, 0, 7, 0);
         row.Children.Add(outTitle);
         Grid.SetColumn(outputLabel, 1);
         row.Children.Add(outputLabel);
-        var destination = UiKit.Button("Destination", ButtonKind.Bordered, 11, G.Folder, ChooseDestination);
+        var destination = UiKit.Button(Loc.T("Destination"), ButtonKind.Bordered, 11, G.Folder, ChooseDestination);
         destination.IsEnabled = hasInput && !Running;
         destination.Margin = new Thickness(7, 0, 0, 0);
         Grid.SetColumn(destination, 2);
@@ -478,7 +478,7 @@ internal sealed class MediaWorkspaceView : StackPanel
 
         if (Tool == MediaTool.Image && multi)
         {
-            var sub = MediaControls.Check("Save in “Converted” subfolder", Ms.GetB("mediaImageSaveInSubfolder"), on => Ms.Set("mediaImageSaveInSubfolder", on), _compact ? 11 : 11.5);
+            var sub = MediaControls.Check(Loc.T("Save in “Converted” subfolder"), Ms.GetB("mediaImageSaveInSubfolder"), on => Ms.Set("mediaImageSaveInSubfolder", on), _compact ? 11 : 11.5);
             sub.Margin = new Thickness(0, 9, 0, 0);
             sub.IsEnabled = !Running;
             column.Children.Add(sub);
@@ -517,7 +517,7 @@ internal sealed class MediaWorkspaceView : StackPanel
         try
         {
             var filter = Tool is MediaTool.Video or MediaTool.Gif ? MediaNaming.VideoFilter : MediaNaming.ImageFilter;
-            var files = Dialogs.OpenFiles("Choose file", filter, Tool == MediaTool.Image);
+            var files = Dialogs.OpenFiles(Loc.T("Choose file"), filter, Tool == MediaTool.Image);
             if (files.Length > 0)
             {
                 SetInputs(files);
@@ -541,7 +541,7 @@ internal sealed class MediaWorkspaceView : StackPanel
         {
             if (Tool == MediaTool.Image && MediaSession.Inputs.Count > 1)
             {
-                var folder = Dialogs.PickFolder("Destination", MediaSession.OutputDirectory ?? Path.GetDirectoryName(input));
+                var folder = Dialogs.PickFolder(Loc.T("Destination"), MediaSession.OutputDirectory ?? Path.GetDirectoryName(input));
                 if (folder is not null)
                 {
                     MediaSession.OutputDirectory = folder;
@@ -554,13 +554,13 @@ internal sealed class MediaWorkspaceView : StackPanel
 
             var (filter, ext) = Tool switch
             {
-                MediaTool.Video => ("MP4 video|*.mp4", ".mp4"),
-                MediaTool.Gif => ("GIF image|*.gif", ".gif"),
-                MediaTool.Text => ("Text file|*.txt", ".txt"),
-                _ => (MediaSession.Options.Format switch { "png" => "PNG image|*.png", "heic" => "HEIC image|*.heic", "pdf" => "PDF document|*.pdf", _ => "JPEG image|*.jpg" }, MediaNaming.ExtensionOf(MediaSession.Options.Format)),
+                MediaTool.Video => (Loc.T("MP4 video|*.mp4"), ".mp4"),
+                MediaTool.Gif => (Loc.T("GIF image|*.gif"), ".gif"),
+                MediaTool.Text => (Loc.T("Text file|*.txt"), ".txt"),
+                _ => (MediaSession.Options.Format switch { "png" => Loc.T("PNG image|*.png"), "heic" => Loc.T("HEIC image|*.heic"), "pdf" => Loc.T("PDF document|*.pdf"), _ => Loc.T("JPEG image|*.jpg") }, MediaNaming.ExtensionOf(MediaSession.Options.Format)),
             };
             var current = MediaSession.Output ?? input;
-            var chosen = Dialogs.SaveFile("Destination", filter, Path.GetDirectoryName(current), Path.GetFileName(current), ext);
+            var chosen = Dialogs.SaveFile(Loc.T("Destination"), filter, Path.GetDirectoryName(current), Path.GetFileName(current), ext);
             if (chosen is null)
             {
                 return;
@@ -609,8 +609,8 @@ internal sealed class MediaWorkspaceView : StackPanel
                 break;
             default:
                 var accurate = Ms.GetB("mediaTextAccurate");
-                var seg = MediaControls.Segmented(["Accurate", "Fast"], accurate ? 0 : 1, i => Ms.Set("mediaTextAccurate", i == 0), _compact ? 11 : 12);
-                System.Windows.Automation.AutomationProperties.SetName(seg, "OCR");
+                var seg = MediaControls.Segmented([Loc.T("Accurate"), Loc.T("Fast")], accurate ? 0 : 1, i => Ms.Set("mediaTextAccurate", i == 0), _compact ? 11 : 12);
+                System.Windows.Automation.AutomationProperties.SetName(seg, Loc.T("OCR"));
                 Add(seg);
                 break;
         }
@@ -622,8 +622,8 @@ internal sealed class MediaWorkspaceView : StackPanel
 
     private FrameworkElement TrimRow(string startKey, string endKey)
     {
-        var start = MediaControls.NumberField("Start", Ms.GetD(startKey, 0, 1e6), 1, 0, "s", v => Ms.Set(startKey, v), _compact);
-        var end = MediaControls.NumberField("End", Ms.GetD(endKey, 0, 1e6), 1, 0, "s", v => Ms.Set(endKey, v), _compact);
+        var start = MediaControls.NumberField(Loc.T("Start"), Ms.GetD(startKey, 0, 1e6), 1, 0, "s", v => Ms.Set(startKey, v), _compact);
+        var end = MediaControls.NumberField(Loc.T("End"), Ms.GetD(endKey, 0, 1e6), 1, 0, "s", v => Ms.Set(endKey, v), _compact);
         var row = new StackPanel { Orientation = Orientation.Horizontal };
         start.Margin = new Thickness(0, 0, 10, 0);
         row.Children.Add(start);
@@ -658,13 +658,13 @@ internal sealed class MediaWorkspaceView : StackPanel
                 Commit();
             }
         };
-        var label = UiKit.Text("Target size", _compact ? 10.5 : 11, FontWeights.SemiBold, ThemeKeys.TextPrimary);
+        var label = UiKit.Text(Loc.T("Target size"), _compact ? 10.5 : 11, FontWeights.SemiBold, ThemeKeys.TextPrimary);
         label.Width = _compact ? 74 : 92;
         label.VerticalAlignment = VerticalAlignment.Center;
-        var unit = UiKit.Text(" MB", 10.5, FontWeights.Normal, ThemeKeys.TextSecondary);
+        var unit = UiKit.Text(Loc.T(" MB"), 10.5, FontWeights.Normal, ThemeKeys.TextSecondary);
         unit.VerticalAlignment = VerticalAlignment.Center;
         column.Children.Add(V.Row(0, label, box, unit));
-        var hint = V.Secondary("Resolution adapts to stay under the limit.", _compact ? 9.5 : 10.5);
+        var hint = V.Secondary(Loc.T("Resolution adapts to stay under the limit."), _compact ? 9.5 : 10.5);
         hint.Margin = new Thickness(0, 5, 0, 0);
         column.Children.Add(hint);
         return column;
@@ -674,7 +674,7 @@ internal sealed class MediaWorkspaceView : StackPanel
     {
         add(TrimRow("mediaVideoStart", "mediaVideoEnd"), -1);
         var sizing = Ms.GetS("mediaVideoSizing", "resolution", "targetSize");
-        add(MediaControls.Segmented(["Resolution", "File size"], sizing == "resolution" ? 0 : 1, i =>
+        add(MediaControls.Segmented([Loc.T("Resolution"), Loc.T("File size")], sizing == "resolution" ? 0 : 1, i =>
         {
             Ms.Set("mediaVideoSizing", i == 0 ? "resolution" : "targetSize");
             BuildOptions();
@@ -686,7 +686,7 @@ internal sealed class MediaWorkspaceView : StackPanel
                 Ms.Set("mediaVideoQuality", q);
                 BuildOptions();
             }, _compact), -1);
-            add(MediaControls.Stepper("Size", Ms.GetI("mediaVideoMaxDimension", 640, 3840), 640, 3840, 320, "px", v => Ms.Set("mediaVideoMaxDimension", v), _compact), -1);
+            add(MediaControls.Stepper(Loc.T("Size"), Ms.GetI("mediaVideoMaxDimension", 640, 3840), 640, 3840, 320, "px", v => Ms.Set("mediaVideoMaxDimension", v), _compact), -1);
         }
         else
         {
@@ -698,7 +698,7 @@ internal sealed class MediaWorkspaceView : StackPanel
     {
         add(TrimRow("mediaGIFStart", "mediaGIFEnd"), -1);
         var sizing = Ms.GetS("mediaGIFSizing", "resolution", "targetSize");
-        add(MediaControls.Segmented(["Resolution", "File size"], sizing == "resolution" ? 0 : 1, i =>
+        add(MediaControls.Segmented([Loc.T("Resolution"), Loc.T("File size")], sizing == "resolution" ? 0 : 1, i =>
         {
             Ms.Set("mediaGIFSizing", i == 0 ? "resolution" : "targetSize");
             BuildOptions();
@@ -715,17 +715,17 @@ internal sealed class MediaWorkspaceView : StackPanel
                 Ms.Set("mediaGIFFPS", Math.Round(e.NewValue));
             };
             var fpsColumn = new StackPanel();
-            fpsColumn.Children.Add(V.Split(UiKit.Text("FPS", _compact ? 11 : 12, FontWeights.Normal, ThemeKeys.TextPrimary), value));
+            fpsColumn.Children.Add(V.Split(UiKit.Text(Loc.T("FPS"), _compact ? 11 : 12, FontWeights.Normal, ThemeKeys.TextPrimary), value));
             fpsColumn.Children.Add(slider);
             add(fpsColumn, -1);
-            add(MediaControls.Stepper("Width", Ms.GetI("mediaGIFWidth", 160, 1600), 160, 1600, 80, "px", v => Ms.Set("mediaGIFWidth", v), _compact), -1);
+            add(MediaControls.Stepper(Loc.T("Width"), Ms.GetI("mediaGIFWidth", 160, 1600), 160, 1600, 80, "px", v => Ms.Set("mediaGIFWidth", v), _compact), -1);
         }
         else
         {
             add(TargetSizeRow("mediaGIFTargetMegabytes", 10), -1);
         }
 
-        add(MediaControls.Check("Loop GIF", Ms.GetB("mediaGIFLoops"), on => Ms.Set("mediaGIFLoops", on), _compact ? 11 : 11.5), -1);
+        add(MediaControls.Check(Loc.T("Loop GIF"), Ms.GetB("mediaGIFLoops"), on => Ms.Set("mediaGIFLoops", on), _compact ? 11 : 11.5), -1);
     }
 
     private static readonly string[] ResizeKinds = ["none", "maxDimension", "width", "height", "exact"];
@@ -736,17 +736,17 @@ internal sealed class MediaWorkspaceView : StackPanel
 
         // presets
         var presets = V.Row(6,
-            V.Mini("Web", () => ApplyPreset(o, "jpeg", 0.72, 1600, "{name}-web", false, "transparent", false)),
-            V.Mini("Social", () => ApplyPreset(o, "png", 0.82, 2048, "{name}-social", false, "transparent", false)),
-            V.Mini("Docs", () => ApplyPreset(o, "pdf", 0.7, 1600, "", true, "white", true)));
+            V.Mini(Loc.T("Web"), () => ApplyPreset(o, "jpeg", 0.72, 1600, "{name}-web", false, "transparent", false)),
+            V.Mini(Loc.T("Social"), () => ApplyPreset(o, "png", 0.82, 2048, "{name}-social", false, "transparent", false)),
+            V.Mini(Loc.T("Docs"), () => ApplyPreset(o, "pdf", 0.7, 1600, "", true, "white", true)));
         add(presets, -1);
 
         // preview
         var previewHost = new ContentControl();
         _preview = previewHost;
         var previewText = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) };
-        previewText.Children.Add(UiKit.Text("Preview", 11, FontWeights.SemiBold, ThemeKeys.TextPrimary));
-        _previewOutput = UiKit.Text($"Output: {(MediaSession.Output is { } output ? Path.GetFileName(output) : "Automatic")}", _compact ? 9.5 : 10.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true, trimming: TextTrimming.CharacterEllipsis);
+        previewText.Children.Add(UiKit.Text(Loc.T("Preview"), 11, FontWeights.SemiBold, ThemeKeys.TextPrimary));
+        _previewOutput = UiKit.Text(Loc.F("Output: {0}", (MediaSession.Output is { } output ? Path.GetFileName(output) : "Automatic")), _compact ? 9.5 : 10.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true, trimming: TextTrimming.CharacterEllipsis);
         _previewOutput.MaxHeight = 30;
         previewText.Children.Add(_previewOutput);
         var previewRow = new StackPanel { Orientation = Orientation.Horizontal };
@@ -780,7 +780,7 @@ internal sealed class MediaWorkspaceView : StackPanel
         // resize
         var resize = new StackPanel();
         var kindIndex = Math.Max(0, Array.IndexOf(ResizeKinds, o.ResizeKind));
-        var drop = V.Drop(["No change", "Max side", "Width", "Height", "Custom"], kindIndex, i =>
+        var drop = V.Drop([Loc.T("No change"), Loc.T("Max side"), Loc.T("Width"), Loc.T("Height"), Loc.T("Custom")], kindIndex, i =>
         {
             o.ResizeKind = ResizeKinds[i];
             OptionsChanged(true);
@@ -788,7 +788,7 @@ internal sealed class MediaWorkspaceView : StackPanel
         var resizeRow = new Grid();
         resizeRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         resizeRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        resizeRow.Children.Add(UiKit.Text("Resize", _compact ? 11 : 12, FontWeights.Normal, ThemeKeys.TextPrimary));
+        resizeRow.Children.Add(UiKit.Text(Loc.T("Resize"), _compact ? 11 : 12, FontWeights.Normal, ThemeKeys.TextPrimary));
         Grid.SetColumn(drop, 1);
         resizeRow.Children.Add(drop);
         resize.Children.Add(resizeRow);
@@ -806,19 +806,19 @@ internal sealed class MediaWorkspaceView : StackPanel
         switch (o.ResizeKind)
         {
             case "maxDimension":
-                resize.Children.Add(Step("Size", o.MaxDimension, 64, 20000, 128, v => o.MaxDimension = v));
+                resize.Children.Add(Step(Loc.T("Size"), o.MaxDimension, 64, 20000, 128, v => o.MaxDimension = v));
                 break;
             case "width":
-                resize.Children.Add(Step("Width", o.ResizeWidth, 1, 20000, 64, v => o.ResizeWidth = v));
+                resize.Children.Add(Step(Loc.T("Width"), o.ResizeWidth, 1, 20000, 64, v => o.ResizeWidth = v));
                 break;
             case "height":
-                resize.Children.Add(Step("Height", o.ResizeHeight, 1, 20000, 64, v => o.ResizeHeight = v));
+                resize.Children.Add(Step(Loc.T("Height"), o.ResizeHeight, 1, 20000, 64, v => o.ResizeHeight = v));
                 break;
             case "exact":
-                resize.Children.Add(Step("Width", o.ResizeWidth, 1, 20000, 64, v => o.ResizeWidth = v));
-                resize.Children.Add(Step("Height", o.ResizeHeight, 1, 20000, 64, v => o.ResizeHeight = v));
+                resize.Children.Add(Step(Loc.T("Width"), o.ResizeWidth, 1, 20000, 64, v => o.ResizeWidth = v));
+                resize.Children.Add(Step(Loc.T("Height"), o.ResizeHeight, 1, 20000, 64, v => o.ResizeHeight = v));
                 var modes = new[] { "stretch", "fit", "fill" };
-                var modeSeg = MediaControls.Segmented(["Stretch", "Fit", "Fill"], Math.Max(0, Array.IndexOf(modes, o.ExactMode)), i =>
+                var modeSeg = MediaControls.Segmented([Loc.T("Stretch"), Loc.T("Fit"), Loc.T("Fill")], Math.Max(0, Array.IndexOf(modes, o.ExactMode)), i =>
                 {
                     o.ExactMode = modes[i];
                     OptionsChanged();
@@ -831,7 +831,7 @@ internal sealed class MediaWorkspaceView : StackPanel
         add(resize, -1);
 
         // more options
-        var moreTitle = UiKit.Text("More options", _compact ? 11 : 12, FontWeights.Medium, ThemeKeys.TextPrimary);
+        var moreTitle = UiKit.Text(Loc.T("More options"), _compact ? 11 : 12, FontWeights.Medium, ThemeKeys.TextPrimary);
         add(V.Disclosure(moreTitle, MoreOptions, _moreOpen, open => _moreOpen = open), -1);
     }
 
@@ -864,7 +864,7 @@ internal sealed class MediaWorkspaceView : StackPanel
         var selectedId = Host.App.Get<string>("mediaImageSelectedProfileID");
         var selected = profiles.FirstOrDefault(p => p.Id == selectedId);
         var profileRow = new StackPanel { Orientation = Orientation.Horizontal };
-        var names = new List<string> { "No profile" };
+        var names = new List<string> { Loc.T("No profile") };
         names.AddRange(profiles.Select(p => p.Name));
         var profileDrop = V.Drop(names, selected is null ? 0 : profiles.IndexOf(selected) + 1, i =>
         {
@@ -882,9 +882,9 @@ internal sealed class MediaWorkspaceView : StackPanel
 
             OptionsChanged(true);
         }, 140, 11.5);
-        System.Windows.Automation.AutomationProperties.SetName(profileDrop, "Profile");
+        System.Windows.Automation.AutomationProperties.SetName(profileDrop, Loc.T("Profile"));
         profileRow.Children.Add(profileDrop);
-        var delete = V.IconButton(G.Trash, "Delete profile", () =>
+        var delete = V.IconButton(G.Trash, Loc.T("Delete profile"), () =>
         {
             if (selected is not null)
             {
@@ -899,17 +899,17 @@ internal sealed class MediaWorkspaceView : StackPanel
         profileRow.Children.Add(delete);
         if (selected is not null && !selected.Options.SameAs(o))
         {
-            var modified = V.Label(G.Edit, "Modified", 10, FontWeights.Medium, ThemeKeys.TextSecondary, ThemeKeys.TextSecondary, 3);
+            var modified = V.Label(G.Edit, Loc.T("Modified"), 10, FontWeights.Medium, ThemeKeys.TextSecondary, ThemeKeys.TextSecondary, 3);
             modified.Margin = new Thickness(8, 0, 0, 0);
             profileRow.Children.Add(modified);
         }
 
         Add(profileRow);
         var nameRow = new StackPanel { Orientation = Orientation.Horizontal };
-        var nameBox = V.Field(_profileName.Length > 0 ? _profileName : (selected?.Name ?? string.Empty), 130, 11.5, "Profile name");
+        var nameBox = V.Field(_profileName.Length > 0 ? _profileName : (selected?.Name ?? string.Empty), 130, 11.5, Loc.T("Profile name"));
         nameBox.TextChanged += (_, _) => _profileName = nameBox.Text;
         nameRow.Children.Add(nameBox);
-        var update = V.Mini("Update", () =>
+        var update = V.Mini(Loc.T("Update"), () =>
         {
             if (selected is null)
             {
@@ -928,12 +928,12 @@ internal sealed class MediaWorkspaceView : StackPanel
         update.IsEnabled = selected is not null;
         update.Margin = new Thickness(6, 0, 0, 0);
         nameRow.Children.Add(update);
-        var saveNew = V.Mini("Save new", () =>
+        var saveNew = V.Mini(Loc.T("Save new"), () =>
         {
             var name = nameBox.Text.Trim();
             if (name.Length == 0)
             {
-                name = $"Profile {profiles.Count + 1}";
+                name = Loc.F("Profile {0}", profiles.Count + 1);
             }
 
             var profile = new ImageProfile { Name = name, Options = MediaSession.Options.Clone() };
@@ -949,7 +949,7 @@ internal sealed class MediaWorkspaceView : StackPanel
 
         if (o.Format != "pdf")
         {
-            Add(MediaControls.Check("Remove metadata", o.StripMetadata, on =>
+            Add(MediaControls.Check(Loc.T("Remove metadata"), o.StripMetadata, on =>
             {
                 o.StripMetadata = on;
                 OptionsChanged();
@@ -957,18 +957,18 @@ internal sealed class MediaWorkspaceView : StackPanel
         }
 
         var backgrounds = new[] { "transparent", "white", "black" };
-        var bg = MediaControls.Segmented(["Transparent", "White", "Black"], Math.Max(0, Array.IndexOf(backgrounds, o.Background)), i =>
+        var bg = MediaControls.Segmented([Loc.T("Transparent"), Loc.T("White"), Loc.T("Black")], Math.Max(0, Array.IndexOf(backgrounds, o.Background)), i =>
         {
             o.Background = backgrounds[i];
             OptionsChanged();
         }, _compact ? 11 : 12);
-        System.Windows.Automation.AutomationProperties.SetName(bg, "Background");
+        System.Windows.Automation.AutomationProperties.SetName(bg, Loc.T("Background"));
         Add(bg);
 
         // watermark
         var watermark = new StackPanel();
         var kinds = new[] { "off", "text", "logo", "textAndLogo" };
-        var kindDrop = V.Drop(["Off", "Text", "Logo", "Text + logo"], Math.Max(0, Array.IndexOf(kinds, o.WatermarkKind)), i =>
+        var kindDrop = V.Drop([Loc.T("Off"), Loc.T("Text"), Loc.T("Logo"), Loc.T("Text + logo")], Math.Max(0, Array.IndexOf(kinds, o.WatermarkKind)), i =>
         {
             o.WatermarkKind = kinds[i];
             OptionsChanged();
@@ -977,13 +977,13 @@ internal sealed class MediaWorkspaceView : StackPanel
         var kindRow = new Grid();
         kindRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         kindRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        kindRow.Children.Add(UiKit.Text("Watermark", _compact ? 11 : 12, FontWeights.Normal, ThemeKeys.TextPrimary));
+        kindRow.Children.Add(UiKit.Text(Loc.T("Watermark"), _compact ? 11 : 12, FontWeights.Normal, ThemeKeys.TextPrimary));
         Grid.SetColumn(kindDrop, 1);
         kindRow.Children.Add(kindDrop);
         watermark.Children.Add(kindRow);
         if (o.WatermarkKind is "text" or "textAndLogo")
         {
-            var textBox = PackageParts.HintField("Watermark text", out var box, 11.5);
+            var textBox = PackageParts.HintField(Loc.T("Watermark text"), out var box, 11.5);
             box.Text = o.WatermarkText;
             box.TextChanged += (_, _) =>
             {
@@ -996,10 +996,10 @@ internal sealed class MediaWorkspaceView : StackPanel
 
         if (o.WatermarkKind is "logo" or "textAndLogo")
         {
-            var logoName = UiKit.Text(string.IsNullOrEmpty(o.WatermarkLogoPath) ? "No logo" : Path.GetFileName(o.WatermarkLogoPath), 11, FontWeights.Normal, ThemeKeys.TextPrimary, trimming: TextTrimming.CharacterEllipsis);
-            var logoRow = V.Split(logoName, V.Row(4, V.Mini("Choose logo", () =>
+            var logoName = UiKit.Text(string.IsNullOrEmpty(o.WatermarkLogoPath) ? Loc.T("No logo") : Path.GetFileName(o.WatermarkLogoPath), 11, FontWeights.Normal, ThemeKeys.TextPrimary, trimming: TextTrimming.CharacterEllipsis);
+            var logoRow = V.Split(logoName, V.Row(4, V.Mini(Loc.T("Choose logo"), () =>
             {
-                var files = Dialogs.OpenFiles("Choose logo", MediaNaming.ImageFilter, false);
+                var files = Dialogs.OpenFiles(Loc.T("Choose logo"), MediaNaming.ImageFilter, false);
                 if (files.Length > 0)
                 {
                     o.WatermarkLogoPath = files[0];
@@ -1019,7 +1019,7 @@ internal sealed class MediaWorkspaceView : StackPanel
         if (o.WatermarkKind != "off")
         {
             var positions = new[] { "topLeft", "topRight", "center", "bottomLeft", "bottomRight" };
-            var posDrop = V.Drop(["Top left", "Top right", "Center", "Bottom left", "Bottom right"], Math.Max(0, Array.IndexOf(positions, o.WatermarkPosition)), i =>
+            var posDrop = V.Drop([Loc.T("Top left"), Loc.T("Top right"), Loc.T("Center"), Loc.T("Bottom left"), Loc.T("Bottom right")], Math.Max(0, Array.IndexOf(positions, o.WatermarkPosition)), i =>
             {
                 o.WatermarkPosition = positions[i];
                 OptionsChanged();
@@ -1027,7 +1027,7 @@ internal sealed class MediaWorkspaceView : StackPanel
             var posRow = new Grid { Margin = new Thickness(0, 7, 0, 0) };
             posRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             posRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            posRow.Children.Add(UiKit.Text("Position", _compact ? 11 : 12, FontWeights.Normal, ThemeKeys.TextPrimary));
+            posRow.Children.Add(UiKit.Text(Loc.T("Position"), _compact ? 11 : 12, FontWeights.Normal, ThemeKeys.TextPrimary));
             Grid.SetColumn(posDrop, 1);
             posRow.Children.Add(posDrop);
             watermark.Children.Add(posRow);
@@ -1042,16 +1042,16 @@ internal sealed class MediaWorkspaceView : StackPanel
                 return s;
             }
 
-            watermark.Children.Add(Step("Opacity", (int)Math.Round(o.WatermarkOpacity * 100), 10, 100, 5, "%", v => o.WatermarkOpacity = v / 100.0));
-            watermark.Children.Add(Step("Margin", o.WatermarkMargin, 0, 2000, 8, "px", v => o.WatermarkMargin = v));
-            watermark.Children.Add(Step("Scale", (int)Math.Round(o.WatermarkScale * 100), 5, 80, 1, "%", v => o.WatermarkScale = v / 100.0));
+            watermark.Children.Add(Step(Loc.T("Opacity"), (int)Math.Round(o.WatermarkOpacity * 100), 10, 100, 5, "%", v => o.WatermarkOpacity = v / 100.0));
+            watermark.Children.Add(Step(Loc.T("Margin"), o.WatermarkMargin, 0, 2000, 8, "px", v => o.WatermarkMargin = v));
+            watermark.Children.Add(Step(Loc.T("Scale"), (int)Math.Round(o.WatermarkScale * 100), 5, 80, 1, "%", v => o.WatermarkScale = v / 100.0));
         }
 
         Add(watermark);
 
         // rename
         var rename = new StackPanel();
-        rename.Children.Add(UiKit.Text("Rename", _compact ? 10.5 : 11, FontWeights.SemiBold, ThemeKeys.TextPrimary));
+        rename.Children.Add(UiKit.Text(Loc.T("Rename"), _compact ? 10.5 : 11, FontWeights.SemiBold, ThemeKeys.TextPrimary));
         var renameRow = new Grid { Margin = new Thickness(0, 5, 0, 0) };
         renameRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         renameRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -1063,7 +1063,7 @@ internal sealed class MediaWorkspaceView : StackPanel
             OptionsChanged();
         };
         renameRow.Children.Add(patternField);
-        var tokens = new Button { Content = UiKit.Text("{…}", 11, FontWeights.Normal, ThemeKeys.TextPrimary), ToolTip = "Rename", Margin = new Thickness(6, 0, 0, 0) };
+        var tokens = new Button { Content = UiKit.Text("{…}", 11, FontWeights.Normal, ThemeKeys.TextPrimary), ToolTip = Loc.T("Rename"), Margin = new Thickness(6, 0, 0, 0) };
         tokens.Content = new TextBlock { Text = "{…}", FontFamily = new FontFamily("Cascadia Mono, Consolas"), FontSize = 11 };
         tokens.SetResourceReference(FrameworkElement.StyleProperty, ThemeKeys.ButtonPlain);
         var menu = new ContextMenu();
@@ -1085,7 +1085,7 @@ internal sealed class MediaWorkspaceView : StackPanel
         rename.Children.Add(renameRow);
         Add(rename);
 
-        Add(MediaControls.Check("Keep original modified date", o.PreserveModificationDate, on =>
+        Add(MediaControls.Check(Loc.T("Keep original modified date"), o.PreserveModificationDate, on =>
         {
             o.PreserveModificationDate = on;
             OptionsChanged();
@@ -1203,10 +1203,10 @@ internal sealed class MediaWorkspaceView : StackPanel
         var row = new StackPanel { Orientation = Orientation.Horizontal };
         var title = Tool switch
         {
-            MediaTool.Video => "Compress video",
-            MediaTool.Gif => "Make GIF",
-            MediaTool.Image => MediaSession.Options.Format == "pdf" ? "Convert to PDF" : "Process image",
-            _ => "Extract text",
+            MediaTool.Video => Loc.T("Compress video"),
+            MediaTool.Gif => Loc.T("Make GIF"),
+            MediaTool.Image => MediaSession.Options.Format == "pdf" ? Loc.T("Convert to PDF") : Loc.T("Process image"),
+            _ => Loc.T("Extract text"),
         };
         var start = UiKit.Button(title, ButtonKind.Prominent, _compact ? 11 : 12, Tool == MediaTool.Text ? G.Search : G.Play, Start);
         start.IsEnabled = FirstInput is not null && !Running;
@@ -1214,7 +1214,7 @@ internal sealed class MediaWorkspaceView : StackPanel
         row.Children.Add(start);
         if (Running)
         {
-            var cancel = UiKit.Button("Cancel", ButtonKind.Bordered, _compact ? 11 : 12, G.Cancel, _svc.Cancel);
+            var cancel = UiKit.Button(Loc.T("Cancel"), ButtonKind.Bordered, _compact ? 11 : 12, G.Cancel, _svc.Cancel);
             cancel.Margin = new Thickness(8, 0, 0, 0);
             row.Children.Add(cancel);
         }
@@ -1226,7 +1226,7 @@ internal sealed class MediaWorkspaceView : StackPanel
     {
         if (FirstInput is not { } input)
         {
-            _localMessage = "Choose a file first.";
+            _localMessage = Loc.T("Choose a file first.");
             BuildStatus();
             return;
         }
@@ -1351,7 +1351,7 @@ internal sealed class MediaWorkspaceView : StackPanel
                 var head = new Grid();
                 head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                head.Children.Add(V.Label(G.Gear, "Processing", 11.5, FontWeights.SemiBold, ThemeKeys.TextPrimary, ThemeKeys.TextPrimary));
+                head.Children.Add(V.Label(G.Gear, Loc.T("Processing"), 11.5, FontWeights.SemiBold, ThemeKeys.TextPrimary, ThemeKeys.TextPrimary));
                 var percent = UiKit.Text($"{(int)(_svc.Progress * 100)}%", 11, FontWeights.Normal, ThemeKeys.TextSecondary);
                 percent.FontFamily = new FontFamily("Cascadia Mono, Consolas");
                 Grid.SetColumn(percent, 1);
@@ -1366,10 +1366,10 @@ internal sealed class MediaWorkspaceView : StackPanel
                 column.Children.Add(new PanelCard(ResultBody(result)) { Margin = new Thickness(0, column.Children.Count == 0 ? 0 : 8, 0, 0) });
                 break;
             case MediaStateKind.Failed:
-                column.Children.Add(MessageCard(G.Warning, ThemeKeys.Orange, _svc.Message ?? "Format not supported by Windows."));
+                column.Children.Add(MessageCard(G.Warning, ThemeKeys.Orange, _svc.Message ?? Loc.T("Format not supported by Windows.")));
                 break;
             case MediaStateKind.Cancelled:
-                column.Children.Add(MessageCard(G.CancelCircle, ThemeKeys.TextSecondary, "Cancelled."));
+                column.Children.Add(MessageCard(G.CancelCircle, ThemeKeys.TextSecondary, Loc.T("Cancelled.")));
                 break;
         }
 
@@ -1380,7 +1380,7 @@ internal sealed class MediaWorkspaceView : StackPanel
     private FrameworkElement ResultBody(MediaResult result)
     {
         var column = new StackPanel();
-        column.Children.Add(V.Label(G.CheckCircle, "Done", 11.5, FontWeights.SemiBold, ThemeKeys.Green, ThemeKeys.Green));
+        column.Children.Add(V.Label(G.CheckCircle, Loc.T("Done"), 11.5, FontWeights.SemiBold, ThemeKeys.Green, ThemeKeys.Green));
         var batch = result.Batch.Count > 1;
         void Line(FrameworkElement e, double top = 8)
         {
@@ -1392,7 +1392,7 @@ internal sealed class MediaWorkspaceView : StackPanel
         {
             if (string.IsNullOrWhiteSpace(result.Text))
             {
-                Line(V.Secondary("No text found.", 11, false));
+                Line(V.Secondary(Loc.T("No text found."), 11, false));
             }
             else
             {
@@ -1419,24 +1419,24 @@ internal sealed class MediaWorkspaceView : StackPanel
             if (batch)
             {
                 var failedCount = result.Batch.Count(b => b.Output is null);
-                Line(UiKit.Text(failedCount == 0 ? $"{result.Batch.Count} images saved" : $"{result.Batch.Count - failedCount} saved, {failedCount} failed", 11, FontWeights.Normal, ThemeKeys.TextPrimary, wrap: true));
+                Line(UiKit.Text(failedCount == 0 ? Loc.F("{0} images saved", result.Batch.Count) : Loc.F("{0} saved, {1} failed", result.Batch.Count - failedCount, failedCount), 11, FontWeights.Normal, ThemeKeys.TextPrimary, wrap: true));
             }
             else
             {
-                Line(UiKit.Text($"Saved as {Path.GetFileName(result.Outputs[0])}", 11, FontWeights.Normal, ThemeKeys.TextPrimary, trimming: TextTrimming.CharacterEllipsis));
+                Line(UiKit.Text(Loc.F("Saved as {0}", Path.GetFileName(result.Outputs[0])), 11, FontWeights.Normal, ThemeKeys.TextPrimary, trimming: TextTrimming.CharacterEllipsis));
             }
 
-            var sizes = V.Secondary($"{Fmt.Bytes(result.OriginalBytes)} to {Fmt.Bytes(result.OutputBytes)}", 10.5, false);
+            var sizes = V.Secondary(Loc.F("{0} to {1}", Fmt.Bytes(result.OriginalBytes), Fmt.Bytes(result.OutputBytes)), 10.5, false);
             Line(sizes, 2);
             var delta = result.OriginalBytes - result.OutputBytes;
             if (delta != 0 && result.Tool != MediaTool.Text)
             {
-                Line(V.Secondary(delta > 0 ? $"{Fmt.Bytes(delta)} saved" : $"{Fmt.Bytes(-delta)} larger", 10.5, false), 2);
+                Line(V.Secondary(delta > 0 ? Loc.F("{0} saved", Fmt.Bytes(delta)) : Loc.F("{0} larger", Fmt.Bytes(-delta)), 10.5, false), 2);
             }
 
             if (result.OutputGrew && result.Tool != MediaTool.Text)
             {
-                Line(V.Secondary("The converted file came out larger than the original.", 10.5), 2);
+                Line(V.Secondary(Loc.T("The converted file came out larger than the original."), 10.5), 2);
             }
 
             foreach (var failure in result.Batch.Where(b => b.Output is null).Take(3))
@@ -1457,20 +1457,20 @@ internal sealed class MediaWorkspaceView : StackPanel
 
         if (result.Outputs.Count > 0)
         {
-            Button("Show", G.Folder, () => FileOps.Reveal(result.Outputs[0]));
+            Button(Loc.T("Show"), G.Folder, () => FileOps.Reveal(result.Outputs[0]));
         }
 
         if (result.Tool == MediaTool.Text && !string.IsNullOrEmpty(result.Text))
         {
-            Button("Copy text", G.Copy, () => TryCopy(result.Text!));
+            Button(Loc.T("Copy text"), G.Copy, () => TryCopy(result.Text!));
         }
 
         if (batch)
         {
-            Button("Copy summary", G.Copy, () => TryCopy(Summary(result)));
+            Button(Loc.T("Copy summary"), G.Copy, () => TryCopy(Summary(result)));
         }
 
-        Button("Run again", G.Refresh, Start);
+        Button(Loc.T("Run again"), G.Refresh, Start);
         column.Children.Add(buttons);
         return column;
     }
@@ -1479,11 +1479,11 @@ internal sealed class MediaWorkspaceView : StackPanel
     {
         var failed = result.Batch.Count(b => b.Output is null);
         var builder = new System.Text.StringBuilder();
-        builder.AppendLine($"{result.Batch.Count - failed} saved, {failed} failed");
+        builder.AppendLine(Loc.F("{0} saved, {1} failed", result.Batch.Count - failed, failed));
         var delta = result.OriginalBytes - result.OutputBytes;
         if (delta != 0)
         {
-            builder.AppendLine(delta > 0 ? $"{Fmt.Bytes(delta)} saved" : $"{Fmt.Bytes(-delta)} larger");
+            builder.AppendLine(delta > 0 ? Loc.F("{0} saved", Fmt.Bytes(delta)) : Loc.F("{0} larger", Fmt.Bytes(-delta)));
         }
 
         foreach (var item in result.Batch)

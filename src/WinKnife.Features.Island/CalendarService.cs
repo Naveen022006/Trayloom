@@ -205,7 +205,7 @@ internal sealed class CalendarService : IDisposable
                 if (!string.IsNullOrEmpty(cal.UserDataAccountId) && !accounts.ContainsKey(cal.UserDataAccountId))
                 {
                     var acc = await acStore.GetAccountAsync(cal.UserDataAccountId);
-                    accounts[cal.UserDataAccountId] = acc?.UserDisplayName ?? "Other";
+                    accounts[cal.UserDataAccountId] = acc?.UserDisplayName ?? Loc.T("Other");
                 }
             }
         }
@@ -299,7 +299,7 @@ internal sealed class CalendarService : IDisposable
 
                 var name = Path.GetFileNameWithoutExtension(src);
                 var id = "ics:" + src;
-                calendars.Add(new CalendarInfo(id, string.IsNullOrEmpty(name) ? "Calendar" : name, "ICS", Color.FromRgb(0x5E, 0xC8, 0x6B), "ics"));
+                calendars.Add(new CalendarInfo(id, string.IsNullOrEmpty(name) ? Loc.T("Calendar") : name, "ICS", Color.FromRgb(0x5E, 0xC8, 0x6B), "ics"));
                 if (excluded.Contains(id))
                 {
                     continue;

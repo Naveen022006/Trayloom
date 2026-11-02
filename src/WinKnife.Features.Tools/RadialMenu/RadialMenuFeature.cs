@@ -92,7 +92,7 @@ public sealed class RadialMenuFeature : ToolsFeatureBase, IRadialMenuService
     /// <inheritdoc />
     public override IReadOnlyList<FeatureAction> Actions =>
     [
-        new FeatureAction("try", "Radial menu", () => Safe(() => TryItCore(_profiles.FirstOrDefault() ?? RadialModel.Seed(Ctx))), ""),
+        new FeatureAction("try", Loc.T("Radial menu"), () => Safe(() => TryItCore(_profiles.FirstOrDefault() ?? RadialModel.Seed(Ctx))), ""),
     ];
 
     /// <inheritdoc />
@@ -463,7 +463,7 @@ public sealed class RadialMenuFeature : ToolsFeatureBase, IRadialMenuService
         else if (_stack.Count > 1)
         {
             var parent = _trail.Count > 0 ? _trail[^1] : "";
-            var label = parent.Length > 0 ? parent : "Submenu";
+            var label = parent.Length > 0 ? parent : Loc.T("Submenu");
             _window.SetHubFace("back." + label, () =>
             {
                 var stack = new System.Windows.Controls.StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };

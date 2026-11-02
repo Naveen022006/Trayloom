@@ -130,7 +130,7 @@ internal static class SUi
     /// <summary>Segmented Dynamic Island | Separate window row.</summary>
     public static FrameworkElement DestinationRow(IAppSettings app, string key, string glyph, string title, string? caption, bool enabled = true)
     {
-        var seg = new SegmentedControl(["Dynamic Island", "Separate window"], app.Get<bool>(key) ? 0 : 1, false, 12) { IsEnabled = enabled };
+        var seg = new SegmentedControl([Loc.T("Dynamic Island"), Loc.T("Separate window")], app.Get<bool>(key) ? 0 : 1, false, 12) { IsEnabled = enabled };
         seg.SelectionChanged += i => app.Set(key, i == 0);
         var row = new SettingsRow(glyph, title, caption, seg);
         if (!enabled)

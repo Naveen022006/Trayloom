@@ -17,7 +17,7 @@ public sealed class CleanerFeature : IFeature
 
     public IReadOnlyList<FeatureAction> Actions =>
     [
-        new FeatureAction("open", "Cleaner", () => _context?.Shell.OpenSettings(SettingsPages.Cleaner), G.Sparkle),
+        new FeatureAction("open", Loc.T("Cleaner"), () => _context?.Shell.OpenSettings(SettingsPages.Cleaner), G.Sparkle),
     ];
 
     public void Start(IFeatureContext context)
@@ -62,7 +62,7 @@ public sealed class CleanerSettingsSection : ISettingsSection
 
     public string PageId => SettingsPages.Cleaner;
 
-    public string? Title => "Cleaner";
+    public string? Title => Loc.T("Cleaner");
 
     public IReadOnlyList<string> Keywords => ["Automatic cleanup", "Clean up automatically", "Forgotten screenshots", "caches", "logs", "temp", "WhatsApp downloads", "File types", "Automatic organization"];
 
@@ -84,11 +84,11 @@ public sealed class CleanerUtility : IPanelUtility
 
     public string Id => "cleaner";
 
-    public string Title => "Cleaner";
+    public string Title => Loc.T("Cleaner");
 
     public string Glyph => G.Sparkle;
 
-    public string? Caption => "App leftovers, caches and logs";
+    public string? Caption => Loc.T("App leftovers, caches and logs");
 
     public string? SettingsDestination => SettingsPages.Cleaner;
 

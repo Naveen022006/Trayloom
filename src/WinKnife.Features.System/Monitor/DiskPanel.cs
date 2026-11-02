@@ -146,7 +146,7 @@ internal static class DiskBlocks
         name.MaxWidth = 70;
         head.Children.Add(name);
         text.Children.Add(head);
-        text.Children.Add(UiKit.Text($"{Math.Round(v.UsedFraction * 100)}% used", 9, FontWeights.Normal, ThemeKeys.TextSecondary));
+        text.Children.Add(UiKit.Text(Loc.F("{0}% used", Math.Round(v.UsedFraction * 100)), 9, FontWeights.Normal, ThemeKeys.TextSecondary));
         grid.Children.Add(text);
         if (v.External)
         {
@@ -246,8 +246,8 @@ internal static class DiskBlocks
             var fraction = v.UsedFraction;
             bar.Value = fraction;
             bar.FillKey = fraction < 0.75 ? ThemeKeys.Accent : fraction < 0.9 ? ThemeKeys.Yellow : ThemeKeys.Red;
-            used.Text = $"{Math.Round(fraction * 100)}% used";
-            avail.Text = $"{Fmt.BytesDecimal(v.Free)} available";
+            used.Text = Loc.F("{0}% used", Math.Round(fraction * 100));
+            avail.Text = Loc.F("{0} available", Fmt.BytesDecimal(v.Free));
             totalLine.Text = $"{Fmt.BytesDecimal(v.Total - v.Free)} / {Fmt.BytesDecimal(v.Total)}";
         }
 
@@ -348,8 +348,8 @@ internal static class DiskBlocks
 
             foreach (var (label, value) in new[]
             {
-                ("Status", info.Status), ("Total written", info.TotalWritten), ("Total read", info.TotalRead), ("Temperature", info.Temperature),
-                ("Health", info.Health), ("Power cycles", info.PowerCycles), ("Power on hours", info.PowerOnHours),
+                (Loc.T("Status"), info.Status), (Loc.T("Total written"), info.TotalWritten), (Loc.T("Total read"), info.TotalRead), (Loc.T("Temperature"), info.Temperature),
+                (Loc.T("Health"), info.Health), (Loc.T("Power cycles"), info.PowerCycles), (Loc.T("Power on hours"), info.PowerOnHours),
             })
             {
                 if (value is null)

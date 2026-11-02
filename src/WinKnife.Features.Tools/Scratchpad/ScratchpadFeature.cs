@@ -180,7 +180,7 @@ public sealed class ScratchpadSettingsSection : ISettingsSection
         card.Add(open);
         card.AddCaption(PadStrings.PanelCaption);
 
-        IReadOnlyList<(string, string)> items = [("never", "Never"), ("day", "After a day unused"), ("week", "After a week unused"), ("month", "After a month unused")];
+        IReadOnlyList<(string, string)> items = [("never", Loc.T("Never")), ("day", Loc.T("After a day unused")), ("week", Loc.T("After a week unused")), ("month", Loc.T("After a month unused"))];
         var current = app.Get<string>("scratchpadRetention");
         card.Add(new PickerRow<string>(null, PadStrings.RetentionTitle, null, items, items.Any(i => i.Item1 == current) ? current : "never", v => app.Set("scratchpadRetention", v), 170));
         card.AddCaption(PadStrings.RetentionCaption);

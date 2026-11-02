@@ -189,7 +189,7 @@ internal sealed class ClipboardSource : IDisposable
             return;
         }
 
-        _core.ShowNotice(new Notice { Event = NoticeEvents.ClipboardCopy, Glyph = G.Clipboard, Title = "Copied", Detail = "Clipboard" });
+        _core.ShowNotice(new Notice { Event = NoticeEvents.ClipboardCopy, Glyph = G.Clipboard, Title = Loc.T("Copied"), Detail = Loc.T("Clipboard") });
     }
 
     public void Copy(ClipItem item)

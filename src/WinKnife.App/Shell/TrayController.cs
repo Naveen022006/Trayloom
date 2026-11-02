@@ -19,7 +19,7 @@ internal sealed class TrayController : IDisposable
     private Forms.NotifyIcon? _icon;
     private Drawing.Icon? _iconImage;
     private string _glyphCode = string.Empty;
-    private string _tooltip = "WinKnife: normal sleep";
+    private string _tooltip = Loc.T("WinKnife: normal sleep");
     private Color? _badge;
     private Color? _tint;
     private string? _overrideGlyph;

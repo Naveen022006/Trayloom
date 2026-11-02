@@ -52,7 +52,7 @@ internal sealed class BarWindow : GlassWindow
         Width = BarWidth;
         SizeToContent = SizeToContent.Height;
         ShowActivated = true;
-        Title = "Command Bar";
+        Title = Loc.T("Command Bar");
         Focusable = true;
 
         _field = new TextBox
@@ -847,7 +847,7 @@ internal sealed class BarWindow : GlassWindow
         row.Children.Add(Chip(null, "All"));
         foreach (var raw in chips)
         {
-            row.Children.Add(Chip(raw, BarSource.CategoryTitle(raw) is var t && raw == "menus" ? "Menu commands" : t));
+            row.Children.Add(Chip(raw, BarSource.CategoryTitle(raw) is var t && raw == "menus" ? Loc.T("Menu commands") : t));
         }
 
         scroll.Content = row;
@@ -1279,7 +1279,7 @@ internal sealed class BarWindow : GlassWindow
             Hint(BarStrings.ActionsTitle, false, 8);
         }
 
-        Hint(_svc.CategoryChips().Count > 0 ? "Ctrl+P Ctrl+N ↑↓ ←→" : "Ctrl+P Ctrl+N ↑↓");
+        Hint(_svc.CategoryChips().Count > 0 ? Loc.T("Ctrl+P Ctrl+N ↑↓ ←→") : Loc.T("Ctrl+P Ctrl+N ↑↓"));
         if (search && _svc.CanTabComplete)
         {
             Hint("⇥");

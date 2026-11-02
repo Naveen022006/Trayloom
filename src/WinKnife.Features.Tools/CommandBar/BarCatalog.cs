@@ -74,20 +74,20 @@ internal static class BarCatalog
         }
 
         // ---- action rows ----
-        Tool("action.screenshot", "screenshot", "Screenshot", 0xE722, "screenshot", "screenshot");
+        Tool("action.screenshot", "screenshot", Loc.T("Screenshot"), 0xE722, "screenshot", "screenshot");
         if (Has("screenshot") && Exact(ctx, "screenshot", "scrolling", "scrolling-screenshot") is { } scrolling)
         {
-            rows.Add(Simple("action.scrollingScreenshot", "Scrolling screenshot", Area("screenshot", "Scrolling screenshot"), 0xE8A9, scrolling.Invoke, 150));
+            rows.Add(Simple("action.scrollingScreenshot", Loc.T("Scrolling screenshot"), Area("screenshot", Loc.T("Scrolling screenshot")), 0xE8A9, scrolling.Invoke, 150));
         }
 
-        Tool("action.screenRecorder", "screenRecorder", "Screen recording", 0xE7C8, "screen-recorder", "screenRecorder");
+        Tool("action.screenRecorder", "screenRecorder", Loc.T("Screen recording"), 0xE7C8, "screen-recorder", "screenRecorder");
         if (Has("screenshot") && Exact(ctx, "screenshot", "recent", "history", "recent-captures") is { } recent)
         {
-            rows.Add(Simple("action.recentCaptures", "Recent captures", Tools, 0xE81C, recent.Invoke, 100, "Screenshot Recording Recent captures"));
+            rows.Add(Simple("action.recentCaptures", Loc.T("Recent captures"), Tools, 0xE81C, recent.Invoke, 100, Loc.T("Screenshot Recording Recent captures")));
         }
 
-        Tool("action.screenOCR", "screenOCR", "Copy text from screen", 0xE8D2, "screen-ocr", "screenOCR");
-        Tool("action.colorPicker", "colorPicker", "Color picker", 0xEF3C, "color-picker", "colorPicker");
+        Tool("action.screenOCR", "screenOCR", Loc.T("Copy text from screen"), 0xE8D2, "screen-ocr", "screenOCR");
+        Tool("action.colorPicker", "colorPicker", Loc.T("Color picker"), 0xEF3C, "color-picker", "colorPicker");
 
         if (Has("clipboard-history"))
         {
@@ -97,12 +97,12 @@ internal static class BarCatalog
             rows.Add(new BarEntry
             {
                 Id = "action.clipboardWindow",
-                Title = "Clipboard",
-                EnglishTitle = "Clipboard",
-                Subtitle = Area("clipboard-history", "Clipboard"),
+                Title = Loc.T("Clipboard"),
+                EnglishTitle = Loc.T("Clipboard"),
+                Subtitle = Area("clipboard-history", Loc.T("Clipboard")),
                 Glyph = G(0xE77F),
                 Shortcut = ShortcutText.Of(ctx, "clipboardHistory"),
-                NeedsSetupFeature = needs ? "Clipboard" : null,
+                NeedsSetupFeature = needs ? Loc.T("Clipboard") : null,
                 NeedsSetupDestination = needs ? SettingsPages.Clipboard : null,
                 BeatMs = 100,
                 FeatureKey = "clipboard-history",
@@ -115,14 +115,14 @@ internal static class BarCatalog
                 rows.Add(new BarEntry
                 {
                     Id = "action.clipboardClearRecent",
-                    Title = "Clear unpinned",
-                    EnglishTitle = "Clear unpinned",
-                    Subtitle = "Clipboard",
+                    Title = Loc.T("Clear unpinned"),
+                    EnglishTitle = Loc.T("Clear unpinned"),
+                    Subtitle = Loc.T("Clipboard"),
                     Glyph = G(0xE74D),
                     Keywords = "Clipboard Clipboard Clear unpinned Recent Recent Clear recent Clear recent",
-                    NeedsSetupFeature = needs ? "Clipboard" : null,
+                    NeedsSetupFeature = needs ? Loc.T("Clipboard") : null,
                     NeedsSetupDestination = needs ? SettingsPages.Clipboard : null,
-                    ConfirmPrompt = $"Clear unpinned ({unpinned})?",
+                    ConfirmPrompt = Loc.F("Clear unpinned ({0})?", unpinned),
                     Run = _ => clear.Invoke(),
                 });
             }
@@ -133,19 +133,19 @@ internal static class BarCatalog
             var lib = ctx.Actions.All.FirstOrDefault(a => FeatureCatalog.Resolve(a.Feature.Id) == "text-snippets" && (a.Action.Id.Contains("librar", StringComparison.OrdinalIgnoreCase) || a.Action.Id.Contains("menu", StringComparison.OrdinalIgnoreCase))).Action;
             if (lib is not null)
             {
-                rows.Add(Simple("action.snippetLibrary", "Quick snippet menu", Area("text-snippets", "Quick snippet menu"), 0xE8C4, lib.Invoke, 100));
+                rows.Add(Simple("action.snippetLibrary", Loc.T("Quick snippet menu"), Area("text-snippets", Loc.T("Quick snippet menu")), 0xE8C4, lib.Invoke, 100));
             }
         }
 
-        Tool("action.scratchpad", "scratchpad", "Scratchpad", 0xE70B, "scratchpad", "scratchpad");
-        Tool("action.cameraPreview", "cameraPreview", "Camera preview", 0xE722, "camera-preview", "cameraPreview");
-        Tool("action.shelf", "shelf", "Shelf", 0xE7B8, "shelf", "shelf");
+        Tool("action.scratchpad", "scratchpad", Loc.T("Scratchpad"), 0xE70B, "scratchpad", "scratchpad");
+        Tool("action.cameraPreview", "cameraPreview", Loc.T("Camera preview"), 0xE722, "camera-preview", "cameraPreview");
+        Tool("action.shelf", "shelf", Loc.T("Shelf"), 0xE7B8, "shelf", "shelf");
         if (Has("paste-plain") && Exact(ctx, "paste-plain", "paste-plain") is { } plain)
         {
-            rows.Add(Simple("action.pastePlain", "Paste as plain text", Area("paste-plain", "Paste as plain text"), 0xE8E4, plain.Invoke, 150, null, ShortcutText.Of(ctx, "pastePlain")));
+            rows.Add(Simple("action.pastePlain", Loc.T("Paste as plain text"), Area("paste-plain", Loc.T("Paste as plain text")), 0xE8E4, plain.Invoke, 150, null, ShortcutText.Of(ctx, "pastePlain")));
         }
 
-        Tool("action.cleaningMode", "cleaningMode", "Cleaning Mode", 0xE765, "cleaning-mode", null, 100);
+        Tool("action.cleaningMode", "cleaningMode", Loc.T("Cleaning Mode"), 0xE765, "cleaning-mode", null, 100);
 
         // keep awake
         if (Has("keep-awake"))
@@ -155,9 +155,9 @@ internal static class BarCatalog
             rows.Add(new BarEntry
             {
                 Id = "action.keepAwake",
-                Title = on ? "Disable keep awake" : "Enable keep awake",
-                EnglishTitle = on ? "Disable keep awake" : "Enable keep awake",
-                Subtitle = "Keep awake",
+                Title = on ? Loc.T("Disable keep awake") : Loc.T("Enable keep awake"),
+                EnglishTitle = on ? Loc.T("Disable keep awake") : Loc.T("Enable keep awake"),
+                Subtitle = Loc.T("Keep awake"),
                 Keywords = "Keep awake",
                 Glyph = G(0xE945),
                 IsActive = on,
@@ -183,15 +183,15 @@ internal static class BarCatalog
                     }
                 },
             });
-            foreach (var (minutes, label) in new[] { (15, "15 minutes"), (30, "30 minutes"), (60, "1 hour"), (120, "2 hours"), (240, "4 hours"), (480, "8 hours") })
+            foreach (var (minutes, label) in new[] { (15, Loc.T("15 minutes")), (30, Loc.T("30 minutes")), (60, Loc.T("1 hour")), (120, Loc.T("2 hours")), (240, Loc.T("4 hours")), (480, Loc.T("8 hours")) })
             {
                 var m = minutes;
                 rows.Add(new BarEntry
                 {
                     Id = "action.keepAwake." + m,
-                    Title = $"Keep awake for {label}",
-                    EnglishTitle = $"Keep awake for {label}",
-                    Subtitle = "Keep awake",
+                    Title = Loc.F("Keep awake for {0}", label),
+                    EnglishTitle = Loc.F("Keep awake for {0}", label),
+                    Subtitle = Loc.T("Keep awake"),
                     Keywords = "Keep awake",
                     Glyph = G(0xE916),
                     FeatureKey = "keep-awake",
@@ -208,9 +208,9 @@ internal static class BarCatalog
             rows.Add(new BarEntry
             {
                 Id = "action.micMute",
-                Title = muted ? "Unmute microphone" : "Mute microphone",
-                EnglishTitle = muted ? "Unmute microphone" : "Mute microphone",
-                Subtitle = "Mute microphone",
+                Title = muted ? Loc.T("Unmute microphone") : Loc.T("Mute microphone"),
+                EnglishTitle = muted ? Loc.T("Unmute microphone") : Loc.T("Mute microphone"),
+                Subtitle = Loc.T("Mute microphone"),
                 Glyph = G(muted ? 0xF781 : 0xE720),
                 IsActive = muted,
                 Shortcut = ShortcutText.Of(ctx, "micMute"),
@@ -225,12 +225,12 @@ internal static class BarCatalog
             rows.Add(new BarEntry
             {
                 Id = "action.brightness",
-                Title = "Display brightness",
-                EnglishTitle = "Display brightness",
-                Subtitle = enabled ? "0 to 100" : "Displays",
+                Title = Loc.T("Display brightness"),
+                EnglishTitle = Loc.T("Display brightness"),
+                Subtitle = enabled ? Loc.T("0 to 100") : Loc.T("Displays"),
                 Keywords = "Displays screen",
                 Glyph = G(0xE706),
-                NeedsSetupFeature = enabled ? null : "Displays",
+                NeedsSetupFeature = enabled ? null : Loc.T("Displays"),
                 NeedsSetupDestination = enabled ? null : "energy#brightness",
                 NumericRange = enabled ? (0, 100) : null,
                 Run = v =>
@@ -253,9 +253,9 @@ internal static class BarCatalog
         rows.Add(new BarEntry
         {
             Id = "action.volume",
-            Title = "Volume",
-            EnglishTitle = "Volume",
-            Subtitle = "0 to 100",
+            Title = Loc.T("Volume"),
+            EnglishTitle = Loc.T("Volume"),
+            Subtitle = Loc.T("0 to 100"),
             Glyph = G(0xE767),
             NumericRange = (0, 100),
             Run = v =>
@@ -264,7 +264,7 @@ internal static class BarCatalog
                 {
                     if (BarSystem.SetVolume(value))
                     {
-                        ToolHud.Show(G(0xE767), $"Volume {value}%");
+                        ToolHud.Show(G(0xE767), Loc.F("Volume {0}%", value));
                     }
                     else
                     {
@@ -278,9 +278,9 @@ internal static class BarCatalog
             rows.Add(new BarEntry
             {
                 Id = "action.soundMute",
-                Title = soundMuted ? "Turn the sound back on" : "Mute the sound",
-                EnglishTitle = soundMuted ? "Turn the sound back on" : "Mute the sound",
-                Subtitle = "Volume",
+                Title = soundMuted ? Loc.T("Turn the sound back on") : Loc.T("Mute the sound"),
+                EnglishTitle = soundMuted ? Loc.T("Turn the sound back on") : Loc.T("Mute the sound"),
+                Subtitle = Loc.T("Volume"),
                 Glyph = G(soundMuted ? 0xE74F : 0xE767),
                 IsActive = soundMuted,
                 Run = _ => BarSystem.SetMuted(!soundMuted),
@@ -289,7 +289,7 @@ internal static class BarCatalog
 
         if (Has("sound-output-switcher") && Exact(ctx, "sound-output-switcher", "cycle") is { } cycle)
         {
-            rows.Add(Simple("action.soundOutput", "Switch sound output", "Sound", 0xE7F6, cycle.Invoke, 100, "Switch sound output", ShortcutText.Of(ctx, "soundOutputSwitcher")));
+            rows.Add(Simple("action.soundOutput", Loc.T("Switch sound output"), Loc.T("Sound"), 0xE7F6, cycle.Invoke, 100, Loc.T("Switch sound output"), ShortcutText.Of(ctx, "soundOutputSwitcher")));
         }
 
         // quick toggles
@@ -317,7 +317,7 @@ internal static class BarCatalog
                 },
                 Title = title,
                 EnglishTitle = title,
-                Subtitle = "Quick toggles",
+                Subtitle = Loc.T("Quick toggles"),
                 Keywords = id == "darkMode" ? "Dark mode Light mode appearance theme" : "",
                 Glyph = QuickToggleOps.Glyph(id),
                 BeatMs = id is "lockScreen" or "displayOff" or "screenSaver" ? 150 : 100,
@@ -330,9 +330,9 @@ internal static class BarCatalog
             rows.Add(new BarEntry
             {
                 Id = "action.quitAll",
-                Title = "Quit all apps",
-                EnglishTitle = "Quit all apps",
-                Subtitle = "Quit apps",
+                Title = Loc.T("Quit all apps"),
+                EnglishTitle = Loc.T("Quit all apps"),
+                Subtitle = Loc.T("Quit apps"),
                 Glyph = G(0xE711),
                 Shortcut = ShortcutText.Of(ctx, "quitAll"),
                 BeatMs = 100,
@@ -341,9 +341,9 @@ internal static class BarCatalog
             rows.Add(new BarEntry
             {
                 Id = "action.quitOthers",
-                Title = "Quit all apps except the front one",
-                EnglishTitle = "Quit all apps except the front one",
-                Subtitle = "Quit apps",
+                Title = Loc.T("Quit all apps except the front one"),
+                EnglishTitle = Loc.T("Quit all apps except the front one"),
+                Subtitle = Loc.T("Quit apps"),
                 Glyph = G(0xE711),
                 Shortcut = ShortcutText.Of(ctx, "quitAllExceptFront"),
                 BeatMs = 100,
@@ -353,7 +353,7 @@ internal static class BarCatalog
 
         if (Has("url-cleaner") && Exact(ctx, "url-cleaner", "clean-clipboard") is { } clean)
         {
-            rows.Add(Simple("action.cleanURL", "Clean the copied link", "Clean URL", 0xE71B, clean.Invoke, 100, "Clean URL"));
+            rows.Add(Simple("action.cleanURL", Loc.T("Clean the copied link"), Loc.T("Clean URL"), 0xE71B, clean.Invoke, 100, Loc.T("Clean URL")));
         }
 
         if (Has("window-layout"))
@@ -372,7 +372,7 @@ internal static class BarCatalog
                     Id = "action.layout." + raw,
                     Title = title,
                     EnglishTitle = title,
-                    Subtitle = "Window layout",
+                    Subtitle = Loc.T("Window layout"),
                     Keywords = "Window layout" + (raw == "maximize" ? " Full Screen" : raw == "fullScreen" ? " Maximize" : ""),
                     Glyph = G(0xE8A0),
                     Shortcut = ShortcutText.Of(ctx, role),
@@ -387,9 +387,9 @@ internal static class BarCatalog
             rows.Add(new BarEntry
             {
                 Id = "action.appUpdates",
-                Title = "Check for app updates",
-                EnglishTitle = "Check for app updates",
-                Subtitle = "App updates",
+                Title = Loc.T("Check for app updates"),
+                EnglishTitle = Loc.T("Check for app updates"),
+                Subtitle = Loc.T("App updates"),
                 Keywords = "App updates",
                 Glyph = G(0xE896),
                 Run = _ => ToolActions.Run(ctx, "appUpdates"),
@@ -398,22 +398,22 @@ internal static class BarCatalog
 
         if (Has("cleaner"))
         {
-            rows.Add(Simple("action.cleaner", "Cleaner", Tools, 0xE9CE, () => ctx.Shell.OpenSettings(SettingsPages.Cleaner), 100));
+            rows.Add(Simple("action.cleaner", Loc.T("Cleaner"), Tools, 0xE9CE, () => ctx.Shell.OpenSettings(SettingsPages.Cleaner), 100));
         }
 
         if (Has("uninstaller"))
         {
-            rows.Add(Simple("action.uninstaller", "Uninstaller", Tools, 0xE74D, () => ctx.Shell.OpenSettings(SettingsPages.Uninstaller), 100));
+            rows.Add(Simple("action.uninstaller", Loc.T("Uninstaller"), Tools, 0xE74D, () => ctx.Shell.OpenSettings(SettingsPages.Uninstaller), 100));
         }
 
-        Tool("action.quickLauncher", "quickLauncher", "Quick panel", 0xE80A, "quick-launcher", "quickLauncher");
+        Tool("action.quickLauncher", "quickLauncher", Loc.T("Quick panel"), 0xE80A, "quick-launcher", "quickLauncher");
 
         rows.Add(new BarEntry
         {
             Id = "emoji.browse",
-            Title = "Emoji",
-            EnglishTitle = "Emoji",
-            Subtitle = "Command Bar",
+            Title = Loc.T("Emoji"),
+            EnglishTitle = Loc.T("Emoji"),
+            Subtitle = Loc.T("Command Bar"),
             Keywords = "Emoji",
             Glyph = G(0xE76E),
             KeepsBarOpen = true,
@@ -426,9 +426,9 @@ internal static class BarCatalog
             rows.Add(new BarEntry
             {
                 Id = "kill.browse",
-                Title = "Kill Process",
-                EnglishTitle = "Kill Process",
-                Subtitle = "Browse & Kill",
+                Title = Loc.T("Kill Process"),
+                EnglishTitle = Loc.T("Kill Process"),
+                Subtitle = Loc.T("Browse & Kill"),
                 Glyph = G(0xEA39),
                 KeepsBarOpen = true,
                 CountsUsage = false,
@@ -440,24 +440,24 @@ internal static class BarCatalog
             });
         }
 
-        rows.Add(Simple("action.feedback.bug", "Report a bug", "Send feedback", 0xEBE8, () => FeedbackWindow.Open(ctx, "bug"), 150, "Send feedback"));
-        rows.Add(Simple("action.feedback.feature", "Suggest a feature", "Send feedback", 0xEA80, () => FeedbackWindow.Open(ctx, "feature"), 150, "Send feedback"));
-        rows.Add(Simple("action.restartApp", "Restart WinKnife", "WinKnife actions", 0xE72C, () => ctx.Shell.Restart(), 100));
+        rows.Add(Simple("action.feedback.bug", Loc.T("Report a bug"), Loc.T("Send feedback"), 0xEBE8, () => FeedbackWindow.Open(ctx, "bug"), 150, Loc.T("Send feedback")));
+        rows.Add(Simple("action.feedback.feature", Loc.T("Suggest a feature"), Loc.T("Send feedback"), 0xEA80, () => FeedbackWindow.Open(ctx, "feature"), 150, Loc.T("Send feedback")));
+        rows.Add(Simple("action.restartApp", Loc.T("Restart WinKnife"), Loc.T("WinKnife actions"), 0xE72C, () => ctx.Shell.Restart(), 100));
 
         // power
-        rows.Add(Simple("action.power.sleep", "Sleep", "General", 0xE708, BarSystem.Sleep, 150));
-        rows.Add(Confirm("action.power.restart", "Restart", "Restart the PC?", 0xE777, () => BarSystem.Shutdown("/r")));
-        rows.Add(Confirm("action.power.shutDown", "Shut down", "Shut down the PC?", 0xE7E8, () => BarSystem.Shutdown("/s")));
-        rows.Add(Confirm("action.power.logOut", "Log out", "Log out?", 0xF3B1, () => BarSystem.Shutdown("/l")));
+        rows.Add(Simple("action.power.sleep", Loc.T("Sleep"), Loc.T("General"), 0xE708, BarSystem.Sleep, 150));
+        rows.Add(Confirm("action.power.restart", Loc.T("Restart"), Loc.T("Restart the PC?"), 0xE777, () => BarSystem.Shutdown("/r")));
+        rows.Add(Confirm("action.power.shutDown", Loc.T("Shut down"), Loc.T("Shut down the PC?"), 0xE7E8, () => BarSystem.Shutdown("/s")));
+        rows.Add(Confirm("action.power.logOut", Loc.T("Log out"), Loc.T("Log out?"), 0xF3B1, () => BarSystem.Shutdown("/l")));
 
         if (s.WifiOn is { } wifi)
         {
             rows.Add(new BarEntry
             {
                 Id = "action.wifi",
-                Title = wifi ? "Turn Wi-Fi off" : "Turn Wi-Fi on",
-                EnglishTitle = wifi ? "Turn Wi-Fi off" : "Turn Wi-Fi on",
-                Subtitle = "General",
+                Title = wifi ? Loc.T("Turn Wi-Fi off") : Loc.T("Turn Wi-Fi on"),
+                EnglishTitle = wifi ? Loc.T("Turn Wi-Fi off") : Loc.T("Turn Wi-Fi on"),
+                Subtitle = Loc.T("General"),
                 Keywords = "wifi wi-fi",
                 Glyph = G(wifi ? 0xE701 : 0xF384),
                 IsActive = wifi,
@@ -478,14 +478,14 @@ internal static class BarCatalog
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         foreach (var (name, path) in new[]
         {
-            ("Downloads", Path.Combine(home, "Downloads")),
-            ("Documents", Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)),
+            (Loc.T("Downloads"), Path.Combine(home, "Downloads")),
+            (Loc.T("Documents"), Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)),
             ("Desktop", Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory)),
-            ("Videos", Environment.GetFolderPath(Environment.SpecialFolder.MyVideos)),
+            (Loc.T("Videos"), Environment.GetFolderPath(Environment.SpecialFolder.MyVideos)),
             ("Pictures", Environment.GetFolderPath(Environment.SpecialFolder.MyPictures)),
-            ("Music", Environment.GetFolderPath(Environment.SpecialFolder.MyMusic)),
+            (Loc.T("Music"), Environment.GetFolderPath(Environment.SpecialFolder.MyMusic)),
             (Path.GetFileName(home), home),
-            ("Applications", "shell:AppsFolder"),
+            (Loc.T("Applications"), "shell:AppsFolder"),
         })
         {
             var folderPath = path;
@@ -509,8 +509,8 @@ internal static class BarCatalog
             rows.Add(new BarEntry
             {
                 Id = "answer.battery",
-                Title = "Battery",
-                EnglishTitle = "Battery",
+                Title = Loc.T("Battery"),
+                EnglishTitle = Loc.T("Battery"),
                 Subtitle = battery.State,
                 Glyph = G(battery.State == "charging" ? 0xE83E : 0xE83F),
                 AnswerValue = battery.Percent + "%",
@@ -524,9 +524,9 @@ internal static class BarCatalog
             rows.Add(new BarEntry
             {
                 Id = "answer.memory",
-                Title = "Memory",
-                EnglishTitle = "Memory",
-                Subtitle = $"{BarSystem.Bytes(mem.Used)} of {BarSystem.Bytes(mem.Total)} in use",
+                Title = Loc.T("Memory"),
+                EnglishTitle = Loc.T("Memory"),
+                Subtitle = Loc.F("{0} of {1} in use", BarSystem.Bytes(mem.Used), BarSystem.Bytes(mem.Total)),
                 Glyph = G(0xE950),
                 AnswerValue = mem.Percent + "%",
                 CountsUsage = false,
@@ -540,9 +540,9 @@ internal static class BarCatalog
             rows.Add(new BarEntry
             {
                 Id = "answer.storage",
-                Title = "Storage",
-                EnglishTitle = "Storage",
-                Subtitle = $"{BarSystem.Bytes(storage.Free)} available of {BarSystem.Bytes(storage.Total)}",
+                Title = Loc.T("Storage"),
+                EnglishTitle = Loc.T("Storage"),
+                Subtitle = Loc.F("{0} available of {1}", BarSystem.Bytes(storage.Free), BarSystem.Bytes(storage.Total)),
                 Glyph = G(0xEDA2),
                 AnswerValue = pct + "%",
                 CountsUsage = false,
@@ -554,8 +554,8 @@ internal static class BarCatalog
         rows.Add(new BarEntry
         {
             Id = "answer.date",
-            Title = "Today",
-            EnglishTitle = "Today",
+            Title = Loc.T("Today"),
+            EnglishTitle = Loc.T("Today"),
             Subtitle = now.ToString("D", CultureInfo.CurrentCulture),
             Glyph = G(0xE787),
             AnswerValue = now.ToString("d", CultureInfo.CurrentCulture),
@@ -565,15 +565,15 @@ internal static class BarCatalog
         rows.Add(new BarEntry
         {
             Id = "answer.time",
-            Title = "Time now",
-            EnglishTitle = "Time now",
+            Title = Loc.T("Time now"),
+            EnglishTitle = Loc.T("Time now"),
             Subtitle = now.ToString("T", CultureInfo.CurrentCulture),
             Glyph = G(0xE121),
             AnswerValue = now.ToString("T", CultureInfo.CurrentCulture),
             CountsUsage = false,
             Run = _ => CopyAnswer(now.ToString("T", CultureInfo.CurrentCulture)),
         });
-        rows.Add(Simple("action.openSettings", "Open Settings", BarStrings.SettingsSubtitle, 0xE713, () => ctx.Shell.OpenSettings(SettingsPages.General), 100));
+        rows.Add(Simple("action.openSettings", Loc.T("Open Settings"), BarStrings.SettingsSubtitle, 0xE713, () => ctx.Shell.OpenSettings(SettingsPages.General), 100));
 
         // ---- feature toggles ----
         foreach (var entry in FeatureCatalog.All)
@@ -585,8 +585,8 @@ internal static class BarCatalog
 
             if (entry.Id == "scroll-inverter")
             {
-                rows.Add(Toggle(s, entry, "scrollInverterEnabled", "Invert vertical scrolling", ".vertical"));
-                rows.Add(Toggle(s, entry, "scrollInverterHorizontalEnabled", "Invert horizontal scrolling", ".horizontal"));
+                rows.Add(Toggle(s, entry, "scrollInverterEnabled", Loc.T("Invert vertical scrolling"), ".vertical"));
+                rows.Add(Toggle(s, entry, "scrollInverterHorizontalEnabled", Loc.T("Invert horizontal scrolling"), ".horizontal"));
                 continue;
             }
 
@@ -699,7 +699,7 @@ internal static class BarCatalog
         Id = id,
         Title = title,
         EnglishTitle = title,
-        Subtitle = "General",
+        Subtitle = Loc.T("General"),
         Glyph = char.ConvertFromUtf32(glyph),
         ConfirmPrompt = prompt,
         Destructive = true,
@@ -716,7 +716,7 @@ internal static class BarCatalog
         }
         catch
         {
-            ToolHud.Show("", "Couldn’t copy");
+            ToolHud.Show("", Loc.T("Couldn’t copy"));
         }
     }
 
@@ -724,7 +724,7 @@ internal static class BarCatalog
     {
         var on = s.Ctx.App.Get<bool>(key);
         var name = overrideTitle ?? entry.Title;
-        var title = overrideTitle is null ? (on ? $"Turn off {name}" : $"Turn on {name}") : (on ? $"Turn off: {name}" : name);
+        var title = overrideTitle is null ? (on ? Loc.F("Turn off {0}", name) : Loc.F("Turn on {0}", name)) : (on ? $"Turn off: {name}" : name);
         var glyph = string.IsNullOrEmpty(entry.Glyph) ? "" : entry.Glyph;
         return new BarEntry
         {
@@ -752,8 +752,8 @@ internal static class BarCatalog
     {
         var glyph = link.Kind switch { "place" => "", "script" => "", _ => "" };
         var subtitle = link.Kind == "script"
-            ? (link.RunsWithoutArgument ? "Runs on its own, or type what to send" : "Type what to send after the name")
-            : link.TakesQuery ? "Type what to look for after the name" : BarStrings.KindLink;
+            ? (link.RunsWithoutArgument ? Loc.T("Runs on its own, or type what to send") : Loc.T("Type what to send after the name"))
+            : link.TakesQuery ? Loc.T("Type what to look for after the name") : BarStrings.KindLink;
         return new BarEntry
         {
             Id = "link." + link.Id,
@@ -857,13 +857,13 @@ internal static class BarCatalog
             result.Add(new BarEntry
             {
                 Id = "quit." + pid,
-                Title = $"Quit {name}",
-                EnglishTitle = $"Quit {name}",
+                Title = Loc.F("Quit {0}", name),
+                EnglishTitle = Loc.F("Quit {0}", name),
                 Subtitle = BarStrings.KindApp,
                 Keywords = $"Quit {name}",
                 Glyph = "",
                 IconLoader = () => Plat.ShellImage(w.ExePath, 32),
-                ConfirmPrompt = $"Quit {name}?",
+                ConfirmPrompt = Loc.F("Quit {0}?", name),
                 BeatMs = 120,
                 Run = _ =>
                 {
@@ -911,7 +911,7 @@ internal static class BarCatalog
         .. BarProviders.Clips().Take(limit).Select(c => new BarEntry
         {
             Id = "clipboard." + c.Id,
-            Title = c.Kind == "image" ? "Image" : c.Kind == "files" ? string.Join(", ", c.Files.Select(Path.GetFileName)) : Preview(c.Text),
+            Title = c.Kind == "image" ? Loc.T("Image") : c.Kind == "files" ? string.Join(", ", c.Files.Select(Path.GetFileName)) : Preview(c.Text),
             EnglishTitle = "",
             Subtitle = BarStrings.KindClipboard,
             Glyph = c.Kind == "image" ? "" : c.Kind == "files" ? "" : "",
@@ -1009,11 +1009,11 @@ internal static class BarCatalog
                     Id = "kill." + pid,
                     Title = e.Name,
                     EnglishTitle = e.Name,
-                    Subtitle = $"PID {pid}",
+                    Subtitle = Loc.F("PID {0}", pid),
                     Keywords = "",
                     Glyph = "",
                     CountsUsage = false,
-                    ConfirmPrompt = $"Kill {e.Name}?",
+                    ConfirmPrompt = Loc.F("Kill {0}?", e.Name),
                     Destructive = true,
                     Run = _ =>
                     {
@@ -1044,11 +1044,11 @@ internal static class BarCatalog
                     Id = "kill." + pid,
                     Title = name,
                     EnglishTitle = name,
-                    Subtitle = $"PID {pid}",
+                    Subtitle = Loc.F("PID {0}", pid),
                     Keywords = "",
                     Glyph = "",
                     CountsUsage = false,
-                    ConfirmPrompt = $"Kill {name}?",
+                    ConfirmPrompt = Loc.F("Kill {0}?", name),
                     Destructive = true,
                     Run = _ =>
                     {
@@ -1100,11 +1100,11 @@ internal static class BarCatalog
             Run = _ => run(),
         };
 
-        result.Add(Row("copy", "Copy it", BarStrings.KindSelection, () => CopyAnswer(text)));
-        result.Add(Row("search", "Use it in the search", BarStrings.KindSelection, () => s.SetQueryDirect(text), true));
+        result.Add(Row("copy", Loc.T("Copy it"), BarStrings.KindSelection, () => CopyAnswer(text)));
+        result.Add(Row("search", Loc.T("Use it in the search"), BarStrings.KindSelection, () => s.SetQueryDirect(text), true));
         if (s.Ctx.Runtime.IsAvailable("url-cleaner") && Uri.TryCreate(text, UriKind.Absolute, out _) && ActionBridge.Find(s.Ctx, "url-cleaner", "clean-clipboard") is { } clean)
         {
-            result.Add(Row("cleanLink", "Clean the copied link", BarStrings.KindSelection, () =>
+            result.Add(Row("cleanLink", Loc.T("Clean the copied link"), BarStrings.KindSelection, () =>
             {
                 try
                 {
@@ -1124,9 +1124,9 @@ internal static class BarCatalog
             var info = CultureInfo.CurrentCulture.TextInfo;
             foreach (var (id, title, transformed) in new[]
             {
-                ("upper", "UPPERCASE", text.ToUpper(CultureInfo.CurrentCulture)),
-                ("lower", "lowercase", text.ToLower(CultureInfo.CurrentCulture)),
-                ("titleCase", "Title Case", info.ToTitleCase(text.ToLower(CultureInfo.CurrentCulture))),
+                ("upper", Loc.T("UPPERCASE"), text.ToUpper(CultureInfo.CurrentCulture)),
+                ("lower", Loc.T("lowercase"), text.ToLower(CultureInfo.CurrentCulture)),
+                ("titleCase", Loc.T("Title Case"), info.ToTitleCase(text.ToLower(CultureInfo.CurrentCulture))),
             })
             {
                 if (transformed != text)
@@ -1139,7 +1139,7 @@ internal static class BarCatalog
 
         if (s.Ctx.Runtime.IsAvailable("shelf") && s.Ctx.App.Get<bool>("shelfEnabled"))
         {
-            result.Add(Row("shelf", "Keep it on the shelf", BarStrings.KindSelection, () =>
+            result.Add(Row("shelf", Loc.T("Keep it on the shelf"), BarStrings.KindSelection, () =>
             {
                 try
                 {
@@ -1156,7 +1156,7 @@ internal static class BarCatalog
 
         var words = text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
         var chars = new StringInfo(text).LengthInTextElements;
-        var count = Row("count", "Count it", $"Words: {words}, characters: {chars}", () => CopyAnswer($"Words: {words}, characters: {chars}"), false, chars.ToString(CultureInfo.CurrentCulture));
+        var count = Row("count", Loc.T("Count it"), Loc.F("Words: {0}, characters: {1}", words, chars), () => CopyAnswer(Loc.F("Words: {0}, characters: {1}", words, chars)), false, chars.ToString(CultureInfo.CurrentCulture));
         result.Add(count);
         return result;
     }

@@ -247,8 +247,8 @@ internal sealed class QuickPanelWindow : GlassWindow
 
     private string TitleOf(QuickItem item) => item.Id switch
     {
-        "micMute" when IsActiveItem(item) => "Unmute microphone",
-        "screenRecorder" when IsActiveItem(item) => "Stop recording",
+        "micMute" when IsActiveItem(item) => Loc.T("Unmute microphone"),
+        "screenRecorder" when IsActiveItem(item) => Loc.T("Stop recording"),
         _ => item.Title,
     };
 
@@ -271,7 +271,7 @@ internal sealed class QuickPanelWindow : GlassWindow
         _root.Children.Add(BuildHeader());
         if (_editing && _hosted is null)
         {
-            var hint = UiKit.Text("Use the tune button to choose, hide and drag the tools around.", 9.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+            var hint = UiKit.Text(Loc.T("Use the tune button to choose, hide and drag the tools around."), 9.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
             hint.TextAlignment = TextAlignment.Center;
             hint.Margin = new Thickness(0, 6, 0, 0);
             _root.Children.Add(hint);
@@ -284,7 +284,7 @@ internal sealed class QuickPanelWindow : GlassWindow
         }
         else if (_visible.Count == 0 && !_editing)
         {
-            var empty = UiKit.Text("All tools are hidden. Use the tune button to add them back.", 11, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+            var empty = UiKit.Text(Loc.T("All tools are hidden. Use the tune button to add them back."), 11, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
             empty.TextAlignment = TextAlignment.Center;
             empty.Margin = new Thickness(0, 26, 0, 26);
             body = empty;
@@ -329,18 +329,18 @@ internal sealed class QuickPanelWindow : GlassWindow
         FrameworkElement right;
         if (_hosted is not null)
         {
-            left = HeaderButton("", "Back", () =>
+            left = HeaderButton("", Loc.T("Back"), () =>
             {
                 _hosted = null;
                 _hostedView = null;
                 Rebuild();
             }, false);
-            right = HeaderButton("", "Close", HidePanel, false);
+            right = HeaderButton("", Loc.T("Close"), HidePanel, false);
         }
         else
         {
-            left = HeaderButton("", "Close", HidePanel, false);
-            right = HeaderButton(_editing ? "" : "", _editing ? "Done" : "Use the tune button to choose, hide and drag the tools around.", () =>
+            left = HeaderButton("", Loc.T("Close"), HidePanel, false);
+            right = HeaderButton(_editing ? "" : "", _editing ? Loc.T("Done") : Loc.T("Use the tune button to choose, hide and drag the tools around."), () =>
             {
                 _editing = !_editing;
                 _optionsItem = null;
@@ -439,7 +439,7 @@ internal sealed class QuickPanelWindow : GlassWindow
                 VerticalAlignment = VerticalAlignment.Top,
                 Margin = new Thickness(0, -7, -7, 0),
                 Cursor = Cursors.Hand,
-                ToolTip = "Hide from panel",
+                ToolTip = Loc.T("Hide from panel"),
                 Child = new Border { Width = 7, Height = 1.6, Background = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
             };
             minus.MouseLeftButtonUp += (_, e) =>
@@ -611,7 +611,7 @@ internal sealed class QuickPanelWindow : GlassWindow
     private FrameworkElement BuildAddBack(List<QuickItem> hidden)
     {
         var panel = new StackPanel { Margin = new Thickness(0, 12, 0, 0) };
-        var heading = UiKit.Text("ADD BACK", 9, FontWeights.Bold, ThemeKeys.TextSecondary);
+        var heading = UiKit.Text(Loc.T("ADD BACK"), 9, FontWeights.Bold, ThemeKeys.TextSecondary);
         panel.Children.Add(heading);
         var wrap = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
         foreach (var item in hidden)
@@ -679,7 +679,7 @@ internal sealed class QuickPanelWindow : GlassWindow
         var close = UiKit.Icon("", 12, ThemeKeys.TextSecondary);
         close.HorizontalAlignment = HorizontalAlignment.Right;
         close.Cursor = Cursors.Hand;
-        close.ToolTip = "Close";
+        close.ToolTip = Loc.T("Close");
         close.MouseLeftButtonUp += (_, _) =>
         {
             _optionsItem = null;
@@ -691,17 +691,17 @@ internal sealed class QuickPanelWindow : GlassWindow
         switch (item.Id)
         {
             case "keepAwake":
-                stack.AddSpaced(OptionToggle("Keep going with the lid closed", "clamshellPreferred", false), 9);
-                stack.AddSpaced(OptionPicker("Default duration", "defaultDuration", [("15 minutes", 15), ("30 minutes", 30), ("1 hour", 60), ("2 hours", 120), ("4 hours", 240), ("8 hours", 480), ("Indefinite", 0)], 0), 9);
+                stack.AddSpaced(OptionToggle(Loc.T("Keep going with the lid closed"), "clamshellPreferred", false), 9);
+                stack.AddSpaced(OptionPicker(Loc.T("Default duration"), "defaultDuration", [(Loc.T("15 minutes"), 15), (Loc.T("30 minutes"), 30), (Loc.T("1 hour"), 60), (Loc.T("2 hours"), 120), (Loc.T("4 hours"), 240), (Loc.T("8 hours"), 480), (Loc.T("Indefinite"), 0)], 0), 9);
                 break;
             case "micMute":
-                stack.AddSpaced(OptionToggle("Show in the system tray while Mic Mute is on", "micMuteMenuBarIndicator", true), 9);
+                stack.AddSpaced(OptionToggle(Loc.T("Show in the system tray while Mic Mute is on"), "micMuteMenuBarIndicator", true), 9);
                 break;
             case "clipboard":
-                stack.AddSpaced(OptionToggle("Save clipboard history", "clipboardHistoryEnabled", false, rebuild: true), 9);
+                stack.AddSpaced(OptionToggle(Loc.T("Save clipboard history"), "clipboardHistoryEnabled", false, rebuild: true), 9);
                 if (_ctx.App.Get<bool>("clipboardHistoryEnabled"))
                 {
-                    stack.AddSpaced(OptionPicker("Limit", "clipboardHistoryLimit", [("20", 20), ("50", 50), ("100", 100), ("250", 250), ("500", 500), ("1000", 1000), ("10000", 10000), ("Unlimited", 0)], 50), 9);
+                    stack.AddSpaced(OptionPicker(Loc.T("Limit"), "clipboardHistoryLimit", [("20", 20), ("50", 50), ("100", 100), ("250", 250), ("500", 500), ("1000", 1000), ("10000", 10000), (Loc.T("Unlimited"), 0)], 50), 9);
                 }
 
                 break;
@@ -717,7 +717,7 @@ internal sealed class QuickPanelWindow : GlassWindow
                 stack.AddSpaced(seg, 9);
                 if (current == 0)
                 {
-                    stack.AddSpaced(OptionToggle("Copy without the # prefix", "colorPickerBareHex", false), 9);
+                    stack.AddSpaced(OptionToggle(Loc.T("Copy without the # prefix"), "colorPickerBareHex", false), 9);
                 }
 
                 break;
@@ -785,7 +785,7 @@ internal sealed class QuickPanelWindow : GlassWindow
         name.Margin = new Thickness(6, 0, 0, 0);
         title.Children.Add(name);
         header.Children.Add(title);
-        var close = HeaderButton("", "Cancel", () =>
+        var close = HeaderButton("", Loc.T("Cancel"), () =>
         {
             _hosted = null;
             _hostedView = null;

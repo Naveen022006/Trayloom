@@ -33,10 +33,10 @@ internal sealed class ContentEditor : Grid
         var list = new Border { CornerRadius = new CornerRadius(16), Padding = new Thickness(10) };
         list.SetResourceReference(Border.BackgroundProperty, ThemeKeys.SettingsCard);
         var lstack = new StackPanel();
-        var h = UiKit.Text("Sections", 13, FontWeights.SemiBold, ThemeKeys.TextPrimary);
+        var h = UiKit.Text(Loc.T("Sections"), 13, FontWeights.SemiBold, ThemeKeys.TextPrimary);
         h.Margin = new Thickness(6, 0, 6, 2);
         lstack.Children.Add(h);
-        var cap = SUi.Caption("Drag to reorder. Uncheck a section to hide it from the island.");
+        var cap = SUi.Caption(Loc.T("Drag to reorder. Uncheck a section to hide it from the island."));
         cap.Margin = new Thickness(6, 0, 6, 8);
         lstack.Children.Add(cap);
         lstack.Children.Add(_listHost);
@@ -160,9 +160,9 @@ internal sealed class ContentEditor : Grid
             }
         };
         row.ContextMenu = new ContextMenu();
-        var up = new MenuItem { Header = "Move up" };
+        var up = new MenuItem { Header = Loc.T("Move up") };
         up.Click += (_, _) => Move(m.Id, -1);
-        var down = new MenuItem { Header = "Move down" };
+        var down = new MenuItem { Header = Loc.T("Move down") };
         down.Click += (_, _) => Move(m.Id, 1);
         row.ContextMenu.Items.Add(up);
         row.ContextMenu.Items.Add(down);
@@ -201,8 +201,8 @@ internal sealed class ContentEditor : Grid
         {
             var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
             var missing = IslandCatalog.MissingFeatureTitle(_c.Runtime, m.Features);
-            row.Children.Add(UiKit.Text(missing is null ? Strings.Disabled : $"Enable “{missing}” in Features.", 12.5, FontWeights.Normal, ThemeKeys.Orange));
-            var open = UiKit.Button("Open Features", ButtonKind.Bordered, 11.5, null, () => _c.Shell.OpenFeatures(m.Features.FirstOrDefault(f => !_c.Runtime.IsAvailable(f))));
+            row.Children.Add(UiKit.Text(missing is null ? Strings.Disabled : Loc.F("Enable “{0}” in Features.", missing), 12.5, FontWeights.Normal, ThemeKeys.Orange));
+            var open = UiKit.Button(Loc.T("Open Features"), ButtonKind.Bordered, 11.5, null, () => _c.Shell.OpenFeatures(m.Features.FirstOrDefault(f => !_c.Runtime.IsAvailable(f))));
             open.Margin = new Thickness(10, 0, 0, 0);
             row.Children.Add(open);
             col.Children.Add(row);
@@ -231,7 +231,7 @@ internal sealed class ContentEditor : Grid
         }
         else if (available)
         {
-            var t = UiKit.Text("This section has no options.", 12.5, FontWeights.Normal, ThemeKeys.TextSecondary);
+            var t = UiKit.Text(Loc.T("This section has no options."), 12.5, FontWeights.Normal, ThemeKeys.TextSecondary);
             t.Margin = new Thickness(0, 14, 0, 0);
             _detail.Children.Add(t);
         }
@@ -249,8 +249,8 @@ internal sealed class ContentEditor : Grid
                 var preset = _c.App.Get<string>(K.Size);
                 double w = preset switch { "compact" => 480, "custom" => Math.Clamp(_c.App.Get<double>(K.CustomWidth), 360, 600), _ => 560 };
                 IslandPage? page = m.Id == "camera"
-                    ? new StillPage("The camera turns on only in the island.", G.Video)
-                    : (m.Id == "agents" && _core.External("agents") is null ? new StillPage("Claude Code, Codex, OpenCode and GitHub Copilot usage, limits and costs.", G.Sparkle) : PageFactory.Create(_core, null, m.Id));
+                    ? new StillPage(Loc.T("The camera turns on only in the island."), G.Video)
+                    : (m.Id == "agents" && _core.External("agents") is null ? new StillPage(Loc.T("Claude Code, Codex, OpenCode and GitHub Copilot usage, limits and costs."), G.Sparkle) : PageFactory.Create(_core, null, m.Id));
                 if (page is not null)
                 {
                     page.IsPreview = true;
@@ -284,7 +284,7 @@ internal sealed class ContentEditor : Grid
 
         var cap = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(12, 0, 0, 8) };
         cap.Children.Add(UiKit.Icon(hiddenFromIsland ? "" : "", 11, ThemeKeys.TextSecondary));
-        var ct = UiKit.Text(hiddenFromIsland ? "Hidden from the island" : "Preview", 11, FontWeights.Medium, ThemeKeys.TextSecondary);
+        var ct = UiKit.Text(hiddenFromIsland ? Loc.T("Hidden from the island") : Loc.T("Preview"), 11, FontWeights.Medium, ThemeKeys.TextSecondary);
         ct.Margin = new Thickness(5, 0, 0, 0);
         cap.Children.Add(ct);
         grid.Children.Add(cap);
@@ -304,13 +304,13 @@ internal sealed class ContentEditor : Grid
                 ControlsOptions(card);
                 return true;
             case "music":
-                card.Add(SUi.SwitchRow(app, K.ShowPlayingMusic, G.Music, "Show music while playing"));
+                card.Add(SUi.SwitchRow(app, K.ShowPlayingMusic, G.Music, Loc.T("Show music while playing")));
                 card.AddDivider();
-                card.Add(SUi.SwitchRow(app, K.IncludeOtherPlayers, "", "Automatically include videos and other apps"));
+                card.Add(SUi.SwitchRow(app, K.IncludeOtherPlayers, "", Loc.T("Automatically include videos and other apps")));
                 card.AddDivider();
-                card.Add(new FeatureSwitchRow(rt, _c.Shell, "mixer", G.Speaker, "Show volume in the player", null, app.Get<bool>(K.MusicShowVolume), on => app.Set(K.MusicShowVolume, on), "Enable “Volume mixer” in Features."));
+                card.Add(new FeatureSwitchRow(rt, _c.Shell, "mixer", G.Speaker, Loc.T("Show volume in the player"), null, app.Get<bool>(K.MusicShowVolume), on => app.Set(K.MusicShowVolume, on), Loc.T("Enable “Volume mixer” in Features.")));
                 card.AddDivider();
-                var players = new List<(string Value, string Label)> { ("", "Automatic") };
+                var players = new List<(string Value, string Label)> { ("", Loc.T("Automatic")) };
                 players.AddRange((PlaybackService.InstalledPlayers()).Select(p => (p.Aumid, p.Name)));
                 var saved = app.Get<string>(K.PreferredPlayer);
                 if (!string.IsNullOrEmpty(saved) && players.All(p => p.Value != saved))
@@ -318,26 +318,26 @@ internal sealed class ContentEditor : Grid
                     players.Add((saved, PlaybackService.PrettyName(saved)));
                 }
 
-                card.Add(new PickerRow<string>("", "Open when nothing is playing", "The cover and the playback buttons open this app. Automatic opens the music app that played last, then Spotify.", players, saved, v => app.Set(K.PreferredPlayer, v), 180));
+                card.Add(new PickerRow<string>("", Loc.T("Open when nothing is playing"), Loc.T("The cover and the playback buttons open this app. Automatic opens the music app that played last, then Spotify."), players, saved, v => app.Set(K.PreferredPlayer, v), 180));
                 card.AddDivider();
-                card.Add(new FeatureSwitchRow(rt, _c.Shell, "notch-lyrics", "", "Show lyrics", null, app.Get<bool>(K.LyricsEnabled), on => { app.Set(K.LyricsEnabled, on); _c.RequestRebuild(); }, "Enable “Lyrics” in Features."));
+                card.Add(new FeatureSwitchRow(rt, _c.Shell, "notch-lyrics", "", Loc.T("Show lyrics"), null, app.Get<bool>(K.LyricsEnabled), on => { app.Set(K.LyricsEnabled, on); _c.RequestRebuild(); }, Loc.T("Enable “Lyrics” in Features.")));
                 if (app.Get<bool>(K.LyricsEnabled) && rt.IsAvailable("notch-lyrics"))
                 {
-                    card.Add(SUi.Indent(SUi.SwitchRow(app, K.LyricsOnline, "", "Find lyrics online", Strings.LyricsOnlineHint)));
+                    card.Add(SUi.Indent(SUi.SwitchRow(app, K.LyricsOnline, "", Loc.T("Find lyrics online"), Strings.LyricsOnlineHint)));
                 }
 
                 card.AddDivider();
-                card.Add(new FeatureSwitchRow(rt, _c.Shell, "notch-queue", "", "Show upcoming songs", "See the actual upcoming songs shared by your player.", app.Get<bool>(K.QueueEnabled), on => app.Set(K.QueueEnabled, on), "Enable “Up next” in Features."));
+                card.Add(new FeatureSwitchRow(rt, _c.Shell, "notch-queue", "", Loc.T("Show upcoming songs"), Loc.T("See the actual upcoming songs shared by your player."), app.Get<bool>(K.QueueEnabled), on => app.Set(K.QueueEnabled, on), Loc.T("Enable “Up next” in Features.")));
                 card.AddDivider();
-                card.Add(new FeatureSwitchRow(rt, _c.Shell, "notch-live-equalizer", "", "Bars follow the music", "Listens to the player’s own audio output to move the bars. Nothing is stored or sent. Without it, the bars keep their usual motion.", app.Get<bool>(K.LiveEqualizer), on => app.Set(K.LiveEqualizer, on), "Enable “Bars follow the music” in Features."));
+                card.Add(new FeatureSwitchRow(rt, _c.Shell, "notch-live-equalizer", "", Loc.T("Bars follow the music"), Loc.T("Listens to the player’s own audio output to move the bars. Nothing is stored or sent. Without it, the bars keep their usual motion."), app.Get<bool>(K.LiveEqualizer), on => app.Set(K.LiveEqualizer, on), Loc.T("Enable “Bars follow the music” in Features.")));
                 return true;
             case "notifications":
-                card.Add(SUi.SwitchRow(app, K.DismissNative, "", "Hide the system banner", "Hide the original while the Dynamic Island shows it.", enabled: false, badge: null));
-                card.AddCaption("Not available on this PC");
+                card.Add(SUi.SwitchRow(app, K.DismissNative, "", Loc.T("Hide the system banner"), Loc.T("Hide the original while the Dynamic Island shows it."), enabled: false, badge: null));
+                card.AddCaption(Loc.T("Not available on this PC"));
                 var status = IslandCore.Current?.Notifications;
                 if (status is { NeedsIdentity: true } or { AccessDenied: true })
                 {
-                    var row = new SettingsRow("", "Notification access", status.NeedsIdentity ? "Reading banners works best when WinKnife is installed as an app." : "Allow notification access in Windows Settings.", UiKit.Button(status.AccessDenied ? "Open Settings" : "Allow", ButtonKind.Bordered, 11.5, null, () => { if (status.AccessDenied) { status.OpenAccessSettings(); } else { _ = status.RequestAccessAsync(); } }));
+                    var row = new SettingsRow("", Loc.T("Notification access"), status.NeedsIdentity ? Loc.T("Reading banners works best when WinKnife is installed as an app.") : Loc.T("Allow notification access in Windows Settings."), UiKit.Button(status.AccessDenied ? Loc.T("Open Settings") : "Allow", ButtonKind.Bordered, 11.5, null, () => { if (status.AccessDenied) { status.OpenAccessSettings(); } else { _ = status.RequestAccessAsync(); } }));
                     card.Add(row);
                 }
 
@@ -349,62 +349,62 @@ internal sealed class ContentEditor : Grid
                 CalendarOptions(card);
                 return true;
             case "timer":
-                card.Add(SUi.SwitchRow(app, K.HideTimerCountdown, "", "Hide timer countdown", null, enabled: rt.IsAvailable("notch-timer")));
+                card.Add(SUi.SwitchRow(app, K.HideTimerCountdown, "", Loc.T("Hide timer countdown"), null, enabled: rt.IsAvailable("notch-timer")));
                 card.AddDivider();
-                card.Add(SUi.SwitchRow(app, K.TimerSound, "", "Play sound when time is up", null, enabled: rt.IsAvailable("notch-timer")));
+                card.Add(SUi.SwitchRow(app, K.TimerSound, "", Loc.T("Play sound when time is up"), null, enabled: rt.IsAvailable("notch-timer")));
                 return true;
             case "camera":
-                card.AddCaption("Open a live mirror here. The camera stops when you leave this view.");
-                card.Add(UiKit.Button("Open Settings…", ButtonKind.Bordered, 12, null, () => UiKit.OpenUrl("ms-settings:privacy-webcam")));
+                card.AddCaption(Loc.T("Open a live mirror here. The camera stops when you leave this view."));
+                card.Add(UiKit.Button(Loc.T("Open Settings…"), ButtonKind.Bordered, 12, null, () => UiKit.OpenUrl("ms-settings:privacy-webcam")));
                 return true;
             case "files":
-                card.Add(SUi.DestinationRow(app, K.Shelf, G.Files, "Files", null, rt.IsAvailable("shelf")));
+                card.Add(SUi.DestinationRow(app, K.Shelf, G.Files, Loc.T("Files"), null, rt.IsAvailable("shelf")));
                 if (app.Get<bool>(K.Shelf))
                 {
                     card.AddDivider();
-                    card.Add(SUi.SwitchRow(app, K.DragReveal, "", "Show a drop target while dragging"));
+                    card.Add(SUi.SwitchRow(app, K.DragReveal, "", Loc.T("Show a drop target while dragging")));
                 }
 
                 if (rt.IsAvailable("media-tools"))
                 {
-                    card.AddCaption("Drag images or one video onto the island, then drop on Optimize media to choose how to save a copy.");
+                    card.AddCaption(Loc.T("Drag images or one video onto the island, then drop on Optimize media to choose how to save a copy."));
                 }
 
                 return true;
             case "clipboard":
-                card.Add(SUi.DestinationRow(app, K.ClipboardWindow, G.Clipboard, "Clipboard", null, rt.IsAvailable("clipboard-history")));
+                card.Add(SUi.DestinationRow(app, K.ClipboardWindow, G.Clipboard, Loc.T("Clipboard"), null, rt.IsAvailable("clipboard-history")));
                 card.AddDivider();
-                card.Add(SUi.SwitchRow(app, K.Clipboard, G.Clipboard, "Notify when something is copied", "Copied content stays private until you open the clipboard. These options follow the original feature’s settings."));
+                card.Add(SUi.SwitchRow(app, K.Clipboard, G.Clipboard, Loc.T("Notify when something is copied"), Loc.T("Copied content stays private until you open the clipboard. These options follow the original feature’s settings.")));
                 if (app.Get<bool>(K.ClipboardWindow) && rt.IsAvailable("clipboard-history"))
                 {
-                    var seg = new SegmentedControl(["Compact", "Comfortable"], app.Get<string>(K.ClipboardCardSize) == "compact" ? 0 : 1, false, 12);
+                    var seg = new SegmentedControl([Loc.T("Compact"), Loc.T("Comfortable")], app.Get<string>(K.ClipboardCardSize) == "compact" ? 0 : 1, false, 12);
                     seg.SelectionChanged += i => app.Set(K.ClipboardCardSize, i == 0 ? "compact" : "comfortable");
-                    card.Add(new SettingsRow("", "Entry size", "Compact entries show one or two lines and open up when the pointer rests on them.", seg));
+                    card.Add(new SettingsRow("", Loc.T("Entry size"), Loc.T("Compact entries show one or two lines and open up when the pointer rests on them."), seg));
                 }
 
                 return true;
             case "captures":
-                card.Add(new FeatureSwitchRow(rt, _c.Shell, "screenshot", G.Camera, "Show screenshot previews here", null, app.Get<bool>(K.Capture), on => { app.Set(K.Capture, on); _c.RequestRebuild(); }, "Enable “Screenshot” in Features."));
+                card.Add(new FeatureSwitchRow(rt, _c.Shell, "screenshot", G.Camera, Loc.T("Show screenshot previews here"), null, app.Get<bool>(K.Capture), on => { app.Set(K.Capture, on); _c.RequestRebuild(); }, Loc.T("Enable “Screenshot” in Features.")));
                 if (app.Get<bool>(K.Capture) && rt.IsAvailable("screenshot"))
                 {
-                    var actions = new List<(string Value, string Label)> { ("", "Ask each time"), ("save", "Save"), ("saveAndCopy", "Save & Copy"), ("copy", "Copy"), ("edit", "Edit") };
-                    var row = new PickerRow<string>(null, "Default action", null, actions, app.Get<string>(K.ScreenshotDefaultAction), v => app.Set(K.ScreenshotDefaultAction, v), 160);
+                    var actions = new List<(string Value, string Label)> { ("", Loc.T("Ask each time")), ("save", Loc.T("Save")), ("saveAndCopy", Loc.T("Save & Copy")), ("copy", Loc.T("Copy")), ("edit", Loc.T("Edit")) };
+                    var row = new PickerRow<string>(null, Loc.T("Default action"), null, actions, app.Get<string>(K.ScreenshotDefaultAction), v => app.Set(K.ScreenshotDefaultAction, v), 160);
                     card.Add(SUi.Indent(row));
                 }
 
                 return true;
             case "scratchpad":
-                card.Add(SUi.DestinationRow(app, K.Scratchpad, G.Note, "Scratchpad", null, rt.IsAvailable("scratchpad")));
+                card.Add(SUi.DestinationRow(app, K.Scratchpad, G.Note, Loc.T("Scratchpad"), null, rt.IsAvailable("scratchpad")));
                 return true;
             case "agents":
-                card.Add(SUi.SwitchRow(app, K.AgentsEnabled, G.Sparkle, "AI Agents", "Reads the usage Claude Code, Codex, OpenCode and GitHub Copilot record on this PC and the plan limits the Claude app saves. Prompts, replies and files are never kept, and your usage never leaves your PC."));
+                card.Add(SUi.SwitchRow(app, K.AgentsEnabled, G.Sparkle, Loc.T("AI Agents"), Loc.T("Reads the usage Claude Code, Codex, OpenCode and GitHub Copilot record on this PC and the plan limits the Claude app saves. Prompts, replies and files are never kept, and your usage never leaves your PC.")));
                 return true;
             case "watch":
-                card.Add(SUi.SwitchRow(app, K.WatchEnabled, G.Eye, "Watch", "Turn any part of any window into a live activity in the Dynamic Island, with an alert when it changes, finishes or shows what you are waiting for.", enabled: rt.IsAvailable("notch-watch")));
+                card.Add(SUi.SwitchRow(app, K.WatchEnabled, G.Eye, Loc.T("Watch"), Loc.T("Turn any part of any window into a live activity in the Dynamic Island, with an alert when it changes, finishes or shows what you are waiting for."), enabled: rt.IsAvailable("notch-watch")));
                 if (app.Get<bool>(K.WatchEnabled))
                 {
                     card.AddDivider();
-                    card.Add(SUi.SwitchRow(app, K.WatchSound, "", "Play a sound"));
+                    card.Add(SUi.SwitchRow(app, K.WatchSound, "", Loc.T("Play a sound")));
                 }
 
                 return true;
@@ -434,13 +434,13 @@ internal sealed class ContentEditor : Grid
         FrameworkElement CardFor(ControlDef d)
         {
             var avail = d.Features.Length == 0 || rt.AnyAvailable(d.Features);
-            var reason = avail ? null : $"Enable “{FeatureCatalog.Get(d.Features[0])?.Title ?? d.Features[0]}” in Features.";
+            var reason = avail ? null : Loc.F("Enable “{0}” in Features.", FeatureCatalog.Get(d.Features[0])?.Title ?? d.Features[0]);
             return SUi.ToggleCard(d.Glyph, d.Title, !hidden.Contains(d.Id), avail, reason, () => Toggle(d.Id), () => _c.Shell.OpenFeatures(d.Features.FirstOrDefault()), true);
         }
 
         var primary = IslandCatalog.Controls.Where(d => d.Id is "music" or "volume" or "brightness" or "keyboardLight").OrderBy(d => d.Id switch { "music" => 0, "volume" => 1, "brightness" => 2, _ => 3 }).ToList();
         card.Add(SUi.TileRow(4, 10, primary.Select(CardFor).ToArray()));
-        var sub = UiKit.Text("Controls and shortcuts", 12.5, FontWeights.Medium, ThemeKeys.TextPrimary);
+        var sub = UiKit.Text(Loc.T("Controls and shortcuts"), 12.5, FontWeights.Medium, ThemeKeys.TextPrimary);
         card.Add(sub);
         var order = IslandCatalog.ControlOrder(app).Select(IslandCatalog.Control).Where(d => d is { IsLevel: false } && d.Id != "music").Select(d => d!).ToList();
         var grid = new UniformGrid { Columns = 4 };
@@ -478,19 +478,19 @@ internal sealed class ContentEditor : Grid
 
         card.Add(grid);
         card.AddDivider();
-        card.Add(new FeatureSwitchRow(rt, _c.Shell, "keep-awake", "", "Show “Keep awake” in the closed island", "A running session appears in the island with the time it has left, or ∞ when it has no end.", app.Get<bool>(K.KeepAwakeActivity), on => app.Set(K.KeepAwakeActivity, on), "Enable “Keep awake” in Features."));
+        card.Add(new FeatureSwitchRow(rt, _c.Shell, "keep-awake", "", Loc.T("Show “Keep awake” in the closed island"), Loc.T("A running session appears in the island with the time it has left, or ∞ when it has no end."), app.Get<bool>(K.KeepAwakeActivity), on => app.Set(K.KeepAwakeActivity, on), Loc.T("Enable “Keep awake” in Features.")));
     }
 
     private void DownloadsOptions(SettingsCard card)
     {
         var app = _c.App;
         var svc = _core?.Downloads;
-        card.Add(SUi.SwitchRow(app, K.DownloadsEnabled, G.Download, "Downloads", "Choose the folder where your browser saves downloads. Only that folder is watched.", enabled: _c.Runtime.IsAvailable("notch-downloads")));
+        card.Add(SUi.SwitchRow(app, K.DownloadsEnabled, G.Download, Loc.T("Downloads"), Loc.T("Choose the folder where your browser saves downloads. Only that folder is watched."), enabled: _c.Runtime.IsAvailable("notch-downloads")));
         if (svc is not null)
         {
             if (svc.FolderUnavailable)
             {
-                card.AddCaption("This folder is unavailable. Choose it again to restore access.");
+                card.AddCaption(Loc.T("This folder is unavailable. Choose it again to restore access."));
             }
             else if (!string.IsNullOrEmpty(svc.Folder))
             {
@@ -503,9 +503,9 @@ internal sealed class ContentEditor : Grid
             }
 
             var buttons = new StackPanel { Orientation = Orientation.Horizontal };
-            buttons.Children.Add(UiKit.Button("Choose Folder…", ButtonKind.Bordered, 11.5, null, () =>
+            buttons.Children.Add(UiKit.Button(Loc.T("Choose Folder…"), ButtonKind.Bordered, 11.5, null, () =>
             {
-                using var dlg = new System.Windows.Forms.FolderBrowserDialog { Description = "Choose the folder where your browser saves downloads. Only that folder is watched.", UseDescriptionForTitle = true };
+                using var dlg = new System.Windows.Forms.FolderBrowserDialog { Description = Loc.T("Choose the folder where your browser saves downloads. Only that folder is watched."), UseDescriptionForTitle = true };
                 if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
                 {
                     svc.Choose(dlg.SelectedPath);
@@ -514,7 +514,7 @@ internal sealed class ContentEditor : Grid
             }));
             if (!string.IsNullOrEmpty(svc.Folder) || svc.FolderUnavailable)
             {
-                var forget = UiKit.Button("Forget Folder", ButtonKind.Bordered, 11.5, null, () =>
+                var forget = UiKit.Button(Loc.T("Forget Folder"), ButtonKind.Bordered, 11.5, null, () =>
                 {
                     svc.Forget();
                     BuildDetail();
@@ -531,14 +531,14 @@ internal sealed class ContentEditor : Grid
     {
         var app = _c.App;
         var svc = _core?.Calendar;
-        card.AddCaption("Read your calendars to show upcoming appointments. Events stay on this PC.");
+        card.AddCaption(Loc.T("Read your calendars to show upcoming appointments. Events stay on this PC."));
         if (svc is not null)
         {
             if (svc.Access == CalendarAccess.Allowed)
             {
                 var ok = new StackPanel { Orientation = Orientation.Horizontal };
                 ok.Children.Add(UiKit.Icon("", 13, ThemeKeys.Green));
-                var t = UiKit.Text("Granted", 12.5, FontWeights.Normal, ThemeKeys.Green);
+                var t = UiKit.Text(Loc.T("Granted"), 12.5, FontWeights.Normal, ThemeKeys.Green);
                 t.Margin = new Thickness(6, 0, 0, 0);
                 ok.Children.Add(t);
                 card.Add(ok);
@@ -546,34 +546,34 @@ internal sealed class ContentEditor : Grid
             else
             {
                 var row = new StackPanel { Orientation = Orientation.Horizontal };
-                row.Children.Add(UiKit.Button("Allow Calendar Access", ButtonKind.Bordered, 11.5, null, async () => { await svc.RequestAccessAsync(); _c.RequestRebuild(); }));
-                var open = UiKit.Button("Open Windows Settings", ButtonKind.Bordered, 11.5, null, CalendarPage.OpenSettingsUri);
+                row.Children.Add(UiKit.Button(Loc.T("Allow Calendar Access"), ButtonKind.Bordered, 11.5, null, async () => { await svc.RequestAccessAsync(); _c.RequestRebuild(); }));
+                var open = UiKit.Button(Loc.T("Open Windows Settings"), ButtonKind.Bordered, 11.5, null, CalendarPage.OpenSettingsUri);
                 open.Margin = new Thickness(8, 0, 0, 0);
                 row.Children.Add(open);
                 card.Add(row);
                 if (svc.RequestFailed)
                 {
-                    card.Add(UiKit.Text("Could not request calendar access. Please try again.", 11.5, FontWeights.Normal, ThemeKeys.Orange));
+                    card.Add(UiKit.Text(Loc.T("Could not request calendar access. Please try again."), 11.5, FontWeights.Normal, ThemeKeys.Orange));
                 }
             }
         }
 
         card.AddDivider();
-        card.Add(SUi.SwitchRow(app, K.CalendarCountdown, "", "Event countdown", "Show every timed event in the closed island before it starts. To count down to only some, turn this off and right-click them on the island’s Calendar page. Titles may appear in screen captures."));
+        card.Add(SUi.SwitchRow(app, K.CalendarCountdown, "", Loc.T("Event countdown"), Loc.T("Show every timed event in the closed island before it starts. To count down to only some, turn this off and right-click them on the island’s Calendar page. Titles may appear in screen captures.")));
         var leads = new List<(int Value, string Label)>();
         var cur = Math.Clamp(app.Get<int>(K.CalendarLead), 5, 240);
         foreach (var v in new[] { 15, 30, 60, 120, cur }.Distinct().OrderBy(x => x))
         {
-            leads.Add((v, v >= 60 && v % 60 == 0 ? $"{v / 60} hr" : $"{v} min"));
+            leads.Add((v, v >= 60 && v % 60 == 0 ? Loc.F("{0} hr", v / 60) : Loc.F("{0} min", v)));
         }
 
-        card.Add(new PickerRow<int>("", "Time before event", null, leads, cur, v => app.Set(K.CalendarLead, v), 120));
-        card.Add(SUi.SwitchRow(app, K.CalendarTimeLeft, "", "Time left in current event", "Show a timed event in progress in the closed island during the hour before it ends. Its title may appear in screen captures."));
-        card.Add(SUi.SwitchRow(app, K.CalendarWeekNumbers, "", "Week numbers"));
+        card.Add(new PickerRow<int>("", Loc.T("Time before event"), null, leads, cur, v => app.Set(K.CalendarLead, v), 120));
+        card.Add(SUi.SwitchRow(app, K.CalendarTimeLeft, "", Loc.T("Time left in current event"), Loc.T("Show a timed event in progress in the closed island during the hour before it ends. Its title may appear in screen captures.")));
+        card.Add(SUi.SwitchRow(app, K.CalendarWeekNumbers, "", Loc.T("Week numbers")));
         if (svc is { Access: CalendarAccess.Allowed })
         {
             card.AddDivider();
-            card.Add(UiKit.Text("Calendars shown", 12.5, FontWeights.Medium, ThemeKeys.TextPrimary));
+            card.Add(UiKit.Text(Loc.T("Calendars shown"), 12.5, FontWeights.Medium, ThemeKeys.TextPrimary));
             var excluded = app.Get<List<string>>(K.CalendarExcluded) ?? [];
             foreach (var group in svc.Calendars.GroupBy(c => c.Account).OrderBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase))
             {

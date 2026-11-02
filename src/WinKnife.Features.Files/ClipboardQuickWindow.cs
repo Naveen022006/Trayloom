@@ -64,7 +64,7 @@ internal sealed class ClipboardQuickWindow : Window, IQuickActions
     public ClipboardQuickWindow(IClipboardHost host)
     {
         _host = host;
-        Title = "Clipboard";
+        Title = Loc.T("Clipboard");
         WindowStyle = WindowStyle.None;
         ShowInTaskbar = false;
         Topmost = true;

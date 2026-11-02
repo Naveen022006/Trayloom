@@ -18,41 +18,43 @@ namespace WinKnife.Features.Tools;
 /// <summary>Strings of the scratchpad (Vorssaint <c>ScratchpadFeatureStrings</c>, enUS).</summary>
 internal static class PadStrings
 {
-    public const string Title = "Scratchpad";
-    public const string PanelCaption = "Quick notes in separate tabs";
-    public const string OpenButton = "Open scratchpad";
-    public const string Placeholder = "Type anything. It saves by itself.";
-    public const string CopyAll = "Copy all";
-    public const string Copied = "Copied";
-    public const string ExportAction = "Save as file";
-    public const string ExportFailed = "The file could not be saved";
-    public const string LoadFailed = "Your notes could not be opened. They were left unchanged.";
-    public const string SaveFailed = "Your notes could not be saved. Copy them elsewhere before quitting.";
-    public const string ClearAction = "Clear";
-    public const string RetentionTitle = "Clear on its own";
-    public const string RetentionCaption = "The pad empties itself once the text goes that long without edits.";
-    public const string CloseOnClickOutside = "Close when I click outside";
-    public const string KeepOpen = "Keep open";
-    public const string BackgroundOpacity = "Pad background";
-    public const string Translucent = "Translucent";
-    public const string Opaque = "Opaque";
-    public const string NewPad = "New scratchpad";
-    public const string PadActions = "Scratchpad actions";
-    public const string RenamePad = "Rename scratchpad";
-    public const string ClosePad = "Close scratchpad";
-    public const string SaveName = "Save";
-    public const string Cancel = "Cancel";
-    public const string Close = "Close";
-    public const string PreviewFormatting = "Show formatting";
-    public const string EditText = "Edit text";
-    public const string FormatMarks = "Formatting";
-    public const string TextSize = "Text size";
+    public static  string Title => Loc.T("Scratchpad");
+    public static  string PanelCaption => Loc.T("Quick notes in separate tabs");
+    public static  string OpenButton => Loc.T("Open scratchpad");
+    public static  string Placeholder => Loc.T("Type anything. It saves by itself.");
+    public static  string CopyAll => Loc.T("Copy all");
+    public static  string Copied => Loc.T("Copied");
+    public static  string ExportAction => Loc.T("Save as file");
+    public static  string ExportFailed => Loc.T("The file could not be saved");
+    public static  string LoadFailed => Loc.T("Your notes could not be opened. They were left unchanged.");
+    public static  string SaveFailed => Loc.T("Your notes could not be saved. Copy them elsewhere before quitting.");
+    public static  string ClearAction => Loc.T("Clear");
+    public static  string RetentionTitle => Loc.T("Clear on its own");
+    public static  string RetentionCaption => Loc.T("The pad empties itself once the text goes that long without edits.");
+    public static  string CloseOnClickOutside => Loc.T("Close when I click outside");
+    public static  string KeepOpen => Loc.T("Keep open");
+    public static  string BackgroundOpacity => Loc.T("Pad background");
+    public static  string Translucent => Loc.T("Translucent");
+    public static  string Opaque => Loc.T("Opaque");
+    public static  string NewPad => Loc.T("New scratchpad");
+    public static  string PadActions => Loc.T("Scratchpad actions");
+    public static  string RenamePad => Loc.T("Rename scratchpad");
+    public static  string ClosePad => Loc.T("Close scratchpad");
+    public static  string SaveName => Loc.T("Save");
+    public static  string Cancel => Loc.T("Cancel");
+    public static  string Close => Loc.T("Close");
+    public static  string PreviewFormatting => Loc.T("Show formatting");
+    public static  string EditText => Loc.T("Edit text");
+    public static  string FormatMarks => Loc.T("Formatting");
+    public static  string TextSize => Loc.T("Text size");
 
-    public static string DeleteMessage(string name) => $"Delete “{name}” and everything in it?";
+    public static string DeleteMessage(string name) => Loc.F("Delete “{0}” and everything in it?", name);
 
-    public static string PadLimit(int count) => $"You can keep up to {count} scratchpads";
+    public static string PadLimit(int count) => Loc.F("You can keep up to {0} scratchpads", count);
 
-    public static readonly string[] MarkLabels = ["Bold", "Italic", "Strikethrough", "Heading", "Bulleted list", "Numbered list", "Quote", "Code", "Link"];
+    public static string[] MarkLabels => _loc_MarkLabels.Value;
+
+    private static readonly LocValue<string[]> _loc_MarkLabels = new(() => [Loc.T("Bold"), Loc.T("Italic"), Loc.T("Strikethrough"), Loc.T("Heading"), Loc.T("Bulleted list"), Loc.T("Numbered list"), Loc.T("Quote"), Loc.T("Code"), Loc.T("Link")]);
 }
 
 /// <summary>A flat icon button (26x26, hover fill, never takes focus).</summary>
@@ -419,8 +421,8 @@ internal sealed class ScratchpadWindow : GlassWindow
         _findCount.VerticalAlignment = VerticalAlignment.Center;
         Grid.SetColumn(_findCount, 1);
         _findBar.Children.Add(_findCount);
-        var prev = new PadButton("", "Previous", () => FindFrom(false, false), 22, 11);
-        var next = new PadButton("", "Next", () => FindFrom(true, false), 22, 11);
+        var prev = new PadButton("", Loc.T("Previous"), () => FindFrom(false, false), 22, 11);
+        var next = new PadButton("", Loc.T("Next"), () => FindFrom(true, false), 22, 11);
         var close = new PadButton("", PadStrings.Close, HideFind, 22, 11);
         Grid.SetColumn(prev, 2);
         Grid.SetColumn(next, 3);
@@ -1367,7 +1369,7 @@ internal sealed class ScratchpadWindow : GlassWindow
             i += query.Length;
         }
 
-        _findCount.Text = $"{Math.Max(1, before)} of {total}";
+        _findCount.Text = Loc.F("{0} of {1}", Math.Max(1, before), total);
     }
 
     private void FindFrom(bool forward, bool fromSelectionStart)

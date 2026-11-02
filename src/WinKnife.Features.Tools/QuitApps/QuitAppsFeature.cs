@@ -19,8 +19,8 @@ public sealed class QuitAppsFeature : ToolsFeatureBase
     /// <inheritdoc />
     public override IReadOnlyList<FeatureAction> Actions =>
     [
-        new FeatureAction("show", "Quit all apps", () => Safe(() => QuitAppsOps.Show(Ctx, false)), ""),
-        new FeatureAction("showExceptFront", "Quit all apps except the front one", () => Safe(() => QuitAppsOps.Show(Ctx, true)), ""),
+        new FeatureAction("show", Loc.T("Quit all apps"), () => Safe(() => QuitAppsOps.Show(Ctx, false)), ""),
+        new FeatureAction("showExceptFront", Loc.T("Quit all apps except the front one"), () => Safe(() => QuitAppsOps.Show(Ctx, true)), ""),
     ];
 
     /// <inheritdoc />
@@ -54,7 +54,7 @@ public sealed class QuitAppsSettingsSection : ISettingsSection
     public string? Anchor => "quitApps";
 
     /// <inheritdoc />
-    public string? Title => "Quit apps";
+    public string? Title => Loc.T("Quit apps");
 
     /// <inheritdoc />
     public IReadOnlyList<string> Keywords => ["Quit all apps", "Kept apps", "Quit all apps except the front one"];
@@ -66,12 +66,12 @@ public sealed class QuitAppsSettingsSection : ISettingsSection
     public FrameworkElement CreateView(ISettingsContext c)
     {
         ToolsDefaults.Register(c.App);
-        var card = new SettingsCard("Quit apps");
-        card.Add(UiKit.Button("Quit all apps", ButtonKind.Bordered, 13, "", () => QuitAppsOps.Show(c, false)));
+        var card = new SettingsCard(Loc.T("Quit apps"));
+        card.Add(UiKit.Button(Loc.T("Quit all apps"), ButtonKind.Bordered, 13, "", () => QuitAppsOps.Show(c, false)));
         card.Add(new KeptAppsList(c));
-        ShortcutSettingsRows.AddGlobalShortcut(card, c, "quitAll", "quitAppsShortcutEnabled", "Global shortcut: Quit all apps");
-        ShortcutSettingsRows.AddGlobalShortcut(card, c, "quitAllExceptFront", "quitAppsExceptFrontShortcutEnabled", "Global shortcut: Quit all apps except the front one");
-        card.AddCaption("Lists your open apps to quit one by one, all at once, or all but the one in front. Always shows the list before anything quits.");
+        ShortcutSettingsRows.AddGlobalShortcut(card, c, "quitAll", "quitAppsShortcutEnabled", Loc.T("Global shortcut: Quit all apps"));
+        ShortcutSettingsRows.AddGlobalShortcut(card, c, "quitAllExceptFront", "quitAppsExceptFrontShortcutEnabled", Loc.T("Global shortcut: Quit all apps except the front one"));
+        card.AddCaption(Loc.T("Lists your open apps to quit one by one, all at once, or all but the one in front. Always shows the list before anything quits."));
         return card;
     }
 }
@@ -100,7 +100,7 @@ internal sealed class KeptAppsList : StackPanel
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        header.Children.Add(UiKit.Text("Kept apps", 13));
+        header.Children.Add(UiKit.Text(Loc.T("Kept apps"), 13));
         var count = UiKit.Text(kept.Count.ToString(), 12, FontWeights.Normal, ThemeKeys.TextSecondary);
         count.FontFamily = UiKit.DisplayFont;
         count.Margin = new Thickness(0, 0, 8, 0);
@@ -133,19 +133,19 @@ internal sealed class KeptAppsList : StackPanel
             _body.Children.Add(Row(key));
         }
 
-        var add = UiKit.Button("Add app…", ButtonKind.Bordered, 11.5, "", AddApp);
+        var add = UiKit.Button(Loc.T("Add app…"), ButtonKind.Bordered, 11.5, "", AddApp);
         add.HorizontalAlignment = HorizontalAlignment.Left;
         add.Margin = new Thickness(0, 8, 0, 0);
         _body.Children.Add(add);
-        var caption = UiKit.Text("Quit all leaves these apps running. File Explorer, WinKnife and Phone Link are always kept. You can still quit a kept app from its own row.", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+        var caption = UiKit.Text(Loc.T("Quit all leaves these apps running. File Explorer, WinKnife and Phone Link are always kept. You can still quit a kept app from its own row."), 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
         caption.Margin = new Thickness(0, 8, 0, 0);
         _body.Children.Add(caption);
         Children.Add(_body);
     }
 
     private static string DisplayName(string key) =>
-        key == QuitAppsModel.ExplorerKey ? "File Explorer"
-        : key == "phoneexperiencehost.exe" ? "Phone Link"
+        key == QuitAppsModel.ExplorerKey ? Loc.T("File Explorer")
+        : key == "phoneexperiencehost.exe" ? Loc.T("Phone Link")
         : key.Contains('\\') && File.Exists(key) ? QuitAppsModel.NameOf(key)
         : key;
 
@@ -178,7 +178,7 @@ internal sealed class KeptAppsList : StackPanel
         {
             var remove = UiKit.Icon("", 14, ThemeKeys.TextSecondary);
             remove.Cursor = Cursors.Hand;
-            remove.ToolTip = "Remove";
+            remove.ToolTip = Loc.T("Remove");
             remove.MouseLeftButtonUp += (_, _) => Remove(key);
             trailing = remove;
         }
@@ -220,7 +220,7 @@ internal static class AppPickerDialog
         string? result = null;
         var window = new Window
         {
-            Title = "Add app",
+            Title = Loc.T("Add app"),
             Width = 380,
             Height = 440,
             WindowStartupLocation = WindowStartupLocation.CenterScreen,
@@ -268,8 +268,8 @@ internal static class AppPickerDialog
                 window.Close();
             }
         });
-        var cancel = UiKit.Button("Cancel", ButtonKind.Bordered, 12, null, window.Close);
-        var add = UiKit.Button("Add app…", ButtonKind.Prominent, 12, null, Accept);
+        var cancel = UiKit.Button(Loc.T("Cancel"), ButtonKind.Bordered, 12, null, window.Close);
+        var add = UiKit.Button(Loc.T("Add app…"), ButtonKind.Prominent, 12, null, Accept);
         foreach (var b in new[] { browse, cancel, add })
         {
             b.Margin = new Thickness(8, 0, 0, 0);

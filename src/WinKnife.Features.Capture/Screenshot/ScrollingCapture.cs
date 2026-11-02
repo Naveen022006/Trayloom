@@ -368,7 +368,7 @@ internal sealed class ScrollingCaptureSession
             var msg = UiKit.Text(Strings.Screenshot.ScrollingProgress, 12, FontWeights.SemiBold, wrap: true);
             msg.MaxWidth = 360;
             texts.Children.Add(msg);
-            _height = UiKit.Text("0 px", 10, FontWeights.Medium, ThemeKeys.TextSecondary);
+            _height = UiKit.Text(Loc.T("0 px"), 10, FontWeights.Medium, ThemeKeys.TextSecondary);
             texts.Children.Add(_height);
             row.Children.Add(texts);
             row.Children.Add(UiKit.Button(Strings.Cancel, ButtonKind.Bordered, 11, null, owner.Cancel));
@@ -380,7 +380,7 @@ internal sealed class ScrollingCaptureSession
             card.SetResourceReference(Border.BorderBrushProperty, ThemeKeys.CardBorder);
             card.Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 14, ShadowDepth = 3, Opacity = 0.3, Direction = 270 };
             Content = card;
-            _timer.Tick += (_, _) => _height.Text = $"{_owner.TotalHeight} px";
+            _timer.Tick += (_, _) => _height.Text = Loc.F("{0} px", _owner.TotalHeight);
         }
 
         public void Present(RegionPick pick)

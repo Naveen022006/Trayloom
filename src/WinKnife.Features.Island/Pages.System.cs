@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Island;
 
@@ -188,17 +189,17 @@ internal sealed class SystemPage : IslandPage
         var rt = Core.Ctx.Runtime;
         if (rt.IsAvailable("monitor-cpu"))
         {
-            Add(G.Cpu, "CPU", () => ($"{(int)Math.Round(_s.Cpu * 100)}%", null, _s.Cpu, _s.Cpu >= 0.85));
+            Add(G.Cpu, Loc.T("CPU"), () => ($"{(int)Math.Round(_s.Cpu * 100)}%", null, _s.Cpu, _s.Cpu >= 0.85));
         }
 
         if (rt.IsAvailable("monitor-memory"))
         {
-            Add(G.Memory, "Memory", () => ($"{(int)Math.Round(_s.Memory * 100)}%", null, _s.Memory, _s.Memory >= 0.85));
+            Add(G.Memory, Loc.T("Memory"), () => ($"{(int)Math.Round(_s.Memory * 100)}%", null, _s.Memory, _s.Memory >= 0.85));
         }
 
         if (rt.IsAvailable("monitor-power") && IslandNative.Power().HasBattery)
         {
-            Add(G.Battery, "Battery", () =>
+            Add(G.Battery, Loc.T("Battery"), () =>
             {
                 var (_, pct, plugged, _) = IslandNative.Power();
                 return ($"{pct}%", null, pct / 100.0, !plugged && pct <= 20);
@@ -207,7 +208,7 @@ internal sealed class SystemPage : IslandPage
 
         if (rt.IsAvailable("monitor-network"))
         {
-            Add(G.Network, "Network", () => ("\u2193 " + SystemSamples.Rate(_s.RxRate, false), "\u2191 " + SystemSamples.Rate(_s.TxRate, false), null, false));
+            Add(G.Network, Loc.T("Network"), () => ("\u2193 " + SystemSamples.Rate(_s.RxRate, false), "\u2191 " + SystemSamples.Rate(_s.TxRate, false), null, false));
         }
 
         if (rt.IsAvailable("monitor-disk"))

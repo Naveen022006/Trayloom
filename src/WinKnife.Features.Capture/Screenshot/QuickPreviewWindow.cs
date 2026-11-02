@@ -10,6 +10,7 @@ using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using WinKnife.Core.Ui;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Capture;
 
@@ -183,11 +184,11 @@ internal sealed class QuickPreviewWindow : Window
         var overlay = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 6, 6, 0) };
         if (CaptureHost.Installed("screen-ocr"))
         {
-            overlay.Children.Add(Round(G.TextScan, "Copy text", () => _ = CopyTextAsync()));
+            overlay.Children.Add(Round(G.TextScan, Loc.T("Copy text"), () => _ = CopyTextAsync()));
         }
 
-        overlay.Children.Add(Round(G.Share, "Share", Share));
-        overlay.Children.Add(Round(G.Pin, "Pin to screen", () =>
+        overlay.Children.Add(Round(G.Share, Loc.T("Share"), Share));
+        overlay.Children.Add(Round(G.Pin, Loc.T("Pin to screen"), () =>
         {
             _svc.Pin(_capture.Image, _capture.Scale);
             Close();
@@ -232,7 +233,7 @@ internal sealed class QuickPreviewWindow : Window
     private void BuildActions()
     {
         _actions.Children.Clear();
-        _actions.Children.Add(new EdButton(G.Trash, null, "Discard  (Backspace)", Discard, width: 28, height: 26));
+        _actions.Children.Add(new EdButton(G.Trash, null, Loc.T("Discard  (Backspace)"), Discard, width: 28, height: 26));
         if (_qr is not null)
         {
             _actions.Children.Add(new EdButton(G.QrCode, null, Strings.Screenshot.QrCode, () => { QrResultWindow.Show(_qr, null); Close(); }, width: 28, height: 26) { Active = true });
@@ -244,7 +245,7 @@ internal sealed class QuickPreviewWindow : Window
         _actions.Children.Add(_copyBtn);
         var spacer = new Border { Width = Math.Max(0, 320 - 28 - (_qr is null ? 0 : 28) - 5 * 2 - 150 - 78) };
         _actions.Children.Add(spacer);
-        var edit = new EdButton(G.Edit, Strings.Screenshot.EditLabel, "Edit  (Enter)", Edit, prominent: true, height: 26) { Margin = new Thickness(5, 0, 0, 0) };
+        var edit = new EdButton(G.Edit, Strings.Screenshot.EditLabel, Loc.T("Edit  (Enter)"), Edit, prominent: true, height: 26) { Margin = new Thickness(5, 0, 0, 0) };
         _actions.Children.Add(edit);
     }
 

@@ -56,7 +56,7 @@ internal static class Sk
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var label = UiKit.Text("Shortcut", 12.5, FontWeights.Normal, ThemeKeys.TextSecondary);
+        var label = UiKit.Text(Loc.T("Shortcut"), 12.5, FontWeights.Normal, ThemeKeys.TextSecondary);
         label.VerticalAlignment = VerticalAlignment.Center;
         grid.Children.Add(label);
         var warn = Warning(string.Empty);

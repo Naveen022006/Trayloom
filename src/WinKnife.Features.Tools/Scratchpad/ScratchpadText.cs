@@ -2,6 +2,7 @@
 // WinKnife — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
 
 using System.Text.RegularExpressions;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Tools;
 
@@ -330,6 +331,6 @@ internal static class ScratchpadText
             collapsed = collapsed.Replace(c, '-');
         }
 
-        return collapsed.Length == 0 ? "Scratchpad" : collapsed;
+        return collapsed.Length == 0 ? Loc.T("Scratchpad") : collapsed;
     }
 }

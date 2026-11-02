@@ -42,31 +42,31 @@ internal static class AboutPage
         versionRow.Children.Add(UiKit.Text("Version " + AppInfo.Version, 11.5, FontWeights.Normal, ThemeKeys.TextSecondary));
         if (AppInfo.IsBeta)
         {
-            var beta = new BadgePill("Beta", BadgeStyle.Orange) { Margin = new Thickness(6, 0, 0, 0) };
+            var beta = new BadgePill(Loc.T("Beta"), BadgeStyle.Orange) { Margin = new Thickness(6, 0, 0, 0) };
             versionRow.Children.Add(beta);
         }
 
         col.Children.Add(versionRow);
-        var desc = UiKit.Text("A utility hub for your PC.\nEnergy, system monitor, scrolling and a window switcher, right in the system tray.", 12.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+        var desc = UiKit.Text(Loc.T("A utility hub for your PC.\nEnergy, system monitor, scrolling and a window switcher, right in the system tray."), 12.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
         desc.TextAlignment = TextAlignment.Center;
         desc.HorizontalAlignment = HorizontalAlignment.Center;
         desc.Margin = new Thickness(0, 14, 0, 0);
         col.Children.Add(desc);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 14, 0, 0) };
-        buttons.Children.Add(UiKit.Button("Review introduction", ButtonKind.Bordered, 13, onClick: () => s.Shell.ShowOnboarding()));
-        var highlights = UiKit.Button("Review highlights", ButtonKind.Bordered, 13, onClick: () => s.Shell.OpenSettings(SettingsPages.WhatsNew));
+        buttons.Children.Add(UiKit.Button(Loc.T("Review introduction"), ButtonKind.Bordered, 13, onClick: () => s.Shell.ShowOnboarding()));
+        var highlights = UiKit.Button(Loc.T("Review highlights"), ButtonKind.Bordered, 13, onClick: () => s.Shell.OpenSettings(SettingsPages.WhatsNew));
         highlights.Margin = new Thickness(10, 0, 0, 0);
         buttons.Children.Add(highlights);
-        var link = UiKit.Button("View on GitHub", ButtonKind.Plain, 13, onClick: () => UiKit.OpenUrl(AppInfo.RepositoryUrl));
+        var link = UiKit.Button(Loc.T("View on GitHub"), ButtonKind.Plain, 13, onClick: () => UiKit.OpenUrl(AppInfo.RepositoryUrl));
         link.Margin = new Thickness(10, 0, 0, 0);
         link.SetResourceReference(Control.ForegroundProperty, ThemeKeys.Accent);
         buttons.Children.Add(link);
         col.Children.Add(buttons);
         var help = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 8, 0, 0) };
-        help.Children.Add(UiKit.Button("Report a problem", ButtonKind.Bordered, 13, onClick: () => s.Shell.ReportProblem()));
+        help.Children.Add(UiKit.Button(Loc.T("Report a problem"), ButtonKind.Bordered, 13, onClick: () => s.Shell.ReportProblem()));
         if (!InstallManager.IsInstalledCopy && !InstallManager.IsDevelopmentBuild)
         {
-            var install = UiKit.Button("Install WinKnife…", ButtonKind.Bordered, 13, onClick: () => s.Shell.ShowInstallOffer());
+            var install = UiKit.Button(Loc.T("Install WinKnife…"), ButtonKind.Bordered, 13, onClick: () => s.Shell.ShowInstallOffer());
             install.Margin = new Thickness(10, 0, 0, 0);
             help.Children.Add(install);
         }
@@ -76,8 +76,8 @@ internal static class AboutPage
         if (sac is SmartAppControlState.Enforcing or SmartAppControlState.Evaluation)
         {
             var note = UiKit.Text(sac == SmartAppControlState.Enforcing
-                ? "Smart App Control is on. It may slow the first start or block unsigned parts of WinKnife; WinKnife explains it if that happens."
-                : "Smart App Control is in evaluation mode. It may slow the first start.", 11, FontWeights.Normal, ThemeKeys.TextTertiary, wrap: true);
+                ? Loc.T("Smart App Control is on. It may slow the first start or block unsigned parts of WinKnife; WinKnife explains it if that happens.")
+                : Loc.T("Smart App Control is in evaluation mode. It may slow the first start."), 11, FontWeights.Normal, ThemeKeys.TextTertiary, wrap: true);
             note.TextAlignment = TextAlignment.Center;
             note.MaxWidth = 420;
             note.HorizontalAlignment = HorizontalAlignment.Center;
@@ -93,26 +93,26 @@ internal static class AboutPage
         stack.AddSpaced(identity, 20);
 
         // Updates.
-        var updates = new SettingsCard("Updates");
-        updates.Add(Toggle(s, AppKeys.AutoCheckUpdates, "Check for updates automatically"));
-        var beta2 = Toggle(s, AppKeys.IncludeBetaUpdates, "Receive beta updates");
+        var updates = new SettingsCard(Loc.T("Updates"));
+        updates.Add(Toggle(s, AppKeys.AutoCheckUpdates, Loc.T("Check for updates automatically")));
+        var beta2 = Toggle(s, AppKeys.IncludeBetaUpdates, Loc.T("Receive beta updates"));
         updates.Add(beta2);
-        updates.AddCaption("Beta versions include features in development and may contain bugs or incomplete behavior.");
-        updates.Add(Toggle(s, AppKeys.ShowReleaseNotesBeforeUpdate, "Show what’s new before updating"));
+        updates.AddCaption(Loc.T("Beta versions include features in development and may contain bugs or incomplete behavior."));
+        updates.Add(Toggle(s, AppKeys.ShowReleaseNotesBeforeUpdate, Loc.T("Show what’s new before updating")));
         if (s.App.Get<bool>(AppKeys.ReleaseNotesOnUpdate))
         {
-            updates.AddCaption("What changed in your features still appears after each update.");
+            updates.AddCaption(Loc.T("What changed in your features still appears after each update."));
         }
 
-        updates.Add(Toggle(s, AppKeys.ReleaseNotesOnUpdate, "Show what’s new after updating"));
+        updates.Add(Toggle(s, AppKeys.ReleaseNotesOnUpdate, Loc.T("Show what’s new after updating")));
         var status = new StackPanel { Orientation = Orientation.Horizontal };
         var last = s.App.Get<string>("updateLastChecked") ?? string.Empty;
-        var checkButton = UiKit.Button("Check now", ButtonKind.Bordered, 13);
+        var checkButton = UiKit.Button(Loc.T("Check now"), ButtonKind.Bordered, 13);
         checkButton.Click += (_, _) =>
         {
             status.Children.Clear();
             status.Children.Add(UiKit.Icon("", 13, ThemeKeys.Green));
-            var text = UiKit.Text("You’re on the latest version.", 12.5, FontWeights.Normal, ThemeKeys.TextPrimary);
+            var text = UiKit.Text(Loc.T("You’re on the latest version."), 12.5, FontWeights.Normal, ThemeKeys.TextPrimary);
             text.Margin = new Thickness(6, 0, 0, 0);
             status.Children.Add(text);
             s.App.Set("updateLastChecked", DateTime.Now.ToString("g"));
@@ -140,37 +140,38 @@ internal static class WhatsNewPage
 {
     private sealed record Section(string Title, string[] Items);
 
-    private static readonly Section[] Notes =
-    [
+    private static Section[] Notes => _loc_Notes.Value;
+
+    private static readonly LocValue<Section[]> _loc_Notes = new(() => [
         new("Added",
         [
-            "The Features hub: install only what you use, with bundles, permissions and a restart-to-unload card.",
-            "A tabbed tray panel with Keep awake, Volume mixer, System, Network, Disks, Power, Utilities, Controls, Quick toggles and Wallpaper tabs.",
-            "A Settings window with a searchable sidebar, back and forward history and section anchors.",
-            "Central keyboard shortcuts page with conflict reporting.",
+            Loc.T("The Features hub: install only what you use, with bundles, permissions and a restart-to-unload card."),
+            Loc.T("A tabbed tray panel with Keep awake, Volume mixer, System, Network, Disks, Power, Utilities, Controls, Quick toggles and Wallpaper tabs."),
+            Loc.T("A Settings window with a searchable sidebar, back and forward history and section anchors."),
+            Loc.T("Central keyboard shortcuts page with conflict reporting."),
         ]),
         new("Changed",
         [
-            "Every screen now follows the same look: cards, switches and the segmented tab bar.",
-            "Appearance can follow Windows or be forced to light or dark.",
+            Loc.T("Every screen now follows the same look: cards, switches and the segmented tab bar."),
+            Loc.T("Appearance can follow Windows or be forced to light or dark."),
         ]),
         new("Fixed",
         [
-            "Shelf and Command Bar windows keep their real size when they open.",
-            "Window layout on monitors with a different scale no longer overshoots the screen edge.",
+            Loc.T("Shelf and Command Bar windows keep their real size when they open."),
+            Loc.T("Window layout on monitors with a different scale no longer overshoots the screen edge."),
         ]),
-    ];
+    ]);
 
     public static FrameworkElement Build()
     {
         var stack = new StackPanel { Margin = new Thickness(2, 2, 2, 0) };
-        stack.Children.Add(UiKit.Text("What’s new in this version", 18, FontWeights.Bold, ThemeKeys.TextPrimary));
+        stack.Children.Add(UiKit.Text(Loc.T("What’s new in this version"), 18, FontWeights.Bold, ThemeKeys.TextPrimary));
         var version = UiKit.Text($"v{AppInfo.Version} · 2026-11-02", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary);
         version.Margin = new Thickness(0, 4, 0, 0);
         stack.Children.Add(version);
         foreach (var section in Notes)
         {
-            var heading = UiKit.Text(section.Title.ToUpperInvariant(), 11, FontWeights.Bold, ThemeKeys.TextSecondary);
+            var heading = UiKit.Text(Loc.T(section.Title).ToUpperInvariant(), 11, FontWeights.Bold, ThemeKeys.TextSecondary);
             heading.Margin = new Thickness(0, 18, 0, 8);
             stack.Children.Add(heading);
             foreach (var item in section.Items)
@@ -211,11 +212,11 @@ internal static class SupportPage
             Child = UiKit.Icon(Glyphs.Heart, 29, ThemeKeys.OnAccent, FontWeights.SemiBold),
         };
         stack.Children.Add(badge);
-        var heading = UiKit.Text("Help WinKnife keep growing", 18, FontWeights.Bold, ThemeKeys.TextPrimary);
+        var heading = UiKit.Text(Loc.T("Help WinKnife keep growing"), 18, FontWeights.Bold, ThemeKeys.TextPrimary);
         heading.HorizontalAlignment = HorizontalAlignment.Center;
         heading.Margin = new Thickness(0, 18, 0, 0);
         stack.Children.Add(heading);
-        var message = UiKit.Text("WinKnife stays free and local, with no ads or usage tracking. If it helps you, a star on GitHub is the best way to help it grow.", 13.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+        var message = UiKit.Text(Loc.T("WinKnife stays free and local, with no ads or usage tracking. If it helps you, a star on GitHub is the best way to help it grow."), 13.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
         message.TextAlignment = TextAlignment.Center;
         message.Margin = new Thickness(0, 8, 0, 0);
         stack.Children.Add(message);
@@ -237,8 +238,8 @@ internal static class SupportPage
         };
         row.Children.Add(star);
         var text = new StackPanel { Margin = new Thickness(14, 0, 0, 0) };
-        text.Children.Add(UiKit.Text("Financial support is never expected. A star on GitHub helps more people discover WinKnife and makes a real difference to its development.", 13.5, FontWeights.Medium, ThemeKeys.TextPrimary, wrap: true));
-        var button = UiKit.Button("Star WinKnife on GitHub", ButtonKind.Bordered, 13, Glyphs.Star, () => UiKit.OpenUrl(AppInfo.RepositoryUrl));
+        text.Children.Add(UiKit.Text(Loc.T("Financial support is never expected. A star on GitHub helps more people discover WinKnife and makes a real difference to its development."), 13.5, FontWeights.Medium, ThemeKeys.TextPrimary, wrap: true));
+        var button = UiKit.Button(Loc.T("Star WinKnife on GitHub"), ButtonKind.Bordered, 13, Glyphs.Star, () => UiKit.OpenUrl(AppInfo.RepositoryUrl));
         button.HorizontalAlignment = HorizontalAlignment.Left;
         button.Padding = new Thickness(14, 7, 14, 7);
         button.Margin = new Thickness(0, 12, 0, 0);
@@ -247,7 +248,7 @@ internal static class SupportPage
         row.Children.Add(text);
         card.Child = row;
         stack.Children.Add(card);
-        var thanks = UiKit.Text(ThemeManager.IsLight ? "Thank you for being here. \U0001F5A4" : "Thank you for being here. \U0001F90D", 11.5, FontWeights.Normal, ThemeKeys.TextTertiary);
+        var thanks = UiKit.Text(ThemeManager.IsLight ? Loc.T("Thank you for being here. \U0001F5A4") : Loc.T("Thank you for being here. \U0001F90D"), 11.5, FontWeights.Normal, ThemeKeys.TextTertiary);
         thanks.HorizontalAlignment = HorizontalAlignment.Center;
         thanks.Margin = new Thickness(0, 18, 0, 0);
         stack.Children.Add(thanks);

@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Maintenance;
 
@@ -251,12 +252,12 @@ internal sealed class KillService
     {
         if (pid == 4)
         {
-            return "System";
+            return Loc.T("System");
         }
 
         if (pid == 0)
         {
-            return "System Idle Process";
+            return Loc.T("System Idle Process");
         }
 
         if (string.IsNullOrEmpty(path))
@@ -520,7 +521,7 @@ internal sealed class KillService
         if (needAdmin.Count > 0)
         {
             var name = needAdmin[0].Name;
-            if (Dialogs.Confirm($"WinKnife needs administrator access to end “{name}”.", string.Empty, "Continue", false))
+            if (Dialogs.Confirm(Loc.F("WinKnife needs administrator access to end “{0}”.", name), string.Empty, Loc.T("Continue"), false))
             {
                 var ok = await Task.Run(() => Elevated.Kill(needAdmin.Select(t => (t.Pid, t.StartedAt)).ToList())).ConfigureAwait(true);
                 await Task.Delay(400).ConfigureAwait(true);
@@ -536,7 +537,7 @@ internal sealed class KillService
         _ = Task.Delay(500).ContinueWith(_ => Application.Current?.Dispatcher.BeginInvoke(() => _ = RefreshAsync(true)));
         if (failed > 0)
         {
-            Dialogs.Alert("Couldn’t Kill Process", "The process may have already exited or require additional privileges.");
+            Dialogs.Alert(Loc.T("Couldn’t Kill Process"), Loc.T("The process may have already exited or require additional privileges."));
         }
 
         return failed == 0;

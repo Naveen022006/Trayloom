@@ -48,7 +48,7 @@ internal sealed class ToggleConfirmDialog : Window
         {
             DialogResult = true;
         };
-        var cancel = UiKit.Button("Cancel", ButtonKind.Bordered, 12.5);
+        var cancel = UiKit.Button(Loc.T("Cancel"), ButtonKind.Bordered, 12.5);
         cancel.IsCancel = true;
         cancel.Margin = new Thickness(8, 0, 0, 0);
         buttons.Children.Add(ok);

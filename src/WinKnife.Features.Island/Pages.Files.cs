@@ -114,11 +114,11 @@ internal sealed class FilesPage : IslandPage
             var txt = D.Digits($"Create ZIP · {_progress.Done}/{_progress.Total}", 12, null, D.Secondary);
             txt.Margin = new Thickness(8, 0, 6, 0);
             _leading.Children.Add(txt);
-            _leading.Children.Add(D.IconButton(G.Close, "Cancel", () => _cts?.Cancel(), size: 28));
+            _leading.Children.Add(D.IconButton(G.Close, Loc.T("Cancel"), () => _cts?.Cancel(), size: 28));
         }
         else if (items.Count > 0)
         {
-            var hint = D.T(_selected.Count > 0 ? $"{_selected.Count} selected" : "Click to select. Drag out to use or right-click for more actions.", _selected.Count > 0 ? 12 : 10, null, D.Secondary, true);
+            var hint = D.T(_selected.Count > 0 ? Loc.F("{0} selected", _selected.Count) : Loc.T("Click to select. Drag out to use or right-click for more actions."), _selected.Count > 0 ? 12 : 10, null, D.Secondary, true);
             hint.MaxWidth = 220;
             hint.MaxHeight = 28;
             _leading.Children.Add(hint);
@@ -127,7 +127,7 @@ internal sealed class FilesPage : IslandPage
         if (items.Count > 0)
         {
             var mediaService = Core.Ctx.Services.Get<IMediaToolsService>();
-            var media = D.IconButton("", "Media", () =>
+            var media = D.IconButton("", Loc.T("Media"), () =>
             {
                 var chosen = _selected.Count > 0 ? _selected.ToList() : IslandShelf.Items.ToList();
                 mediaService?.OpenWith(chosen);
@@ -136,10 +136,10 @@ internal sealed class FilesPage : IslandPage
             media.Visibility = Core.Ctx.Runtime.IsAvailable("media-tools") ? Visibility.Visible : Visibility.Collapsed;
             _trailing.Children.Add(media);
             HoverButton? zip = null;
-            zip = D.IconButton(G.Zip, "Create ZIP", () => IslandMenu.Show(zip!, [new IslandMenu.Item("Create ZIP", StartZip, Enabled: !_zipping, Glyph: G.Zip)], () => HasWindow ? Window.HoldOpen() : null), size: 28);
+            zip = D.IconButton(G.Zip, Loc.T("Create ZIP"), () => IslandMenu.Show(zip!, [new IslandMenu.Item(Loc.T("Create ZIP"), StartZip, Enabled: !_zipping, Glyph: G.Zip)], () => HasWindow ? Window.HoldOpen() : null), size: 28);
             _trailing.Children.Add(zip);
             HoverButton? trash = null;
-            trash = D.IconButton(G.Trash, _selected.Count > 0 ? "Remove selected" : "Clear all", () =>
+            trash = D.IconButton(G.Trash, _selected.Count > 0 ? Loc.T("Remove selected") : Loc.T("Clear all"), () =>
             {
                 if (_selected.Count > 0)
                 {
@@ -148,7 +148,7 @@ internal sealed class FilesPage : IslandPage
                 }
                 else
                 {
-                    IslandMenu.Show(trash!, [new IslandMenu.Item("Clear all", IslandShelf.Clear, Destructive: true), new IslandMenu.Item("Cancel", null)], () => HasWindow ? Window.HoldOpen() : null);
+                    IslandMenu.Show(trash!, [new IslandMenu.Item(Loc.T("Clear all"), IslandShelf.Clear, Destructive: true), new IslandMenu.Item(Loc.T("Cancel"), null)], () => HasWindow ? Window.HoldOpen() : null);
                 }
             }, size: 28);
             trash.Margin = new Thickness(6, 0, 0, 0);
@@ -223,9 +223,9 @@ internal sealed class FilesPage : IslandPage
         {
             IslandMenu.Show(tile,
             [
-                new IslandMenu.Item("Open", () => DownloadsPage.OpenPath(path)),
-                new IslandMenu.Item("Show in folder", () => DownloadsPage.Reveal(path)),
-                new IslandMenu.Item("Remove selected", () => IslandShelf.Remove([path])),
+                new IslandMenu.Item(Loc.T("Open"), () => DownloadsPage.OpenPath(path)),
+                new IslandMenu.Item(Loc.T("Show in folder"), () => DownloadsPage.Reveal(path)),
+                new IslandMenu.Item(Loc.T("Remove selected"), () => IslandShelf.Remove([path])),
             ], () => HasWindow ? Window.HoldOpen() : null);
             e.Handled = true;
         };
@@ -255,7 +255,7 @@ internal sealed class FilesPage : IslandPage
         }
         else
         {
-            using var f = new System.Windows.Forms.FolderBrowserDialog { Description = "Each selected item is saved as a separate ZIP. Originals stay unchanged.", UseDescriptionForTitle = true };
+            using var f = new System.Windows.Forms.FolderBrowserDialog { Description = Loc.T("Each selected item is saved as a separate ZIP. Originals stay unchanged."), UseDescriptionForTitle = true };
             if (f.ShowDialog() != System.Windows.Forms.DialogResult.OK)
             {
                 return;
@@ -318,13 +318,13 @@ internal sealed class FilesPage : IslandPage
                     _view.Dispatcher.BeginInvoke(Build);
                 }
             }, token);
-            _status = "Saved";
+            _status = Loc.T("Saved");
             _statusFailed = false;
             IslandShelf.Add(outputs);
         }
         catch (OperationCanceledException)
         {
-            _status = "Cancelled.";
+            _status = Loc.T("Cancelled.");
             _statusFailed = false;
         }
         catch (Exception ex)

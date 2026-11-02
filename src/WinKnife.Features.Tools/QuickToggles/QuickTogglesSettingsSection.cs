@@ -23,7 +23,7 @@ public sealed class QuickTogglesSettingsSection : ISettingsSection
     public string? Anchor => "quickToggles";
 
     /// <inheritdoc />
-    public string? Title => "Quick toggles";
+    public string? Title => Loc.T("Quick toggles");
 
     /// <inheritdoc />
     public IReadOnlyList<string> Keywords => ["dark mode", "keyboard light", "excluded drives", "eject", "recycle bin", "hidden files", "desktop icons"];
@@ -35,7 +35,7 @@ public sealed class QuickTogglesSettingsSection : ISettingsSection
     public FrameworkElement CreateView(ISettingsContext context)
     {
         context.App.Register("diskEjectExcludedVolumes", new List<string>());
-        var card = new SettingsCard("Quick toggles");
+        var card = new SettingsCard(Loc.T("Quick toggles"));
 
         // Dark mode button: title and glyph follow the live scheme.
         var host = new ContentControl { HorizontalAlignment = HorizontalAlignment.Left };
@@ -73,7 +73,7 @@ public sealed class QuickTogglesSettingsSection : ISettingsSection
             var percent = UiKit.Text($"{Math.Round(level * 100)}%", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary);
             percent.Width = 34;
             percent.TextAlignment = TextAlignment.Right;
-            var slider = new Slider { Minimum = 0, Maximum = 1, Value = level, Width = 190, VerticalAlignment = VerticalAlignment.Center, ToolTip = "Keyboard light" };
+            var slider = new Slider { Minimum = 0, Maximum = 1, Value = level, Width = 190, VerticalAlignment = VerticalAlignment.Center, ToolTip = Loc.T("Keyboard light") };
             var toggle = new MacSwitch(level > 0, SwitchSize.Regular);
             var updating = false;
             toggle.Toggled += on =>
@@ -107,7 +107,7 @@ public sealed class QuickTogglesSettingsSection : ISettingsSection
                 percent.Text = $"{Math.Round(e.NewValue * 100)}%";
                 updating = false;
             };
-            card.Add(new SettingsRow("", "Keyboard light", null, toggle));
+            card.Add(new SettingsRow("", Loc.T("Keyboard light"), null, toggle));
             var sliderRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(SettingsRow.TextInset, 0, 0, 0) };
             sliderRow.Children.Add(slider);
             sliderRow.Children.Add(percent);
@@ -115,7 +115,7 @@ public sealed class QuickTogglesSettingsSection : ISettingsSection
         }
 
         card.Add(new DiskExclusionsList(context));
-        card.AddCaption("One-click system actions in the tray panel and in the quick panel.");
+        card.AddCaption(Loc.T("One-click system actions in the tray panel and in the quick panel."));
         return card;
     }
 }
@@ -155,7 +155,7 @@ internal sealed class DiskExclusionsList : StackPanel
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) });
-        header.Children.Add(UiKit.Text("Excluded drives", 13, FontWeights.Normal, ThemeKeys.TextPrimary));
+        header.Children.Add(UiKit.Text(Loc.T("Excluded drives"), 13, FontWeights.Normal, ThemeKeys.TextPrimary));
         if (list.Count > 0)
         {
             var count = UiKit.Text(list.Count.ToString(), 12, FontWeights.Normal, ThemeKeys.TextSecondary);
@@ -187,7 +187,7 @@ internal sealed class DiskExclusionsList : StackPanel
             var label = UiKit.Text(name, 12, FontWeights.Normal, ThemeKeys.TextPrimary, trimming: TextTrimming.CharacterEllipsis);
             Grid.SetColumn(label, 1);
             row.Children.Add(label);
-            var remove = new Button { Content = UiKit.Icon("", 12, ThemeKeys.TextSecondary), ToolTip = "Remove", Padding = new Thickness(4, 2, 4, 2), Cursor = Cursors.Hand };
+            var remove = new Button { Content = UiKit.Icon("", 12, ThemeKeys.TextSecondary), ToolTip = Loc.T("Remove"), Padding = new Thickness(4, 2, 4, 2), Cursor = Cursors.Hand };
             remove.SetResourceReference(StyleProperty, ThemeKeys.ButtonPlain);
             var captured = name;
             remove.Click += (_, _) =>
@@ -202,12 +202,12 @@ internal sealed class DiskExclusionsList : StackPanel
 
         if (_adding)
         {
-            var field = new TextBox { Text = _draft, Width = 200, FontSize = 12, VerticalContentAlignment = VerticalAlignment.Center, ToolTip = "Drive or volume name" };
+            var field = new TextBox { Text = _draft, Width = 200, FontSize = 12, VerticalContentAlignment = VerticalAlignment.Center, ToolTip = Loc.T("Drive or volume name") };
             field.SetResourceReference(StyleProperty, ThemeKeys.TextBoxStyle);
-            var add = UiKit.Button("Add", ButtonKind.Bordered, 11.5);
-            var cancel = UiKit.Button("Cancel", ButtonKind.Plain, 11.5);
+            var add = UiKit.Button(Loc.T("Add"), ButtonKind.Bordered, 11.5);
+            var cancel = UiKit.Button(Loc.T("Cancel"), ButtonKind.Plain, 11.5);
             add.IsEnabled = _draft.Trim().Length > 0;
-            var hint = new TextBlock { Text = "Drive or volume name", FontSize = 11.5, IsHitTestVisible = false, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0), Visibility = _draft.Length == 0 ? Visibility.Visible : Visibility.Collapsed };
+            var hint = new TextBlock { Text = Loc.T("Drive or volume name"), FontSize = 11.5, IsHitTestVisible = false, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0), Visibility = _draft.Length == 0 ? Visibility.Visible : Visibility.Collapsed };
             hint.SetResourceReference(TextBlock.ForegroundProperty, ThemeKeys.TextTertiary);
 
             void Commit()
@@ -269,7 +269,7 @@ internal sealed class DiskExclusionsList : StackPanel
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(n => n, StringComparer.CurrentCultureIgnoreCase)
                 .ToList();
-            var button = UiKit.Button("Add drive…", ButtonKind.Bordered, 11.5, Glyphs.Add);
+            var button = UiKit.Button(Loc.T("Add drive…"), ButtonKind.Bordered, 11.5, Glyphs.Add);
             button.HorizontalAlignment = HorizontalAlignment.Left;
             button.Margin = new Thickness(0, 0, 0, 8);
             button.Click += (_, _) =>
@@ -297,7 +297,7 @@ internal sealed class DiskExclusionsList : StackPanel
                 }
 
                 menu.Items.Add(new Separator());
-                var other = new MenuItem { Header = "Other drive name…" };
+                var other = new MenuItem { Header = Loc.T("Other drive name…") };
                 other.Click += (_, _) =>
                 {
                     _adding = true;
@@ -309,7 +309,7 @@ internal sealed class DiskExclusionsList : StackPanel
             _body.Children.Add(button);
         }
 
-        _body.Children.Add(UiKit.Text("Drives in this list are never unmounted when using Eject all disks.", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true));
+        _body.Children.Add(UiKit.Text(Loc.T("Drives in this list are never unmounted when using Eject all disks."), 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true));
         Children.Add(_body);
     }
 }

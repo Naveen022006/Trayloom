@@ -18,7 +18,7 @@ internal sealed class KillProcessPageView : StackPanel
     private readonly KillService _s = KillService.Shared;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(3) };
     private readonly VirtualList _list = new(RowHeight) { Height = 520 };
-    private readonly TextBlock _count = UiKit.Text("Processes: 0", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary);
+    private readonly TextBlock _count = UiKit.Text(Loc.T("Processes: 0"), 11.5, FontWeights.Normal, ThemeKeys.TextSecondary);
     private readonly ContentControl _empty = new();
     private readonly ContentControl _columns = new();
     private readonly Spinner _spinner = new(12);
@@ -28,7 +28,7 @@ internal sealed class KillProcessPageView : StackPanel
     public KillProcessPageView()
     {
         var group = new SettingsCard();
-        group.Add(new SettingsRow(null, "Group related processes", "Groups helper processes under the app responsible for them.",
+        group.Add(new SettingsRow(null, Loc.T("Group related processes"), Loc.T("Groups helper processes under the app responsible for them."),
             new MacSwitch(Host.App.Get<bool>("killProcessGroupRelated"), SwitchSize.Regular, on =>
             {
                 Host.App.Set("killProcessGroupRelated", on);
@@ -36,19 +36,19 @@ internal sealed class KillProcessPageView : StackPanel
                 _ = _s.RefreshAsync(true);
             })));
         group.AddDivider();
-        group.Add(new SettingsRow(null, "Show in Command Bar", "Adds running processes to the Command Bar, so you can find and kill them without opening Settings.",
+        group.Add(new SettingsRow(null, Loc.T("Show in Command Bar"), Loc.T("Adds running processes to the Command Bar, so you can find and kill them without opening Settings."),
             new MacSwitch(Host.App.Get<bool>("killProcessCommandBarEnabled"), SwitchSize.Regular, on => Host.App.Set("killProcessCommandBarEnabled", on))));
         Children.Add(group);
 
         var top = new Grid { Margin = new Thickness(0, 12, 0, 0) };
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var right = V.Row(16, _count, V.IconButton(G.Refresh, "Refresh", () => _ = _s.RefreshAsync(true), 12, ThemeKeys.TextSecondary, 24));
+        var right = V.Row(16, _count, V.IconButton(G.Refresh, Loc.T("Refresh"), () => _ = _s.RefreshAsync(true), 12, ThemeKeys.TextSecondary, 24));
         Grid.SetColumn(right, 1);
         top.Children.Add(right);
         Children.Add(top);
 
-        var search = V.SearchField("Filter by name", out var box, 12, 9, 9);
+        var search = V.SearchField(Loc.T("Filter by name"), out var box, 12, 9, 9);
         search.Margin = new Thickness(0, 8, 0, 0);
         var searchRow = V.Split(search, _spinner, 8);
         box.TextChanged += (_, _) =>
@@ -158,10 +158,10 @@ internal sealed class KillProcessPageView : StackPanel
             grid.Children.Add(button);
         }
 
-        Header("Process", "name", 1, false);
-        Header("CPU", "cpu", 2, true);
-        Header("Memory", "memory", 3, true);
-        Header("PID", "pid", 4, true);
+        Header(Loc.T("Process"), "name", 1, false);
+        Header(Loc.T("CPU"), "cpu", 2, true);
+        Header(Loc.T("Memory"), "memory", 3, true);
+        Header(Loc.T("PID"), "pid", 4, true);
         _columns.Content = grid;
     }
 
@@ -183,7 +183,7 @@ internal sealed class KillProcessPageView : StackPanel
             _ => (asc ? rows.OrderBy(r => r.Cpu) : rows.OrderByDescending(r => r.Cpu)).ThenBy(r => r.Pid),
         };
         _rows = rows.ToList();
-        _count.Text = $"Processes: {_rows.Count}";
+        _count.Text = Loc.F("Processes: {0}", _rows.Count);
         if (!_s.HasLoadedOnce)
         {
             _empty.Content = new Spinner(18) { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
@@ -191,7 +191,7 @@ internal sealed class KillProcessPageView : StackPanel
         }
         else if (_rows.Count == 0)
         {
-            var text = V.Secondary("No Processes Found", 13);
+            var text = V.Secondary(Loc.T("No Processes Found"), 13);
             text.HorizontalAlignment = HorizontalAlignment.Center;
             text.VerticalAlignment = VerticalAlignment.Center;
             _empty.Content = text;
@@ -224,7 +224,7 @@ internal sealed class KillProcessPageView : StackPanel
         line1.Children.Add(name);
         if (entry.GroupedCount > 1)
         {
-            var count = UiKit.Text($"  Processes: {entry.GroupedCount}", 10, FontWeights.Normal, ThemeKeys.TextTertiary);
+            var count = UiKit.Text(Loc.F("  Processes: {0}", entry.GroupedCount), 10, FontWeights.Normal, ThemeKeys.TextTertiary);
             count.VerticalAlignment = VerticalAlignment.Center;
             line1.Children.Add(count);
         }
@@ -255,7 +255,7 @@ internal sealed class KillProcessPageView : StackPanel
         Metric(entry.Pid.ToString(), 4);
 
         var cluster = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
-        var kill = V.Mini("Kill", () => Confirm(entry, "Kill", false));
+        var kill = V.Mini(Loc.T("Kill"), () => Confirm(entry, Loc.T("Kill"), false));
         kill.MinWidth = 44;
         kill.IsEnabled = !entry.IsProtected;
         cluster.Children.Add(kill);
@@ -286,18 +286,18 @@ internal sealed class KillProcessPageView : StackPanel
         var restartable = !entry.IsProtected && entry.IsRegularApp && entry.Path.Length > 0 && !entry.Path.Contains(@"\WindowsApps\", StringComparison.OrdinalIgnoreCase);
         var items = new List<(string? Title, Action? Action, bool Enabled)>
         {
-            ("Force Kill", () => Confirm(entry, "Force Kill", true), !entry.IsProtected),
-            ($"Kill All “{entry.Name}”", () => ConfirmAll(entry), !entry.IsProtected),
-            ("Kill Process Tree", () => ConfirmTree(entry), !entry.IsProtected),
+            (Loc.T("Force Kill"), () => Confirm(entry, Loc.T("Force Kill"), true), !entry.IsProtected),
+            (Loc.F("Kill All “{0}”", entry.Name), () => ConfirmAll(entry), !entry.IsProtected),
+            (Loc.T("Kill Process Tree"), () => ConfirmTree(entry), !entry.IsProtected),
         };
         if (restartable)
         {
-            items.Add(("Restart", () => _ = _s.RestartAsync(entry), true));
+            items.Add((Loc.T("Restart"), () => _ = _s.RestartAsync(entry), true));
         }
 
         items.Add((null, null, true));
-        items.Add(("Copy PID", () => Copy(entry.Pid.ToString()), true));
-        items.Add(("Copy Path", () => Copy(entry.Path), entry.Path.Length > 0));
+        items.Add((Loc.T("Copy PID"), () => Copy(entry.Pid.ToString()), true));
+        items.Add((Loc.T("Copy Path"), () => Copy(entry.Path), entry.Path.Length > 0));
         return V.Menu([.. items]);
     }
 
@@ -315,7 +315,7 @@ internal sealed class KillProcessPageView : StackPanel
 
     private void Confirm(KillEntry entry, string verb, bool force)
     {
-        var title = force ? $"Force Kill {entry.Name}?" : $"Kill {entry.Name}?";
+        var title = force ? Loc.F("Force Kill {0}?", entry.Name) : Loc.F("Kill {0}?", entry.Name);
         if (!Dialogs.Confirm(title, entry.Path, verb, true))
         {
             return;
@@ -326,7 +326,7 @@ internal sealed class KillProcessPageView : StackPanel
 
     private void ConfirmAll(KillEntry entry)
     {
-        if (!Dialogs.Confirm($"Kill all “{entry.Name}” processes?", string.Empty, "Kill", true))
+        if (!Dialogs.Confirm(Loc.F("Kill all “{0}” processes?", entry.Name), string.Empty, Loc.T("Kill"), true))
         {
             return;
         }
@@ -338,7 +338,7 @@ internal sealed class KillProcessPageView : StackPanel
 
     private void ConfirmTree(KillEntry entry)
     {
-        if (!Dialogs.Confirm($"Kill {entry.Name} and all its child processes?", entry.Path, "Kill Process Tree", true))
+        if (!Dialogs.Confirm(Loc.F("Kill {0} and all its child processes?", entry.Name), entry.Path, Loc.T("Kill Process Tree"), true))
         {
             return;
         }
@@ -354,7 +354,7 @@ public sealed class KillProcessSettingsSection : ISettingsSection
 
     public string PageId => SettingsPages.KillProcess;
 
-    public string? Title => "Kill Process";
+    public string? Title => Loc.T("Kill Process");
 
     public IReadOnlyList<string> Keywords => ["force quit", "process", "cpu", "memory", "kill", "Group related processes", "Show in Command Bar"];
 
@@ -376,7 +376,7 @@ public sealed class KillProcessFeature : IFeature
 
     public IReadOnlyList<FeatureAction> Actions =>
     [
-        new FeatureAction("browse", "Kill Process", () => _context?.Shell.OpenSettings(SettingsPages.KillProcess), G.CancelCircle),
+        new FeatureAction("browse", Loc.T("Kill Process"), () => _context?.Shell.OpenSettings(SettingsPages.KillProcess), G.CancelCircle),
     ];
 
     private IProcessKillService? _service;

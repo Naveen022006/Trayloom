@@ -63,7 +63,7 @@ public sealed class KeyDebounceSection : ISettingsSection
         main.Add(Rows.Toggle(app, "", Strings.FilterDuplicateKeys, Strings.FilterDuplicateKeysCaption, K.KeyDebounceEnabled));
         var active = InputUi.ActiveBadge(Strings.FilterActive, Rows.Inset);
         main.Add(live.Show(active, () => app.Get<bool>(K.KeyDebounceEnabled) && c.Runtime.IsRunning("keyboard-debounce")));
-        var globalRow = InputUi.LabelLine(Strings.GlobalWindow, InputUi.Stepper(0, 500, window is >= 0 and <= 500 ? window : 5, v => $"{v} ms", v => app.Set(K.KeyDebounceWindow, v)));
+        var globalRow = InputUi.LabelLine(Strings.GlobalWindow, InputUi.Stepper(0, 500, window is >= 0 and <= 500 ? window : 5, v => Loc.F("{0} ms", v), v => app.Set(K.KeyDebounceWindow, v)));
         globalRow.Margin = new Thickness(Rows.Inset, 0, 0, 0);
         main.Add(globalRow);
         _ = step;
@@ -77,7 +77,7 @@ public sealed class KeyDebounceSection : ISettingsSection
         var addWindow = 5;
         var picker = new ComboBox { MinWidth = 160, ItemsSource = new[] { Strings.KeyPlaceholder }.Concat(Catalogue.Select(k => k.Label)).ToList(), SelectedIndex = 0 };
         picker.SelectionChanged += (_, _) => selectedVk = picker.SelectedIndex > 0 ? Catalogue[picker.SelectedIndex - 1].Vk : null;
-        var addStepper = InputUi.Stepper(0, 500, addWindow, v => $"{v} ms", v => addWindow = v);
+        var addStepper = InputUi.Stepper(0, 500, addWindow, v => Loc.F("{0} ms", v), v => addWindow = v);
         var addButton = UiKit.Button(Strings.AddKey, ButtonKind.Bordered, 12, null, () =>
         {
             if (selectedVk is { } vk)
@@ -118,7 +118,7 @@ public sealed class KeyDebounceSection : ISettingsSection
                 label.VerticalAlignment = VerticalAlignment.Center;
                 grid.Children.Add(label);
                 var key = vk;
-                var stepper = InputUi.Stepper(0, 500, ms, v => $"{v} ms", v =>
+                var stepper = InputUi.Stepper(0, 500, ms, v => Loc.F("{0} ms", v), v =>
                 {
                     var current = KeyDebounceFeature.ParseOverrides(app.Get<string>(K.KeyDebounceKeys));
                     current[key] = v;
@@ -402,10 +402,10 @@ public sealed class QuitProtectionSection : ISettingsSection
         var modes = new (string Value, string Label)[] { ("hold", Strings.ModeHold), ("doublePress", Strings.ModeDouble), ("extraModifier", Strings.ModeExtra) };
         body.Children.Add(new PickerRow<string>(null, Strings.ConfirmationMode, null, modes, app.Get<string>(Key("Mode")), v => app.Set(Key("Mode"), v), 220));
 
-        var hold = live.Show(HoldSlider(app, Key("HoldDurationMs"), Strings.HoldDuration, 250, 2000, "250 ms", "2 s"), () => app.Get<string>(Key("Mode")) == "hold");
+        var hold = live.Show(HoldSlider(app, Key("HoldDurationMs"), Strings.HoldDuration, 250, 2000, Loc.T("250 ms"), Loc.T("2 s")), () => app.Get<string>(Key("Mode")) == "hold");
         hold.Margin = new Thickness(0, 13, 0, 0);
         body.Children.Add(hold);
-        var dbl = live.Show(HoldSlider(app, Key("DoubleIntervalMs"), Strings.DoubleInterval, 200, 1500, "200 ms", "1.5 s"), () => app.Get<string>(Key("Mode")) == "doublePress");
+        var dbl = live.Show(HoldSlider(app, Key("DoubleIntervalMs"), Strings.DoubleInterval, 200, 1500, Loc.T("200 ms"), Loc.T("1.5 s")), () => app.Get<string>(Key("Mode")) == "doublePress");
         dbl.Margin = new Thickness(0, 13, 0, 0);
         body.Children.Add(dbl);
 
@@ -468,11 +468,11 @@ public sealed class QuitProtectionSection : ISettingsSection
     {
         var stack = new StackPanel();
         var value = Math.Clamp(app.Get<double>(key), min, max);
-        var readout = UiKit.Text($"{(int)value} ms", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary);
+        var readout = UiKit.Text(Loc.F("{0} ms", (int)value), 11.5, FontWeights.Normal, ThemeKeys.TextSecondary);
         var slider = new Slider { Minimum = min, Maximum = max, Value = value, TickFrequency = 50, IsSnapToTickEnabled = true, HorizontalAlignment = HorizontalAlignment.Stretch };
         slider.ValueChanged += (_, e) =>
         {
-            readout.Text = $"{(int)e.NewValue} ms";
+            readout.Text = Loc.F("{0} ms", (int)e.NewValue);
             app.Set(key, Math.Round(e.NewValue));
         };
         var head = new Grid();

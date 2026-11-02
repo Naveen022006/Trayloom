@@ -20,8 +20,8 @@ internal static class PanelLayoutEditor
 
     public static FrameworkElement Build(ShellServices s, Action rebuild)
     {
-        var card = new SettingsCard("Tray & panel");
-        card.AddCaption("Click WinKnife’s icon in the system tray to open the panel. Its tabs appear in this order.");
+        var card = new SettingsCard(Loc.T("Tray & panel"));
+        card.AddCaption(Loc.T("Click WinKnife’s icon in the system tray to open the panel. Its tabs appear in this order."));
 
         var editable = PanelLayout.Editable(s.Runtime, s.App);
         var selected = editable.FirstOrDefault(t => PanelLayout.IsShown(s.App, t))?.Id ?? editable.FirstOrDefault()?.Id;
@@ -105,7 +105,7 @@ internal static class PanelLayoutEditor
         editor.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         var left = new StackPanel { Width = 232, Margin = new Thickness(0, 0, 20, 0) };
         left.Children.Add(miniatureHost);
-        var hint = UiKit.Text("Drag to reorder. Switch off anything you don’t need.", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+        var hint = UiKit.Text(Loc.T("Drag to reorder. Switch off anything you don’t need."), 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
         hint.Margin = new Thickness(0, 10, 0, 0);
         left.Children.Add(hint);
         editor.Children.Add(left);
@@ -116,8 +116,8 @@ internal static class PanelLayoutEditor
         card.AddDivider();
         card.Add(IconRow(s, rebuild));
         card.AddDivider();
-        var show = UiKit.Button("Show tray icon", ButtonKind.Bordered, 13, onClick: () => s.Shell.ReshowTray());
-        card.Add(new SettingsRow("", "Can’t find the icon?", "A crowded system tray can hide it; drag it out of the overflow (^).", show));
+        var show = UiKit.Button(Loc.T("Show tray icon"), ButtonKind.Bordered, 13, onClick: () => s.Shell.ReshowTray());
+        card.Add(new SettingsRow("", Loc.T("Can’t find the icon?"), Loc.T("A crowded system tray can hide it; drag it out of the overflow (^)."), show));
         return card;
     }
 
@@ -209,9 +209,9 @@ internal static class PanelLayoutEditor
     {
         var current = s.App.Get<string>(AppKeys.MenuBarIconSymbol);
         var stack = new StackPanel();
-        stack.Children.Add(new SettingsRow(null, "Tray icon", "Choose the icon WinKnife shows in the system tray."));
+        stack.Children.Add(new SettingsRow(null, Loc.T("Tray icon"), Loc.T("Choose the icon WinKnife shows in the system tray.")));
         var wrap = new WrapPanel { Margin = new Thickness(0, 10, 0, 0) };
-        wrap.Children.Add(Cell(BrandMark.Create(18, ThemeKeys.TextPrimary), "Use the WinKnife icon", current.Length == 0, () => Set(string.Empty)));
+        wrap.Children.Add(Cell(BrandMark.Create(18, ThemeKeys.TextPrimary), Loc.T("Use the WinKnife icon"), current.Length == 0, () => Set(string.Empty)));
         foreach (var code in IconGallery)
         {
             var glyph = char.ConvertFromUtf32(Convert.ToInt32(code, 16));
@@ -219,7 +219,7 @@ internal static class PanelLayoutEditor
         }
 
         stack.Children.Add(wrap);
-        var hint = UiKit.Text("Pick one of the glyphs, or type the hex code of any Segoe Fluent Icons glyph in settings.json (menuBarIconSymbol).", 11, FontWeights.Normal, ThemeKeys.TextTertiary, wrap: true);
+        var hint = UiKit.Text(Loc.T("Pick one of the glyphs, or type the hex code of any Segoe Fluent Icons glyph in settings.json (menuBarIconSymbol)."), 11, FontWeights.Normal, ThemeKeys.TextTertiary, wrap: true);
         hint.Margin = new Thickness(0, 8, 0, 0);
         stack.Children.Add(hint);
         return stack;

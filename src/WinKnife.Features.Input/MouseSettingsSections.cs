@@ -279,7 +279,7 @@ public sealed class FocusFollowsMouseSection : MouseSectionBase
         card.Add(Rows.Toggle(app, "", Strings.FocusTitle, Strings.FocusCaption, K.FocusEnabled));
 
         var block = Rows.Indented(10);
-        Rows.AddTo(block, InputUi.SliderLine(Strings.HoverDelay, 100, 3000, 50, Math.Clamp(app.Get<int>(K.FocusDelay), 100, 3000), v => $"{(int)v} ms", v => app.Set(K.FocusDelay, (int)v), labelWidth: 96));
+        Rows.AddTo(block, InputUi.SliderLine(Strings.HoverDelay, 100, 3000, 50, Math.Clamp(app.Get<int>(K.FocusDelay), 100, 3000), v => Loc.F("{0} ms", (int)v), v => app.Set(K.FocusDelay, (int)v), labelWidth: 96));
         Rows.AddTo(block, SwitchLine(Strings.BringToFront, app, K.FocusRaise));
         Rows.AddTo(block, live.Show(SwitchLine(Strings.WaitForStop, app, K.FocusWaitForStop), () => !app.Get<bool>(K.FocusRaise)));
         Rows.AddTo(block, new AppBundleList(app, K.FocusExceptions, Strings.CaptionFocus));
@@ -442,7 +442,7 @@ public sealed class ClickFilterSection : MouseSectionBase
         card.Add(Rows.Toggle(app, "", Strings.ClickFilterTitle, Strings.ClickFilterCaption, K.ClickDebounceEnabled));
         var block = Rows.Indented(6);
         var window = app.Get<int>(K.ClickDebounceWindow);
-        Rows.AddTo(block, InputUi.LabelLine(Strings.FilterWindow, InputUi.Stepper(5, 100, window is >= 5 and <= 100 ? window : 25, v => $"{v} ms", v => app.Set(K.ClickDebounceWindow, v))));
+        Rows.AddTo(block, InputUi.LabelLine(Strings.FilterWindow, InputUi.Stepper(5, 100, window is >= 5 and <= 100 ? window : 25, v => Loc.F("{0} ms", v), v => app.Set(K.ClickDebounceWindow, v))));
         Rows.AddTo(block, InputUi.Caption(Strings.FilterWindowCaption));
         card.Add(live.Show(block, () => app.Get<bool>(K.ClickDebounceEnabled)));
         return live.Attach(card);

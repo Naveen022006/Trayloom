@@ -47,7 +47,7 @@ public sealed class MediaSettingsSection : ISettingsSection
 
     public string PageId => SettingsPages.Media;
 
-    public string? Title => "Media";
+    public string? Title => Loc.T("Media");
 
     public IReadOnlyList<string> Keywords => ["PDF", "GIF", "PNG", "JPEG", "convert", "resize", "watermark", "rename", "profile", "fit", "fill", "crop", "Convert to PDF", "OCR", "Copy text from screen"];
 
@@ -71,11 +71,11 @@ public sealed class MediaUtility : IPanelUtility
 
     public string Id => "media";
 
-    public string Title => "Media";
+    public string Title => Loc.T("Media");
 
     public string Glyph => G.Photo;
 
-    public string? Caption => "Compress videos, convert and process images, make GIFs and extract text locally.";
+    public string? Caption => Loc.T("Compress videos, convert and process images, make GIFs and extract text locally.");
 
     public string? SettingsDestination => SettingsPages.Media;
 

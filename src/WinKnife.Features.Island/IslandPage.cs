@@ -102,7 +102,7 @@ internal sealed class ExternalPage : IslandPage
         catch (Exception ex)
         {
             Core.Ctx.Log.Warn($"Island page {_section.Id} failed: {ex.Message}");
-            return D.EmptyView(G.Warning, "This page could not be shown.");
+            return D.EmptyView(G.Warning, Loc.T("This page could not be shown."));
         }
     }
 

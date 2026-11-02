@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Windows;
 using Microsoft.Win32;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Maintenance;
 
@@ -563,10 +564,10 @@ internal sealed class CleanerModel
 
                 if (parts.Count == 0)
                 {
-                    parts.Add("Nothing to clean. Your PC is tidy.");
+                    parts.Add(Loc.T("Nothing to clean. Your PC is tidy."));
                 }
 
-                Host.Notify("Automatic cleanup", string.Join(" ", parts));
+                Host.Notify(Loc.T("Automatic cleanup"), string.Join(" ", parts));
             }
 
             ScheduleNext();

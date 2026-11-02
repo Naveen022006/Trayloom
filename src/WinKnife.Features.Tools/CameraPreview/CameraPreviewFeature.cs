@@ -24,17 +24,17 @@ namespace WinKnife.Features.Tools;
 /// <summary>Strings of the camera preview (Vorssaint <c>CameraPreviewFeatureStrings</c>, enUS, Windows wording).</summary>
 internal static class CameraStrings
 {
-    public const string Title = "Camera preview";
-    public const string PanelCaption = "Check how you look before a call";
-    public const string OpenButton = "Open preview";
-    public const string CameraMenuLabel = "Camera";
-    public const string DeniedMessage = "Camera access for WinKnife is turned off in Settings.";
-    public const string NoCamera = "No camera detected";
-    public const string Unavailable = "The camera could not start. Try opening it again.";
-    public const string StartCamera = "Open camera";
-    public const string OpenSettings = "Open Settings…";
-    public const string PermissionRequired = "Permission required: Camera";
-    public const string NotGranted = "Not granted";
+    public static  string Title => Loc.T("Camera preview");
+    public static  string PanelCaption => Loc.T("Check how you look before a call");
+    public static  string OpenButton => Loc.T("Open preview");
+    public static  string CameraMenuLabel => Loc.T("Camera");
+    public static  string DeniedMessage => Loc.T("Camera access for WinKnife is turned off in Settings.");
+    public static  string NoCamera => Loc.T("No camera detected");
+    public static  string Unavailable => Loc.T("The camera could not start. Try opening it again.");
+    public static  string StartCamera => Loc.T("Open camera");
+    public static  string OpenSettings => Loc.T("Open Settings…");
+    public static  string PermissionRequired => Loc.T("Permission required: Camera");
+    public static  string NotGranted => Loc.T("Not granted");
 }
 
 /// <summary>State of the mirror (Vorssaint <c>CameraPreviewService.State</c>).</summary>
@@ -790,7 +790,7 @@ public sealed class CameraPreviewSettingsSection : ISettingsSection
         {
             var warn = new StackPanel { Orientation = Orientation.Horizontal };
             warn.Children.Add(UiKit.Icon("", 14, ThemeKeys.Orange));
-            var label = UiKit.Text("Camera", 13);
+            var label = UiKit.Text(Loc.T("Camera"), 13);
             label.Margin = new Thickness(8, 0, 0, 0);
             warn.Children.Add(label);
             var grid = new Grid();

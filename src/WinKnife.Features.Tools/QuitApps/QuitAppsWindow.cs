@@ -55,13 +55,13 @@ internal sealed class QuitAppsWindow : GlassWindow
         Title = "WinKnife";
 
         var header = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(17, 14, 17, 8) };
-        header.Children.Add(UiKit.Text("Open apps", 13, FontWeights.SemiBold));
+        header.Children.Add(UiKit.Text(Loc.T("Open apps"), 13, FontWeights.SemiBold));
         _count = UiKit.Text("0", 13, FontWeights.Medium, ThemeKeys.TextTertiary);
         _count.FontFamily = UiKit.DisplayFont;
         _count.Margin = new Thickness(6, 0, 0, 0);
         header.Children.Add(_count);
 
-        _empty = UiKit.Text("No other apps are open.", 12.5, FontWeights.Normal, ThemeKeys.TextSecondary);
+        _empty = UiKit.Text(Loc.T("No other apps are open."), 12.5, FontWeights.Normal, ThemeKeys.TextSecondary);
         _empty.HorizontalAlignment = HorizontalAlignment.Center;
         _empty.VerticalAlignment = VerticalAlignment.Center;
         _scroll.Content = _rows;
@@ -290,12 +290,12 @@ internal sealed class QuitAppsWindow : GlassWindow
         left.Children.Add(name);
         if (app.IsFront)
         {
-            left.Children.Add(Badge("Front", null));
+            left.Children.Add(Badge(Loc.T("Front"), null));
         }
 
         if (app.IsKept)
         {
-            left.Children.Add(Badge("Kept", "Quit all leaves these apps running. File Explorer, WinKnife and Phone Link are always kept. You can still quit a kept app from its own row."));
+            left.Children.Add(Badge(Loc.T("Kept"), Loc.T("Quit all leaves these apps running. File Explorer, WinKnife and Phone Link are always kept. You can still quit a kept app from its own row.")));
         }
 
         Grid.SetColumn(left, 1);
@@ -312,7 +312,7 @@ internal sealed class QuitAppsWindow : GlassWindow
             x.Opacity = focused ? 1 : 0;
             x.IsHitTestVisible = focused;
             x.Cursor = Cursors.Hand;
-            x.ToolTip = $"Quit {app.Name}";
+            x.ToolTip = Loc.F("Quit {0}", app.Name);
             x.MouseEnter += (_, _) => x.SetResourceReference(TextBlock.ForegroundProperty, ThemeKeys.TextPrimary);
             x.MouseLeave += (_, _) => x.SetResourceReference(TextBlock.ForegroundProperty, ThemeKeys.TextSecondary);
             x.MouseLeftButtonUp += (_, e) =>
@@ -354,9 +354,9 @@ internal sealed class QuitAppsWindow : GlassWindow
             var id = _buttons[i];
             var (title, keys) = id switch
             {
-                "cancel" => ("Cancel", "Esc"),
-                "exceptFront" => ($"Quit all except {_exceptFrontName}", "Ctrl+Alt+↵"),
-                _ => ("Quit all", "Ctrl+↵"),
+                "cancel" => (Loc.T("Cancel"), "Esc"),
+                "exceptFront" => (Loc.F("Quit all except {0}", _exceptFrontName), "Ctrl+Alt+↵"),
+                _ => (Loc.T("Quit all"), "Ctrl+↵"),
             };
             var index = i;
             var button = MakeButton(title, keys, !_focusIsRow && _focusButton == i);

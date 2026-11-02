@@ -107,7 +107,7 @@ public sealed class SwitcherControlRow : WindowControlRow
 
     public override int Order => 0;
 
-    protected override string Item => "Switcher";
+    protected override string Item => Loc.T("Switcher");
 
     protected override string Glyph => "";
 

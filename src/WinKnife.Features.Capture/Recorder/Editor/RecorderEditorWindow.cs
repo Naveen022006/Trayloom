@@ -12,6 +12,7 @@ using System.Windows.Media.Imaging;
 using Path = System.IO.Path;
 using System.Windows.Threading;
 using WinKnife.Core.Ui;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Capture;
 
@@ -438,15 +439,15 @@ internal sealed partial class RecorderEditorWindow : Window
 
         var busy = _exportCts is not null;
         _topRight.Children.Add(new EdButton(G.Trash, null, Strings.Recorder.DiscardTitle.Replace("?", string.Empty), Discard, width: 28, height: 26) { Margin = new Thickness(0, 0, 6, 0) });
-        var copyDel = new EdButton(G.Copy, "Copy and delete", "Ctrl+Alt+C", () => _ = CopyAsync(false, true), height: 26) { IsEnabled = !busy, Margin = new Thickness(0, 0, 6, 0) };
+        var copyDel = new EdButton(G.Copy, Loc.T("Copy and delete"), "Ctrl+Alt+C", () => _ = CopyAsync(false, true), height: 26) { IsEnabled = !busy, Margin = new Thickness(0, 0, 6, 0) };
         _topRight.Children.Add(copyDel);
         var copy = new EdButton(G.Copy, Strings.Screenshot.CopyLabel, "Ctrl+C", () => _ = CopyAsync(false, false), height: 26) { IsEnabled = !busy };
-        var copyMore = new EdButton(G.ChevronDown, null, "Copy as GIF", null, iconSize: 8, width: 20, height: 26) { IsEnabled = !busy };
+        var copyMore = new EdButton(G.ChevronDown, null, Loc.T("Copy as GIF"), null, iconSize: 8, width: 20, height: 26) { IsEnabled = !busy };
         copyMore.MouseLeftButtonUp += (_, e) =>
         {
             e.Handled = true;
             var menu = new ContextMenu();
-            var item = new MenuItem { Header = "Copy as GIF" };
+            var item = new MenuItem { Header = Loc.T("Copy as GIF") };
             item.Click += (_, _) => _ = CopyAsync(true, false);
             menu.Items.Add(item);
             menu.PlacementTarget = copyMore;
@@ -472,7 +473,7 @@ internal sealed partial class RecorderEditorWindow : Window
 
             Add(Strings.Screenshot.SaveLabel, () => _ = SaveAsync(SaveKind.Mp4, false), "Ctrl+S");
             Add(Strings.Screenshot.SaveAs, () => _ = SaveAsync(SaveKind.Mp4, true), "Ctrl+Shift+S");
-            Add("Save as GIF", () => _ = SaveAsync(SaveKind.Gif, false));
+            Add(Loc.T("Save as GIF"), () => _ = SaveAsync(SaveKind.Gif, false));
             menu.Items.Add(new Separator());
             Add(Strings.SaveTo + "…", ChooseFolder);
             menu.PlacementTarget = saveMore;

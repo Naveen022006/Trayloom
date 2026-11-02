@@ -25,7 +25,7 @@ internal static class RadialEditor
     /// <summary>Shows the sheet for <paramref name="item"/> (a working copy edited in place; apply it only on Save / DrillIn).</summary>
     public static RadialEditorResult Show(Window? owner, IContributionServices ctx, RadialItem item, bool isNew, bool rootLevel)
     {
-        var window = RadialDialogs.NewDialog(owner, "Add action", 440);
+        var window = RadialDialogs.NewDialog(owner, Loc.T("Add action"), 440);
         var result = RadialEditorResult.Cancel;
         var tools = ToolActions.RadialOrder.Where(t => ToolActions.IsAvailable(ctx, t) && (t != "shelf" || ctx.App.Get<bool>("shelfEnabled", false))).ToList();
         var toggles = RadialCatalog.QuickToggles.Where(t => QuickToggleOps.Available(ctx, t)).ToList();
@@ -43,7 +43,7 @@ internal static class RadialEditor
         }
 
         var root = new StackPanel { Margin = new Thickness(18) };
-        var heading = UiKit.Text(isNew ? "Add action" : RadialModel.DisplayName(item), 14, FontWeights.SemiBold, ThemeKeys.TextPrimary);
+        var heading = UiKit.Text(isNew ? Loc.T("Add action") : RadialModel.DisplayName(item), 14, FontWeights.SemiBold, ThemeKeys.TextPrimary);
         root.Children.Add(heading);
 
         var form = new StackPanel { Margin = new Thickness(0, 14, 0, 0) };
@@ -52,7 +52,7 @@ internal static class RadialEditor
         var iconCells = new List<(string Symbol, Border Cell)>();
         Border? automaticCell = null;
         var notes = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
-        var save = UiKit.Button("Save", ButtonKind.Prominent, 12.5);
+        var save = UiKit.Button(Loc.T("Save"), ButtonKind.Prominent, 12.5);
 
         void RefreshValidity()
         {
@@ -84,15 +84,15 @@ internal static class RadialEditor
             notes.Children.Clear();
             if (item.Kind == RadialKinds.Url && item.Payload.Length > 0 && RadialModel.NormalizedUrl(item.Payload) is null)
             {
-                notes.Children.Add(UiKit.Text("Enter a valid link.", 11.5, FontWeights.Normal, ThemeKeys.Orange, wrap: true));
+                notes.Children.Add(UiKit.Text(Loc.T("Enter a valid link."), 11.5, FontWeights.Normal, ThemeKeys.Orange, wrap: true));
             }
 
             if (item.Kind == RadialKinds.Submenu)
             {
-                notes.Children.Add(UiKit.Text("Opens a second wheel with its own actions.", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true));
+                notes.Children.Add(UiKit.Text(Loc.T("Opens a second wheel with its own actions."), 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true));
                 if (!isNew)
                 {
-                    var link = UiKit.Button("Edit actions >", ButtonKind.Plain, 11.5, onClick: () =>
+                    var link = UiKit.Button(Loc.T("Edit actions >"), ButtonKind.Plain, 11.5, onClick: () =>
                     {
                         result = RadialEditorResult.DrillIn;
                         window.Close();
@@ -106,35 +106,35 @@ internal static class RadialEditor
 
         // ---- kind picker
         var kindCombo = new ComboBox { MinWidth = 180, ItemsSource = kinds.Select(RadialKinds.Label).ToList(), SelectedIndex = Math.Max(0, kinds.IndexOf(item.Kind)) };
-        form.Children.Add(Row("Action", kindCombo));
+        form.Children.Add(Row(Loc.T("Action"), kindCombo));
 
         void BuildPayload()
         {
             payloadHost.Content = item.Kind switch
             {
-                RadialKinds.App => FileRow("Open an app", item, isApp: true, RefreshValidity, RefreshAutomatic, owner),
-                RadialKinds.File => FileRow("Open a file or folder", item, isApp: false, RefreshValidity, RefreshAutomatic, owner),
+                RadialKinds.App => FileRow(Loc.T("Open an app"), item, isApp: true, RefreshValidity, RefreshAutomatic, owner),
+                RadialKinds.File => FileRow(Loc.T("Open a file or folder"), item, isApp: false, RefreshValidity, RefreshAutomatic, owner),
                 RadialKinds.Url => UrlRow(item, RefreshValidity, RefreshAutomatic, RefreshIcons),
                 RadialKinds.Shortcut => ShortcutRow(item, RefreshValidity),
-                RadialKinds.Tool => ComboRow("Tool", tools.Select(ToolActions.TitleOf).ToList(), tools.IndexOf(item.Payload), i =>
+                RadialKinds.Tool => ComboRow(Loc.T("Tool"), tools.Select(ToolActions.TitleOf).ToList(), tools.IndexOf(item.Payload), i =>
                 {
                     item.Payload = tools[i];
                     RefreshValidity();
                     RefreshAutomatic();
                 }),
-                RadialKinds.QuickToggle => ComboRow("Quick toggles", toggles.Select(RadialCatalog.ToggleTitle).ToList(), toggles.IndexOf(item.Payload), i =>
+                RadialKinds.QuickToggle => ComboRow(Loc.T("Quick toggles"), toggles.Select(RadialCatalog.ToggleTitle).ToList(), toggles.IndexOf(item.Payload), i =>
                 {
                     item.Payload = toggles[i];
                     RefreshValidity();
                     RefreshAutomatic();
                 }),
-                RadialKinds.WindowLayout => ComboRow("Window layout", RadialCatalog.Layouts.Select(l => l.Title).ToList(), RadialCatalog.Layouts.ToList().FindIndex(l => l.Raw == item.Payload), i =>
+                RadialKinds.WindowLayout => ComboRow(Loc.T("Window layout"), RadialCatalog.Layouts.Select(l => l.Title).ToList(), RadialCatalog.Layouts.ToList().FindIndex(l => l.Raw == item.Payload), i =>
                 {
                     item.Payload = RadialCatalog.Layouts[i].Raw;
                     RefreshValidity();
                     RefreshAutomatic();
                 }),
-                RadialKinds.Media => ComboRow("Control", RadialCatalog.MediaKeys.Select(RadialCatalog.MediaLabel).ToList(), Array.IndexOf(RadialCatalog.MediaKeys, item.Payload), i =>
+                RadialKinds.Media => ComboRow(Loc.T("Control"), RadialCatalog.MediaKeys.Select(RadialCatalog.MediaLabel).ToList(), Array.IndexOf(RadialCatalog.MediaKeys, item.Payload), i =>
                 {
                     item.Payload = RadialCatalog.MediaKeys[i];
                     RefreshValidity();
@@ -176,15 +176,15 @@ internal static class RadialEditor
         // ---- name
         var nameBox = RadialDialogs.NewTextBox(item.Name, 200);
         nameBox.TextChanged += (_, _) => item.Name = nameBox.Text;
-        var nameRow = Row("Name", RadialDialogs.WithPlaceholder(nameBox, "Automatic"));
+        var nameRow = Row(Loc.T("Name"), RadialDialogs.WithPlaceholder(nameBox, Loc.T("Automatic")));
         nameRow.Margin = new Thickness(0, 14, 0, 0);
         form.Children.Add(nameRow);
 
         // ---- icon picker
         var iconBlock = new StackPanel { Margin = new Thickness(0, 14, 0, 0) };
-        iconBlock.Children.Add(UiKit.Text("Icon", 13, FontWeights.Normal, ThemeKeys.TextPrimary));
+        iconBlock.Children.Add(UiKit.Text(Loc.T("Icon"), 13, FontWeights.Normal, ThemeKeys.TextPrimary));
         var wrap = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
-        automaticCell = Cell(null, "Automatic", () =>
+        automaticCell = Cell(null, Loc.T("Automatic"), () =>
         {
             item.SymbolName = "";
             RefreshIcons();
@@ -214,7 +214,7 @@ internal static class RadialEditor
         buttons.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         if (!isNew)
         {
-            var remove = UiKit.Button("Remove", ButtonKind.Plain, 12.5, onClick: () =>
+            var remove = UiKit.Button(Loc.T("Remove"), ButtonKind.Plain, 12.5, onClick: () =>
             {
                 result = RadialEditorResult.Remove;
                 window.Close();
@@ -225,7 +225,7 @@ internal static class RadialEditor
         }
 
         var right = new StackPanel { Orientation = Orientation.Horizontal };
-        right.Children.Add(UiKit.Button("Cancel", ButtonKind.Bordered, 12.5, onClick: window.Close));
+        right.Children.Add(UiKit.Button(Loc.T("Cancel"), ButtonKind.Bordered, 12.5, onClick: window.Close));
         save.Margin = new Thickness(8, 0, 0, 0);
         save.IsDefault = true;
         save.Click += (_, _) =>
@@ -273,7 +273,7 @@ internal static class RadialEditor
 
     private static FrameworkElement FileRow(string label, RadialItem item, bool isApp, Action validity, Action automatic, Window? owner)
     {
-        var button = UiKit.Button(item.Payload.Length == 0 ? "Choose…" : RadialModel.FileDisplayName(item.Payload), ButtonKind.Bordered, 12.5);
+        var button = UiKit.Button(item.Payload.Length == 0 ? Loc.T("Choose…") : RadialModel.FileDisplayName(item.Payload), ButtonKind.Bordered, 12.5);
         button.MinWidth = 150;
         void Apply(string path)
         {
@@ -329,7 +329,7 @@ internal static class RadialEditor
         var stack = new StackPanel();
         var box = RadialDialogs.NewTextBox(item.Payload, 220);
         var status = new TextBlock { Margin = new Thickness(0, 6, 0, 0), FontSize = 11.5 };
-        var fetch = UiKit.Button("Fetch Website Icon", ButtonKind.Bordered, 12);
+        var fetch = UiKit.Button(Loc.T("Fetch Website Icon"), ButtonKind.Bordered, 12);
         var running = false;
 
         void ShowStatus(string? text, string brushKey, string? glyph = null)
@@ -373,31 +373,31 @@ internal static class RadialEditor
 
             running = true;
             RefreshFetch();
-            ShowStatus("Fetching icon…", ThemeKeys.TextSecondary);
+            ShowStatus(Loc.T("Fetching icon…"), ThemeKeys.TextSecondary);
             var data = await RadialFavicon.FetchAsync(url);
             running = false;
             if (data is null)
             {
-                ShowStatus("Could not find a website icon", ThemeKeys.Orange, "");
+                ShowStatus(Loc.T("Could not find a website icon"), ThemeKeys.Orange, "");
             }
             else
             {
                 item.CustomIconData = data;
                 item.SymbolName = "";
-                ShowStatus("Icon downloaded", ThemeKeys.Green, "");
+                ShowStatus(Loc.T("Icon downloaded"), ThemeKeys.Green, "");
                 icons();
                 automatic();
             }
 
             RefreshFetch();
         };
-        stack.Children.Add(Row("Open a link", RadialDialogs.WithPlaceholder(box, "example.com")));
+        stack.Children.Add(Row(Loc.T("Open a link"), RadialDialogs.WithPlaceholder(box, "example.com")));
         var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0), HorizontalAlignment = HorizontalAlignment.Right };
         line.Children.Add(fetch);
         stack.Children.Add(line);
         status.HorizontalAlignment = HorizontalAlignment.Right;
         stack.Children.Add(status);
-        var disclaimer = UiKit.Text("Connects to the website once to download its icon. Saved locally.", 11, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+        var disclaimer = UiKit.Text(Loc.T("Connects to the website once to download its icon. Saved locally."), 11, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
         disclaimer.Margin = new Thickness(0, 6, 0, 0);
         stack.Children.Add(disclaimer);
         ShowStatus(null, ThemeKeys.TextSecondary);
@@ -413,7 +413,7 @@ internal static class RadialEditor
             item.Payload = h?.ToString() ?? "";
             validity();
         };
-        return Row("Press a shortcut", recorder);
+        return Row(Loc.T("Press a shortcut"), recorder);
     }
 
     // ------------------------------------------------------------------ icon cells

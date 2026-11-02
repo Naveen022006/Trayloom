@@ -2,6 +2,7 @@
 // WinKnife — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
 
 using System.Text.Json.Serialization;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Agents;
 
@@ -32,7 +33,7 @@ public static class AgentProviders
         AgentProvider.Claude => "Claude",
         AgentProvider.Codex => "Codex",
         AgentProvider.OpenCode => "OpenCode",
-        _ => "GitHub Copilot",
+        _ => Loc.T("GitHub Copilot"),
     };
 
     /// <summary>Whether the provider records a plan allowance in its local logs.</summary>

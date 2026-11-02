@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows.Threading;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Maintenance;
 
@@ -77,34 +78,34 @@ internal sealed class OperationStatus
     {
         OpState.Running => Action switch
         {
-            PkgAction.Install => $"Installing {Target}",
-            PkgAction.Uninstall => $"Uninstalling {Target}",
-            PkgAction.Upgrade => $"Updating {Target}",
-            PkgAction.UpdateSources => "Updating winget",
-            _ => "Updating packages",
+            PkgAction.Install => Loc.F("Installing {0}", Target),
+            PkgAction.Uninstall => Loc.F("Uninstalling {0}", Target),
+            PkgAction.Upgrade => Loc.F("Updating {0}", Target),
+            PkgAction.UpdateSources => Loc.T("Updating winget"),
+            _ => Loc.T("Updating packages"),
         },
         OpState.Succeeded => Action switch
         {
-            PkgAction.Install => $"{Target} installed.",
-            PkgAction.Uninstall => $"{Target} uninstalled.",
-            PkgAction.Upgrade => $"{Target} updated.",
-            PkgAction.UpdateSources => "winget updated.",
-            _ => "Packages updated.",
+            PkgAction.Install => Loc.F("{0} installed.", Target),
+            PkgAction.Uninstall => Loc.F("{0} uninstalled.", Target),
+            PkgAction.Upgrade => Loc.F("{0} updated.", Target),
+            PkgAction.UpdateSources => Loc.T("winget updated."),
+            _ => Loc.T("Packages updated."),
         },
-        OpState.Cancelled => "Operation cancelled.",
-        OpState.NeedsTerminal => "Continue in your terminal.",
-        _ => $"Could not finish {Target}.",
+        OpState.Cancelled => Loc.T("Operation cancelled."),
+        OpState.NeedsTerminal => Loc.T("Continue in your terminal."),
+        _ => Loc.F("Could not finish {0}.", Target),
     };
 
     public string PhaseText => Phase switch
     {
-        OpPhase.Downloading => "Downloading files…",
-        OpPhase.Installing => "Installing files…",
-        OpPhase.Uninstalling => "Removing files…",
-        OpPhase.Upgrading => "Updating files…",
-        OpPhase.Refreshing => "Refreshing list…",
-        OpPhase.Finalizing => "Finishing…",
-        _ => "Preparing…",
+        OpPhase.Downloading => Loc.T("Downloading files…"),
+        OpPhase.Installing => Loc.T("Installing files…"),
+        OpPhase.Uninstalling => Loc.T("Removing files…"),
+        OpPhase.Upgrading => Loc.T("Updating files…"),
+        OpPhase.Refreshing => Loc.T("Refreshing list…"),
+        OpPhase.Finalizing => Loc.T("Finishing…"),
+        _ => Loc.T("Preparing…"),
     };
 }
 

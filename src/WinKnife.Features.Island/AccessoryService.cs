@@ -5,6 +5,7 @@ using System.Windows.Threading;
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
 using Windows.Devices.Enumeration;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Island;
 
@@ -220,7 +221,7 @@ internal sealed class AccessoryService : IDisposable
         {
             Event = NoticeEvents.Accessory,
             Glyph = GlyphFor(d.Kind),
-            Title = "Connected",
+            Title = Loc.T("Connected"),
             Detail = d.Name,
             Reaction = null,
         });
@@ -241,7 +242,7 @@ internal sealed class AccessoryService : IDisposable
         if (!d.Low && percent <= Low)
         {
             d.Low = true;
-            Enqueue(new Notice { Event = NoticeEvents.Accessory, Glyph = GlyphFor(d.Kind), Title = d.Name, Detail = $"Low battery · {percent}%", Level = percent / 100.0, Tint = System.Windows.Media.Color.FromRgb(0xFF, 0x9F, 0x0A) });
+            Enqueue(new Notice { Event = NoticeEvents.Accessory, Glyph = GlyphFor(d.Kind), Title = d.Name, Detail = Loc.F("Low battery · {0}%", percent), Level = percent / 100.0, Tint = System.Windows.Media.Color.FromRgb(0xFF, 0x9F, 0x0A) });
         }
         else if (d.Low && percent >= Recovery)
         {

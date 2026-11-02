@@ -408,7 +408,7 @@ public sealed class CleanUrlSettingsSection : ISettingsSection
 
     public string? Anchor => "urlCleaner";
 
-    public string? Title => "Clean URL";
+    public string? Title => Loc.T("Clean URL");
 
     public IReadOnlyList<string> Keywords => ["tracking", "utm", "parameters", "links", "Clean now", "Cleaning rules", "Add a site"];
 
@@ -459,7 +459,7 @@ public sealed class CleanUrlUtility : IPanelUtility
 
     public string Id => "cleanURL";
 
-    public string Title => "Clean URL";
+    public string Title => Loc.T("Clean URL");
 
     public string Glyph => "";
 

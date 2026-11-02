@@ -29,44 +29,46 @@ internal static class IslandCatalog
 {
     private static Color C(string hex) => (Color)ColorConverter.ConvertFromString(hex);
 
-    public static readonly IReadOnlyList<ModuleDef> Modules =
-    [
-        new("controls", "Controls", G.Controls, 'c', C("#0A84FF"), false, "Playback, volume, brightness and your shortcuts.", [], null, true),
-        new("mixer", "Volume mixer", G.Mixer, 'v', C("#BF5AF2"), false, "The volume of each app, and where sound plays.", ["mixer"], null, true),
-        new("music", "Now Playing", G.Music, 'm', C("#FF375F"), false, "The song playing now, with its controls.", [], null, true),
-        new("clipboard", "Clipboard", G.Clipboard, 'b', C("#AC8E68"), false, "What you copied recently, ready to paste again.", ["clipboard-history"], null, true),
-        new("captures", "Recent captures", G.Camera, 's', C("#5E5CE6"), false, "Your latest screenshots and recordings.", ["screenshot", "screen-recorder", "screen-ocr", "color-picker"], null, true),
-        new("files", "Files", G.Files, 'f', C("#64D2FF"), false, "A shelf for the files you drop on the island.", ["shelf"], null, true),
-        new("system", "System", G.System, 'i', C("#30D158"), false, "CPU, memory, disk, network and battery at a glance.", ["monitor-cpu", "monitor-gpu", "monitor-memory", "monitor-network", "monitor-disk", "monitor-power", "connected-devices"], null, false),
-        new("tools", "Tools", G.Tools, 't', C("#98989D"), false, "Tools and utilities, one click away.", ["quick-launcher"], null, true),
-        new("calendar", "Calendar", G.Calendar, 'a', C("#FF453A"), false, "Today's events and the month ahead.", ["notch-calendar"], K.CalendarEnabled, true),
-        new("notifications", "Notifications", G.Bell, 'n', C("#FF9F0A"), false, "Your PC's notifications, kept in the island.", ["notch-notifications"], K.NotificationsEnabled, true),
-        new("timer", "Timer", G.Timer, 'r', C("#63E6E2"), false, "Timer, Pomodoro and stopwatch.", ["notch-timer"], K.TimerEnabled, true),
-        new("camera", "Camera mirror", G.Video, 'w', C("#40C8E0"), false, "A mirror to check yourself before a call.", ["camera-preview"], K.CameraEnabled, true),
-        new("downloads", "Downloads", G.Download, 'd', C("#0A84FF"), false, "Downloads in progress and just finished.", ["notch-downloads"], null, true),
-        new("scratchpad", "Scratchpad", G.Note, 'p', C("#FFD60A"), true, "Quick notes that save by themselves.", ["scratchpad"], null, true),
-        new("agents", "AI Agents", G.Sparkle, 'g', C("#D97857"), false, "Claude Code, Codex, OpenCode and GitHub Copilot usage, limits and costs.", ["notch-agents"], K.AgentsEnabled, true),
-        new("watch", "Watch", G.Eye, 'o', C("#BF5AF2"), false, "Any part of a window, read live, with an alert when it changes.", ["notch-watch"], K.WatchEnabled, true),
-    ];
+    public static IReadOnlyList<ModuleDef> Modules => _loc_Modules.Value;
 
-    public static readonly IReadOnlyList<ControlDef> Controls =
-    [
-        new("volume", "Volume", G.Speaker, true, ["mixer"]),
-        new("brightness", "Brightness", G.Brightness, true, ["brightness"]),
-        new("keyboardLight", "Keyboard light", G.Brightness, true, ["brightness"]),
-        new("music", "Now Playing", G.Music, false, []),
-        new("mixer", "Volume mixer", G.Mixer, false, ["mixer"]),
-        new("keepAwake", "Keep awake", G.Cup, false, ["keep-awake"]),
-        new("timer", "Timer", G.Timer, false, ["notch-timer"]),
-        new("calendar", "Calendar", G.Calendar, false, ["notch-calendar"]),
-        new("microphone", "Mute microphone", G.Mic, false, ["mic-mute"]),
-        new("screenshot", "Screenshot", G.Camera, false, ["screenshot"]),
-        new("recording", "Screen recording", G.Record, false, ["screen-recorder"]),
-        new("speedTest", "Speed test", G.Gauge, false, ["monitor-network"]),
-        new("panel", "Open app panel", G.Panel, false, []),
-        new("commandBar", "Command Bar", G.Command, false, ["command-bar"]),
-        new("scratchpad", "Scratchpad", G.Note, false, ["scratchpad"]),
-    ];
+    private static readonly LocValue<IReadOnlyList<ModuleDef>> _loc_Modules = new(() => [
+        new("controls", Loc.T("Controls"), G.Controls, 'c', C("#0A84FF"), false, Loc.T("Playback, volume, brightness and your shortcuts."), [], null, true),
+        new("mixer", Loc.T("Volume mixer"), G.Mixer, 'v', C("#BF5AF2"), false, Loc.T("The volume of each app, and where sound plays."), ["mixer"], null, true),
+        new("music", Loc.T("Now Playing"), G.Music, 'm', C("#FF375F"), false, Loc.T("The song playing now, with its controls."), [], null, true),
+        new("clipboard", Loc.T("Clipboard"), G.Clipboard, 'b', C("#AC8E68"), false, Loc.T("What you copied recently, ready to paste again."), ["clipboard-history"], null, true),
+        new("captures", Loc.T("Recent captures"), G.Camera, 's', C("#5E5CE6"), false, Loc.T("Your latest screenshots and recordings."), ["screenshot", "screen-recorder", "screen-ocr", "color-picker"], null, true),
+        new("files", Loc.T("Files"), G.Files, 'f', C("#64D2FF"), false, Loc.T("A shelf for the files you drop on the island."), ["shelf"], null, true),
+        new("system", Loc.T("System"), G.System, 'i', C("#30D158"), false, Loc.T("CPU, memory, disk, network and battery at a glance."), ["monitor-cpu", "monitor-gpu", "monitor-memory", "monitor-network", "monitor-disk", "monitor-power", "connected-devices"], null, false),
+        new("tools", Loc.T("Tools"), G.Tools, 't', C("#98989D"), false, Loc.T("Tools and utilities, one click away."), ["quick-launcher"], null, true),
+        new("calendar", Loc.T("Calendar"), G.Calendar, 'a', C("#FF453A"), false, Loc.T("Today's events and the month ahead."), ["notch-calendar"], K.CalendarEnabled, true),
+        new("notifications", Loc.T("Notifications"), G.Bell, 'n', C("#FF9F0A"), false, Loc.T("Your PC's notifications, kept in the island."), ["notch-notifications"], K.NotificationsEnabled, true),
+        new("timer", Loc.T("Timer"), G.Timer, 'r', C("#63E6E2"), false, Loc.T("Timer, Pomodoro and stopwatch."), ["notch-timer"], K.TimerEnabled, true),
+        new("camera", Loc.T("Camera mirror"), G.Video, 'w', C("#40C8E0"), false, Loc.T("A mirror to check yourself before a call."), ["camera-preview"], K.CameraEnabled, true),
+        new("downloads", Loc.T("Downloads"), G.Download, 'd', C("#0A84FF"), false, Loc.T("Downloads in progress and just finished."), ["notch-downloads"], null, true),
+        new("scratchpad", Loc.T("Scratchpad"), G.Note, 'p', C("#FFD60A"), true, Loc.T("Quick notes that save by themselves."), ["scratchpad"], null, true),
+        new("agents", Loc.T("AI Agents"), G.Sparkle, 'g', C("#D97857"), false, Loc.T("Claude Code, Codex, OpenCode and GitHub Copilot usage, limits and costs."), ["notch-agents"], K.AgentsEnabled, true),
+        new("watch", Loc.T("Watch"), G.Eye, 'o', C("#BF5AF2"), false, Loc.T("Any part of a window, read live, with an alert when it changes."), ["notch-watch"], K.WatchEnabled, true),
+    ]);
+
+    public static IReadOnlyList<ControlDef> Controls => _loc_Controls.Value;
+
+    private static readonly LocValue<IReadOnlyList<ControlDef>> _loc_Controls = new(() => [
+        new("volume", Loc.T("Volume"), G.Speaker, true, ["mixer"]),
+        new("brightness", Loc.T("Brightness"), G.Brightness, true, ["brightness"]),
+        new("keyboardLight", Loc.T("Keyboard light"), G.Brightness, true, ["brightness"]),
+        new("music", Loc.T("Now Playing"), G.Music, false, []),
+        new("mixer", Loc.T("Volume mixer"), G.Mixer, false, ["mixer"]),
+        new("keepAwake", Loc.T("Keep awake"), G.Cup, false, ["keep-awake"]),
+        new("timer", Loc.T("Timer"), G.Timer, false, ["notch-timer"]),
+        new("calendar", Loc.T("Calendar"), G.Calendar, false, ["notch-calendar"]),
+        new("microphone", Loc.T("Mute microphone"), G.Mic, false, ["mic-mute"]),
+        new("screenshot", Loc.T("Screenshot"), G.Camera, false, ["screenshot"]),
+        new("recording", Loc.T("Screen recording"), G.Record, false, ["screen-recorder"]),
+        new("speedTest", Loc.T("Speed test"), G.Gauge, false, ["monitor-network"]),
+        new("panel", Loc.T("Open app panel"), G.Panel, false, []),
+        new("commandBar", Loc.T("Command Bar"), G.Command, false, ["command-bar"]),
+        new("scratchpad", Loc.T("Scratchpad"), G.Note, false, ["scratchpad"]),
+    ]);
 
     public static ModuleDef? Get(string id) => Modules.FirstOrDefault(m => m.Id == id);
 

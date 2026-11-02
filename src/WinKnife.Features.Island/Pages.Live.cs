@@ -52,7 +52,7 @@ internal sealed class NotificationsPage : IslandPage
 
     private void OnChanged() => _view.Dispatcher.BeginInvoke(DispatcherPriority.Background, Build);
 
-    private const string Privacy = "Show new visible banners only. Messages stay in memory and are cleared when you lock this PC or turn this off.";
+    private static  string Privacy => Loc.T("Show new visible banners only. Messages stay in memory and are cleared when you lock this PC or turn this off.");
 
     private void Build()
     {
@@ -60,7 +60,7 @@ internal sealed class NotificationsPage : IslandPage
         _trailing.Children.Clear();
         var s = Core.Notifications;
         var items = s.Items;
-        var clear = D.IconButton(G.Trash, "Clear All", ClearAll);
+        var clear = D.IconButton(G.Trash, Loc.T("Clear All"), ClearAll);
         clear.IsEnabled = items.Count > 0;
         _trailing.Children.Add(clear);
         if (items.Count == 0)
@@ -68,16 +68,16 @@ internal sealed class NotificationsPage : IslandPage
             var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             row.Children.Add(new Border { Width = 56, Height = 56, CornerRadius = new CornerRadius(18), Background = D.White(0.05), Child = D.I(G.Bell, 26, D.White(0.6)) });
             var col = new StackPanel { Margin = new Thickness(14, 0, 0, 0), MaxWidth = 260, VerticalAlignment = VerticalAlignment.Center };
-            col.Children.Add(D.T(s.Monitoring ? "New notifications will appear here" : "Waiting for the Windows notification service", 13, FontWeights.SemiBold, D.Text, true));
+            col.Children.Add(D.T(s.Monitoring ? Loc.T("New notifications will appear here") : Loc.T("Waiting for the Windows notification service"), 13, FontWeights.SemiBold, D.Text, true));
             var priv = D.T(Privacy, 11, null, D.White(0.65), true);
             priv.Margin = new Thickness(0, 4, 0, 0);
             col.Children.Add(priv);
             if (s.AccessDenied || s.NeedsIdentity)
             {
-                var note = D.T(s.NeedsIdentity ? "Reading banners works best when WinKnife is installed as an app." : "Notification access is off.", 10.5, null, D.Orange, true);
+                var note = D.T(s.NeedsIdentity ? Loc.T("Reading banners works best when WinKnife is installed as an app.") : Loc.T("Notification access is off."), 10.5, null, D.Orange, true);
                 note.Margin = new Thickness(0, 6, 0, 0);
                 col.Children.Add(note);
-                var allow = D.PillButton(s.AccessDenied ? "Open Settings" : "Allow", () => { if (s.AccessDenied) { s.OpenAccessSettings(); } else { _ = s.RequestAccessAsync(); } });
+                var allow = D.PillButton(s.AccessDenied ? Loc.T("Open Settings") : "Allow", () => { if (s.AccessDenied) { s.OpenAccessSettings(); } else { _ = s.RequestAccessAsync(); } });
                 allow.Margin = new Thickness(0, 6, 0, 0);
                 allow.HorizontalAlignment = HorizontalAlignment.Left;
                 col.Children.Add(allow);
@@ -111,19 +111,19 @@ internal sealed class NotificationsPage : IslandPage
         var l = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         FrameworkElement ic = n.Icon is not null ? new Image { Source = n.Icon, Width = 18, Height = 18 } : D.I("", 14, D.White(0.85));
         l.Children.Add(ic);
-        var an = D.T(n.App.Length == 0 ? "Notifications" : n.App, 11, null, D.White(0.6), false, TextTrimming.CharacterEllipsis);
+        var an = D.T(n.App.Length == 0 ? Loc.T("Notifications") : n.App, 11, null, D.White(0.6), false, TextTrimming.CharacterEllipsis);
         an.Margin = new Thickness(6, 0, 0, 0);
         an.MaxWidth = 90;
         l.Children.Add(an);
         head.Children.Add(l);
         var r = new StackPanel { Orientation = Orientation.Horizontal };
-        r.Children.Add(D.Digits(n.Received.ToString("h:mm"), 11, null, D.White(0.6)));
+        r.Children.Add(D.Digits(n.Received.ToString("t"), 11, null, D.White(0.6)));
         if (n.CanOpen)
         {
-            r.Children.Add(D.IconButton(G.OpenApp, "Open", () => Core.Notifications.Open(n), size: 20, glyphSize: 10));
+            r.Children.Add(D.IconButton(G.OpenApp, Loc.T("Open"), () => Core.Notifications.Open(n), size: 20, glyphSize: 10));
         }
 
-        r.Children.Add(D.IconButton(G.Close, "Dismiss", () => Core.Notifications.Dismiss(n), size: 20, glyphSize: 9));
+        r.Children.Add(D.IconButton(G.Close, Loc.T("Dismiss"), () => Core.Notifications.Dismiss(n), size: 20, glyphSize: 9));
         Grid.SetColumn(r, 1);
         head.Children.Add(r);
         stack.Children.Add(head);
@@ -150,7 +150,7 @@ internal sealed class NotificationsPage : IslandPage
     private void ClearAll()
     {
         using var hold = HasWindow ? Window.HoldOpen() : null;
-        if (MessageBox.Show("Clear All", "Clear All", MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK)
+        if (MessageBox.Show(Loc.T("Clear All"), Loc.T("Clear All"), MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK)
         {
             Core.Notifications.Clear();
         }
@@ -209,14 +209,14 @@ internal sealed class CameraPage : IslandPage
             var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12) };
             row.Children.Add(new Border { Width = 56, Height = 56, CornerRadius = new CornerRadius(18), Background = D.White(0.05), Child = D.I(G.Video, 30, D.White(0.6)) });
             var col = new StackPanel { Margin = new Thickness(16, 0, 0, 0), MaxWidth = 280, VerticalAlignment = VerticalAlignment.Center };
-            col.Children.Add(D.T(_failed ? "The camera could not start. Try opening it again." : "Open a live mirror here. The camera stops when you leave this view.", 12, null, _failed ? D.Orange : D.Secondary, true));
-            var open = D.PillButton("Open camera", () => _ = StartAsync(), true);
+            col.Children.Add(D.T(_failed ? Loc.T("The camera could not start. Try opening it again.") : Loc.T("Open a live mirror here. The camera stops when you leave this view."), 12, null, _failed ? D.Orange : D.Secondary, true));
+            var open = D.PillButton(Loc.T("Open camera"), () => _ = StartAsync(), true);
             open.Margin = new Thickness(0, 8, 0, 0);
             open.HorizontalAlignment = HorizontalAlignment.Left;
             col.Children.Add(open);
             if (_failed)
             {
-                var settings = D.PillButton("Open Settings…", () => { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:privacy-webcam") { UseShellExecute = true }); } catch { } });
+                var settings = D.PillButton(Loc.T("Open Settings…"), () => { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:privacy-webcam") { UseShellExecute = true }); } catch { } });
                 settings.Margin = new Thickness(0, 6, 0, 0);
                 settings.HorizontalAlignment = HorizontalAlignment.Left;
                 col.Children.Add(settings);
@@ -236,11 +236,11 @@ internal sealed class CameraPage : IslandPage
         _view.Children.Add(holder);
         if (_cameras.Count > 1)
         {
-            var current = _cameras.FirstOrDefault(c => c.Id == _cameraId).Name ?? "Camera";
+            var current = _cameras.FirstOrDefault(c => c.Id == _cameraId).Name ?? Loc.T("Camera");
             _leading.Children.Add(PageUi.BandMenu(current, null, () => _cameras.Select(c => { var id = c.Id; return new IslandMenu.Item(c.Name, () => { _cameraId = id; _ = RestartAsync(); }, id == _cameraId); }), () => HasWindow ? Window.HoldOpen() : null, current));
         }
 
-        var stop = D.PillButton("Stop camera", () => _ = StopAsync(), true);
+        var stop = D.PillButton(Loc.T("Stop camera"), () => _ = StopAsync(), true);
         _trailing.Children.Add(stop);
     }
 
@@ -443,8 +443,8 @@ internal sealed class WatchPage : IslandPage
 
         D.Tip(name, W.WindowTitle.Length > 0 ? $"{W.AppName} · {W.WindowTitle}" : W.AppName);
         _leading.Children.Add(name);
-        _trailing.Children.Add(D.IconButton("", "Choose Another Area", Choose));
-        var stop = D.IconButton(G.Close, "Stop Watching", () => W.Stop());
+        _trailing.Children.Add(D.IconButton("", Loc.T("Choose Another Area"), Choose));
+        var stop = D.IconButton(G.Close, Loc.T("Stop Watching"), () => W.Stop());
         stop.Margin = new Thickness(6, 0, 0, 0);
         _trailing.Children.Add(stop);
 
@@ -472,7 +472,7 @@ internal sealed class WatchPage : IslandPage
             var lab = new Border { Background = D.Frozen(Color.FromArgb(153, 0, 0, 0)), CornerRadius = new CornerRadius(8), Padding = new Thickness(8, 4, 8, 4), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             var lr = new StackPanel { Orientation = Orientation.Horizontal };
             lr.Children.Add(D.I(G.EyeOff, 11, D.Text));
-            var lt = D.T("The window is hidden. Watching continues when it returns.", 11, null, D.Text, true);
+            var lt = D.T(Loc.T("The window is hidden. Watching continues when it returns."), 11, null, D.Text, true);
             lt.Margin = new Thickness(6, 0, 0, 0);
             lt.MaxWidth = 260;
             lr.Children.Add(lt);
@@ -496,7 +496,7 @@ internal sealed class WatchPage : IslandPage
         {
             if (W.HasReading)
             {
-                info.Children.Add(D.T("No text", 15, FontWeights.SemiBold, D.Secondary));
+                info.Children.Add(D.T(Loc.T("No text"), 15, FontWeights.SemiBold, D.Secondary));
             }
         }
         else
@@ -504,7 +504,7 @@ internal sealed class WatchPage : IslandPage
             HoverButton? head = null;
             head = PageUi.BandMenu(W.Headline, null, () =>
             {
-                var items = new List<IslandMenu.Item> { new("Show in the island", null, Enabled: false), new("Automatic", () => W.SetHeadlineLine(-1), W.HeadlineLine < 0) };
+                var items = new List<IslandMenu.Item> { new(Loc.T("Show in the island"), null, Enabled: false), new(Loc.T("Automatic"), () => W.SetHeadlineLine(-1), W.HeadlineLine < 0) };
                 for (var i = 0; i < Math.Min(12, W.Lines.Count); i++)
                 {
                     var idx = i;
@@ -528,10 +528,10 @@ internal sealed class WatchPage : IslandPage
         card.Child = col;
         root.Children.Add(card);
         var ruleRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0), Height = 24 };
-        ruleRow.Children.Add(D.T("Tell me", 11, null, D.Secondary));
+        ruleRow.Children.Add(D.T(Loc.T("Tell me"), 11, null, D.Secondary));
         var cond = W.Condition;
         HoverButton? cb = null;
-        var names = new Dictionary<WatchCondition, string> { [WatchCondition.Changes] = "When it changes", [WatchCondition.Settles] = "When it stops changing", [WatchCondition.Contains] = "When it shows", [WatchCondition.Reaches] = "When the number reaches" };
+        var names = new Dictionary<WatchCondition, string> { [WatchCondition.Changes] = Loc.T("When it changes"), [WatchCondition.Settles] = Loc.T("When it stops changing"), [WatchCondition.Contains] = Loc.T("When it shows"), [WatchCondition.Reaches] = Loc.T("When the number reaches") };
         cb = PageUi.BandMenu(names[cond], null, () => names.Select(kv => new IslandMenu.Item(kv.Value, () => { W.Condition = kv.Key; Build(); }, kv.Key == cond)), () => HasWindow ? Window.HoldOpen() : null, null, 200);
         cb.Height = 24;
         ruleRow.Children.Add(cb);
@@ -564,7 +564,7 @@ internal sealed class WatchPage : IslandPage
                 Window.EnsureKeyboard();
             }
 
-            var ph = D.T(cond == WatchCondition.Contains ? "Text, like Done" : "Number, like 100", 12, null, D.White(0.35));
+            var ph = D.T(cond == WatchCondition.Contains ? Loc.T("Text, like Done") : Loc.T("Number, like 100"), 12, null, D.White(0.35));
             ph.IsHitTestVisible = false;
             ph.Visibility = box.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
             box.TextChanged += (_, _) => ph.Visibility = box.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -577,7 +577,7 @@ internal sealed class WatchPage : IslandPage
         }
         else if (cond == WatchCondition.Settles)
         {
-            var hint = D.T("After it changes, it must stay still for 30 seconds.", 10, null, D.Secondary);
+            var hint = D.T(Loc.T("After it changes, it must stay still for 30 seconds."), 10, null, D.Secondary);
             hint.Margin = new Thickness(8, 0, 0, 0);
             hint.VerticalAlignment = VerticalAlignment.Center;
             ruleRow.Children.Add(hint);
@@ -590,16 +590,16 @@ internal sealed class WatchPage : IslandPage
         {
             if (W.CanWatchAgain)
             {
-                footer.Children.Add(D.PillButton("Watch Again", () => W.WatchAgain(), true));
+                footer.Children.Add(D.PillButton(Loc.T("Watch Again"), () => W.WatchAgain(), true));
             }
 
-            var other = D.PillButton("Choose Another Area", Choose, !W.CanWatchAgain);
+            var other = D.PillButton(Loc.T("Choose Another Area"), Choose, !W.CanWatchAgain);
             other.Margin = new Thickness(6, 0, 0, 0);
             footer.Children.Add(other);
         }
         else
         {
-            footer.Children.Add(D.T($"Watching since {W.Since:h:mm tt}", 10, null, D.Secondary));
+            footer.Children.Add(D.T(Loc.F("Watching since {0}", Loc.Fmt(W.Since, "t")), 10, null, D.Secondary));
         }
 
         Grid.SetRow(footer, 2);
@@ -622,8 +622,8 @@ internal sealed class WatchPage : IslandPage
         var enabled = Core.App.Get<bool>(K.WatchEnabled);
         var tile = new Border { Width = 56, Height = 56, CornerRadius = new CornerRadius(18), Background = D.White(0.05), Child = D.I(G.Eye, 26, D.White(0.65)) };
         var copy = D.T(enabled
-            ? "Choose any part of a window, like a progress bar, a build status or a score. The island reads it for you and tells you when it changes."
-            : "Turn any part of any window into a live activity in the Dynamic Island, with an alert when it changes, finishes or shows what you are waiting for.", 12, null, D.White(0.65), true);
+            ? Loc.T("Choose any part of a window, like a progress bar, a build status or a score. The island reads it for you and tells you when it changes.")
+            : Loc.T("Turn any part of any window into a live activity in the Dynamic Island, with an alert when it changes, finishes or shows what you are waiting for."), 12, null, D.White(0.65), true);
         copy.MaxWidth = 300;
         copy.Margin = new Thickness(0, 12, 0, 12);
         copy.TextAlignment = TextAlignment.Center;
@@ -634,7 +634,7 @@ internal sealed class WatchPage : IslandPage
         if (!enabled)
         {
             var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
-            row.Children.Add(D.T("Watch", 12, FontWeights.Medium));
+            row.Children.Add(D.T(Loc.T("Watch"), 12, FontWeights.Medium));
             var tg = new IslandToggle(false, on => { Core.App.Set(K.WatchEnabled, on); Build(); });
             tg.Margin = new Thickness(10, 0, 0, 0);
             row.Children.Add(tg);
@@ -642,7 +642,7 @@ internal sealed class WatchPage : IslandPage
         }
         else
         {
-            var btn = D.PillButton("Choose Area", Choose, true);
+            var btn = D.PillButton(Loc.T("Choose Area"), Choose, true);
             btn.HorizontalAlignment = HorizontalAlignment.Center;
             stack.Children.Add(btn);
         }
@@ -704,7 +704,7 @@ internal sealed class CapturesPage : IslandPage
         var recent = files.OrderByDescending(f => f.LastWriteTime).Take(24).ToList();
         if (recent.Count == 0)
         {
-            _view.Children.Add(D.EmptyView(G.Camera, "No recent captures"));
+            _view.Children.Add(D.EmptyView(G.Camera, Loc.T("No recent captures")));
             return;
         }
 
@@ -763,10 +763,10 @@ internal sealed class ToolsPage : IslandPage
         _view.Children.Clear();
         var tools = new (string Id, string Glyph, string Title)[]
         {
-            ("screenshot", G.Camera, "Screenshot"), ("screen-recorder", G.Record, "Screen recording"), ("screen-ocr", "", "Copy text from screen"),
-            ("color-picker", "", "Color picker"), ("clipboard-history", G.Clipboard, "Clipboard"), ("scratchpad", G.Note, "Scratchpad"),
-            ("camera-preview", G.Video, "Camera preview"), ("command-bar", G.Command, "Command Bar"), ("cleaning-mode", "", "Cleaning Mode"),
-            ("radial-menu", "", "Radial menu"), ("quick-toggles", "", "Quick toggles"), ("quick-launcher", G.Tools, "Quick panel"),
+            ("screenshot", G.Camera, Loc.T("Screenshot")), ("screen-recorder", G.Record, Loc.T("Screen recording")), ("screen-ocr", "", Loc.T("Copy text from screen")),
+            ("color-picker", "", Loc.T("Color picker")), ("clipboard-history", G.Clipboard, Loc.T("Clipboard")), ("scratchpad", G.Note, Loc.T("Scratchpad")),
+            ("camera-preview", G.Video, Loc.T("Camera preview")), ("command-bar", G.Command, Loc.T("Command Bar")), ("cleaning-mode", "", Loc.T("Cleaning Mode")),
+            ("radial-menu", "", Loc.T("Radial menu")), ("quick-toggles", "", Loc.T("Quick toggles")), ("quick-launcher", G.Tools, Loc.T("Quick panel")),
         };
         var items = new List<FrameworkElement>();
         foreach (var (id, glyph, title) in tools)
@@ -782,7 +782,7 @@ internal sealed class ToolsPage : IslandPage
 
         if (items.Count == 0)
         {
-            _view.Children.Add(D.EmptyView(G.Tools, "Tools and utilities, one click away."));
+            _view.Children.Add(D.EmptyView(G.Tools, Loc.T("Tools and utilities, one click away.")));
             return Math.Min(budget, 140);
         }
 

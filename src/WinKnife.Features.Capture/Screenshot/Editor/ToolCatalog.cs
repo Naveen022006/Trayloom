@@ -16,24 +16,25 @@ internal sealed record ToolInfo(ToolId Id, string RawId, string Title, string Gl
 /// <summary>The 15 rail tools, their order (digits 1-9 are positions) and per-tool custom keys.</summary>
 internal static class ToolCatalog
 {
-    public static readonly IReadOnlyList<ToolInfo> All =
-    [
-        new(ToolId.Select, "select", "Select", G.Pointer),
-        new(ToolId.Arrow, "arrow", "Arrow", ""),
-        new(ToolId.Pixelate, "pixelate", "Blur", ""),
-        new(ToolId.Crop, "crop", "Crop", G.Crop),
-        new(ToolId.Text, "text", "Text", ""),
-        new(ToolId.Sticker, "sticker", "Sticker", G.Emoji),
-        new(ToolId.Rect, "rect", "Rectangle", ""),
-        new(ToolId.Highlight, "highlight", "Highlighter", G.Highlight),
-        new(ToolId.Freehand, "freehand", "Pen", G.Pen),
-        new(ToolId.Line, "line", "Line", ""),
-        new(ToolId.Ellipse, "ellipse", "Ellipse", ""),
-        new(ToolId.Counter, "counter", "Number", ""),
-        new(ToolId.Redact, "redact", "Solid block", ""),
-        new(ToolId.Spotlight, "spotlight", "Spotlight", ""),
-        new(ToolId.ExpandCanvas, "expandCanvas", "Expand canvas", G.Expand),
-    ];
+    public static IReadOnlyList<ToolInfo> All => _loc_All.Value;
+
+    private static readonly LocValue<IReadOnlyList<ToolInfo>> _loc_All = new(() => [
+        new(ToolId.Select, "select", Loc.T("Select"), G.Pointer),
+        new(ToolId.Arrow, "arrow", Loc.T("Arrow"), ""),
+        new(ToolId.Pixelate, "pixelate", Loc.T("Blur"), ""),
+        new(ToolId.Crop, "crop", Loc.T("Crop"), G.Crop),
+        new(ToolId.Text, "text", Loc.T("Text"), ""),
+        new(ToolId.Sticker, "sticker", Loc.T("Sticker"), G.Emoji),
+        new(ToolId.Rect, "rect", Loc.T("Rectangle"), ""),
+        new(ToolId.Highlight, "highlight", Loc.T("Highlighter"), G.Highlight),
+        new(ToolId.Freehand, "freehand", Loc.T("Pen"), G.Pen),
+        new(ToolId.Line, "line", Loc.T("Line"), ""),
+        new(ToolId.Ellipse, "ellipse", Loc.T("Ellipse"), ""),
+        new(ToolId.Counter, "counter", Loc.T("Number"), ""),
+        new(ToolId.Redact, "redact", Loc.T("Solid block"), ""),
+        new(ToolId.Spotlight, "spotlight", Loc.T("Spotlight"), ""),
+        new(ToolId.ExpandCanvas, "expandCanvas", Loc.T("Expand canvas"), G.Expand),
+    ]);
 
     public static ToolInfo Get(ToolId id) => All.FirstOrDefault(t => t.Id == id) ?? All[0];
 

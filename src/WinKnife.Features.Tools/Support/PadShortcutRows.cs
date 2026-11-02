@@ -25,7 +25,7 @@ internal static class ShortcutSettingsRows
     {
         var status = UiKit.Text(string.Empty, 11.5, FontWeights.Normal, ThemeKeys.Orange, wrap: true);
         var recorder = new HotkeyRecorder { Hotkey = c.Shortcuts.GetHotkey(roleId), Width = 150, IsEnabled = c.App.Get<bool>(enableKey) };
-        var reset = UiKit.Button("Reset", ButtonKind.Bordered, 12);
+        var reset = UiKit.Button(Loc.T("Reset"), ButtonKind.Bordered, 12);
         string? error = null;
 
         void Refresh()
@@ -35,7 +35,7 @@ internal static class ShortcutSettingsRows
             string? text = error;
             if (text is null && enabled)
             {
-                text = state.Problem ?? (state.IsRegistered ? null : "Windows rejected this shortcut. Choose another one.");
+                text = state.Problem ?? (state.IsRegistered ? null : Loc.T("Windows rejected this shortcut. Choose another one."));
             }
 
             status.Text = text ?? string.Empty;
@@ -72,7 +72,7 @@ internal static class ShortcutSettingsRows
         right.Children.Add(recorder);
         reset.Margin = new Thickness(8, 0, 0, 0);
         right.Children.Add(reset);
-        card.Add(new SettingsRow(null, "Shortcut", null, right));
+        card.Add(new SettingsRow(null, Loc.T("Shortcut"), null, right));
         card.Add(status);
         Refresh();
         void OnChanged(string id)

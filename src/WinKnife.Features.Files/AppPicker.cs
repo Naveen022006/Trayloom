@@ -10,6 +10,7 @@ using WinKnife.Core.Ui;
 using Brushes = System.Windows.Media.Brushes;
 using Button = System.Windows.Controls.Button;
 using Orientation = System.Windows.Controls.Orientation;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Files;
 
@@ -28,7 +29,7 @@ internal sealed class AppPickerDialog : Window
     private AppPickerDialog(IEnumerable<string> exclude)
     {
         _exclude = exclude.Select(Lists.Key).ToHashSet();
-        Title = "Add an app";
+        Title = Loc.T("Add an app");
         Width = 420;
         Height = 520;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -37,7 +38,7 @@ internal sealed class AppPickerDialog : Window
         ThemeManager.BindWindow(this);
 
         var root = new DockPanel { Margin = new Thickness(16) };
-        var searchGrid = Ui.PlaceholderBox(out _search, "Search apps");
+        var searchGrid = Ui.PlaceholderBox(out _search, Loc.T("Search apps"));
         DockPanel.SetDock(searchGrid, Dock.Top);
         _search.TextChanged += (_, _) => Fill();
         root.Children.Add(searchGrid);
@@ -86,7 +87,7 @@ internal sealed class AppPickerDialog : Window
     {
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
-            Title = "Choose an app",
+            Title = Loc.T("Choose an app"),
             Filter = "Applications (*.exe)|*.exe|All files (*.*)|*.*",
             CheckFileExists = true,
         };

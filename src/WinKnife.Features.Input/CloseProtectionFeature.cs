@@ -85,8 +85,8 @@ public sealed class CloseProtectionFeature : InputFeatureBase
     protected override void Engage()
     {
         _timer = new System.Threading.Timer(_ => OnHoldElapsed());
-        _config[0].Rules = new AppRuleSet(App, K.Quit("Exceptions"));
-        _config[1].Rules = new AppRuleSet(App, K.Close("Exceptions"));
+        _config[0].Rules = new AppRuleSet(App, K.Quit(Loc.T("Exceptions")));
+        _config[1].Rules = new AppRuleSet(App, K.Close(Loc.T("Exceptions")));
         SubscribeKeyboard(OnKey, HookPriorities.CloseProtection);
     }
 
@@ -160,7 +160,7 @@ public sealed class CloseProtectionFeature : InputFeatureBase
 
         if (all.HasFlag(ModifierKeys.Shift))
         {
-            parts.Add("Shift");
+            parts.Add(Loc.T("Shift"));
         }
 
         if (all.HasFlag(ModifierKeys.Alt))

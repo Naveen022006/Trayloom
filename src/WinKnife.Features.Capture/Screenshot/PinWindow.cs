@@ -190,7 +190,7 @@ internal sealed class PinWindow : Window
     private ContextMenu BuildMenu()
     {
         var menu = new ContextMenu();
-        var copy = new MenuItem { Header = "Copy" };
+        var copy = new MenuItem { Header = Loc.T("Copy") };
         copy.Click += (_, _) =>
         {
             if (Output.CopyImage(_image, _scale, _svc.App.Get<bool>(K.CopyImageOnly)))
@@ -210,7 +210,7 @@ internal sealed class PinWindow : Window
         menu.Items.Add(copy);
         menu.Items.Add(save);
         menu.Items.Add(new Separator());
-        var opacity = new MenuItem { Header = "Opacity" };
+        var opacity = new MenuItem { Header = Loc.T("Opacity") };
         foreach (var pct in new[] { 100, 85, 70, 50 })
         {
             var p = pct;
@@ -228,13 +228,13 @@ internal sealed class PinWindow : Window
         }
 
         menu.Items.Add(opacity);
-        var click = new MenuItem { Header = "Ignore clicks", IsCheckable = true };
+        var click = new MenuItem { Header = Loc.T("Ignore clicks"), IsCheckable = true };
         click.Click += (_, _) => SetClickThrough(click.IsChecked);
         menu.Items.Add(click);
         menu.Items.Add(new Separator());
         var close = new MenuItem { Header = Strings.Close };
         close.Click += (_, _) => Close();
-        var all = new MenuItem { Header = "Close all pins" };
+        var all = new MenuItem { Header = Loc.T("Close all pins") };
         all.Click += (_, _) => CloseAll();
         menu.Items.Add(close);
         menu.Items.Add(all);

@@ -63,9 +63,9 @@ public sealed class CutPasteSettingsSection : ISettingsSection
 
     internal static UIElement AdminCard()
     {
-        var card = new SettingsCard("Administrator access");
-        card.Add(Ui.Caption("Some windows belong to apps running as administrator. Run WinKnife as administrator to control them."));
-        var button = UiKit.Button("Restart as administrator", ButtonKind.Bordered, 12, null, () =>
+        var card = new SettingsCard(Loc.T("Administrator access"));
+        card.Add(Ui.Caption(Loc.T("Some windows belong to apps running as administrator. Run WinKnife as administrator to control them.")));
+        var button = UiKit.Button(Loc.T("Restart as administrator"), ButtonKind.Bordered, 12, null, () =>
         {
             try
             {

@@ -457,7 +457,7 @@ internal static class ClosedViews
         private void Update()
         {
             var item = _core.Downloads.ActiveItem;
-            _name.Text = item?.Name ?? "Downloads";
+            _name.Text = item?.Name ?? Loc.T("Downloads");
             if (item?.Fraction is { } f)
             {
                 _meter.Visibility = Visibility.Visible;
@@ -596,10 +596,10 @@ internal static class ClosedViews
             var remain = boundary - now;
             var total = (int)Math.Max(0, Math.Ceiling(remain.TotalSeconds));
             _dot.Fill = new SolidColorBrush(e.Color);
-            _title.Text = e.Title.Length == 0 ? "Untitled event" : e.Title;
+            _title.Text = e.Title.Length == 0 ? Loc.T("Untitled event") : e.Title;
             _clock.Text = $"{total / 60}:{total % 60:00}";
             _clock.Foreground = ongoing ? D.Mint : D.Text;
-            _time.Text = ongoing ? $"→ {e.End:h:mm tt}" : $"· {e.Start:h:mm tt}";
+            _time.Text = ongoing ? $"→ {e.End:t}" : $"· {e.Start:t}";
             var shape = $"{_clock.Text.Length}{ongoing}";
             if (shape != _shape)
             {
@@ -633,7 +633,7 @@ internal static class ClosedViews
         reading.VerticalAlignment = VerticalAlignment.Center;
         row.Children.Add(icon);
         row.Children.Add(reading);
-        D.Tip(row, "Keep awake");
+        D.Tip(row, Loc.T("Keep awake"));
         return new ClosedView(row, 220, 109);
     }
 

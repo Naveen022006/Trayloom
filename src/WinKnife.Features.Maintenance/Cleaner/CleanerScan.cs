@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 using Microsoft.Win32;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Maintenance;
 
@@ -128,16 +129,16 @@ internal sealed class CleanerScanner
     public List<CleanItem> Scan()
     {
         var items = new List<CleanItem>();
-        Step("Leftovers from uninstalled apps", () => items.AddRange(Leftovers()));
-        Step("Orphaned startup items", () => items.AddRange(StartupItems()));
-        Step("Caches", () => items.AddRange(Caches()));
-        Step("Logs", () => items.AddRange(Logs()));
-        Step("Developer junk", () => items.AddRange(Developer()));
-        Step("Recycle Bin", () => items.AddRange(Bin()));
-        Step("iPhone backups", () => items.AddRange(DeviceBackups()));
+        Step(Loc.T("Leftovers from uninstalled apps"), () => items.AddRange(Leftovers()));
+        Step(Loc.T("Orphaned startup items"), () => items.AddRange(StartupItems()));
+        Step(Loc.T("Caches"), () => items.AddRange(Caches()));
+        Step(Loc.T("Logs"), () => items.AddRange(Logs()));
+        Step(Loc.T("Developer junk"), () => items.AddRange(Developer()));
+        Step(Loc.T("Recycle Bin"), () => items.AddRange(Bin()));
+        Step(Loc.T("iPhone backups"), () => items.AddRange(DeviceBackups()));
         if (_attended && _screenshotDays > 0)
         {
-            Step("Forgotten screenshots", () => items.AddRange(Screenshots()));
+            Step(Loc.T("Forgotten screenshots"), () => items.AddRange(Screenshots()));
         }
 
         foreach (var item in items)
@@ -270,8 +271,8 @@ internal sealed class CleanerScanner
         // Chromium browsers per profile
         var chromium = new (string Name, string UserData)[]
         {
-            ("Google Chrome", Path.Combine(local, "Google", "Chrome", "User Data")),
-            ("Microsoft Edge", Path.Combine(local, "Microsoft", "Edge", "User Data")),
+            (Loc.T("Google Chrome"), Path.Combine(local, "Google", "Chrome", "User Data")),
+            (Loc.T("Microsoft Edge"), Path.Combine(local, "Microsoft", "Edge", "User Data")),
             ("Brave", Path.Combine(local, "BraveSoftware", "Brave-Browser", "User Data")),
             ("Vivaldi", Path.Combine(local, "Vivaldi", "User Data")),
         };
@@ -333,8 +334,8 @@ internal sealed class CleanerScanner
             ("Cypress", Path.Combine(local, "Cypress", "Cache"), false),
             ("puppeteer", Path.Combine(profile2, ".cache", "puppeteer"), true),
             ("typescript", Path.Combine(local, "Microsoft", "TypeScript"), true),
-            ("winget", Path.Combine(FileOps.Temp, "WinGet"), true),
-            ("Microsoft Store", Path.Combine(local, "Packages", "Microsoft.WindowsStore_8wekyb3d8bbwe", "LocalCache"), false),
+            (Loc.T("winget"), Path.Combine(FileOps.Temp, "WinGet"), true),
+            (Loc.T("Microsoft Store"), Path.Combine(local, "Packages", "Microsoft.WindowsStore_8wekyb3d8bbwe", "LocalCache"), false),
             ("ms-playwright", Path.Combine(local, "ms-playwright"), false),
         };
         foreach (var (name, path, safe) in known)
@@ -437,7 +438,7 @@ internal sealed class CleanerScanner
                 var size = files.Sum(f => new FileInfo(f).Length);
                 if (files.Count > 0 && size > 0)
                 {
-                    list.Add(new CleanItem { Group = CleanerGroup.Logs, Kind = RemoveKind.PermanentFiles, Name = name, Path = logs, Paths = files, Size = size, Detail = "App logs", Recommended = true, Root = logs });
+                    list.Add(new CleanItem { Group = CleanerGroup.Logs, Kind = RemoveKind.PermanentFiles, Name = name, Path = logs, Paths = files, Size = size, Detail = Loc.T("App logs"), Recommended = true, Root = logs });
                 }
             }
         }
@@ -472,7 +473,7 @@ internal sealed class CleanerScanner
             }
         }
 
-        list.Add(Multi(CleanerGroup.Developer, "VS Code caches", new[] { "CachedData", "CachedExtensionVSIXs", "logs" }.Select(d => Path.Combine(roaming, "Code", d)), "Code", true, Path.Combine(roaming, "Code")));
+        list.Add(Multi(CleanerGroup.Developer, "VS Code caches", new[] { "CachedData", "CachedExtensionVSIXs", "logs" }.Select(d => Path.Combine(roaming, "Code", d)), Loc.T("Code"), true, Path.Combine(roaming, "Code")));
         list.Add(Multi(CleanerGroup.Developer, "NuGet HTTP cache", new[] { "v3-cache", "plugins-cache" }.Select(d => Path.Combine(local, "NuGet", d)), "NuGet", true, Path.Combine(local, "NuGet")));
         list.Add(Folder(CleanerGroup.Developer, "Go build cache", Path.Combine(local, "go-build"), "go-build", true));
         list.Add(Folder(CleanerGroup.Developer, "Android cache", Path.Combine(profile, ".android", "cache"), "Android", true));
@@ -490,7 +491,7 @@ internal sealed class CleanerScanner
         var (bytes, count) = FileOps.RecycleBinInfo();
         if (count > 0)
         {
-            yield return new CleanItem { Group = CleanerGroup.Trash, Kind = RemoveKind.EmptyBin, Name = "Recycle Bin", Path = "Recycle Bin", Size = bytes, Detail = $"{count} items", Recommended = false };
+            yield return new CleanItem { Group = CleanerGroup.Trash, Kind = RemoveKind.EmptyBin, Name = Loc.T("Recycle Bin"), Path = "Recycle Bin", Size = bytes, Detail = Loc.F("{0} items", count), Recommended = false };
         }
     }
 

@@ -378,7 +378,7 @@ internal sealed partial class IslandWindow
         {
             var mod = ModuleForActivity(a);
             var def = _core.AllModules().FirstOrDefault(m => m.Id == mod);
-            var title = a == IslandCore.ActKeepAwake ? "Keep awake" : (def?.Title ?? a);
+            var title = a == IslandCore.ActKeepAwake ? Loc.T("Keep awake") : (def?.Title ?? a);
             var glyph = a == IslandCore.ActKeepAwake ? G.Cup : (def?.Glyph ?? G.Dot);
             var selected = a == current;
             var chip = new HoverButton(() => { _core.PickedActivity = a; RefreshClosed(); }) { Height = 32, CornerRadius = new CornerRadius(8), Padding = new Thickness(10, 0, 10, 0), Margin = new Thickness(3), Fill = selected ? Brushes.White : D.White(0.12) };
@@ -455,7 +455,7 @@ internal sealed partial class IslandWindow
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 0) };
         if (n.OnClick is not null)
         {
-            actions.Children.Add(D.PillButton("Open", () => n.OnClick(), true));
+            actions.Children.Add(D.PillButton(Loc.T("Open"), () => n.OnClick(), true));
         }
 
         body.Children.Add(actions);

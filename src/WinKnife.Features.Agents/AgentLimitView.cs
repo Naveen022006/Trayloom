@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Agents;
 
@@ -50,7 +51,7 @@ internal static class LimitPresenter
         var tint = Tint(provider, w);
         if (w.Renewed)
         {
-            return new LimitRowModel(label, "Renewed", null, provider.Tint(), null, "Reset since the last reading; waiting for a new one", false, label + ": its reset time passed after the last reading, so what it holds now is not known yet.", null);
+            return new LimitRowModel(label, "Renewed", null, provider.Tint(), null, Loc.T("Reset since the last reading; waiting for a new one"), false, label + ": its reset time passed after the last reading, so what it holds now is not known yet.", null);
         }
 
         if (w.Kind == LimitKind.Session && exhaustedWeek is not null && (w.NotStarted || w.UsedPercent <= 0))
@@ -63,7 +64,7 @@ internal static class LimitPresenter
         if (w.NotStarted)
         {
             var start = provider == AgentProvider.Claude ? "Starts with your next message" : "Starts with your next task";
-            return new LimitRowModel(label, "Not started", null, provider.Tint(), null, start, false, label + ": no usage has begun this window, so the source reports no reset time.", null);
+            return new LimitRowModel(label, Loc.T("Not started"), null, provider.Tint(), null, start, false, label + ": no usage has begun this window, so the source reports no reset time.", null);
         }
 
         var used = w.UsedPercent >= 100;
@@ -74,7 +75,7 @@ internal static class LimitPresenter
         {
             label, AgentStrings.UsedShare(AgentFormat.Percent(w.UsedFraction)), AgentStrings.Left(AgentFormat.Percent(w.RemainingFraction)),
             w.Severity is { Length: > 0 } s ? "severity " + s : null,
-            reset is null ? "no reset time reported" : "resets " + (AgentLimitSupport.DisplayedReset(w, now) is { } d ? d.ToLocalTime().ToString("ddd MMM d, h:mm tt", CultureInfo.CurrentCulture) : ""),
+            reset is null ? "no reset time reported" : "resets " + (AgentLimitSupport.DisplayedReset(w, now) is { } d ? d.ToLocalTime().ToString("ddd MMM d, " + Loc.ShortTime, CultureInfo.CurrentCulture) : ""),
             inferred ? "reset time inferred from history" : null,
         }.Where(x => !string.IsNullOrEmpty(x)));
         return new LimitRowModel(label, value, fraction, tint, reset, null, false, tip, pace);
@@ -114,7 +115,7 @@ internal static class LimitPresenter
     {
         var local = utc.ToLocalTime();
         var culture = CultureInfo.CurrentCulture;
-        return local.Date == now.ToLocalTime().Date ? local.ToString("h:mm tt", culture) : local.ToString("ddd h:mm tt", culture);
+        return local.Date == now.ToLocalTime().Date ? local.ToString(Loc.ShortTime, culture) : local.ToString("ddd " + Loc.ShortTime, culture);
     }
 
     /// <summary>"From Claude Code · 2 minutes ago", and whether the reading is old enough to be questioned.</summary>

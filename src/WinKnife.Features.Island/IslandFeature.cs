@@ -36,13 +36,13 @@ public sealed class IslandFeature : IFeature
             return
             [
                 .. dev,
-                new FeatureAction("toggle", "Open or close Dynamic Island", () => _window?.Toggle(), G.Controls),
-                new FeatureAction("explore", "Explore the island sections", () => _window?.Open("explore"), G.Explore),
-                new FeatureAction("play-pause", "Play or pause music", () => core.Playback.TogglePlayPause(), G.Play),
-                new FeatureAction("next", "Next track", () => core.Playback.Next(), G.Next),
-                new FeatureAction("previous", "Previous track", () => core.Playback.Previous(), G.Previous),
-                new FeatureAction("timer", "Open the island timer", () => _window?.Open("timer"), G.Timer),
-                new FeatureAction("calendar", "Open the island calendar", () => _window?.Open("calendar"), G.Calendar),
+                new FeatureAction("toggle", Loc.T("Open or close Dynamic Island"), () => _window?.Toggle(), G.Controls),
+                new FeatureAction("explore", Loc.T("Explore the island sections"), () => _window?.Open("explore"), G.Explore),
+                new FeatureAction("play-pause", Loc.T("Play or pause music"), () => core.Playback.TogglePlayPause(), G.Play),
+                new FeatureAction("next", Loc.T("Next track"), () => core.Playback.Next(), G.Next),
+                new FeatureAction("previous", Loc.T("Previous track"), () => core.Playback.Previous(), G.Previous),
+                new FeatureAction("timer", Loc.T("Open the island timer"), () => _window?.Open("timer"), G.Timer),
+                new FeatureAction("calendar", Loc.T("Open the island calendar"), () => _window?.Open("calendar"), G.Calendar),
             ];
         }
     }

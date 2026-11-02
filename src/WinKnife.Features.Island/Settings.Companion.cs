@@ -22,12 +22,13 @@ internal sealed class CompanionPage : StackPanel
     private MascotView? _view;
     private int _next;
 
-    private static readonly (string Name, string Glyph, string[] Reactions)[] Moments =
-    [
-        ("A visit", "", ["celebrate"]), ("Timer started", "", ["ready"]), ("Time is up", "", ["surprised"]), ("Now Playing", "", ["groove"]),
-        ("AI Agents", "", ["ready", "celebrate"]), ("Happening now", "", ["bounce"]), ("Download complete", "", ["celebrate"]), ("Download failed", "", ["confused"]),
-        ("Screenshot", "", ["flash"]), ("Mic Mute on", "", ["hush"]), ("Keep awake", "", ["perk"]), ("Charging", "", ["love"]), ("Low battery", "", ["yawn"]), ("PC unlocked", "", ["wakeUp"]),
-    ];
+    private static (string Name, string Glyph, string[] Reactions)[] Moments => _loc_Moments.Value;
+
+    private static readonly LocValue<(string Name, string Glyph, string[] Reactions)[]> _loc_Moments = new(() => [
+        (Loc.T("A visit"), "", ["celebrate"]), (Loc.T("Timer started"), "", ["ready"]), (Loc.T("Time is up"), "", ["surprised"]), (Loc.T("Now Playing"), "", ["groove"]),
+        (Loc.T("AI Agents"), "", ["ready", "celebrate"]), (Loc.T("Happening now"), "", ["bounce"]), (Loc.T("Download complete"), "", ["celebrate"]), (Loc.T("Download failed"), "", ["confused"]),
+        (Loc.T("Screenshot"), "", ["flash"]), (Loc.T("Mic Mute on"), "", ["hush"]), (Loc.T("Keep awake"), "", ["perk"]), (Loc.T("Charging"), "", ["love"]), (Loc.T("Low battery"), "", ["yawn"]), (Loc.T("PC unlocked"), "", ["wakeUp"]),
+    ]);
 
     public CompanionPage(ISettingsContext c)
     {
@@ -52,8 +53,8 @@ internal sealed class CompanionPage : StackPanel
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var col = new StackPanel();
-        col.Children.Add(UiKit.Text("Companion", 20, FontWeights.Bold, ThemeKeys.TextPrimary));
-        var hint = UiKit.Text("A little friend who lives in the Dynamic Island. It rests there when nothing else is showing, and comes out over music and activities to say hello and react to what happens.", 13, FontWeights.Normal, ThemeKeys.TextSecondary, true);
+        col.Children.Add(UiKit.Text(Loc.T("Companion"), 20, FontWeights.Bold, ThemeKeys.TextPrimary));
+        var hint = UiKit.Text(Loc.T("A little friend who lives in the Dynamic Island. It rests there when nothing else is showing, and comes out over music and activities to say hello and react to what happens."), 13, FontWeights.Normal, ThemeKeys.TextSecondary, true);
         hint.Margin = new Thickness(0, 4, 0, 0);
         col.Children.Add(hint);
         head.Children.Add(col);
@@ -69,8 +70,8 @@ internal sealed class CompanionPage : StackPanel
             var nr = new Grid();
             nr.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             nr.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            nr.Children.Add(UiKit.Text("The companion lives in the Dynamic Island.", 13, FontWeights.Normal, ThemeKeys.TextPrimary));
-            var btn = UiKit.Button(_c.Runtime.IsAvailable("notch") ? "Enable Dynamic Island" : "Open Features", ButtonKind.Bordered, 12, null, () =>
+            nr.Children.Add(UiKit.Text(Loc.T("The companion lives in the Dynamic Island."), 13, FontWeights.Normal, ThemeKeys.TextPrimary));
+            var btn = UiKit.Button(_c.Runtime.IsAvailable("notch") ? Loc.T("Enable Dynamic Island") : Loc.T("Open Features"), ButtonKind.Bordered, 12, null, () =>
             {
                 if (_c.Runtime.IsAvailable("notch"))
                 {
@@ -96,10 +97,10 @@ internal sealed class CompanionPage : StackPanel
         var titleRow = new Grid();
         titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        titleRow.Children.Add(UiKit.Text("See how it reacts", 13, FontWeights.SemiBold, ThemeKeys.TextPrimary));
-        var say = UiKit.Button("Say Hi", ButtonKind.Bordered, 11.5, "", () => { _actor.Wake(); _actor.Play("celebrate", D.ReduceMotion); IslandCore.Current?.Mascot.PlayNow("celebrate"); });
+        titleRow.Children.Add(UiKit.Text(Loc.T("See how it reacts"), 13, FontWeights.SemiBold, ThemeKeys.TextPrimary));
+        var say = UiKit.Button(Loc.T("Say Hi"), ButtonKind.Bordered, 11.5, "", () => { _actor.Wake(); _actor.Play("celebrate", D.ReduceMotion); IslandCore.Current?.Mascot.PlayNow("celebrate"); });
         say.IsEnabled = enabled && islandOn;
-        say.ToolTip = "Plays a visit in the Dynamic Island now.";
+        say.ToolTip = Loc.T("Plays a visit in the Dynamic Island now.");
         Grid.SetColumn(say, 1);
         titleRow.Children.Add(say);
         stage.Add(titleRow);
@@ -129,26 +130,26 @@ internal sealed class CompanionPage : StackPanel
         stage.Add(chips);
         var foot = new StackPanel { Orientation = Orientation.Horizontal, Opacity = enabled ? 1 : 0.45 };
         foot.Children.Add(UiKit.Icon("", 11, ThemeKeys.TextSecondary));
-        var ft = SUi.Caption("Click to see it react. Rest the pointer on it to pet it. Left alone, it dozes off until you come back.");
+        var ft = SUi.Caption(Loc.T("Click to see it react. Rest the pointer on it to pet it. Left alone, it dozes off until you come back."));
         ft.Margin = new Thickness(6, 0, 0, 0);
         foot.Children.Add(ft);
         stage.Add(foot);
         Children.Add(stage);
 
         // appearance
-        var app = new SettingsCard("Appearance") { Margin = new Thickness(0, 20, 0, 0) };
+        var app = new SettingsCard(Loc.T("Appearance")) { Margin = new Thickness(0, 20, 0, 0) };
         var style = App.Get<string>(K.MascotStyle);
-        app.Add(new SettingsRow("", "Style", null));
+        app.Add(new SettingsRow("", Loc.T("Style"), null));
         var styleRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(SettingsRow.TextInset, 0, 0, 0) };
-        styleRow.Children.Add(LookTile(new MascotLook("minimal", App.Get<string>(K.MascotShape), App.Get<string>(K.MascotPalette)), 30, "Minimal", 64, 42, 14, style == "minimal", () => SetLook(K.MascotStyle, "minimal")));
-        styleRow.Children.Add(LookTile(new MascotLook("robot", "ball", App.Get<string>(K.MascotPalette)), 30, "Robot", 64, 42, 14, style == "robot", () => SetLook(K.MascotStyle, "robot")));
+        styleRow.Children.Add(LookTile(new MascotLook("minimal", App.Get<string>(K.MascotShape), App.Get<string>(K.MascotPalette)), 30, Loc.T("Minimal"), 64, 42, 14, style == "minimal", () => SetLook(K.MascotStyle, "minimal")));
+        styleRow.Children.Add(LookTile(new MascotLook("robot", "ball", App.Get<string>(K.MascotPalette)), 30, Loc.T("Robot"), 64, 42, 14, style == "robot", () => SetLook(K.MascotStyle, "robot")));
         app.Add(styleRow);
         if (style == "minimal")
         {
             var shape = App.Get<string>(K.MascotShape);
-            app.Add(new SettingsRow("", "Shape", null, UiKit.Text(shape switch { "egg" => "Egg", "squircle" => "Rounded square", "pill" => "Pill", _ => "Ball" }, 12, FontWeights.Normal, ThemeKeys.TextSecondary)));
+            app.Add(new SettingsRow("", Loc.T("Shape"), null, UiKit.Text(shape switch { "egg" => Loc.T("Egg"), "squircle" => Loc.T("Rounded square"), "pill" => Loc.T("Pill"), _ => Loc.T("Ball") }, 12, FontWeights.Normal, ThemeKeys.TextSecondary)));
             var shapes = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(SettingsRow.TextInset, 0, 0, 0) };
-            foreach (var (id, label) in new[] { ("ball", "Ball"), ("egg", "Egg"), ("squircle", "Rounded square"), ("pill", "Pill") })
+            foreach (var (id, label) in new[] { ("ball", Loc.T("Ball")), ("egg", Loc.T("Egg")), ("squircle", Loc.T("Rounded square")), ("pill", Loc.T("Pill")) })
             {
                 shapes.Children.Add(LookTile(new MascotLook("minimal", id, App.Get<string>(K.MascotPalette)), 24, label, 58, 40, 10, shape == id, () => SetLook(K.MascotShape, id)));
             }
@@ -157,7 +158,7 @@ internal sealed class CompanionPage : StackPanel
         }
 
         var palette = App.Get<string>(K.MascotPalette);
-        app.Add(new SettingsRow("", "Color", null, UiKit.Text(char.ToUpperInvariant(palette[0]) + palette[1..], 12, FontWeights.Normal, ThemeKeys.TextSecondary)));
+        app.Add(new SettingsRow("", Loc.T("Color"), null, UiKit.Text(char.ToUpperInvariant(palette[0]) + palette[1..], 12, FontWeights.Normal, ThemeKeys.TextSecondary)));
         var swatches = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(SettingsRow.TextInset, 0, 0, 0) };
         foreach (var p in new[] { "pearl", "lemon", "peach", "rose", "lilac", "sky", "mint" })
         {
@@ -182,36 +183,36 @@ internal sealed class CompanionPage : StackPanel
         Children.Add(app);
 
         // behavior
-        var beh = new SettingsCard("Behavior") { Margin = new Thickness(0, 20, 0, 0) };
+        var beh = new SettingsCard(Loc.T("Behavior")) { Margin = new Thickness(0, 20, 0, 0) };
         if (App.Get<string>(K.Silhouette) == "notch")
         {
             var side = App.Get<string>(K.MascotSide);
-            beh.Add(new SettingsRow("", "Side of the camera", null));
-            var sides = SUi.TileRow(2, 8, SUi.ChoiceTile("", "Left", side == "left", () => { App.Set(K.MascotSide, "left"); Rebuild(); }, 50), SUi.ChoiceTile("", "Right", side == "right", () => { App.Set(K.MascotSide, "right"); Rebuild(); }, 50));
+            beh.Add(new SettingsRow("", Loc.T("Side of the camera"), null));
+            var sides = SUi.TileRow(2, 8, SUi.ChoiceTile("", Loc.T("Left"), side == "left", () => { App.Set(K.MascotSide, "left"); Rebuild(); }, 50), SUi.ChoiceTile("", Loc.T("Right"), side == "right", () => { App.Set(K.MascotSide, "right"); Rebuild(); }, 50));
             sides.Margin = new Thickness(SettingsRow.TextInset, 0, 0, 0);
             beh.Add(sides);
         }
 
-        beh.Add(SUi.SwitchRow(App, K.MascotHides, "", "Hide when idle", "After half a minute with nothing going on, it hops into the island and the island goes back to its usual size. Visits and reactions still bring it out."));
-        beh.Add(SUi.SwitchRow(App, K.MascotVisits, "", "Appear now and then", "Every few minutes it passes through the island with a short animation.", _ => Rebuild()));
+        beh.Add(SUi.SwitchRow(App, K.MascotHides, "", Loc.T("Hide when idle"), Loc.T("After half a minute with nothing going on, it hops into the island and the island goes back to its usual size. Visits and reactions still bring it out.")));
+        beh.Add(SUi.SwitchRow(App, K.MascotVisits, "", Loc.T("Appear now and then"), Loc.T("Every few minutes it passes through the island with a short animation."), _ => Rebuild()));
         if (App.Get<bool>(K.MascotVisits))
         {
-            var seg = new SegmentedControl(["Rarely", "Sometimes", "Often"], App.Get<string>(K.MascotFrequency) switch { "rare" => 0, "frequent" => 2, _ => 1 }, false, 12);
+            var seg = new SegmentedControl([Loc.T("Rarely"), Loc.T("Sometimes"), Loc.T("Often")], App.Get<string>(K.MascotFrequency) switch { "rare" => 0, "frequent" => 2, _ => 1 }, false, 12);
             seg.SelectionChanged += i => App.Set(K.MascotFrequency, i switch { 0 => "rare", 2 => "frequent", _ => "normal" });
-            beh.Add(SUi.Indent(new SettingsRow("", "How often", null, seg)));
+            beh.Add(SUi.Indent(new SettingsRow("", Loc.T("How often"), null, seg)));
         }
 
-        beh.Add(SUi.SwitchRow(App, K.MascotReactions, "", "React to what happens", "It comes out to react to music, timers, downloads, screenshots, the microphone, Keep awake and more."));
+        beh.Add(SUi.SwitchRow(App, K.MascotReactions, "", Loc.T("React to what happens"), Loc.T("It comes out to react to music, timers, downloads, screenshots, the microphone, Keep awake and more.")));
         Children.Add(beh);
 
         // command bar
-        var cb = new SettingsCard("Command Bar") { Margin = new Thickness(0, 20, 0, 0) };
-        cb.Add(new FeatureSwitchRow(_c.Runtime, _c.Shell, "command-bar", "", "Command Bar in the island", "With the shortcut, the Command Bar comes out of the island with the companion as its face. It reacts while you search.", App.Get<bool>(K.CommandBar), on => { App.Set(K.CommandBar, on); Rebuild(); }, "Enable “Command Bar” in Features."));
+        var cb = new SettingsCard(Loc.T("Command Bar")) { Margin = new Thickness(0, 20, 0, 0) };
+        cb.Add(new FeatureSwitchRow(_c.Runtime, _c.Shell, "command-bar", "", Loc.T("Command Bar in the island"), Loc.T("With the shortcut, the Command Bar comes out of the island with the companion as its face. It reacts while you search."), App.Get<bool>(K.CommandBar), on => { App.Set(K.CommandBar, on); Rebuild(); }, Loc.T("Enable “Command Bar” in Features.")));
         if (_c.Runtime.IsAvailable("command-bar") && App.Get<bool>(K.CommandBar))
         {
-            var seg = new SegmentedControl(["Drop", "Open island"], App.Get<string>(K.CommandBarStyle) == "island" ? 1 : 0, false, 12);
+            var seg = new SegmentedControl([Loc.T("Drop"), Loc.T("Open island")], App.Get<string>(K.CommandBarStyle) == "island" ? 1 : 0, false, 12);
             seg.SelectionChanged += i => App.Set(K.CommandBarStyle, i == 1 ? "island" : "droplet");
-            cb.Add(SUi.Indent(new SettingsRow("", "Opens as", null, seg)));
+            cb.Add(SUi.Indent(new SettingsRow("", Loc.T("Opens as"), null, seg)));
         }
 
         Children.Add(cb);

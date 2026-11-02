@@ -32,10 +32,10 @@ internal sealed class FeaturesPageState
 /// <summary>The Features hub (spec 02-settings section 3): tabs, summary, bundles, groups and rows.</summary>
 internal static class FeaturesPage
 {
-    private const string Intro = "Install only what you use. Whatever you uninstall disappears from the whole app and stops loading.";
-    private const string PermissionsIntro = "What each permission does and which features use it. Other access is requested only when you use it.";
-    private const string FooterNote = "Uninstalling deletes nothing: the feature just leaves the app and stops loading. Install it again anytime and everything returns as it was.";
-    private const string EnergyHelp = "What the feature keeps alive while it is on. Uninstalled features load nothing at all.";
+    private static  string Intro => Loc.T("Install only what you use. Whatever you uninstall disappears from the whole app and stops loading.");
+    private static  string PermissionsIntro => Loc.T("What each permission does and which features use it. Other access is requested only when you use it.");
+    private static  string FooterNote => Loc.T("Uninstalling deletes nothing: the feature just leaves the app and stops loading. Install it again anytime and everything returns as it was.");
+    private static  string EnergyHelp => Loc.T("What the feature keeps alive while it is on. Uninstalled features load nothing at all.");
 
     private static readonly FeatureGroup[] GroupOrder =
     [
@@ -129,7 +129,7 @@ internal static class FeaturesPage
     private static UIElement HeaderBlock(FeaturesPageState state, Action rebuild, FeatureRuntime rt)
     {
         var card = new SettingsCard();
-        var seg = new SegmentedControl(["Features", "Permissions"], state.Tab, false, 13);
+        var seg = new SegmentedControl([Loc.T("Features"), Loc.T("Permissions")], state.Tab, false, 13);
         seg.SelectionChanged += i =>
         {
             state.Tab = i;
@@ -157,13 +157,13 @@ internal static class FeaturesPage
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var installed = rt.AvailableCount;
         var total = rt.InstallableCount;
-        var text = UiKit.Text($"{installed} of {total} features installed", 13, FontWeights.SemiBold, ThemeKeys.TextSecondary);
+        var text = UiKit.Text(Loc.F("{0} of {1} features installed", installed, total), 13, FontWeights.SemiBold, ThemeKeys.TextSecondary);
         text.VerticalAlignment = VerticalAlignment.Center;
         grid.Children.Add(text);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal };
-        var all = UiKit.Button("Install all", ButtonKind.Bordered, 13, onClick: () => rt.SetAllAvailable(true));
+        var all = UiKit.Button(Loc.T("Install all"), ButtonKind.Bordered, 13, onClick: () => rt.SetAllAvailable(true));
         all.IsEnabled = installed < total;
-        var none = UiKit.Button("Uninstall all", ButtonKind.Bordered, 13, onClick: () => rt.SetAllAvailable(false));
+        var none = UiKit.Button(Loc.T("Uninstall all"), ButtonKind.Bordered, 13, onClick: () => rt.SetAllAvailable(false));
         none.IsEnabled = installed > 0;
         none.Margin = new Thickness(8, 0, 0, 0);
         buttons.Children.Add(all);
@@ -194,11 +194,11 @@ internal static class FeaturesPage
         var icon = UiKit.Icon("", 22, ThemeKeys.Accent);
         icon.Margin = new Thickness(0, 0, 12, 0);
         grid.Children.Add(icon);
-        var text = UiKit.Text("Features uninstalled in this session stay loaded until the app restarts. Restart to unload them from memory now.", 13, FontWeights.Normal, ThemeKeys.TextPrimary, wrap: true);
+        var text = UiKit.Text(Loc.T("Features uninstalled in this session stay loaded until the app restarts. Restart to unload them from memory now."), 13, FontWeights.Normal, ThemeKeys.TextPrimary, wrap: true);
         text.VerticalAlignment = VerticalAlignment.Center;
         Grid.SetColumn(text, 1);
         grid.Children.Add(text);
-        var button = UiKit.Button("Restart now", ButtonKind.Prominent, 13, onClick: () => s.Shell.Restart());
+        var button = UiKit.Button(Loc.T("Restart now"), ButtonKind.Prominent, 13, onClick: () => s.Shell.Restart());
         button.Margin = new Thickness(12, 0, 0, 0);
         Grid.SetColumn(button, 2);
         grid.Children.Add(button);
@@ -212,7 +212,7 @@ internal static class FeaturesPage
         if (state.NeverUsedUndo is { } undo)
         {
             var done = new SettingsCard();
-            var undoButton = UiKit.Button("Undo", ButtonKind.Bordered, 13, onClick: () =>
+            var undoButton = UiKit.Button(Loc.T("Undo"), ButtonKind.Bordered, 13, onClick: () =>
             {
                 rt.KeepFeatures(undo);
                 rt.SetAvailable(undo.Select(e => e.Id), true, enablingFirstInstalls: false);
@@ -231,16 +231,16 @@ internal static class FeaturesPage
             return null;
         }
 
-        var card = new SettingsCard("Never turned on");
+        var card = new SettingsCard(Loc.T("Never turned on"));
         var names = string.Join(", ", candidates.Select(c => c.Title));
-        card.AddCaption($"These features are installed but have never been on: {names}. Uninstalling them makes the panel and Settings shorter. Nothing is deleted, and each one comes back with one click.");
+        card.AddCaption(Loc.F("These features are installed but have never been on: {0}. Uninstalling them makes the panel and Settings shorter. Nothing is deleted, and each one comes back with one click.", names));
         var buttons = new StackPanel { Orientation = Orientation.Horizontal };
-        buttons.Children.Add(UiKit.Button("Keep them", ButtonKind.Bordered, 13, onClick: () =>
+        buttons.Children.Add(UiKit.Button(Loc.T("Keep them"), ButtonKind.Bordered, 13, onClick: () =>
         {
             rt.KeepFeatures(candidates);
             rebuild();
         }));
-        var remove = UiKit.Button("Uninstall these", ButtonKind.Prominent, 13, onClick: () =>
+        var remove = UiKit.Button(Loc.T("Uninstall these"), ButtonKind.Prominent, 13, onClick: () =>
         {
             var now = rt.NeverTurnedOnCandidates();
             if (now.Count == 0)
@@ -277,8 +277,8 @@ internal static class FeaturesPage
         }
 
         body.Children.Add(presets);
-        body.Children.Add(Spaced(UiKit.Text("One click sets the app up for how you use your PC. Everything else stays one click away.", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true), 10));
-        card.Add(Disclosure("Start with a bundle", state.BundlesCollapsed, collapsed =>
+        body.Children.Add(Spaced(UiKit.Text(Loc.T("One click sets the app up for how you use your PC. Everything else stays one click away."), 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true), 10));
+        card.Add(Disclosure(Loc.T("Start with a bundle"), state.BundlesCollapsed, collapsed =>
         {
             state.BundlesCollapsed = collapsed;
             rebuild();
@@ -296,11 +296,11 @@ internal static class FeaturesPage
         head.Children.Add(name);
         inner.Children.Add(head);
         inner.Children.Add(Spaced(UiKit.Text(preset.Description, 12, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true), 6));
-        var apply = UiKit.Button("Apply", ButtonKind.Bordered, 12.5, onClick: () =>
+        var apply = UiKit.Button(Loc.T("Apply"), ButtonKind.Bordered, 12.5, onClick: () =>
         {
             var choice = Dialogs.Show(Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault(), preset.Name,
-                $"Install the {preset.Name} bundle and uninstall the rest? Nothing is deleted, and everything comes back with one click.",
-                ["Apply bundle", "Cancel"]);
+                Loc.F("Install the {0} bundle and uninstall the rest? Nothing is deleted, and everything comes back with one click.", preset.Name),
+                [Loc.T("Apply bundle"), Loc.T("Cancel")]);
             if (choice == 0)
             {
                 s.Runtime.ApplyPreset(preset);
@@ -322,7 +322,7 @@ internal static class FeaturesPage
         var notch = FeatureCatalog.Get("notch")!;
         var ext = FeatureCatalog.IslandExtensions.ToList();
         var card = new SettingsCard();
-        card.Add(GroupHeader(FeatureGroup.Island, "Dynamic Island", ext.Concat([notch]).Count(e => rt.IsAvailable(e.Id)), ext.Count + 1, collapsible: false, collapsed: false, _ => { }));
+        card.Add(GroupHeader(FeatureGroup.Island, Loc.T("Dynamic Island"), ext.Concat([notch]).Count(e => rt.IsAvailable(e.Id)), ext.Count + 1, collapsible: false, collapsed: false, _ => { }));
         card.AddDivider();
         card.Add(FeatureRow(s, notch, rows, rebuild));
         var inner = new StackPanel();
@@ -336,7 +336,7 @@ internal static class FeaturesPage
             inner.Children.Add(FeatureRow(s, ext[i], rows, rebuild));
         }
 
-        card.Add(Disclosure("What appears", state.IslandModulesCollapsed, collapsed =>
+        card.Add(Disclosure(Loc.T("What appears"), state.IslandModulesCollapsed, collapsed =>
         {
             state.IslandModulesCollapsed = collapsed;
             rebuild();
@@ -366,7 +366,7 @@ internal static class FeaturesPage
         }));
         if (group == FeatureGroup.Monitor && entries.All(e => !rt.IsAvailable(e.Id)))
         {
-            card.AddCaption("With everything off, the Monitor leaves the panel and the taskbar.");
+            card.AddCaption(Loc.T("With everything off, the Monitor leaves the panel and the taskbar."));
         }
 
         if (!collapsed)
@@ -486,12 +486,12 @@ internal static class FeaturesPage
         titleRow.Children.Add(name);
         if (entry.IsExperimental)
         {
-            titleRow.Children.Add(Margined(new BadgePill("Experimental", BadgeStyle.Orange), 8, 0));
+            titleRow.Children.Add(Margined(new BadgePill(Loc.T("Experimental"), BadgeStyle.Orange), 8, 0));
         }
 
         if (entry.IsBeta)
         {
-            titleRow.Children.Add(Margined(new BadgePill("BETA"), 8, 0));
+            titleRow.Children.Add(Margined(new BadgePill(Loc.T("BETA")), 8, 0));
         }
 
         var info = new InfoPopoverButton(() => MetadataPopover(entry), MetadataTooltip(entry));
@@ -528,8 +528,8 @@ internal static class FeaturesPage
         }
 
         var button = installed
-            ? UiKit.Button("Uninstall", ButtonKind.Bordered, 13)
-            : UiKit.Button("Install", ButtonKind.Bordered, 13);
+            ? UiKit.Button(Loc.T("Uninstall"), ButtonKind.Bordered, 13)
+            : UiKit.Button(Loc.T("Install"), ButtonKind.Bordered, 13);
         button.MinWidth = 72;
         button.Padding = new Thickness(12, 4, 12, 4);
         button.HorizontalAlignment = HorizontalAlignment.Right;
@@ -575,9 +575,9 @@ internal static class FeaturesPage
             if (installedExt.Count > 0)
             {
                 var names = string.Join(", ", installedExt.Select(e => e.Title));
-                var choice = Dialogs.Show(Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault(), "Uninstall Dynamic Island",
-                    $"These extensions only work inside the Dynamic Island: {names}. Uninstall them too? Nothing is deleted, and everything comes back with one click.",
-                    ["Uninstall extensions too", "Keep extensions", "Cancel"]);
+                var choice = Dialogs.Show(Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault(), Loc.T("Uninstall Dynamic Island"),
+                    Loc.F("These extensions only work inside the Dynamic Island: {0}. Uninstall them too? Nothing is deleted, and everything comes back with one click.", names),
+                    [Loc.T("Uninstall extensions too"), Loc.T("Keep extensions"), Loc.T("Cancel")]);
                 if (choice == 0)
                 {
                     rt.SetAvailable(installedExt.Select(e => e.Id).Concat(["notch"]), false);
@@ -596,12 +596,12 @@ internal static class FeaturesPage
 
     private static string EnergyLabel(EnergyProfile e) => e switch
     {
-        EnergyProfile.Mouse => "Listens to the mouse",
-        EnergyProfile.Pointer => "Listens to pointer input",
-        EnergyProfile.Keyboard => "Listens to the keyboard",
-        EnergyProfile.Inputs => "Listens to mouse and keyboard",
-        EnergyProfile.Periodic => "Checks on an interval",
-        _ => "Nothing at rest",
+        EnergyProfile.Mouse => Loc.T("Listens to the mouse"),
+        EnergyProfile.Pointer => Loc.T("Listens to pointer input"),
+        EnergyProfile.Keyboard => Loc.T("Listens to the keyboard"),
+        EnergyProfile.Inputs => Loc.T("Listens to mouse and keyboard"),
+        EnergyProfile.Periodic => Loc.T("Checks on an interval"),
+        _ => Loc.T("Nothing at rest"),
     };
 
     private static string EnergyGlyph(EnergyProfile e) => e switch

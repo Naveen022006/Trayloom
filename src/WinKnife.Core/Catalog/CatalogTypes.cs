@@ -62,8 +62,8 @@ public enum WindowsSupport
 /// <param name="Id">Stable kebab-case id used everywhere in code (contributions, <see cref="IFeature.Id"/>).</param>
 /// <param name="RawId">Vorssaint's raw id (camelCase). <c>featureAvailable.&lt;RawId&gt;</c> stores the install state.</param>
 /// <param name="Group">Hub group.</param>
-/// <param name="Title">Hub title.</param>
-/// <param name="Description">Hub description.</param>
+/// <param name="TitleEnglish">Hub title (English source text).</param>
+/// <param name="DescriptionEnglish">Hub description (English source text).</param>
 /// <param name="Glyph">Segoe Fluent Icons glyph.</param>
 /// <param name="Energy">Energy profile shown in the hub.</param>
 /// <param name="Permissions">Permissions the feature can use.</param>
@@ -80,8 +80,8 @@ public sealed record FeatureCatalogEntry(
     string Id,
     string RawId,
     FeatureGroup Group,
-    string Title,
-    string Description,
+    string TitleEnglish,
+    string DescriptionEnglish,
     string Glyph,
     EnergyProfile Energy,
     IReadOnlyList<AppPermission> Permissions,
@@ -95,6 +95,12 @@ public sealed record FeatureCatalogEntry(
     string? UnavailableReason = null,
     string? LegacyId = null)
 {
+    /// <summary>Hub title in the current language.</summary>
+    public string Title => Loc.T(TitleEnglish);
+
+    /// <summary>Hub description in the current language.</summary>
+    public string Description => Loc.T(DescriptionEnglish);
+
     /// <summary>True when the Dynamic Island must be installed for this feature to show anything.</summary>
     public bool IsIslandExtension => Group == FeatureGroup.Island && Id != "notch";
 
@@ -165,46 +171,48 @@ public static class SettingsPages
     /// <summary>Anchor of the General page that hosts the tray / panel configuration ("Tray &amp; panel").</summary>
     public const string PanelConfigurationAnchor = "panelConfiguration";
 
-    private static readonly Dictionary<string, string> Titles = new(StringComparer.Ordinal)
+    private static Dictionary<string, string> Titles => _loc_Titles.Value;
+
+    private static readonly LocValue<Dictionary<string, string>> _loc_Titles = new(() => new(StringComparer.Ordinal)
     {
-        [General] = "General",
-        [Features] = "Features",
-        [Island] = "Dynamic Island",
-        [Monitor] = "Monitor",
-        [Energy] = "Energy",
-        [Switcher] = "Switcher",
-        [Dock] = "Taskbar",
-        [WindowLayout] = "Window layout",
-        [QuitOnClose] = "Quit on close",
-        [QuitProtection] = "Quit & close protection",
-        [Mouse] = "Mouse & Touchpad",
-        [Debounce] = "Debounce",
-        [SuperKey] = "Super key",
-        [TextSnippets] = "Text snippets",
-        [Clipboard] = "Clipboard",
-        [CutPaste] = "Cut & paste",
-        [Shelf] = "Shelf",
-        [Media] = "Media",
-        [CleanUrl] = "Clean URL",
-        [AppUpdates] = "App updates",
+        [General] = Loc.T("General"),
+        [Features] = Loc.T("Features"),
+        [Island] = Loc.T("Dynamic Island"),
+        [Monitor] = Loc.T("Monitor"),
+        [Energy] = Loc.T("Energy"),
+        [Switcher] = Loc.T("Switcher"),
+        [Dock] = Loc.T("Taskbar"),
+        [WindowLayout] = Loc.T("Window layout"),
+        [QuitOnClose] = Loc.T("Quit on close"),
+        [QuitProtection] = Loc.T("Quit & close protection"),
+        [Mouse] = Loc.T("Mouse & Touchpad"),
+        [Debounce] = Loc.T("Debounce"),
+        [SuperKey] = Loc.T("Super key"),
+        [TextSnippets] = Loc.T("Text snippets"),
+        [Clipboard] = Loc.T("Clipboard"),
+        [CutPaste] = Loc.T("Cut & paste"),
+        [Shelf] = Loc.T("Shelf"),
+        [Media] = Loc.T("Media"),
+        [CleanUrl] = Loc.T("Clean URL"),
+        [AppUpdates] = Loc.T("App updates"),
         [Packages] = "Packages",
-        [Cleaner] = "Cleaner",
-        [Uninstaller] = "Uninstaller",
-        [KillProcess] = "Kill Process",
-        [PortManager] = "Port Manager",
-        [QuickTools] = "Quick panel",
-        [ScreenCapture] = "Screen capture",
-        [CommandBar] = "Command Bar",
-        [RadialMenu] = "Radial menu",
-        [Shortcuts] = "Keyboard shortcuts",
-        [Advanced] = "Advanced",
-        [About] = "About",
-        [WhatsNew] = "What’s New",
-        [Support] = "Support",
-    };
+        [Cleaner] = Loc.T("Cleaner"),
+        [Uninstaller] = Loc.T("Uninstaller"),
+        [KillProcess] = Loc.T("Kill Process"),
+        [PortManager] = Loc.T("Port Manager"),
+        [QuickTools] = Loc.T("Quick panel"),
+        [ScreenCapture] = Loc.T("Screen capture"),
+        [CommandBar] = Loc.T("Command Bar"),
+        [RadialMenu] = Loc.T("Radial menu"),
+        [Shortcuts] = Loc.T("Keyboard shortcuts"),
+        [Advanced] = Loc.T("Advanced"),
+        [About] = Loc.T("About"),
+        [WhatsNew] = Loc.T("What’s New"),
+        [Support] = Loc.T("Support"),
+    });
 
     /// <summary>The detail-page title of a page id (the page id itself when unknown).</summary>
-    public static string TitleOf(string pageId) => Titles.TryGetValue(pageId, out var title) ? title : pageId;
+    public static string TitleOf(string pageId) => Titles.TryGetValue(pageId, out var title) ? Loc.T(title) : pageId;
 
     /// <summary>All known page ids.</summary>
     public static IReadOnlyCollection<string> All => Titles.Keys;

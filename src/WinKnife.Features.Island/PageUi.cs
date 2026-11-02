@@ -2,6 +2,7 @@
 // WinKnife — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
 
 using System.Windows;
+using WinKnife.Core;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -99,6 +100,7 @@ internal static class PageUi
             t.LineStackingStrategy = LineStackingStrategy.BlockLineHeight;
             t.LineHeight = 13;
             t.MaxHeight = 28;
+            FitLongestWord(t, title, width - 8);
             label.Children.Add(t);
         }
 
@@ -106,6 +108,26 @@ internal static class PageUi
         tile.Child = stack;
         D.Tip(tile, title);
         return tile;
+    }
+
+    /// <summary>
+    /// Translated labels can contain a word wider than the tile (German "Lautstärkemixer"): WPF would break it in the middle,
+    /// so the font shrinks (down to 8.5) until the longest word fits.
+    /// </summary>
+    private static void FitLongestWord(TextBlock text, string content, double available)
+    {
+        var typeface = new Typeface(text.FontFamily, text.FontStyle, text.FontWeight, text.FontStretch);
+        var size = text.FontSize;
+        foreach (var word in content.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var width = new FormattedText(word, Loc.Culture, FlowDirection.LeftToRight, typeface, size, Brushes.Black, 1.0).WidthIncludingTrailingWhitespace;
+            if (width > available)
+            {
+                size = Math.Max(8.5, Math.Min(size, size * available / width));
+            }
+        }
+
+        text.FontSize = size;
     }
 
     /// <summary>A horizontally scrolling rail (or a wrapped grid when everything fits) of equally sized items.</summary>

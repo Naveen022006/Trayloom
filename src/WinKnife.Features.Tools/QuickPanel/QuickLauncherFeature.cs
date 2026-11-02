@@ -24,7 +24,7 @@ public sealed class QuickLauncherFeature : ToolsFeatureBase
     public override string Id => "quick-launcher";
 
     /// <inheritdoc />
-    public override IReadOnlyList<FeatureAction> Actions => [new FeatureAction("show", "Open quick panel", () => Safe(Show), "")];
+    public override IReadOnlyList<FeatureAction> Actions => [new FeatureAction("show", Loc.T("Open quick panel"), () => Safe(Show), "")];
 
     /// <inheritdoc />
     protected override void RegisterDefaults(IAppSettings app) => ToolsDefaults.Register(app);
@@ -82,7 +82,7 @@ public sealed class QuickLauncherSettingsSection : ISettingsSection
     public string? Anchor => "quickLauncher";
 
     /// <inheritdoc />
-    public string? Title => "Quick panel";
+    public string? Title => Loc.T("Quick panel");
 
     /// <inheritdoc />
     public IReadOnlyList<string> Keywords => ["Open quick panel", "Global shortcut", "floating panel", "tune"];
@@ -94,10 +94,10 @@ public sealed class QuickLauncherSettingsSection : ISettingsSection
     public FrameworkElement CreateView(ISettingsContext c)
     {
         ToolsDefaults.Register(c.App);
-        var card = new SettingsCard("Quick panel");
-        card.Add(UiKit.Button("Open quick panel", ButtonKind.Bordered, 13, "", () => ActionBridge.Invoke(c, "quick-launcher", "show")));
-        card.AddCaption("A floating panel with your favorite tools, summoned by a shortcut from anywhere.");
-        var hint = UiKit.Text("Use the tune button to choose, hide and drag the tools around.", 11, FontWeights.Normal, ThemeKeys.TextTertiary, wrap: true);
+        var card = new SettingsCard(Loc.T("Quick panel"));
+        card.Add(UiKit.Button(Loc.T("Open quick panel"), ButtonKind.Bordered, 13, "", () => ActionBridge.Invoke(c, "quick-launcher", "show")));
+        card.AddCaption(Loc.T("A floating panel with your favorite tools, summoned by a shortcut from anywhere."));
+        var hint = UiKit.Text(Loc.T("Use the tune button to choose, hide and drag the tools around."), 11, FontWeights.Normal, ThemeKeys.TextTertiary, wrap: true);
         card.Add(hint);
         ShortcutSettingsRows.AddGlobalShortcut(card, c, "quickLauncher", "quickLauncherShortcutEnabled");
         return card;
@@ -114,13 +114,13 @@ public sealed class QuickLauncherUtility : IPanelUtility
     public string Id => "quickLauncher";
 
     /// <inheritdoc />
-    public string Title => "Quick panel";
+    public string Title => Loc.T("Quick panel");
 
     /// <inheritdoc />
     public string Glyph => "";
 
     /// <inheritdoc />
-    public string? Caption => "A floating panel with your favorite tools, summoned by a shortcut from anywhere.";
+    public string? Caption => Loc.T("A floating panel with your favorite tools, summoned by a shortcut from anywhere.");
 
     /// <inheritdoc />
     public string? ShortcutText => QuickPanelServices.Shortcut();

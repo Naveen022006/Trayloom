@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Capture;
 
@@ -18,8 +19,8 @@ internal sealed partial class ScreenshotEditorWindow
         _bar.Children.Clear();
         if (_tool == ToolId.Crop && _cropDraft is not null)
         {
-            _bar.Children.Add(new EdButton(null, "Cancel", "Esc", () => SelectTool(ToolId.Select), height: 24));
-            var crop = new EdButton(null, "Crop", "Enter", ApplyCrop, prominent: true, height: 24) { Margin = new Thickness(8, 0, 0, 0) };
+            _bar.Children.Add(new EdButton(null, Loc.T("Cancel"), "Esc", () => SelectTool(ToolId.Select), height: 24));
+            var crop = new EdButton(null, Loc.T("Crop"), "Enter", ApplyCrop, prominent: true, height: 24) { Margin = new Thickness(8, 0, 0, 0) };
             _bar.Children.Add(crop);
             return;
         }
@@ -69,7 +70,7 @@ internal sealed partial class ScreenshotEditorWindow
 
         if (kind == ToolId.Spotlight)
         {
-            var row = new StackPanel { Orientation = Orientation.Horizontal, ToolTip = "Dim outside" };
+            var row = new StackPanel { Orientation = Orientation.Horizontal, ToolTip = Loc.T("Dim outside") };
             row.Children.Add(Ed.Icon("", 11, Ed.FgDim));
             var slider = Ed.NewSlider(0, 1, _doc.SpotlightDim, 84, v =>
             {
@@ -102,8 +103,8 @@ internal sealed partial class ScreenshotEditorWindow
         if (_doc.Marks.Count >= 2)
         {
             var idx = _selected is null ? -1 : _doc.Marks.IndexOf(_selected);
-            var back = new EdButton("", null, "Send backward", () => MoveLayer(-1), iconSize: 12, width: 24) { IsEnabled = idx > 0 };
-            var fwd = new EdButton("", null, "Bring forward", () => MoveLayer(1), iconSize: 12, width: 24) { IsEnabled = idx >= 0 && idx < _doc.Marks.Count - 1 };
+            var back = new EdButton("", null, Loc.T("Send backward"), () => MoveLayer(-1), iconSize: 12, width: 24) { IsEnabled = idx > 0 };
+            var fwd = new EdButton("", null, Loc.T("Bring forward"), () => MoveLayer(1), iconSize: 12, width: 24) { IsEnabled = idx >= 0 && idx < _doc.Marks.Count - 1 };
             Group(back, fwd);
         }
 
@@ -162,11 +163,11 @@ internal sealed partial class ScreenshotEditorWindow
 
     private void BuildExpandBar()
     {
-        _bar.Children.Add(Ed.Label("Color", 11.5, FontWeights.Medium, Ed.FgDim));
+        _bar.Children.Add(Ed.Label(Loc.T("Color"), 11.5, FontWeights.Medium, Ed.FgDim));
         var combo = new ComboBox { Width = 130, Margin = new Thickness(8, 0, 8, 0), Height = 24 };
-        combo.Items.Add("White");
-        combo.Items.Add("Transparent");
-        combo.Items.Add("Custom color");
+        combo.Items.Add(Loc.T("White"));
+        combo.Items.Add(Loc.T("Transparent"));
+        combo.Items.Add(Loc.T("Custom color"));
         combo.SelectedIndex = _expandFill switch { "transparent" => 1, "custom" => 2, _ => 0 };
         combo.SelectionChanged += (_, _) =>
         {
@@ -183,7 +184,7 @@ internal sealed partial class ScreenshotEditorWindow
             _overlay.InvalidateVisual();
         };
         _bar.Children.Add(combo);
-        _bar.Children.Add(Ed.Label($"{(int)Math.Round(_expandRect.Width)} × {(int)Math.Round(_expandRect.Height)} px", 11, FontWeights.Medium, Ed.FgDim));
+        _bar.Children.Add(Ed.Label(Loc.F("{0} × {1} px", (int)Math.Round(_expandRect.Width), (int)Math.Round(_expandRect.Height)), 11, FontWeights.Medium, Ed.FgDim));
     }
 
     private void MoveLayer(int dir)
@@ -291,7 +292,7 @@ internal sealed partial class ScreenshotEditorWindow
 
         var row = new StackPanel { Orientation = Orientation.Horizontal, ToolTip = Strings.Screenshot.FontSizeLabel };
         row.Children.Add(new EdButton("", null, null, () => Apply(Step(presets, current, -1)), iconSize: 11, width: 22));
-        var label = new EdButton(null, $"{current} pt", null, null, height: 24);
+        var label = new EdButton(null, Loc.F("{0} pt", current), null, null, height: 24);
         label.MouseLeftButtonUp += (_, e) =>
         {
             e.Handled = true;
@@ -299,7 +300,7 @@ internal sealed partial class ScreenshotEditorWindow
             foreach (var p in presets)
             {
                 var size = p;
-                var item = new MenuItem { Header = $"{p} pt", IsChecked = p == current };
+                var item = new MenuItem { Header = Loc.F("{0} pt", p), IsChecked = p == current };
                 item.Click += (_, _) => Apply(size);
                 menu.Items.Add(item);
             }
@@ -325,9 +326,9 @@ internal sealed partial class ScreenshotEditorWindow
     private UIElement ArrowStyleMenu()
     {
         var current = _selected?.ArrowStyle ?? _arrowStyle;
-        var styles = new[] { ("filled", "Solid"), ("outline", "Outline"), ("open", "Open"), ("doubleEnded", "Double-ended"), ("scribbly", "Scribbly") };
+        var styles = new[] { ("filled", Loc.T("Solid")), ("outline", Loc.T("Outline")), ("open", Loc.T("Open")), ("doubleEnded", Loc.T("Double-ended")), ("scribbly", Loc.T("Scribbly")) };
         var label = styles.First(s => s.Item1 == current).Item2;
-        var btn = new EdButton("", label, "Arrow style", null, iconSize: 12, height: 24);
+        var btn = new EdButton("", label, Loc.T("Arrow style"), null, iconSize: 12, height: 24);
         btn.MouseLeftButtonUp += (_, e) =>
         {
             e.Handled = true;
@@ -360,7 +361,7 @@ internal sealed partial class ScreenshotEditorWindow
     private UIElement StickerMenu()
     {
         var current = _selected?.Sticker ?? _sticker;
-        var btn = new EdButton(null, "Sticker", null, null, height: 24);
+        var btn = new EdButton(null, Loc.T("Sticker"), null, null, height: 24);
         var glyph = Ed.Label(Palette.StickerGlyph(current), 16);
         glyph.FontFamily = new FontFamily("Segoe UI Emoji");
         glyph.Margin = new Thickness(0, 0, 6, 0);
@@ -401,8 +402,8 @@ internal sealed partial class ScreenshotEditorWindow
     private UIElement BlurStyleMenu()
     {
         var current = _selected?.BlurStyle ?? _blurStyle;
-        var styles = new[] { ("pixelate", "Pixelate"), ("blur", "Blur"), ("erase", "Erase") };
-        var btn = new EdButton("", styles.First(s => s.Item1 == current).Item2, "Blur style", null, iconSize: 12, height: 24);
+        var styles = new[] { ("pixelate", Loc.T("Pixelate")), ("blur", Loc.T("Blur")), ("erase", Loc.T("Erase")) };
+        var btn = new EdButton("", styles.First(s => s.Item1 == current).Item2, Loc.T("Blur style"), null, iconSize: 12, height: 24);
         btn.MouseLeftButtonUp += (_, e) =>
         {
             e.Handled = true;
@@ -435,7 +436,7 @@ internal sealed partial class ScreenshotEditorWindow
     private UIElement BlurTextOnlyToggle()
     {
         var on = _selected?.TextOnly ?? _blurTextOnly;
-        var btn = new EdButton("", null, "Text only", null, iconSize: 12, width: 26) { Active = on };
+        var btn = new EdButton("", null, Loc.T("Text only"), null, iconSize: 12, width: 26) { Active = on };
         btn.MouseLeftButtonUp += (_, e) =>
         {
             e.Handled = true;
@@ -456,7 +457,7 @@ internal sealed partial class ScreenshotEditorWindow
     private UIElement BlurStrength()
     {
         var current = _selected?.BlurLevel ?? _blurLevel;
-        var row = new StackPanel { Orientation = Orientation.Horizontal, ToolTip = "Blur strength" };
+        var row = new StackPanel { Orientation = Orientation.Horizontal, ToolTip = Loc.T("Blur strength") };
         row.Children.Add(Ed.Icon("", 10, Ed.FgDim));
         var slider = Ed.NewSlider(1, 5, current, 84, v =>
         {

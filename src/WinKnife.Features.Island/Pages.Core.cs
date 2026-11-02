@@ -209,7 +209,7 @@ internal sealed class ExplorePage : IslandPage
             }
 
             tile.Child = grid;
-            D.Tip(tile, m.Key == '\0' ? m.Title : $"{m.Title}  Ctrl+Alt+{char.ToUpperInvariant(m.Key)}");
+            D.Tip(tile, m.Key == '\0' ? m.Title : Loc.F("{0}  Ctrl+Alt+{1}", m.Title, char.ToUpperInvariant(m.Key)));
             _wrap.Children.Add(tile);
             _tiles.Add(tile);
         }

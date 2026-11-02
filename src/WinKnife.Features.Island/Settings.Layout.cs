@@ -36,7 +36,7 @@ internal sealed class LayoutEditor : Grid
         var bg = new Border { CornerRadius = new CornerRadius(22), Child = _canvas, ClipToBounds = false };
         bg.SetResourceReference(Border.BackgroundProperty, ThemeKeys.TileFill);
         stack.Children.Add(bg);
-        var hint = UiKit.Text("Click + to add a button. Drag buttons around the island. Click a button to edit it.", 12.5, FontWeights.Normal, ThemeKeys.TextSecondary, true);
+        var hint = UiKit.Text(Loc.T("Click + to add a button. Drag buttons around the island. Click a button to edit it."), 12.5, FontWeights.Normal, ThemeKeys.TextSecondary, true);
         hint.Margin = new Thickness(2, 10, 0, 0);
         stack.Children.Add(hint);
         Children.Add(stack);
@@ -90,7 +90,7 @@ internal sealed class LayoutEditor : Grid
             RenderTransform = new ScaleTransform(_scale, _scale),
             RenderTransformOrigin = new Point(0, 0),
             Cursor = Cursors.Hand,
-            ToolTip = "Content",
+            ToolTip = Loc.T("Content"),
         };
         var content = new Grid();
         if (page is not null)
@@ -269,7 +269,7 @@ internal sealed class LayoutEditor : Grid
             Height = 30,
             CornerRadius = new CornerRadius(15),
             Cursor = Cursors.Hand,
-            ToolTip = "Add button",
+            ToolTip = Loc.T("Add button"),
             BorderThickness = new Thickness(1),
             Child = UiKit.Icon("", 15, ThemeKeys.Accent, FontWeights.SemiBold),
         };
@@ -289,7 +289,7 @@ internal sealed class LayoutEditor : Grid
 
     private void AddGrip()
     {
-        var el = new Border { Width = 24, Height = 24, CornerRadius = new CornerRadius(12), Cursor = Cursors.SizeNWSE, ToolTip = "Size", BorderThickness = new Thickness(1), Child = UiKit.Icon("", 10, ThemeKeys.Accent, FontWeights.SemiBold) };
+        var el = new Border { Width = 24, Height = 24, CornerRadius = new CornerRadius(12), Cursor = Cursors.SizeNWSE, ToolTip = Loc.T("Size"), BorderThickness = new Thickness(1), Child = UiKit.Icon("", 10, ThemeKeys.Accent, FontWeights.SemiBold) };
         el.SetResourceReference(Border.BackgroundProperty, ThemeKeys.SettingsWindow);
         el.SetResourceReference(Border.BorderBrushProperty, ThemeKeys.Accent);
         if (el.Child is TextBlock t)
@@ -345,7 +345,7 @@ internal sealed class LayoutEditor : Grid
         switch (id)
         {
             case "explore":
-                return (G.Explore, "Explore", true);
+                return (G.Explore, Loc.T("Explore"), true);
             case "settings":
                 return (G.Gear, Strings.SettingsEllipsis, true);
             case "pin":
@@ -381,7 +381,7 @@ internal sealed class LayoutEditor : Grid
 
     private IEnumerable<(string Id, string Glyph, string Title, bool Available, bool Section)> Actions()
     {
-        yield return ("explore", G.Explore, "Explore", true, true);
+        yield return ("explore", G.Explore, Loc.T("Explore"), true, true);
         yield return ("settings", G.Gear, Strings.SettingsEllipsis, true, true);
         foreach (var m in IslandCatalog.Modules)
         {
@@ -406,7 +406,7 @@ internal sealed class LayoutEditor : Grid
         {
             var q = WatchService.Normalise(box.Text);
             var stack = new StackPanel();
-            foreach (var (title, isSection) in new[] { ("Open a section", true), ("Quick actions", false) })
+            foreach (var (title, isSection) in new[] { (Loc.T("Open a section"), true), (Loc.T("Quick actions"), false) })
             {
                 var items = Actions().Where(a => a.Section == isSection && a.Available && (q.Length == 0 || WatchService.Normalise(a.Title + " " + a.Id).Contains(q))).ToList();
                 if (items.Count == 0)
@@ -439,7 +439,7 @@ internal sealed class LayoutEditor : Grid
 
             if (stack.Children.Count == 0)
             {
-                var none = UiKit.Text("No results", 12, FontWeights.Normal, ThemeKeys.TextSecondary);
+                var none = UiKit.Text(Loc.T("No results"), 12, FontWeights.Normal, ThemeKeys.TextSecondary);
                 none.HorizontalAlignment = HorizontalAlignment.Center;
                 none.Margin = new Thickness(0, 50, 0, 0);
                 stack.Children.Add(none);
@@ -465,7 +465,7 @@ internal sealed class LayoutEditor : Grid
     private void ShowAdd(FrameworkElement target, QuickSide side)
     {
         var stack = new StackPanel();
-        stack.Children.Add(UiKit.Text("Add button", 13, FontWeights.SemiBold, ThemeKeys.TextPrimary));
+        stack.Children.Add(UiKit.Text(Loc.T("Add button"), 13, FontWeights.SemiBold, ThemeKeys.TextPrimary));
         stack.Children[0].SetValue(MarginProperty, new Thickness(0, 0, 0, 10));
         stack.Children.Add(Chooser(null, id =>
         {
@@ -484,7 +484,7 @@ internal sealed class LayoutEditor : Grid
     private void ShowEdit(FrameworkElement target, QuickButton b)
     {
         var stack = new StackPanel();
-        var heading = UiKit.Text("Edit button", 13, FontWeights.SemiBold, ThemeKeys.TextPrimary);
+        var heading = UiKit.Text(Loc.T("Edit button"), 13, FontWeights.SemiBold, ThemeKeys.TextPrimary);
         heading.Margin = new Thickness(0, 0, 0, 10);
         stack.Children.Add(heading);
         var name = new TextBox { Text = b.Label, Height = 26, MaxLength = 40, VerticalContentAlignment = VerticalAlignment.Center, Padding = new Thickness(6, 0, 6, 0), Margin = new Thickness(0, 0, 0, 10) };
@@ -493,9 +493,9 @@ internal sealed class LayoutEditor : Grid
             b.Label = name.Text;
             Save();
         };
-        stack.Children.Add(UiKit.Text("Name", 11, FontWeights.Normal, ThemeKeys.TextSecondary));
+        stack.Children.Add(UiKit.Text(Loc.T("Name"), 11, FontWeights.Normal, ThemeKeys.TextSecondary));
         stack.Children.Add(name);
-        var pos = new SegmentedControl(["Left", "Right", "Bottom"], (int)b.SideValue, true, 12);
+        var pos = new SegmentedControl([Loc.T("Left"), Loc.T("Right"), Loc.T("Bottom")], (int)b.SideValue, true, 12);
         pos.SelectionChanged += i =>
         {
             var side = (QuickSide)i;
@@ -508,8 +508,8 @@ internal sealed class LayoutEditor : Grid
         };
         stack.Children.Add(pos);
         var moves = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 10) };
-        moves.Children.Add(UiKit.Button("Move up", ButtonKind.Bordered, 11.5, null, () => { if (_layout.Reorder(b.Id, -1)) { Save(); Rebuild(); } }));
-        var down = UiKit.Button("Move down", ButtonKind.Bordered, 11.5, null, () => { if (_layout.Reorder(b.Id, 1)) { Save(); Rebuild(); } });
+        moves.Children.Add(UiKit.Button(Loc.T("Move up"), ButtonKind.Bordered, 11.5, null, () => { if (_layout.Reorder(b.Id, -1)) { Save(); Rebuild(); } }));
+        var down = UiKit.Button(Loc.T("Move down"), ButtonKind.Bordered, 11.5, null, () => { if (_layout.Reorder(b.Id, 1)) { Save(); Rebuild(); } });
         down.Margin = new Thickness(8, 0, 0, 0);
         moves.Children.Add(down);
         stack.Children.Add(moves);
@@ -520,7 +520,7 @@ internal sealed class LayoutEditor : Grid
             _popup!.IsOpen = false;
             Rebuild();
         }));
-        var remove = UiKit.Button("Remove button", ButtonKind.Destructive, 11.5, null, () =>
+        var remove = UiKit.Button(Loc.T("Remove button"), ButtonKind.Destructive, 11.5, null, () =>
         {
             _layout.Buttons.Remove(b);
             Save();

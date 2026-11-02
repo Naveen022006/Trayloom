@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Island;
 
@@ -258,14 +259,14 @@ internal sealed class MixerPage : IslandPage
 
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        _master = new FaderColumn(track, "Output", G.Speaker, G.SpeakerOff, v => Core.Audio.SetVolume(v), m => Core.Audio.SetMuted(m));
+        _master = new FaderColumn(track, Loc.T("Output"), G.Speaker, G.SpeakerOff, v => Core.Audio.SetVolume(v), m => Core.Audio.SetMuted(m));
         _master.Wire(() => Core.Audio.Muted);
         _master.VerticalAlignment = VerticalAlignment.Top;
         row.Children.Add(_master);
         var col = 1;
         if (hasMic)
         {
-            _mic = new FaderColumn(track, "Microphone", G.Mic, G.MicOff, v => Core.Audio.SetMicVolume(v), m => Core.Audio.SetMicMuted(m));
+            _mic = new FaderColumn(track, Loc.T("Microphone"), G.Mic, G.MicOff, v => Core.Audio.SetMicVolume(v), m => Core.Audio.SetMicMuted(m));
             _mic.Wire(() => Core.Audio.MicMuted);
             _mic.VerticalAlignment = VerticalAlignment.Top;
             Grid.SetColumn(_mic, 1);
@@ -342,7 +343,7 @@ internal sealed class MixerPage : IslandPage
             var mi = D.I(G.More, 12, D.White(0.7));
             mi.FontWeight = FontWeights.SemiBold;
             more.Child = mi;
-            D.Tip(more, "Actions");
+            D.Tip(more, Loc.T("Actions"));
             header.Children.Add(more);
             column.Children.Add(header);
             var captured = app;
@@ -367,7 +368,7 @@ internal sealed class MixerPage : IslandPage
         var pinned = arr.Pinned.Contains(key);
         var keys = Visible().Select(a => a.Key).ToList();
         var i = keys.IndexOf(key);
-        yield return new IslandMenu.Item(pinned ? "Unpin" : "Pin to Front", () =>
+        yield return new IslandMenu.Item(pinned ? Loc.T("Unpin") : Loc.T("Pin to Front"), () =>
         {
             var a = Arrangement;
             if (!a.Pinned.Remove(key))
@@ -378,10 +379,10 @@ internal sealed class MixerPage : IslandPage
             SaveArrangement(a);
             RebuildApps(true);
         });
-        yield return new IslandMenu.Item("Move Left", () => Move(key, -1), Enabled: i > 0);
-        yield return new IslandMenu.Item("Move Right", () => Move(key, 1), Enabled: i >= 0 && i < keys.Count - 1);
+        yield return new IslandMenu.Item(Loc.T("Move Left"), () => Move(key, -1), Enabled: i > 0);
+        yield return new IslandMenu.Item(Loc.T("Move Right"), () => Move(key, 1), Enabled: i >= 0 && i < keys.Count - 1);
         yield return IslandMenu.Sep();
-        yield return new IslandMenu.Item("Hide from the list", () =>
+        yield return new IslandMenu.Item(Loc.T("Hide from the list"), () =>
         {
             var a = Arrangement;
             a.Hidden.Add(key);
@@ -448,7 +449,7 @@ internal sealed class MixerPage : IslandPage
         var def = outputs.FirstOrDefault(o => o.IsDefault);
         var menu = PageUi.BandMenu(def?.Name ?? Strings.OutputUnavailable, null, () => outputs.Select(o => { var id = o.Id; return new IslandMenu.Item(o.Name, () => { Core.Audio.SetDefaultOutput(id); Build(); }, o.IsDefault); }), () => HasWindow ? Window.HoldOpen() : null, def?.Name ?? Core.Audio.LastError, 160);
         _leading.Children.Add(menu);
-        _trailing.Children.Add(D.IconButton(_options ? G.Close : G.Controls, _options ? "Close" : "Options", () => { _options = !_options; Build(); }, _options));
+        _trailing.Children.Add(D.IconButton(_options ? G.Close : G.Controls, _options ? Loc.T("Close") : Loc.T("Options"), () => { _options = !_options; Build(); }, _options));
     }
 
     private FrameworkElement Options()
@@ -473,20 +474,20 @@ internal sealed class MixerPage : IslandPage
 
         var outputs = Core.Audio.Outputs();
         var def = outputs.FirstOrDefault(o => o.IsDefault);
-        stack.Children.Add(Row(G.Speaker, "Output", outputs.Count == 0 ? D.T("No outputs found", 9.5, null, D.Secondary) : PageUi.BandMenu(def?.Name ?? "Default", null, () => outputs.Select(o => { var id = o.Id; return new IslandMenu.Item(o.Name, () => Core.Audio.SetDefaultOutput(id), o.IsDefault); }), () => HasWindow ? Window.HoldOpen() : null, null, 200)));
+        stack.Children.Add(Row(G.Speaker, Loc.T("Output"), outputs.Count == 0 ? D.T(Loc.T("No outputs found"), 9.5, null, D.Secondary) : PageUi.BandMenu(def?.Name ?? Loc.T("Default"), null, () => outputs.Select(o => { var id = o.Id; return new IslandMenu.Item(o.Name, () => Core.Audio.SetDefaultOutput(id), o.IsDefault); }), () => HasWindow ? Window.HoldOpen() : null, null, 200)));
         var inputs = Core.Audio.Inputs();
         var defIn = inputs.FirstOrDefault(o => o.IsDefault);
-        stack.Children.Add(Row(G.Mic, "Microphone", inputs.Count == 0 ? D.T("No microphones found", 9.5, null, D.Secondary) : D.T(defIn?.Name ?? "Default", 11, null, D.Text, false, TextTrimming.CharacterEllipsis)));
+        stack.Children.Add(Row(G.Mic, Loc.T("Microphone"), inputs.Count == 0 ? D.T(Loc.T("No microphones found"), 9.5, null, D.Secondary) : D.T(defIn?.Name ?? Loc.T("Default"), 11, null, D.Text, false, TextTrimming.CharacterEllipsis)));
         stack.Children.Add(new Border { Height = 1, Background = D.White(0.12), Margin = new Thickness(0, 2, 0, 10) });
-        stack.Children.Add(Row("", "Hide inactive apps", new IslandToggle(Core.App.Get<bool>(K.MixerHideInactive), on => Core.App.Set(K.MixerHideInactive, on))));
-        stack.Children.Add(Row("", "Lower volume when headphones disconnect", new IslandToggle(Core.App.Get<bool>(K.MixerLowerOnDisconnect), on => { Core.App.Set(K.MixerLowerOnDisconnect, on); })));
-        stack.Children.Add(D.T("Adjusts output when wired or Bluetooth headphones disconnect.", 9.5, null, D.Tertiary, true));
-        stack.Children.Add(Row("", "Use finer volume steps", new IslandToggle(Core.App.Get<bool>(K.FineVolume), on => Core.App.Set(K.FineVolume, on))));
-        stack.Children.Add(D.T("Turns volume wheels and keys into smaller system volume steps.", 9.5, null, D.Tertiary, true));
+        stack.Children.Add(Row("", Loc.T("Hide inactive apps"), new IslandToggle(Core.App.Get<bool>(K.MixerHideInactive), on => Core.App.Set(K.MixerHideInactive, on))));
+        stack.Children.Add(Row("", Loc.T("Lower volume when headphones disconnect"), new IslandToggle(Core.App.Get<bool>(K.MixerLowerOnDisconnect), on => { Core.App.Set(K.MixerLowerOnDisconnect, on); })));
+        stack.Children.Add(D.T(Loc.T("Adjusts output when wired or Bluetooth headphones disconnect."), 9.5, null, D.Tertiary, true));
+        stack.Children.Add(Row("", Loc.T("Use finer volume steps"), new IslandToggle(Core.App.Get<bool>(K.FineVolume), on => Core.App.Set(K.FineVolume, on))));
+        stack.Children.Add(D.T(Loc.T("Turns volume wheels and keys into smaller system volume steps."), 9.5, null, D.Tertiary, true));
         var hidden = Arrangement.Hidden;
         if (hidden.Count > 0)
         {
-            var reset = D.PillButton("Show hidden apps", () => { var a = Arrangement; a.Hidden.Clear(); SaveArrangement(a); Build(); });
+            var reset = D.PillButton(Loc.T("Show hidden apps"), () => { var a = Arrangement; a.Hidden.Clear(); SaveArrangement(a); Build(); });
             reset.Margin = new Thickness(0, 10, 0, 0);
             reset.HorizontalAlignment = HorizontalAlignment.Left;
             stack.Children.Add(reset);

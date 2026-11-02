@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // WinKnife — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
 
+using WinKnife.Core;
+
 namespace WinKnife.Features.WindowTools;
 
 /// <summary>Family a window layout action belongs to (section of the settings page and the hosted panel).</summary>
@@ -60,56 +62,57 @@ internal static class LayoutActions
     private const double T = 1.0 / 3;
     private const double S = 2.0 / 3;
 
-    public static readonly IReadOnlyList<LayoutAction> All =
-    [
-        new("leftHalf", "left", "Left", LayoutGroup.Halves, PlacementKind.Fraction, 0, 0, 0.5, 1),
-        new("rightHalf", "right", "Right", LayoutGroup.Halves, PlacementKind.Fraction, 0.5, 0, 1, 1),
-        new("topHalf", "top", "Top", LayoutGroup.Halves, PlacementKind.Fraction, 0, 0, 1, 0.5),
-        new("bottomHalf", "bottom", "Bottom", LayoutGroup.Halves, PlacementKind.Fraction, 0, 0.5, 1, 1),
-        new("centerHalf", "centerHalf", "Center half", LayoutGroup.Halves, PlacementKind.Fraction, 0.25, 0, 0.75, 1),
+    public static IReadOnlyList<LayoutAction> All => _loc_All.Value;
 
-        new("leftThird", "leftThird", "Left 1/3", LayoutGroup.Thirds, PlacementKind.Fraction, 0, 0, T, 1),
-        new("centerThird", "centerThird", "Center 1/3", LayoutGroup.Thirds, PlacementKind.Fraction, T, 0, S, 1),
-        new("rightThird", "rightThird", "Right 1/3", LayoutGroup.Thirds, PlacementKind.Fraction, S, 0, 1, 1),
-        new("leftTwoThirds", "leftTwoThirds", "Left 2/3", LayoutGroup.Thirds, PlacementKind.Fraction, 0, 0, S, 1),
-        new("rightTwoThirds", "rightTwoThirds", "Right 2/3", LayoutGroup.Thirds, PlacementKind.Fraction, T, 0, 1, 1),
-        new("centerTwoThirds", "centerTwoThirds", "Center 2/3", LayoutGroup.Thirds, PlacementKind.Fraction, 1.0 / 6, 0, 5.0 / 6, 1),
-        new("topThird", "topThird", "Top 1/3", LayoutGroup.Thirds, PlacementKind.Fraction, 0, 0, 1, T),
-        new("middleThird", "middleThird", "Middle 1/3", LayoutGroup.Thirds, PlacementKind.Fraction, 0, T, 1, S),
-        new("bottomThird", "bottomThird", "Bottom 1/3", LayoutGroup.Thirds, PlacementKind.Fraction, 0, S, 1, 1),
-        new("topTwoThirds", "topTwoThirds", "Top 2/3", LayoutGroup.Thirds, PlacementKind.Fraction, 0, 0, 1, S),
-        new("bottomTwoThirds", "bottomTwoThirds", "Bottom 2/3", LayoutGroup.Thirds, PlacementKind.Fraction, 0, T, 1, 1),
+    private static readonly LocValue<IReadOnlyList<LayoutAction>> _loc_All = new(() => [
+        new("leftHalf", "left", Loc.T("Left"), LayoutGroup.Halves, PlacementKind.Fraction, 0, 0, 0.5, 1),
+        new("rightHalf", "right", Loc.T("Right"), LayoutGroup.Halves, PlacementKind.Fraction, 0.5, 0, 1, 1),
+        new("topHalf", "top", Loc.T("Top"), LayoutGroup.Halves, PlacementKind.Fraction, 0, 0, 1, 0.5),
+        new("bottomHalf", "bottom", Loc.T("Bottom"), LayoutGroup.Halves, PlacementKind.Fraction, 0, 0.5, 1, 1),
+        new("centerHalf", "centerHalf", Loc.T("Center half"), LayoutGroup.Halves, PlacementKind.Fraction, 0.25, 0, 0.75, 1),
 
-        new("topQuarter", "topQuarter", "Top 1/4", LayoutGroup.QuarterRows, PlacementKind.Fraction, 0, 0, 1, 0.25),
-        new("upperMiddleQuarter", "upperMiddleQuarter", "Upper middle 1/4", LayoutGroup.QuarterRows, PlacementKind.Fraction, 0, 0.25, 1, 0.5),
-        new("lowerMiddleQuarter", "lowerMiddleQuarter", "Lower middle 1/4", LayoutGroup.QuarterRows, PlacementKind.Fraction, 0, 0.5, 1, 0.75),
-        new("bottomQuarter", "bottomQuarter", "Bottom 1/4", LayoutGroup.QuarterRows, PlacementKind.Fraction, 0, 0.75, 1, 1),
+        new("leftThird", "leftThird", Loc.T("Left 1/3"), LayoutGroup.Thirds, PlacementKind.Fraction, 0, 0, T, 1),
+        new("centerThird", "centerThird", Loc.T("Center 1/3"), LayoutGroup.Thirds, PlacementKind.Fraction, T, 0, S, 1),
+        new("rightThird", "rightThird", Loc.T("Right 1/3"), LayoutGroup.Thirds, PlacementKind.Fraction, S, 0, 1, 1),
+        new("leftTwoThirds", "leftTwoThirds", Loc.T("Left 2/3"), LayoutGroup.Thirds, PlacementKind.Fraction, 0, 0, S, 1),
+        new("rightTwoThirds", "rightTwoThirds", Loc.T("Right 2/3"), LayoutGroup.Thirds, PlacementKind.Fraction, T, 0, 1, 1),
+        new("centerTwoThirds", "centerTwoThirds", Loc.T("Center 2/3"), LayoutGroup.Thirds, PlacementKind.Fraction, 1.0 / 6, 0, 5.0 / 6, 1),
+        new("topThird", "topThird", Loc.T("Top 1/3"), LayoutGroup.Thirds, PlacementKind.Fraction, 0, 0, 1, T),
+        new("middleThird", "middleThird", Loc.T("Middle 1/3"), LayoutGroup.Thirds, PlacementKind.Fraction, 0, T, 1, S),
+        new("bottomThird", "bottomThird", Loc.T("Bottom 1/3"), LayoutGroup.Thirds, PlacementKind.Fraction, 0, S, 1, 1),
+        new("topTwoThirds", "topTwoThirds", Loc.T("Top 2/3"), LayoutGroup.Thirds, PlacementKind.Fraction, 0, 0, 1, S),
+        new("bottomTwoThirds", "bottomTwoThirds", Loc.T("Bottom 2/3"), LayoutGroup.Thirds, PlacementKind.Fraction, 0, T, 1, 1),
 
-        new("leftQuarter", "leftQuarter", "Left 1/4", LayoutGroup.QuarterColumns, PlacementKind.Fraction, 0, 0, 0.25, 1),
-        new("leftMiddleQuarter", "leftMiddleQuarter", "Left middle 1/4", LayoutGroup.QuarterColumns, PlacementKind.Fraction, 0.25, 0, 0.5, 1),
-        new("rightMiddleQuarter", "rightMiddleQuarter", "Right middle 1/4", LayoutGroup.QuarterColumns, PlacementKind.Fraction, 0.5, 0, 0.75, 1),
-        new("rightQuarter", "rightQuarter", "Right 1/4", LayoutGroup.QuarterColumns, PlacementKind.Fraction, 0.75, 0, 1, 1),
+        new("topQuarter", "topQuarter", Loc.T("Top 1/4"), LayoutGroup.QuarterRows, PlacementKind.Fraction, 0, 0, 1, 0.25),
+        new("upperMiddleQuarter", "upperMiddleQuarter", Loc.T("Upper middle 1/4"), LayoutGroup.QuarterRows, PlacementKind.Fraction, 0, 0.25, 1, 0.5),
+        new("lowerMiddleQuarter", "lowerMiddleQuarter", Loc.T("Lower middle 1/4"), LayoutGroup.QuarterRows, PlacementKind.Fraction, 0, 0.5, 1, 0.75),
+        new("bottomQuarter", "bottomQuarter", Loc.T("Bottom 1/4"), LayoutGroup.QuarterRows, PlacementKind.Fraction, 0, 0.75, 1, 1),
 
-        new("topLeftSixth", "topLeftSixth", "Top left 1/6", LayoutGroup.Sixths, PlacementKind.Fraction, 0, 0, T, 0.5),
-        new("topCenterSixth", "topCenterSixth", "Top center 1/6", LayoutGroup.Sixths, PlacementKind.Fraction, T, 0, S, 0.5),
-        new("topRightSixth", "topRightSixth", "Top right 1/6", LayoutGroup.Sixths, PlacementKind.Fraction, S, 0, 1, 0.5),
-        new("bottomLeftSixth", "bottomLeftSixth", "Bottom left 1/6", LayoutGroup.Sixths, PlacementKind.Fraction, 0, 0.5, T, 1),
-        new("bottomCenterSixth", "bottomCenterSixth", "Bottom center 1/6", LayoutGroup.Sixths, PlacementKind.Fraction, T, 0.5, S, 1),
-        new("bottomRightSixth", "bottomRightSixth", "Bottom right 1/6", LayoutGroup.Sixths, PlacementKind.Fraction, S, 0.5, 1, 1),
+        new("leftQuarter", "leftQuarter", Loc.T("Left 1/4"), LayoutGroup.QuarterColumns, PlacementKind.Fraction, 0, 0, 0.25, 1),
+        new("leftMiddleQuarter", "leftMiddleQuarter", Loc.T("Left middle 1/4"), LayoutGroup.QuarterColumns, PlacementKind.Fraction, 0.25, 0, 0.5, 1),
+        new("rightMiddleQuarter", "rightMiddleQuarter", Loc.T("Right middle 1/4"), LayoutGroup.QuarterColumns, PlacementKind.Fraction, 0.5, 0, 0.75, 1),
+        new("rightQuarter", "rightQuarter", Loc.T("Right 1/4"), LayoutGroup.QuarterColumns, PlacementKind.Fraction, 0.75, 0, 1, 1),
 
-        new("topLeft", "topLeft", "Top left", LayoutGroup.Corners, PlacementKind.Fraction, 0, 0, 0.5, 0.5),
-        new("topRight", "topRight", "Top right", LayoutGroup.Corners, PlacementKind.Fraction, 0.5, 0, 1, 0.5),
-        new("bottomLeft", "bottomLeft", "Bottom left", LayoutGroup.Corners, PlacementKind.Fraction, 0, 0.5, 0.5, 1),
-        new("bottomRight", "bottomRight", "Bottom right", LayoutGroup.Corners, PlacementKind.Fraction, 0.5, 0.5, 1, 1),
+        new("topLeftSixth", "topLeftSixth", Loc.T("Top left 1/6"), LayoutGroup.Sixths, PlacementKind.Fraction, 0, 0, T, 0.5),
+        new("topCenterSixth", "topCenterSixth", Loc.T("Top center 1/6"), LayoutGroup.Sixths, PlacementKind.Fraction, T, 0, S, 0.5),
+        new("topRightSixth", "topRightSixth", Loc.T("Top right 1/6"), LayoutGroup.Sixths, PlacementKind.Fraction, S, 0, 1, 0.5),
+        new("bottomLeftSixth", "bottomLeftSixth", Loc.T("Bottom left 1/6"), LayoutGroup.Sixths, PlacementKind.Fraction, 0, 0.5, T, 1),
+        new("bottomCenterSixth", "bottomCenterSixth", Loc.T("Bottom center 1/6"), LayoutGroup.Sixths, PlacementKind.Fraction, T, 0.5, S, 1),
+        new("bottomRightSixth", "bottomRightSixth", Loc.T("Bottom right 1/6"), LayoutGroup.Sixths, PlacementKind.Fraction, S, 0.5, 1, 1),
 
-        new("maximize", "maximize", "Maximize", LayoutGroup.Actions, PlacementKind.Maximize),
-        new("marginMaximize", "maximizeWithMargin", "Maximize with Margin", LayoutGroup.Actions, PlacementKind.MarginMaximize, 0.05, 0.05, 0.95, 0.95),
-        new("fullScreen", "fullScreen", "Full Screen", LayoutGroup.Actions, PlacementKind.FullScreen),
-        new("center", "center", "Center", LayoutGroup.Actions, PlacementKind.Center, 0.25, 0.2, 0.75, 0.8),
-        new("previousDisplay", "previousDisplay", "Previous display", LayoutGroup.Actions, PlacementKind.PreviousDisplay),
-        new("nextDisplay", "nextDisplay", "Next display", LayoutGroup.Actions, PlacementKind.NextDisplay),
-        new("restore", "restore", "Restore", LayoutGroup.Actions, PlacementKind.Restore),
-    ];
+        new("topLeft", "topLeft", Loc.T("Top left"), LayoutGroup.Corners, PlacementKind.Fraction, 0, 0, 0.5, 0.5),
+        new("topRight", "topRight", Loc.T("Top right"), LayoutGroup.Corners, PlacementKind.Fraction, 0.5, 0, 1, 0.5),
+        new("bottomLeft", "bottomLeft", Loc.T("Bottom left"), LayoutGroup.Corners, PlacementKind.Fraction, 0, 0.5, 0.5, 1),
+        new("bottomRight", "bottomRight", Loc.T("Bottom right"), LayoutGroup.Corners, PlacementKind.Fraction, 0.5, 0.5, 1, 1),
+
+        new("maximize", "maximize", Loc.T("Maximize"), LayoutGroup.Actions, PlacementKind.Maximize),
+        new("marginMaximize", "maximizeWithMargin", Loc.T("Maximize with Margin"), LayoutGroup.Actions, PlacementKind.MarginMaximize, 0.05, 0.05, 0.95, 0.95),
+        new("fullScreen", "fullScreen", Loc.T("Full Screen"), LayoutGroup.Actions, PlacementKind.FullScreen),
+        new("center", "center", Loc.T("Center"), LayoutGroup.Actions, PlacementKind.Center, 0.25, 0.2, 0.75, 0.8),
+        new("previousDisplay", "previousDisplay", Loc.T("Previous display"), LayoutGroup.Actions, PlacementKind.PreviousDisplay),
+        new("nextDisplay", "nextDisplay", Loc.T("Next display"), LayoutGroup.Actions, PlacementKind.NextDisplay),
+        new("restore", "restore", Loc.T("Restore"), LayoutGroup.Actions, PlacementKind.Restore),
+    ]);
 
     private static readonly Dictionary<string, LayoutAction> ByRaw = All.ToDictionary(a => a.Raw, StringComparer.Ordinal);
 
@@ -119,13 +122,13 @@ internal static class LayoutActions
 
     public static string GroupTitle(LayoutGroup group) => group switch
     {
-        LayoutGroup.Halves => "Halves",
-        LayoutGroup.Thirds => "Thirds",
-        LayoutGroup.QuarterRows => "Quarter rows",
-        LayoutGroup.QuarterColumns => "Quarter columns",
-        LayoutGroup.Sixths => "Sixths",
-        LayoutGroup.Corners => "Corners",
-        _ => "Actions",
+        LayoutGroup.Halves => Loc.T("Halves"),
+        LayoutGroup.Thirds => Loc.T("Thirds"),
+        LayoutGroup.QuarterRows => Loc.T("Quarter rows"),
+        LayoutGroup.QuarterColumns => Loc.T("Quarter columns"),
+        LayoutGroup.Sixths => Loc.T("Sixths"),
+        LayoutGroup.Corners => Loc.T("Corners"),
+        _ => Loc.T("Actions"),
     };
 
     public static IEnumerable<LayoutAction> InGroup(LayoutGroup group) => All.Where(a => a.Group == group);

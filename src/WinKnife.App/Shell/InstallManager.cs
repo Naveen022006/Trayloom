@@ -326,7 +326,7 @@ internal static class InstallManager
         link.SetPath(target);
         link.SetWorkingDirectory(Path.GetDirectoryName(target)!);
         link.SetIconLocation(target, 0);
-        link.SetDescription("WinKnife - a discreet tray utility for Windows");
+        link.SetDescription(Loc.T("WinKnife - a discreet tray utility for Windows"));
         ((IPersistFile)link).Save(lnkPath, true);
         Marshal.ReleaseComObject(link);
         log.Info("Created shortcut " + lnkPath);

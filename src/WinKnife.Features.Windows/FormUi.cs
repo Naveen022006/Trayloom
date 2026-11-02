@@ -124,8 +124,9 @@ internal static class FormUi
     }
 
     /// <summary>Green "Active now" status line.</summary>
-    public static FrameworkElement ActiveBadge(string text = Strings.ActiveNow)
+    public static FrameworkElement ActiveBadge(string? text = null)
     {
+        text ??= Strings.ActiveNow;
         var border = new Border { CornerRadius = new CornerRadius(20), Padding = new Thickness(8, 4, 8, 4), HorizontalAlignment = HorizontalAlignment.Left };
         border.SetResourceReference(Border.BackgroundProperty, ThemeKeys.TileFill);
         var row = new StackPanel { Orientation = Orientation.Horizontal };

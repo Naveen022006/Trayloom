@@ -8,6 +8,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using WinKnife.Core.Ui;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Agents;
 
@@ -234,7 +235,7 @@ internal static class AgentCardViews
                 // Where the numbers come from and how old they are: every reading says so, and an old one is not dressed up as fresh.
                 var (source, old) = LimitPresenter.SourceLine(limits, now);
                 var line = AU.Text(source + (old ? " · may be out of date" : ""), 9, null, old ? AgentColors.Of(Orange) : AgentColors.Tertiary, TextTrimming.CharacterEllipsis);
-                AU.Tip(line, "Open the AI Agents settings, \"Where these numbers come from\", to compare every source.");
+                AU.Tip(line, Loc.T("Open the AI Agents settings, \"Where these numbers come from\", to compare every source."));
                 Add(body, line, 5);
                 if (LimitPresenter.Breakdown(limits) is { } breakdown)
                 {

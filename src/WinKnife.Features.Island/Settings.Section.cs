@@ -20,7 +20,7 @@ public sealed class IslandSettingsSection : ISettingsSection
 
     public string? Anchor => null;
 
-    public string? Title => "Dynamic Island";
+    public string? Title => Loc.T("Dynamic Island");
 
     public int Order => 0;
 
@@ -157,7 +157,7 @@ internal static class SettingsTabs
         var rebuild = () => c.RequestRebuild();
 
         // Size
-        var size = new SettingsCard("Size");
+        var size = new SettingsCard(Loc.T("Size"));
         var preset = app.Get<string>(K.Size);
         if (preset is not ("compact" or "spacious" or "custom"))
         {
@@ -165,27 +165,27 @@ internal static class SettingsTabs
         }
 
         size.Add(SUi.TileRow(3, 10,
-            SUi.ChoiceTile("", "Compact", preset == "compact", () => { app.Set(K.Size, "compact"); rebuild(); }),
-            SUi.ChoiceTile("", "Spacious", preset == "spacious", () => { app.Set(K.Size, "spacious"); rebuild(); }),
-            SUi.ChoiceTile("", "Custom", preset == "custom", () => { app.Set(K.Size, "custom"); rebuild(); })));
+            SUi.ChoiceTile("", Loc.T("Compact"), preset == "compact", () => { app.Set(K.Size, "compact"); rebuild(); }),
+            SUi.ChoiceTile("", Loc.T("Spacious"), preset == "spacious", () => { app.Set(K.Size, "spacious"); rebuild(); }),
+            SUi.ChoiceTile("", Loc.T("Custom"), preset == "custom", () => { app.Set(K.Size, "custom"); rebuild(); })));
         if (preset == "custom")
         {
-            size.Add(SUi.SliderLine("Width", 360, 600, app.Get<double>(K.CustomWidth), 10, v => ((int)v).ToString(), v => app.Set(K.CustomWidth, v)));
-            size.Add(SUi.SliderLine("Maximum height", 260, 640, app.Get<double>(K.CustomHeight), 10, v => ((int)v).ToString(), v => app.Set(K.CustomHeight, v)));
-            size.AddCaption("Controls stay compact. Longer lists use up to this height.");
+            size.Add(SUi.SliderLine(Loc.T("Width"), 360, 600, app.Get<double>(K.CustomWidth), 10, v => ((int)v).ToString(), v => app.Set(K.CustomWidth, v)));
+            size.Add(SUi.SliderLine(Loc.T("Maximum height"), 260, 640, app.Get<double>(K.CustomHeight), 10, v => ((int)v).ToString(), v => app.Set(K.CustomHeight, v)));
+            size.AddCaption(Loc.T("Controls stay compact. Longer lists use up to this height."));
         }
 
-        size.Add(SUi.SwitchRow(app, K.Translucent, "", "Translucent background", "When open, Dynamic Island blurs what is behind it with the system’s own material."));
+        size.Add(SUi.SwitchRow(app, K.Translucent, "", Loc.T("Translucent background"), Loc.T("When open, Dynamic Island blurs what is behind it with the system’s own material.")));
         stack.AddSpaced(size, 20);
 
         // Displays without a notch
         var silhouette = app.Get<string>(K.Silhouette) == "notch" ? "notch" : "capsule";
-        var shape = new SettingsCard("Displays without a notch");
-        shape.Add(SUi.TileRow(2, 10, SilhouetteTile("Capsule", true, silhouette == "capsule", () => { app.Set(K.Silhouette, "capsule"); rebuild(); }), SilhouetteTile("Notch", false, silhouette == "notch", () => { app.Set(K.Silhouette, "notch"); rebuild(); })));
+        var shape = new SettingsCard(Loc.T("Displays without a notch"));
+        shape.Add(SUi.TileRow(2, 10, SilhouetteTile(Loc.T("Capsule"), true, silhouette == "capsule", () => { app.Set(K.Silhouette, "capsule"); rebuild(); }), SilhouetteTile(Loc.T("Notch"), false, silhouette == "notch", () => { app.Set(K.Silhouette, "notch"); rebuild(); })));
         if (app.Get<bool>(K.Enabled) && app.Get<string>(K.Display) == "builtIn" && System.Windows.Forms.Screen.AllScreens.Length == 0)
         {
-            shape.AddCaption("With the Display chosen on the Behavior tab, Dynamic Island doesn’t appear on these displays.");
-            shape.Add(UiKit.Button("Show on all displays", ButtonKind.Bordered, 12, null, () => { app.Set(K.Display, "all"); rebuild(); }));
+            shape.AddCaption(Loc.T("With the Display chosen on the Behavior tab, Dynamic Island doesn’t appear on these displays."));
+            shape.Add(UiKit.Button(Loc.T("Show on all displays"), ButtonKind.Bordered, 12, null, () => { app.Set(K.Display, "all"); rebuild(); }));
         }
 
         stack.AddSpaced(shape, 20);
@@ -193,17 +193,17 @@ internal static class SettingsTabs
         // Capsule fit
         if (silhouette == "capsule")
         {
-            var fit = new SettingsCard("Capsule fit");
+            var fit = new SettingsCard(Loc.T("Capsule fit"));
             string Signed(double v, int d) => (v > 0 ? "+" : "") + v.ToString(d == 0 ? "0" : "0.#", System.Globalization.CultureInfo.InvariantCulture);
-            fit.Add(SUi.SliderLine("Width", -40, 40, app.Get<double>(K.CapsuleFitWidth), 2, v => Signed(v, 0), v => app.Set(K.CapsuleFitWidth, v)));
-            fit.Add(SUi.SliderLine("Height", -4, 4, app.Get<double>(K.CapsuleFitHeight), 1, v => Signed(v, 0), v => app.Set(K.CapsuleFitHeight, v)));
-            fit.Add(SUi.SliderLine("Distance from top", 0, 20, app.Get<double>(K.CapsuleFitDrop), 1, v => Signed(v, 0), v => app.Set(K.CapsuleFitDrop, v)));
-            fit.AddCaption("Resizes the capsule and lowers it from the top of the screen on displays without a notch.");
+            fit.Add(SUi.SliderLine(Loc.T("Width"), -40, 40, app.Get<double>(K.CapsuleFitWidth), 2, v => Signed(v, 0), v => app.Set(K.CapsuleFitWidth, v)));
+            fit.Add(SUi.SliderLine(Loc.T("Height"), -4, 4, app.Get<double>(K.CapsuleFitHeight), 1, v => Signed(v, 0), v => app.Set(K.CapsuleFitHeight, v)));
+            fit.Add(SUi.SliderLine(Loc.T("Distance from top"), 0, 20, app.Get<double>(K.CapsuleFitDrop), 1, v => Signed(v, 0), v => app.Set(K.CapsuleFitDrop, v)));
+            fit.AddCaption(Loc.T("Resizes the capsule and lowers it from the top of the screen on displays without a notch."));
             stack.AddSpaced(fit, 20);
         }
 
         var outline = new SettingsCard();
-        outline.Add(SUi.SwitchRow(app, K.Outline, "", "Show outline"));
+        outline.Add(SUi.SwitchRow(app, K.Outline, "", Loc.T("Show outline")));
         stack.AddSpaced(outline, 20);
         return stack;
     }
@@ -246,7 +246,7 @@ internal static class SettingsTabs
         var app = c.App;
         var core = IslandCore.Current;
         var stack = new StackPanel();
-        var rest = new SettingsCard("At rest");
+        var rest = new SettingsCard(Loc.T("At rest"));
         var hasBattery = IslandNative.Power().HasBattery;
         var current = app.Get<string>(K.IdleContent);
         var choices = new List<FrameworkElement>();
@@ -259,16 +259,16 @@ internal static class SettingsTabs
         string Resting(string sel) => sel == "battery" && !hasBattery ? "none" : sel;
         var marked = Resting(current);
         var mascotRests = app.Get<bool>(K.MascotEnabled) && !app.Get<bool>(K.MascotHides) && c.Runtime.IsAvailable("notch-mascot");
-        choices.Add(RestChoice(mascotRests ? "Companion" : "Nothing", "", "none", marked == "none", current == "none", null, () => Pick("none")));
+        choices.Add(RestChoice(mascotRests ? Loc.T("Companion") : Loc.T("Nothing"), "", "none", marked == "none", current == "none", null, () => Pick("none")));
         if (hasBattery)
         {
-            choices.Add(RestChoice("Battery", "", "battery", marked == "battery", current == "battery", c.Runtime.IsAvailable("monitor-power") ? null : "Enable “Power” in Features.", () => Pick("battery")));
+            choices.Add(RestChoice(Loc.T("Battery"), "", "battery", marked == "battery", current == "battery", c.Runtime.IsAvailable("monitor-power") ? null : Loc.T("Enable “Power” in Features."), () => Pick("battery")));
         }
 
-        choices.Add(RestChoice("Music", G.Music, "music", marked == "music", current == "music", core is not null && !core.ModuleVisible("music") ? "Show “Now Playing” on the Content tab." : null, () => Pick("music")));
+        choices.Add(RestChoice(Loc.T("Music"), G.Music, "music", marked == "music", current == "music", core is not null && !core.ModuleVisible("music") ? Loc.T("Show “Now Playing” on the Content tab.") : null, () => Pick("music")));
         if (core?.ModuleVisible("agents") == true || current == "agents")
         {
-            choices.Add(RestChoice("AI limits", G.Sparkle, "agents", marked == "agents", current == "agents", core is not null && !core.ModuleVisible("agents") ? "Show “AI Agents” on the Content tab." : null, () => Pick("agents")));
+            choices.Add(RestChoice(Loc.T("AI limits"), G.Sparkle, "agents", marked == "agents", current == "agents", core is not null && !core.ModuleVisible("agents") ? Loc.T("Show “AI Agents” on the Content tab.") : null, () => Pick("agents")));
         }
 
         var grid = new UniformGrid { Columns = choices.Count };
@@ -281,11 +281,11 @@ internal static class SettingsTabs
         rest.Add(grid);
         if (marked == "battery")
         {
-            rest.Add(SUi.SwitchRow(app, K.LowBatteryTint, "", "Turn red when low", "Shows the charge in red at or below this level while on battery.", _ => rebuildTab()));
+            rest.Add(SUi.SwitchRow(app, K.LowBatteryTint, "", Loc.T("Turn red when low"), Loc.T("Shows the charge in red at or below this level while on battery."), _ => rebuildTab()));
             if (app.Get<bool>(K.LowBatteryTint))
             {
                 var red = Math.Clamp(app.Get<int>(K.LowBatteryThreshold), 1, 99);
-                rest.Add(SUi.SliderLine("Red level", 1, 100, red, 1, v => $"{(int)v}%", v =>
+                rest.Add(SUi.SliderLine(Loc.T("Red level"), 1, 100, red, 1, v => $"{(int)v}%", v =>
                 {
                     var r = Math.Clamp((int)v, 1, 99);
                     app.Set(K.LowBatteryThreshold, r);
@@ -294,57 +294,57 @@ internal static class SettingsTabs
                         app.Set(K.LowBatteryEarlyThreshold, Math.Min(100, r + 1));
                     }
                 }, SettingsRow.TextInset));
-                rest.Add(SUi.SwitchRow(app, K.LowBatteryEarly, "", "Turn amber first", "Shows the charge in amber at or below a higher level, as an early warning.", _ => rebuildTab()));
+                rest.Add(SUi.SwitchRow(app, K.LowBatteryEarly, "", Loc.T("Turn amber first"), Loc.T("Shows the charge in amber at or below a higher level, as an early warning."), _ => rebuildTab()));
                 if (app.Get<bool>(K.LowBatteryEarly))
                 {
-                    rest.Add(SUi.SliderLine("Amber level", 2, 100, Math.Max(red + 1, app.Get<int>(K.LowBatteryEarlyThreshold)), 1, v => $"{(int)v}%", v => app.Set(K.LowBatteryEarlyThreshold, Math.Max(Math.Clamp(app.Get<int>(K.LowBatteryThreshold), 1, 99) + 1, (int)v)), SettingsRow.TextInset));
+                    rest.Add(SUi.SliderLine(Loc.T("Amber level"), 2, 100, Math.Max(red + 1, app.Get<int>(K.LowBatteryEarlyThreshold)), 1, v => $"{(int)v}%", v => app.Set(K.LowBatteryEarlyThreshold, Math.Max(Math.Clamp(app.Get<int>(K.LowBatteryThreshold), 1, 99) + 1, (int)v)), SettingsRow.TextInset));
                 }
 
-                rest.Add(SUi.SwitchRow(app, K.LowBatteryMenuBar, "", "Also in the tray icon"));
+                rest.Add(SUi.SwitchRow(app, K.LowBatteryMenuBar, "", Loc.T("Also in the tray icon")));
             }
         }
 
         stack.AddSpaced(rest, 20);
 
         // Indicators
-        var ind = new SettingsCard("Indicators");
+        var ind = new SettingsCard(Loc.T("Indicators"));
         var rt = c.Runtime;
         var cards = new List<FrameworkElement>();
         FrameworkElement Card(string glyph, string title, string key, bool available, string? reason, Action? fix = null)
             => SUi.ToggleCard(glyph, title, app.Get<bool>(key), available, reason, () => { app.Set(key, !app.Get<bool>(key)); rebuildTab(); }, fix, true);
-        string Missing(string id) => $"Enable “{FeatureCatalog.Get(id)?.Title ?? id}” in Features.";
-        cards.Add(Card(G.Speaker, "Volume", K.Volume, rt.IsAvailable("mixer"), rt.IsAvailable("mixer") ? null : Missing("mixer"), () => c.Shell.OpenFeatures("mixer")));
+        string Missing(string id) => Loc.F("Enable “{0}” in Features.", FeatureCatalog.Get(id)?.Title ?? id);
+        cards.Add(Card(G.Speaker, Loc.T("Volume"), K.Volume, rt.IsAvailable("mixer"), rt.IsAvailable("mixer") ? null : Missing("mixer"), () => c.Shell.OpenFeatures("mixer")));
         var brightnessOk = rt.IsAvailable("brightness") && app.Get<bool>(K.BrightnessControl);
-        cards.Add(Card(G.Brightness, "Brightness", K.Brightness, brightnessOk, !rt.IsAvailable("brightness") ? Missing("brightness") : (brightnessOk ? null : "Enable “Control displays” in its settings."), () => { if (!rt.IsAvailable("brightness")) { c.Shell.OpenFeatures("brightness"); } else { c.Shell.OpenSettings("energy#brightness"); } }));
-        cards.Add(Card("", "Keyboard light", K.KeyboardLight, false, Strings.KeyboardBacklightUnavailable));
-        cards.Add(Card(G.Mic, "Microphone", K.Microphone, rt.IsAvailable("mic-mute"), rt.IsAvailable("mic-mute") ? null : Missing("mic-mute"), () => c.Shell.OpenFeatures("mic-mute")));
+        cards.Add(Card(G.Brightness, Loc.T("Brightness"), K.Brightness, brightnessOk, !rt.IsAvailable("brightness") ? Missing("brightness") : (brightnessOk ? null : Loc.T("Enable “Control displays” in its settings.")), () => { if (!rt.IsAvailable("brightness")) { c.Shell.OpenFeatures("brightness"); } else { c.Shell.OpenSettings("energy#brightness"); } }));
+        cards.Add(Card("", Loc.T("Keyboard light"), K.KeyboardLight, false, Strings.KeyboardBacklightUnavailable));
+        cards.Add(Card(G.Mic, Loc.T("Microphone"), K.Microphone, rt.IsAvailable("mic-mute"), rt.IsAvailable("mic-mute") ? null : Missing("mic-mute"), () => c.Shell.OpenFeatures("mic-mute")));
         if (hasBattery)
         {
-            cards.Add(Card(G.Battery, "Battery", K.Battery, rt.IsAvailable("monitor-power"), rt.IsAvailable("monitor-power") ? null : Missing("monitor-power"), () => c.Shell.OpenFeatures("monitor-power")));
+            cards.Add(Card(G.Battery, Loc.T("Battery"), K.Battery, rt.IsAvailable("monitor-power"), rt.IsAvailable("monitor-power") ? null : Missing("monitor-power"), () => c.Shell.OpenFeatures("monitor-power")));
         }
 
         var accOk = rt.IsAvailable("notch-accessories") && rt.IsAvailable("monitor-power");
-        cards.Add(Card(G.Headphones, "Accessory alerts", K.Accessories, accOk, accOk ? null : (!rt.IsAvailable("notch-accessories") ? Missing("notch-accessories") : Missing("monitor-power")), () => c.Shell.OpenFeatures(rt.IsAvailable("notch-accessories") ? "monitor-power" : "notch-accessories")));
+        cards.Add(Card(G.Headphones, Loc.T("Accessory alerts"), K.Accessories, accOk, accOk ? null : (!rt.IsAvailable("notch-accessories") ? Missing("notch-accessories") : Missing("monitor-power")), () => c.Shell.OpenFeatures(rt.IsAvailable("notch-accessories") ? "monitor-power" : "notch-accessories")));
         var clipOk = rt.IsAvailable("clipboard-history") && app.Get<bool>(K.ClipboardHistoryEnabled) && (core?.ModuleVisible("clipboard") ?? false);
-        cards.Add(Card(G.Clipboard, "Clipboard", K.Clipboard, clipOk, !rt.IsAvailable("clipboard-history") ? Missing("clipboard-history") : (!app.Get<bool>(K.ClipboardHistoryEnabled) ? "Enable “Save clipboard history” in its settings." : (clipOk ? null : "Show “Clipboard” on the Content tab."))));
+        cards.Add(Card(G.Clipboard, Loc.T("Clipboard"), K.Clipboard, clipOk, !rt.IsAvailable("clipboard-history") ? Missing("clipboard-history") : (!app.Get<bool>(K.ClipboardHistoryEnabled) ? Loc.T("Enable “Save clipboard history” in its settings.") : (clipOk ? null : Loc.T("Show “Clipboard” on the Content tab.")))));
         var capOk = rt.IsAvailable("screenshot") && (core?.ModuleVisible("captures") ?? false);
-        cards.Add(Card(G.Camera, "Captures", K.Capture, capOk, !rt.IsAvailable("screenshot") ? Missing("screenshot") : (capOk ? null : "Show “Recent captures” on the Content tab.")));
+        cards.Add(Card(G.Camera, Loc.T("Captures"), K.Capture, capOk, !rt.IsAvailable("screenshot") ? Missing("screenshot") : (capOk ? null : Loc.T("Show “Recent captures” on the Content tab."))));
         var trackOk = core?.ModuleVisible("music") ?? false;
-        cards.Add(Card(G.Music, "New track", K.TrackChange, trackOk, trackOk ? null : "Show “Now Playing” on the Content tab."));
-        cards.Add(Card(G.Keyboard, "Input source", K.InputSource, true, null));
+        cards.Add(Card(G.Music, Loc.T("New track"), K.TrackChange, trackOk, trackOk ? null : Loc.T("Show “Now Playing” on the Content tab.")));
+        cards.Add(Card(G.Keyboard, Loc.T("Input source"), K.InputSource, true, null));
         ind.Add(SUi.CardGrid(cards, 116, 700));
         if (app.Get<bool>(K.Accessories))
         {
-            ind.AddCaption("Show connected accessories and warn once when their battery falls to 20%.");
+            ind.AddCaption(Loc.T("Show connected accessories and warn once when their battery falls to 20%."));
         }
 
         stack.AddSpaced(ind, 20);
 
         // Lock screen
-        var lockCard = new SettingsCard("Lock Screen");
-        lockCard.Add(SUi.SwitchRow(app, K.LockScreen, "", "Show on the Lock Screen", "Windows doesn’t allow apps to draw on the lock screen. WinKnife shows a greeting when you unlock instead."));
+        var lockCard = new SettingsCard(Loc.T("Lock Screen"));
+        lockCard.Add(SUi.SwitchRow(app, K.LockScreen, "", Loc.T("Show on the Lock Screen"), Loc.T("Windows doesn’t allow apps to draw on the lock screen. WinKnife shows a greeting when you unlock instead.")));
         lockCard.AddDivider();
-        lockCard.Add(SUi.SwitchRow(app, K.LockSounds, "", "Lock and unlock sounds", "Play a sound when your PC locks and unlocks."));
+        lockCard.Add(SUi.SwitchRow(app, K.LockSounds, "", Loc.T("Lock and unlock sounds"), Loc.T("Play a sound when your PC locks and unlocks.")));
         stack.AddSpaced(lockCard, 20);
         return stack;
     }
@@ -416,7 +416,7 @@ internal static class SettingsTabs
         var app = c.App;
         var rt = c.Runtime;
         var stack = new StackPanel();
-        var opening = new SettingsCard("Opening");
+        var opening = new SettingsCard(Loc.T("Opening"));
         var hover = app.Get<bool>(K.OpenOnHover);
         var expands = app.Get<bool>(K.HoverExpands);
         var hideUntil = app.Get<bool>(K.HideUntilHover);
@@ -429,31 +429,31 @@ internal static class SettingsTabs
         }
 
         opening.Add(SUi.TileRow(2, 8,
-            SUi.ChoiceTile("", "Click to open", !hover, () => Mode(false, expands, false)),
-            SUi.ChoiceTile("", "Preview on hover", hover && !expands && !hideUntil, () => Mode(true, false, false)),
-            SUi.ChoiceTile("", "Expand on hover", hover && expands && !hideUntil, () => Mode(true, true, false)),
-            SUi.ChoiceTile("", "Hidden until hover", hover && hideUntil, () => Mode(true, true, true))));
+            SUi.ChoiceTile("", Loc.T("Click to open"), !hover, () => Mode(false, expands, false)),
+            SUi.ChoiceTile("", Loc.T("Preview on hover"), hover && !expands && !hideUntil, () => Mode(true, false, false)),
+            SUi.ChoiceTile("", Loc.T("Expand on hover"), hover && expands && !hideUntil, () => Mode(true, true, false)),
+            SUi.ChoiceTile("", Loc.T("Hidden until hover"), hover && hideUntil, () => Mode(true, true, true))));
         if (hover && hideUntil)
         {
-            opening.Add(SUi.SwitchRow(app, K.HiddenShowsActivity, "", "Show activity and indicators", null, _ => rebuildTab()));
+            opening.Add(SUi.SwitchRow(app, K.HiddenShowsActivity, "", Loc.T("Show activity and indicators"), null, _ => rebuildTab()));
             if (app.Get<bool>(K.HiddenShowsActivity))
             {
-                opening.AddCaption("Comes into view while an activity runs or an indicator shows, then hides again.");
+                opening.AddCaption(Loc.T("Comes into view while an activity runs or an indicator shows, then hides again."));
             }
         }
 
         if (hover || (app.Get<bool>(K.HideInFullscreen) && app.Get<bool>(K.HoverInFullscreen)))
         {
-            opening.Add(SUi.SliderLine("Activation time", 0.10, 1.00, app.Get<double>(K.HoverDelay), 0.05, v => v.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " s", v => app.Set(K.HoverDelay, Math.Round(v, 2))));
-            opening.AddCaption("Keep the pointer over the island for this long to open it.");
+            opening.Add(SUi.SliderLine(Loc.T("Activation time"), 0.10, 1.00, app.Get<double>(K.HoverDelay), 0.05, v => v.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " s", v => app.Set(K.HoverDelay, Math.Round(v, 2))));
+            opening.AddCaption(Loc.T("Keep the pointer over the island for this long to open it."));
             if (app.Get<bool>(K.HoverExpands))
             {
-                opening.Add(SUi.SliderLine("Closing time", 0.10, 2.00, app.Get<double>(K.CloseDelay), 0.05, v => v.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " s", v => app.Set(K.CloseDelay, Math.Round(v, 2))));
-                opening.AddCaption("Wait this long after the pointer leaves the island before closing it.");
+                opening.Add(SUi.SliderLine(Loc.T("Closing time"), 0.10, 2.00, app.Get<double>(K.CloseDelay), 0.05, v => v.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " s", v => app.Set(K.CloseDelay, Math.Round(v, 2))));
+                opening.AddCaption(Loc.T("Wait this long after the pointer leaves the island before closing it."));
             }
         }
 
-        opening.Add(SUi.SwitchRow(app, K.ShortcutEnabled, "", "Global shortcut", null, _ => rebuildTab()));
+        opening.Add(SUi.SwitchRow(app, K.ShortcutEnabled, "", Loc.T("Global shortcut"), null, _ => rebuildTab()));
         if (app.Get<bool>(K.ShortcutEnabled))
         {
             var recorder = new HotkeyRecorder { Hotkey = c.Shortcuts.GetHotkey("notch"), Width = 140 };
@@ -465,27 +465,27 @@ internal static class SettingsTabs
                 var st = c.Shortcuts.GetState("notch");
                 if (st.Problem is not null && r.Error is null)
                 {
-                    error.Text = "Windows rejected this shortcut. Choose another one.";
+                    error.Text = Loc.T("Windows rejected this shortcut. Choose another one.");
                 }
             };
-            var line = new SettingsRow(null, "Shortcut", null, recorder);
+            var line = new SettingsRow(null, Loc.T("Shortcut"), null, recorder);
             SUi.Indent(line);
             opening.Add(line);
             var st0 = c.Shortcuts.GetState("notch");
             if (st0.IsActive && !st0.IsRegistered)
             {
-                error.Text = "Windows rejected this shortcut. Choose another one.";
+                error.Text = Loc.T("Windows rejected this shortcut. Choose another one.");
             }
 
             opening.Add(SUi.Indent(error));
         }
 
-        opening.Add(new FeatureSwitchRow(rt, c.Shell, "notch-gestures", "", "Dynamic Island Gestures", app.Get<bool>(K.Gestures) ? "Scroll down to open. Scroll up over the top row to close. Swipe left or right over the music to change tracks. Lists keep their own scrolling." : null, app.Get<bool>(K.Gestures), on => { app.Set(K.Gestures, on); rebuildTab(); }, "Enable “Dynamic Island Gestures” in Features."));
+        opening.Add(new FeatureSwitchRow(rt, c.Shell, "notch-gestures", "", Loc.T("Dynamic Island Gestures"), app.Get<bool>(K.Gestures) ? Loc.T("Scroll down to open. Scroll up over the top row to close. Swipe left or right over the music to change tracks. Lists keep their own scrolling.") : null, app.Get<bool>(K.Gestures), on => { app.Set(K.Gestures, on); rebuildTab(); }, Loc.T("Enable “Dynamic Island Gestures” in Features.")));
         var modules = IslandCore.Current?.Modules() ?? [];
-        var reopenItems = new List<(string Value, string Label)> { ("", "Last page"), ("appPanel", "Open app panel"), ("explore", "Explore") };
+        var reopenItems = new List<(string Value, string Label)> { ("", Loc.T("Last page")), ("appPanel", Loc.T("Open app panel")), ("explore", Loc.T("Explore")) };
         reopenItems.AddRange(modules.Select(m => (m.Id, m.Title)));
         var home = app.Get<bool>(K.ReturnHome) ? app.Get<string>(K.HomeModule) : "";
-        opening.Add(new PickerRow<string>("", "When reopening", null, reopenItems, reopenItems.Any(i => i.Value == home) ? home : "controls", v =>
+        opening.Add(new PickerRow<string>("", Loc.T("When reopening"), null, reopenItems, reopenItems.Any(i => i.Value == home) ? home : "controls", v =>
         {
             app.Set(K.ReturnHome, v.Length > 0);
             if (v.Length > 0)
@@ -493,15 +493,15 @@ internal static class SettingsTabs
                 app.Set(K.HomeModule, v);
             }
         }, 160));
-        opening.Add(SUi.SwitchRow(app, K.OpensActivity, "", "Open the visible activity", "When the closed island shows music, a timer or another activity, it opens on that page instead."));
+        opening.Add(SUi.SwitchRow(app, K.OpensActivity, "", Loc.T("Open the visible activity"), Loc.T("When the closed island shows music, a timer or another activity, it opens on that page instead.")));
         stack.AddSpaced(opening, 20);
 
         // Display
-        var display = new SettingsCard("Display");
-        display.Add(SUi.SwitchRow(app, K.HideInFullscreen, "", "Hide content in full screen", null, _ => rebuildTab()));
+        var display = new SettingsCard(Loc.T("Display"));
+        display.Add(SUi.SwitchRow(app, K.HideInFullscreen, "", Loc.T("Hide content in full screen"), null, _ => rebuildTab()));
         if (app.Get<bool>(K.HideInFullscreen))
         {
-            display.Add(SUi.Indent(SUi.SwitchRow(app, K.HoverInFullscreen, "", "Hidden until hover in full screen", null, _ => rebuildTab())));
+            display.Add(SUi.Indent(SUi.SwitchRow(app, K.HoverInFullscreen, "", Loc.T("Hidden until hover in full screen"), null, _ => rebuildTab())));
         }
 
         var disp = app.Get<string>(K.Display);
@@ -517,32 +517,32 @@ internal static class SettingsTabs
         }
 
         display.Add(SUi.TileRow(2, 8,
-            SUi.ChoiceTile("", "Automatic", disp == "automatic", () => SetDisp("automatic")),
-            SUi.ChoiceTile("", "Built-in display", disp == "builtIn", () => SetDisp("builtIn")),
-            SUi.ChoiceTile("", "Main display", disp == "main", () => SetDisp("main")),
-            SUi.ChoiceTile("", "Follow pointer", disp == "pointer", () => SetDisp("pointer")),
-            SUi.ChoiceTile("", "All displays", disp == "all", () => SetDisp("all"))));
+            SUi.ChoiceTile("", Loc.T("Automatic"), disp == "automatic", () => SetDisp("automatic")),
+            SUi.ChoiceTile("", Loc.T("Built-in display"), disp == "builtIn", () => SetDisp("builtIn")),
+            SUi.ChoiceTile("", Loc.T("Main display"), disp == "main", () => SetDisp("main")),
+            SUi.ChoiceTile("", Loc.T("Follow pointer"), disp == "pointer", () => SetDisp("pointer")),
+            SUi.ChoiceTile("", Loc.T("All displays"), disp == "all", () => SetDisp("all"))));
         stack.AddSpaced(display, 20);
 
         // Where things open
-        var where = new SettingsCard("Where things open");
-        where.Add(SUi.DestinationRow(app, K.AppPanel, "", "Open app panel", "Choose where clicking the WinKnife tray icon opens the app panel, on any display."));
+        var where = new SettingsCard(Loc.T("Where things open"));
+        where.Add(SUi.DestinationRow(app, K.AppPanel, "", Loc.T("Open app panel"), Loc.T("Choose where clicking the WinKnife tray icon opens the app panel, on any display.")));
         where.AddDivider();
-        where.Add(SUi.SwitchRow(app, K.HidesTrayIcon, "", "Hide the tray icon", "Settings and the app panel open from Dynamic Island. The icon returns when the island is off or hidden in full screen, or when an update is ready or the microphone is muted."));
+        where.Add(SUi.SwitchRow(app, K.HidesTrayIcon, "", Loc.T("Hide the tray icon"), Loc.T("Settings and the app panel open from Dynamic Island. The icon returns when the island is off or hidden in full screen, or when an update is ready or the microphone is muted.")));
         where.AddDivider();
-        where.Add(SUi.DestinationRow(app, K.QuickPanel, "", "Tools", null, rt.IsAvailable("quick-launcher")));
+        where.Add(SUi.DestinationRow(app, K.QuickPanel, "", Loc.T("Tools"), null, rt.IsAvailable("quick-launcher")));
         where.AddDivider();
-        where.Add(SUi.DestinationRow(app, K.ClipboardWindow, G.Clipboard, "Clipboard", null, rt.IsAvailable("clipboard-history")));
+        where.Add(SUi.DestinationRow(app, K.ClipboardWindow, G.Clipboard, Loc.T("Clipboard"), null, rt.IsAvailable("clipboard-history")));
         where.AddDivider();
-        where.Add(SUi.DestinationRow(app, K.Shelf, G.Files, "Files", null, rt.IsAvailable("shelf")));
+        where.Add(SUi.DestinationRow(app, K.Shelf, G.Files, Loc.T("Files"), null, rt.IsAvailable("shelf")));
         where.AddDivider();
-        where.Add(SUi.DestinationRow(app, K.CaptureControls, G.Camera, "Captures", null));
+        where.Add(SUi.DestinationRow(app, K.CaptureControls, G.Camera, Loc.T("Captures"), null));
         where.AddDivider();
-        where.Add(SUi.DestinationRow(app, K.Scratchpad, G.Note, "Scratchpad", null, rt.IsAvailable("scratchpad")));
+        where.Add(SUi.DestinationRow(app, K.Scratchpad, G.Note, Loc.T("Scratchpad"), null, rt.IsAvailable("scratchpad")));
         stack.AddSpaced(where, 20);
 
-        var privacy = new SettingsCard("Privacy");
-        privacy.Add(SUi.SwitchRow(app, K.ShowInCaptures, G.Camera, "Show in screenshots and videos"));
+        var privacy = new SettingsCard(Loc.T("Privacy"));
+        privacy.Add(SUi.SwitchRow(app, K.ShowInCaptures, G.Camera, Loc.T("Show in screenshots and videos")));
         stack.AddSpaced(privacy, 20);
         return stack;
     }

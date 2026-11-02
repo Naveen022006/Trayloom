@@ -17,47 +17,47 @@ internal static partial class Strings
 {
     public static class MonitorPage
     {
-        public const string Preview = "Tray preview";
-        public const string InTray = "In the tray";
-        public const string InPanel = "In the panel";
-        public const string ReadingsAndAlerts = "Readings and alerts";
-        public const string TrayIntro = "Choose what appears next to the icon in the tray.";
-        public const string DragCaption = "Drag to reorder. Click the checkmark to show or hide.";
-        public const string UsageDisplay = "Usage display";
-        public const string Values = "Values";
-        public const string Bars = "Bars";
-        public const string BarsCaption = "Bars apply to CPU, GPU, memory and disk usage. Other readings stay numeric.";
-        public const string BarColors = "Bar colors and limits";
-        public const string NormalColor = "Normal color";
-        public const string MediumColor = "Medium color";
-        public const string HighColor = "High color";
-        public const string MediumFrom = "Medium from";
-        public const string HighFrom = "High from";
-        public const string Combine = "Combine usage and temperature";
-        public const string CombineCaption = "When usage and temperature for the same item are enabled, show them in one block.";
-        public const string Spacing = "Tray spacing";
-        public const string Standard = "Standard";
-        public const string Compact = "Compact";
-        public const string HideIcon = "Hide the app icon while metrics are shown";
-        public const string HideIconCaption = "The icon returns by itself when metrics leave the tray and when there is something to signal (an update ready, “Keep awake” running or the microphone muted).";
-        public const string Separate = "Separate metrics into their own items";
-        public const string SeparateCaption = "Separates active blocks in the tray and keeps usage and temperature together when combine is on.";
-        public const string PanelCaption = "Open a block to choose what it shows.";
-        public const string GraphScale = "Show graph scale";
-        public const string UpdateEvery = "Update every";
-        public const string Temperatures = "Temperatures";
-        public const string NetworkUnit = "Network speed unit";
-        public const string MeasureMemory = "Measure memory as";
-        public const string MemoryUsed = "Memory Used";
-        public const string AppMemory = "App Memory";
-        public const string MoreOptions = "More options";
-        public const string PressureDot = "Pressure dot";
-        public const string UploadFirst = "Upload above download";
-        public const string DiskDisplay = "Disk display";
-        public const string UsedPercentage = "Used percentage";
-        public const string AvailableSpace = "Available space";
-        public const string UsedSpace = "Used space";
-        public const string ShowInPanel = "Show in panel";
+        public static  string Preview => Loc.T("Tray preview");
+        public static  string InTray => Loc.T("In the tray");
+        public static  string InPanel => Loc.T("In the panel");
+        public static  string ReadingsAndAlerts => Loc.T("Readings and alerts");
+        public static  string TrayIntro => Loc.T("Choose what appears next to the icon in the tray.");
+        public static  string DragCaption => Loc.T("Drag to reorder. Click the checkmark to show or hide.");
+        public static  string UsageDisplay => Loc.T("Usage display");
+        public static  string Values => Loc.T("Values");
+        public static  string Bars => Loc.T("Bars");
+        public static  string BarsCaption => Loc.T("Bars apply to CPU, GPU, memory and disk usage. Other readings stay numeric.");
+        public static  string BarColors => Loc.T("Bar colors and limits");
+        public static  string NormalColor => Loc.T("Normal color");
+        public static  string MediumColor => Loc.T("Medium color");
+        public static  string HighColor => Loc.T("High color");
+        public static  string MediumFrom => Loc.T("Medium from");
+        public static  string HighFrom => Loc.T("High from");
+        public static  string Combine => Loc.T("Combine usage and temperature");
+        public static  string CombineCaption => Loc.T("When usage and temperature for the same item are enabled, show them in one block.");
+        public static  string Spacing => Loc.T("Tray spacing");
+        public static  string Standard => Loc.T("Standard");
+        public static  string Compact => Loc.T("Compact");
+        public static  string HideIcon => Loc.T("Hide the app icon while metrics are shown");
+        public static  string HideIconCaption => Loc.T("The icon returns by itself when metrics leave the tray and when there is something to signal (an update ready, “Keep awake” running or the microphone muted).");
+        public static  string Separate => Loc.T("Separate metrics into their own items");
+        public static  string SeparateCaption => Loc.T("Separates active blocks in the tray and keeps usage and temperature together when combine is on.");
+        public static  string PanelCaption => Loc.T("Open a block to choose what it shows.");
+        public static  string GraphScale => Loc.T("Show graph scale");
+        public static  string UpdateEvery => Loc.T("Update every");
+        public static  string Temperatures => Loc.T("Temperatures");
+        public static  string NetworkUnit => Loc.T("Network speed unit");
+        public static  string MeasureMemory => Loc.T("Measure memory as");
+        public static  string MemoryUsed => Loc.T("Memory Used");
+        public static  string AppMemory => Loc.T("App Memory");
+        public static  string MoreOptions => Loc.T("More options");
+        public static  string PressureDot => Loc.T("Pressure dot");
+        public static  string UploadFirst => Loc.T("Upload above download");
+        public static  string DiskDisplay => Loc.T("Disk display");
+        public static  string UsedPercentage => Loc.T("Used percentage");
+        public static  string AvailableSpace => Loc.T("Available space");
+        public static  string UsedSpace => Loc.T("Used space");
+        public static  string ShowInPanel => Loc.T("Show in panel");
     }
 }
 
@@ -85,13 +85,14 @@ internal static class TempProbe
 
 internal static class MonitorSettingsUi
 {
-    private static readonly (string Id, string Title, string Glyph)[] Metrics =
-    [
-        ("cpu", "CPU", Gl.Cpu), ("cpuTemperature", "CPU temperature", Gl.Cpu), ("gpu", "GPU", Gl.Gpu), ("gpuTemperature", "GPU temperature", Gl.Gpu),
-        ("memory", "Memory", Gl.Memory), ("battery", "Battery", Gl.Battery), ("batteryTime", "Battery time remaining", Gl.Clock),
-        ("batteryTemperature", "Battery temperature", Gl.Battery), ("peripheralBattery", "Peripheral battery", Gl.Keyboard), ("network", "Network", Gl.Network),
-        ("diskUsage", "Disk usage", Gl.Disk), ("diskActivity", "Live activity", Gl.Disk), ("connectedDevices", Strings.Monitor.ConnectedDevices, Gl.Usb), ("power", "Power", Gl.Plug),
-    ];
+    private static (string Id, string Title, string Glyph)[] Metrics => _loc_Metrics.Value;
+
+    private static readonly LocValue<(string Id, string Title, string Glyph)[]> _loc_Metrics = new(() => [
+        ("cpu", Loc.T("CPU"), Gl.Cpu), ("cpuTemperature", Loc.T("CPU temperature"), Gl.Cpu), ("gpu", Loc.T("GPU"), Gl.Gpu), ("gpuTemperature", Loc.T("GPU temperature"), Gl.Gpu),
+        ("memory", Loc.T("Memory"), Gl.Memory), ("battery", Loc.T("Battery"), Gl.Battery), ("batteryTime", Loc.T("Battery time remaining"), Gl.Clock),
+        ("batteryTemperature", Loc.T("Battery temperature"), Gl.Battery), ("peripheralBattery", Loc.T("Peripheral battery"), Gl.Keyboard), ("network", Loc.T("Network"), Gl.Network),
+        ("diskUsage", Loc.T("Disk usage"), Gl.Disk), ("diskActivity", Loc.T("Live activity"), Gl.Disk), ("connectedDevices", Strings.Monitor.ConnectedDevices, Gl.Usb), ("power", Loc.T("Power"), Gl.Plug),
+    ]);
 
     private static FrameworkElement Heading(string text, string glyph)
     {
@@ -276,7 +277,7 @@ internal static class MonitorSettingsUi
     {
         var mock = new Border { Height = 36, CornerRadius = new CornerRadius(8), Background = new SolidColorBrush(Color.FromArgb(0xD1, 0, 0, 0)) };
         var content = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-        foreach (var (label, value, fraction) in new[] { ("CPU", "42%", 0.42), ("RAM", "61%", 0.61) })
+        foreach (var (label, value, fraction) in new[] { (Loc.T("CPU"), "42%", 0.42), ("RAM", "61%", 0.61) })
         {
             if (bars)
             {
@@ -535,11 +536,11 @@ internal static class MonitorSettingsUi
         string? selected = null;
         var blockDefs = new List<(string Id, string Title, string Glyph, string Key, bool Available)>
         {
-            ("system", "System", Gl.Cpu, "monitorShowSystem", c.Runtime.AnyAvailable(["monitor-cpu", "monitor-gpu", "monitor-memory", "connected-devices"])),
-            ("network", "Network", Gl.Network, "monitorShowNetwork", c.Runtime.IsAvailable("monitor-network")),
-            ("disk", "Disks", Gl.Disk, "monitorShowDisk", c.Runtime.IsAvailable("monitor-disk")),
-            ("power", "Power", Gl.Bolt, "monitorShowPower", c.Runtime.IsAvailable("monitor-power")),
-            ("mixer", "Volume mixer", Gl.Speaker, "monitorShowMixer", c.Runtime.AnyAvailable(["mixer", "audio-priority"])),
+            ("system", Loc.T("System"), Gl.Cpu, "monitorShowSystem", c.Runtime.AnyAvailable(["monitor-cpu", "monitor-gpu", "monitor-memory", "connected-devices"])),
+            ("network", Loc.T("Network"), Gl.Network, "monitorShowNetwork", c.Runtime.IsAvailable("monitor-network")),
+            ("disk", Loc.T("Disks"), Gl.Disk, "monitorShowDisk", c.Runtime.IsAvailable("monitor-disk")),
+            ("power", Loc.T("Power"), Gl.Bolt, "monitorShowPower", c.Runtime.IsAvailable("monitor-power")),
+            ("mixer", Loc.T("Volume mixer"), Gl.Speaker, "monitorShowMixer", c.Runtime.AnyAvailable(["mixer", "audio-priority"])),
         };
         var tokens = new List<(string Id, MonitorToken Token)>();
 
@@ -623,20 +624,20 @@ internal static class MonitorSettingsUi
 
                 if (c.Runtime.IsAvailable("monitor-cpu"))
                 {
-                    yield return Item("CPU", Gl.Cpu, "monitorSysCPU", Graph("monitorGraphCPU"), new TokenOption(Gl.Equalizer, Strings.Monitor.PerCore, () => app.Get<bool>("monitorSysCPUCores"), on => app.Set("monitorSysCPUCores", on)));
+                    yield return Item(Loc.T("CPU"), Gl.Cpu, "monitorSysCPU", Graph("monitorGraphCPU"), new TokenOption(Gl.Equalizer, Strings.Monitor.PerCore, () => app.Get<bool>("monitorSysCPUCores"), on => app.Set("monitorSysCPUCores", on)));
                 }
 
                 if (c.Runtime.IsAvailable("monitor-gpu"))
                 {
-                    yield return Item("GPU", Gl.Gpu, "monitorSysGPU", Graph("monitorGraphGPU"));
+                    yield return Item(Loc.T("GPU"), Gl.Gpu, "monitorSysGPU", Graph("monitorGraphGPU"));
                 }
 
                 if (c.Runtime.IsAvailable("monitor-memory"))
                 {
-                    yield return Item("Memory", Gl.Memory, "monitorSysMemory", Graph("monitorGraphMemory"));
+                    yield return Item(Loc.T("Memory"), Gl.Memory, "monitorSysMemory", Graph("monitorGraphMemory"));
                 }
 
-                yield return Item("Uptime", Gl.Clock, "monitorSysUptime");
+                yield return Item(Loc.T("Uptime"), Gl.Clock, "monitorSysUptime");
                 if (c.Runtime.IsAvailable("connected-devices"))
                 {
                     yield return Item(Strings.Monitor.ConnectedDevices, Gl.Usb, "monitorSysConnectedDevices");
@@ -644,32 +645,32 @@ internal static class MonitorSettingsUi
 
                 break;
             case "network":
-                yield return Item("Live speed", Gl.Gauge, "monitorNetSpeed", Graph("monitorGraphNetwork"));
-                yield return Item("Apps using network", Gl.AllApps, "monitorNetApps");
-                yield return Item("Session totals", "", "monitorNetTotals");
-                yield return Item("IP addresses", Gl.Network, "monitorNetAddresses");
-                yield return Item("Speed test", Gl.Gauge, "monitorNetTest");
+                yield return Item(Loc.T("Live speed"), Gl.Gauge, "monitorNetSpeed", Graph("monitorGraphNetwork"));
+                yield return Item(Loc.T("Apps using network"), Gl.AllApps, "monitorNetApps");
+                yield return Item(Loc.T("Session totals"), "", "monitorNetTotals");
+                yield return Item(Loc.T("IP addresses"), Gl.Network, "monitorNetAddresses");
+                yield return Item(Loc.T("Speed test"), Gl.Gauge, "monitorNetTest");
                 break;
             case "disk":
-                yield return Item("Disk usage", Gl.Disk, "monitorDiskUsage");
-                yield return Item("Live activity", Gl.Up, "monitorDiskActivity", Graph("monitorGraphDisk"));
-                yield return Item("SMART", Gl.Heart, "monitorDiskSMART");
-                yield return Item("External protection", "", "monitorDiskProtection");
-                yield return Item("Tools", "", "monitorDiskTools");
+                yield return Item(Loc.T("Disk usage"), Gl.Disk, "monitorDiskUsage");
+                yield return Item(Loc.T("Live activity"), Gl.Up, "monitorDiskActivity", Graph("monitorGraphDisk"));
+                yield return Item(Loc.T("SMART"), Gl.Heart, "monitorDiskSMART");
+                yield return Item(Loc.T("External protection"), "", "monitorDiskProtection");
+                yield return Item(Loc.T("Tools"), "", "monitorDiskTools");
                 break;
             case "power":
-                yield return Item("System", Gl.Bolt, "monitorPwrSystem", Graph("monitorGraphPower"));
-                yield return Item("Adapter", Gl.Plug, "monitorPwrAdapter");
+                yield return Item(Loc.T("System"), Gl.Bolt, "monitorPwrSystem", Graph("monitorGraphPower"));
+                yield return Item(Loc.T("Adapter"), Gl.Plug, "monitorPwrAdapter");
                 if (PowerStatus.HasBattery)
                 {
-                    yield return Item("Charge", Gl.Battery, "monitorSysBattery", Graph("monitorGraphBattery"));
-                    yield return Item("Battery", Gl.BatteryCharging, "monitorPwrBattery");
-                    yield return Item("Battery time remaining", Gl.Clock, "monitorPwrTimeRemaining");
-                    yield return Item("Battery temperature", Gl.Thermo, "monitorPwrTemperature");
-                    yield return Item("Battery health", Gl.Heart, "monitorPwrHealth");
+                    yield return Item(Loc.T("Charge"), Gl.Battery, "monitorSysBattery", Graph("monitorGraphBattery"));
+                    yield return Item(Loc.T("Battery"), Gl.BatteryCharging, "monitorPwrBattery");
+                    yield return Item(Loc.T("Battery time remaining"), Gl.Clock, "monitorPwrTimeRemaining");
+                    yield return Item(Loc.T("Battery temperature"), Gl.Thermo, "monitorPwrTemperature");
+                    yield return Item(Loc.T("Battery health"), Gl.Heart, "monitorPwrHealth");
                 }
 
-                yield return Item("Peripheral battery", Gl.Keyboard, "monitorPwrPeripherals");
+                yield return Item(Loc.T("Peripheral battery"), Gl.Keyboard, "monitorPwrPeripherals");
                 break;
         }
     }
@@ -689,7 +690,7 @@ internal static class MonitorSettingsUi
         foreach (var s in seconds)
         {
             var value = s;
-            var chip = new Chip(value == 1 ? "1 second" : value + " seconds", null, app.Get<int>("monitorIntervalSeconds") == value, height: 26, radius: 8, tooltip: null) { Margin = new Thickness(0, 0, 6, 0), Padding = new Thickness(10, 0, 10, 0) };
+            var chip = new Chip(value == 1 ? Loc.T("1 second") : value + " seconds", null, app.Get<int>("monitorIntervalSeconds") == value, height: 26, radius: 8, tooltip: null) { Margin = new Thickness(0, 0, 6, 0), Padding = new Thickness(10, 0, 10, 0) };
             chip.MouseLeftButtonUp += (_, _) =>
             {
                 app.Set("monitorIntervalSeconds", value);
@@ -767,7 +768,7 @@ internal static class MonitorSettingsUi
         card.Add(inset);
 
         var cooldown = new[] { 2, 5, 15, 30, 60 };
-        var labels = new[] { "2 minutes", "5 minutes", "15 minutes", "30 minutes", "1 hour" };
+        var labels = new[] { Loc.T("2 minutes"), Loc.T("5 minutes"), Loc.T("15 minutes"), Loc.T("30 minutes"), Loc.T("1 hour") };
         var index = Math.Max(0, Array.IndexOf(cooldown, app.Get<int>("monitorAlertCooldownMinutes")));
         var combo = Bits.MiniCombo(labels, index, i => app.Set("monitorAlertCooldownMinutes", cooldown[i]), 130, 12);
         var anyOn = new[] { "monitorAlertCPU", "monitorAlertCPUTemperature", "monitorAlertMemory", "monitorAlertDisk", "monitorAlertBatteryTemperature", "monitorAlertBattery" }.Any(k => app.Get<bool>(k));
@@ -804,7 +805,7 @@ public sealed class MonitorPreviewSection : ISettingsSection
 
     public string PageId => SettingsPages.Monitor;
 
-    public string? Title => "Tray preview";
+    public string? Title => Loc.T("Tray preview");
 
     public int Order => 0;
 
@@ -826,7 +827,7 @@ public sealed class MonitorTraySection : ISettingsSection
 
     public string? Anchor => "tray";
 
-    public string? Title => "In the tray";
+    public string? Title => Loc.T("In the tray");
 
     public int Order => 10;
 
@@ -852,7 +853,7 @@ public sealed class MonitorPanelSettingsSection : ISettingsSection
 
     public string? Anchor => "panel";
 
-    public string? Title => "In the panel";
+    public string? Title => Loc.T("In the panel");
 
     public int Order => 20;
 
@@ -874,7 +875,7 @@ public sealed class MonitorReadingsSection : ISettingsSection
 
     public string? Anchor => "readings";
 
-    public string? Title => "Readings and alerts";
+    public string? Title => Loc.T("Readings and alerts");
 
     public int Order => 30;
 
@@ -896,7 +897,7 @@ public sealed class MonitorAlertsSection : ISettingsSection
 
     public string? Anchor => "alerts";
 
-    public string? Title => "Alerts";
+    public string? Title => Loc.T("Alerts");
 
     public int Order => 40;
 

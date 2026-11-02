@@ -53,35 +53,35 @@ internal static class PermissionService
 
     public static string Name(AppPermission p) => p switch
     {
-        AppPermission.Accessibility => "Accessibility",
-        AppPermission.ScreenRecording => "Screen Recording",
+        AppPermission.Accessibility => Loc.T("Accessibility"),
+        AppPermission.ScreenRecording => Loc.T("Screen Recording"),
         AppPermission.FullDiskAccess => "Administrator access",
-        AppPermission.FilesAndFolders => "Files & Folders",
-        AppPermission.Notifications => "Notifications",
+        AppPermission.FilesAndFolders => Loc.T("Files & Folders"),
+        AppPermission.Notifications => Loc.T("Notifications"),
         AppPermission.AutomationFinder => "Explorer automation",
-        AppPermission.AutomationPlayback => "Playback automation",
-        AppPermission.AudioCapture => "App audio",
-        AppPermission.Microphone => "Microphone",
-        AppPermission.Camera => "Camera",
-        AppPermission.AppManagement => "App management",
-        AppPermission.Calendar => "Calendar",
+        AppPermission.AutomationPlayback => Loc.T("Playback automation"),
+        AppPermission.AudioCapture => Loc.T("App audio"),
+        AppPermission.Microphone => Loc.T("Microphone"),
+        AppPermission.Camera => Loc.T("Camera"),
+        AppPermission.AppManagement => Loc.T("App management"),
+        AppPermission.Calendar => Loc.T("Calendar"),
         _ => p.ToString(),
     };
 
     public static string Explainer(AppPermission p) => p switch
     {
-        AppPermission.Accessibility => "Lets features react to clicks and keys, and move windows.",
-        AppPermission.ScreenRecording => "Lets features show window thumbnails and read text on screen.",
-        AppPermission.FullDiskAccess => "Lets the cleaner and the uninstaller find leftover files everywhere.",
-        AppPermission.FilesAndFolders => "Lets WhatsApp downloads cleanup and the experimental organizer inspect your Downloads folder.",
-        AppPermission.Notifications => "Lets the app notify you about alerts you turned on.",
-        AppPermission.AutomationFinder => "Lets the app ask File Explorer to move files for you.",
-        AppPermission.AutomationPlayback => "Some music apps require permission for their playback controls.",
-        AppPermission.AudioCapture => "Lets the mixer adjust each app’s volume, the Dynamic Island bars follow the music and screen recordings include the PC’s sound.",
-        AppPermission.Microphone => "Lets screen recordings include your voice when you turn it on.",
-        AppPermission.Camera => "Shows your camera only in the preview window, so you can check how you look before a call. Nothing is recorded or leaves your PC.",
-        AppPermission.AppManagement => "Lets updates replace or remove apps installed by the package manager.",
-        AppPermission.Calendar => "Read your calendars to show upcoming appointments. Events stay on this PC.",
+        AppPermission.Accessibility => Loc.T("Lets features react to clicks and keys, and move windows."),
+        AppPermission.ScreenRecording => Loc.T("Lets features show window thumbnails and read text on screen."),
+        AppPermission.FullDiskAccess => Loc.T("Lets the cleaner and the uninstaller find leftover files everywhere."),
+        AppPermission.FilesAndFolders => Loc.T("Lets WhatsApp downloads cleanup and the experimental organizer inspect your Downloads folder."),
+        AppPermission.Notifications => Loc.T("Lets the app notify you about alerts you turned on."),
+        AppPermission.AutomationFinder => Loc.T("Lets the app ask File Explorer to move files for you."),
+        AppPermission.AutomationPlayback => Loc.T("Some music apps require permission for their playback controls."),
+        AppPermission.AudioCapture => Loc.T("Lets the mixer adjust each app’s volume, the Dynamic Island bars follow the music and screen recordings include the PC’s sound."),
+        AppPermission.Microphone => Loc.T("Lets screen recordings include your voice when you turn it on."),
+        AppPermission.Camera => Loc.T("Shows your camera only in the preview window, so you can check how you look before a call. Nothing is recorded or leaves your PC."),
+        AppPermission.AppManagement => Loc.T("Lets updates replace or remove apps installed by the package manager."),
+        AppPermission.Calendar => Loc.T("Read your calendars to show upcoming appointments. Events stay on this PC."),
         _ => string.Empty,
     };
 
@@ -110,7 +110,7 @@ internal static class PermissionService
                 case AppPermission.Accessibility:
                     return IsElevated
                         ? new PermissionStatus(PermissionState.Granted)
-                        : new PermissionStatus(PermissionState.Granted, "Limited: running without administrator rights. Windows that run as administrator ignore WinKnife until it is elevated too.");
+                        : new PermissionStatus(PermissionState.Granted, Loc.T("Limited: running without administrator rights. Windows that run as administrator ignore WinKnife until it is elevated too."));
                 case AppPermission.ScreenRecording:
                 case AppPermission.AudioCapture:
                     return new PermissionStatus(PermissionState.Granted);
@@ -118,7 +118,7 @@ internal static class PermissionService
                 case AppPermission.AppManagement:
                     return IsElevated
                         ? new PermissionStatus(PermissionState.Granted)
-                        : new PermissionStatus(PermissionState.Missing, "Not granted. Windows asks (UAC) when something needs it.");
+                        : new PermissionStatus(PermissionState.Missing, Loc.T("Not granted. Windows asks (UAC) when something needs it."));
                 case AppPermission.FilesAndFolders:
                     return ControlledFolderAccess() ? new PermissionStatus(PermissionState.Unknown) : new PermissionStatus(PermissionState.Granted);
                 case AppPermission.Notifications:
@@ -147,7 +147,7 @@ internal static class PermissionService
 
     public static string RequestLabel(AppPermission p) => p is AppPermission.Accessibility or AppPermission.FullDiskAccess or AppPermission.AppManagement
         ? "Restart as administrator"
-        : "Request";
+        : Loc.T("Request");
 
     public static void Request(AppPermission p)
     {

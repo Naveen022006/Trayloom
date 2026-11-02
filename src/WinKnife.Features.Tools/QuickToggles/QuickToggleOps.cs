@@ -111,17 +111,17 @@ internal static class QuickToggleOps
     /// <summary>Dynamic title with an explicit context.</summary>
     public static string Title(IContributionServices? ctx, string id) => id switch
     {
-        "darkMode" => Dark ? "Switch to light mode" : "Switch to dark mode",
-        "keyboardLight" => "Keyboard light",
-        "micMute" => MicMuted(ctx) ? "Unmute microphone" : "Mute microphone",
-        "emptyTrash" => "Empty the Recycle Bin",
-        "quitAllApps" => "Quit all apps",
-        "ejectDisks" => "Eject all disks",
-        "hiddenFiles" => HiddenFilesShown ? "Hide hidden files" : "Show hidden files",
-        "desktopIcons" => DesktopIconsShown ? "Hide desktop icons" : "Show desktop icons",
-        "lockScreen" => "Lock the screen",
-        "displayOff" => "Turn off the display",
-        "screenSaver" => "Start the screen saver",
+        "darkMode" => Dark ? Loc.T("Switch to light mode") : Loc.T("Switch to dark mode"),
+        "keyboardLight" => Loc.T("Keyboard light"),
+        "micMute" => MicMuted(ctx) ? Loc.T("Unmute microphone") : Loc.T("Mute microphone"),
+        "emptyTrash" => Loc.T("Empty the Recycle Bin"),
+        "quitAllApps" => Loc.T("Quit all apps"),
+        "ejectDisks" => Loc.T("Eject all disks"),
+        "hiddenFiles" => HiddenFilesShown ? Loc.T("Hide hidden files") : Loc.T("Show hidden files"),
+        "desktopIcons" => DesktopIconsShown ? Loc.T("Hide desktop icons") : Loc.T("Show desktop icons"),
+        "lockScreen" => Loc.T("Lock the screen"),
+        "displayOff" => Loc.T("Turn off the display"),
+        "screenSaver" => Loc.T("Start the screen saver"),
         _ => id,
     };
 
@@ -145,16 +145,16 @@ internal static class QuickToggleOps
     /// <summary>The tooltip / edit-mode caption.</summary>
     public static string Caption(string id) => id switch
     {
-        "darkMode" => "Changes the appearance of the whole system.",
-        "keyboardLight" => "Turns the keyboard backlight on or off.",
-        "micMute" => "Uses each microphone’s mute control. Some apps may still hear you. This is not a privacy lock.",
-        "emptyTrash" => "Removes everything from the Recycle Bin.",
-        "quitAllApps" => "Lists your open apps to quit one by one, all at once, or all but the one in front. Always shows the list before anything quits.",
-        "ejectDisks" => "Safely ejects every external disk.",
-        "hiddenFiles" or "desktopIcons" => "File Explorer refreshes to apply it.",
-        "lockScreen" => "Asks for the password to come back.",
-        "displayOff" => "The PC keeps running with the display off.",
-        "screenSaver" => "Starts right away, on every display.",
+        "darkMode" => Loc.T("Changes the appearance of the whole system."),
+        "keyboardLight" => Loc.T("Turns the keyboard backlight on or off."),
+        "micMute" => Loc.T("Uses each microphone’s mute control. Some apps may still hear you. This is not a privacy lock."),
+        "emptyTrash" => Loc.T("Removes everything from the Recycle Bin."),
+        "quitAllApps" => Loc.T("Lists your open apps to quit one by one, all at once, or all but the one in front. Always shows the list before anything quits."),
+        "ejectDisks" => Loc.T("Safely ejects every external disk."),
+        "hiddenFiles" or "desktopIcons" => Loc.T("File Explorer refreshes to apply it."),
+        "lockScreen" => Loc.T("Asks for the password to come back."),
+        "displayOff" => Loc.T("The PC keeps running with the display off."),
+        "screenSaver" => Loc.T("Starts right away, on every display."),
         _ => string.Empty,
     };
 
@@ -222,7 +222,7 @@ internal static class QuickToggleOps
                 case "micMute":
                     return ActionBridge.Invoke(ctx, "mic-mute", "toggle");
                 case "emptyTrash":
-                    if (!ToggleConfirmDialog.Ask("Empty the Recycle Bin?", "All items in the Recycle Bin will be removed. This cannot be undone.", "Empty the Recycle Bin"))
+                    if (!ToggleConfirmDialog.Ask(Loc.T("Empty the Recycle Bin?"), Loc.T("All items in the Recycle Bin will be removed. This cannot be undone."), Loc.T("Empty the Recycle Bin")))
                     {
                         return true;
                     }

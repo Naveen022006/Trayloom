@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
 using WinKnife.Core.Ui;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Maintenance;
 
@@ -64,7 +65,7 @@ internal sealed class OperationStatusView : ContentControl
 
     private static string SubText(OperationStatus status)
     {
-        var elapsed = $"{Fmt.Elapsed((status.Finished ?? DateTime.Now) - status.Started)} elapsed";
+        var elapsed = Loc.F("{0} elapsed", Fmt.Elapsed((status.Finished ?? DateTime.Now) - status.Started));
         return status.IsRunning ? $"{status.PhaseText} | {elapsed}" : elapsed;
     }
 
@@ -115,8 +116,8 @@ internal sealed class OperationStatusView : ContentControl
         Grid.SetColumn(texts, 1);
         head.Children.Add(texts);
         var action = status.IsRunning
-            ? PanelButtons.Mini("Cancel", null, () => WingetOperations.Shared.Cancel())
-            : PanelButtons.Mini("Clear log", null, () => WingetOperations.Shared.Clear());
+            ? PanelButtons.Mini(Loc.T("Cancel"), null, () => WingetOperations.Shared.Cancel())
+            : PanelButtons.Mini(Loc.T("Clear log"), null, () => WingetOperations.Shared.Clear());
         action.VerticalAlignment = VerticalAlignment.Top;
         action.Margin = new Thickness(8, 0, 0, 0);
         Grid.SetColumn(action, 2);
@@ -129,7 +130,7 @@ internal sealed class OperationStatusView : ContentControl
             column.Children.Add(bar);
             if (status.IsRunning && status.Fraction is null)
             {
-                var caption = UiKit.Text("winget has not reported a percentage yet.", 10, FontWeights.Normal, ThemeKeys.TextTertiary, trimming: TextTrimming.CharacterEllipsis);
+                var caption = UiKit.Text(Loc.T("winget has not reported a percentage yet."), 10, FontWeights.Normal, ThemeKeys.TextTertiary, trimming: TextTrimming.CharacterEllipsis);
                 caption.Margin = new Thickness(0, 4, 0, 0);
                 column.Children.Add(caption);
             }
@@ -152,7 +153,7 @@ internal sealed class OperationStatusView : ContentControl
 
         if (status.State == OpState.NeedsTerminal)
         {
-            var note = V.Label(G.Terminal, "This operation needs administrator approval. WinKnife does not capture passwords.", _compact ? 9.5 : 11, FontWeights.Normal, ThemeKeys.TextSecondary, ThemeKeys.TextSecondary);
+            var note = V.Label(G.Terminal, Loc.T("This operation needs administrator approval. WinKnife does not capture passwords."), _compact ? 9.5 : 11, FontWeights.Normal, ThemeKeys.TextSecondary, ThemeKeys.TextSecondary);
             foreach (var child in note.Children.OfType<TextBlock>())
             {
                 child.TextWrapping = TextWrapping.Wrap;
@@ -162,7 +163,7 @@ internal sealed class OperationStatusView : ContentControl
             column.Children.Add(note);
             if (!string.IsNullOrEmpty(status.Command))
             {
-                var buttons = V.Row(8, PanelButtons.Mini("Open terminal", null, () => OpenTerminal(status.Command!)), PanelButtons.Mini("Copy", G.Copy, () => TryCopy(status.Command!)));
+                var buttons = V.Row(8, PanelButtons.Mini(Loc.T("Open terminal"), null, () => OpenTerminal(status.Command!)), PanelButtons.Mini(Loc.T("Copy"), G.Copy, () => TryCopy(status.Command!)));
                 buttons.Margin = new Thickness(0, 6, 0, 0);
                 column.Children.Add(buttons);
             }
@@ -170,7 +171,7 @@ internal sealed class OperationStatusView : ContentControl
 
         if (status.Log.Length > 0)
         {
-            var toggle = UiKit.Button(_details ? "Hide details" : "Show details", ButtonKind.Plain, 11, _details ? G.ChevronUp : G.ChevronDown, () =>
+            var toggle = UiKit.Button(_details ? Loc.T("Hide details") : Loc.T("Show details"), ButtonKind.Plain, 11, _details ? G.ChevronUp : G.ChevronDown, () =>
             {
                 _details = !_details;
                 Rebuild();
@@ -181,7 +182,7 @@ internal sealed class OperationStatusView : ContentControl
             column.Children.Add(toggle);
             if (_details)
             {
-                var header = V.Split(UiKit.Text("Technical details", 11, FontWeights.SemiBold, ThemeKeys.TextTertiary), PanelButtons.Mini("Copy", G.Copy, () => TryCopy(status.Log.ToString())));
+                var header = V.Split(UiKit.Text(Loc.T("Technical details"), 11, FontWeights.SemiBold, ThemeKeys.TextTertiary), PanelButtons.Mini(Loc.T("Copy"), G.Copy, () => TryCopy(status.Log.ToString())));
                 header.Margin = new Thickness(0, 2, 0, 4);
                 column.Children.Add(header);
                 var log = new TextBox

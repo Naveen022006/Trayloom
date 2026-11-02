@@ -140,7 +140,7 @@ internal sealed class BarService
 
     public string Placeholder => Mode switch
     {
-        BarMode.Argument when ModeEntry?.NumericRange is { } r => $"{r.Min} to {r.Max}",
+        BarMode.Argument when ModeEntry?.NumericRange is { } r => Loc.F("{0} to {1}", r.Min, r.Max),
         BarMode.Naming => BarStrings.AliasPlaceholder,
         _ => BarStrings.SearchPlaceholder,
     };
@@ -529,7 +529,7 @@ internal sealed class BarService
             .Where(e => e is not null)
             .Cast<BarEntry>()
             .ToList();
-        Add("Pinned", pins);
+        Add(Loc.T("Pinned"), pins);
         foreach (var e in pins)
         {
             shown.Add(e.Id);
@@ -1000,7 +1000,7 @@ internal sealed class BarService
         }
         catch
         {
-            ToolHud.Show("", "Couldn’t copy");
+            ToolHud.Show("", Loc.T("Couldn’t copy"));
         }
     }
 
@@ -1107,7 +1107,7 @@ internal sealed class BarService
                 }
                 else if (failed)
                 {
-                    _scriptResults[key] = "Couldn’t run this file";
+                    _scriptResults[key] = Loc.T("Couldn’t run this file");
                 }
 
                 Rebuild();
@@ -1607,17 +1607,17 @@ internal sealed class BarService
         var owner = shortcuts.FirstOrDefault(p => p.Value.Equals(hotkey) && p.Key != key).Key;
         if (owner is not null)
         {
-            return $"This shortcut is already used by {TitleOfKey(owner)}.";
+            return Loc.F("This shortcut is already used by {0}.", TitleOfKey(owner));
         }
 
         if (!shortcuts.ContainsKey(key) && shortcuts.Count >= BarPreferences.MaxRowShortcuts)
         {
-            return $"You can assign up to {BarPreferences.MaxRowShortcuts} shortcuts. Remove one to add another.";
+            return Loc.F("You can assign up to {0} shortcuts. Remove one to add another.", BarPreferences.MaxRowShortcuts);
         }
 
         if (Ctx.Shortcuts.FindConflict(hotkey, "") is { } role)
         {
-            return $"This shortcut is already used by {role}.";
+            return Loc.F("This shortcut is already used by {0}.", role);
         }
 
         if (HotkeyMap.IsReserved(hotkey))

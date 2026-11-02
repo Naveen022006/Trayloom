@@ -209,8 +209,8 @@ internal sealed partial class ScreenshotEditorWindow : Window
 
         Add(new EdButton(G.History, null, Strings.Screenshot.RecentCaptures, () => RecentCapturesWindow.ShowPalette(), width: 24));
         Add(new EdButton(G.Trash, null, Strings.Screenshot.Discard, () => { _forceClose = true; Close(); }, width: 24));
-        _undoBtn = new EdButton(G.Undo, null, "Undo", Undo, width: 24);
-        _redoBtn = new EdButton(G.Redo, null, "Redo", Redo, width: 24);
+        _undoBtn = new EdButton(G.Undo, null, Loc.T("Undo"), Undo, width: 24);
+        _redoBtn = new EdButton(G.Redo, null, Loc.T("Redo"), Redo, width: 24);
         var ur = new StackPanel { Orientation = Orientation.Horizontal };
         ur.Children.Add(_undoBtn);
         ur.Children.Add(_redoBtn);
@@ -221,8 +221,8 @@ internal sealed partial class ScreenshotEditorWindow : Window
             Add(_qrBtn);
         }
 
-        Add(new EdButton(G.Pin, null, "Pin to screen  (Ctrl+P)", PinCurrent, width: 24));
-        Add(new EdButton(G.Share, null, "Share", ShareCurrent, width: 24));
+        Add(new EdButton(G.Pin, null, Loc.T("Pin to screen  (Ctrl+P)"), PinCurrent, width: 24));
+        Add(new EdButton(G.Share, null, Loc.T("Share"), ShareCurrent, width: 24));
         var save = BuildSaveButton();
         Add(save);
         var copy = new EdButton(null, Strings.Screenshot.CopyLabel, "Enter", CopyAndClose, prominent: true, height: 26);
@@ -354,7 +354,7 @@ internal sealed partial class ScreenshotEditorWindow : Window
         row.Children.Add(_zoomText);
         row.Children.Add(_oneBtn);
         var chip = Ed.Capsule(row, 9, new Thickness(4));
-        chip.ToolTip = "Ctrl+Wheel · Ctrl+Plus Ctrl+Minus";
+        chip.ToolTip = Loc.T("Ctrl+Wheel · Ctrl+Plus Ctrl+Minus");
         chip.VerticalAlignment = VerticalAlignment.Center;
         return chip;
     }

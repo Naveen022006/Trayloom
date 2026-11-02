@@ -273,9 +273,9 @@ public sealed class SwitcherSettingsSection : ISettingsSection
         }
 
         AddBody(new SettingsRow("", Strings.AppearanceDelay, Strings.AppearanceDelayCaption,
-            FormUi.SliderAccessory(0, 500, app.Get<int>(Keys.SwitcherDelay), 25, v => $"{(int)v} ms", v => app.Set(Keys.SwitcherDelay, (int)v))));
+            FormUi.SliderAccessory(0, 500, app.Get<int>(Keys.SwitcherDelay), 25, v => Loc.F("{0} ms", (int)v), v => app.Set(Keys.SwitcherDelay, (int)v))));
         AddBody(new SettingsRow("", Strings.MaxColumns, Strings.MaxColumnsCaption,
-            FormUi.SliderAccessory(1, 10, Math.Max(1, app.Get<int>(Keys.SwitcherMaxColumns)), 1, v => v <= 1 ? "Auto" : ((int)v).ToString(), v => app.Set(Keys.SwitcherMaxColumns, v <= 1 ? 0 : (int)v))));
+            FormUi.SliderAccessory(1, 10, Math.Max(1, app.Get<int>(Keys.SwitcherMaxColumns)), 1, v => v <= 1 ? Loc.T("Auto") : ((int)v).ToString(), v => app.Set(Keys.SwitcherMaxColumns, v <= 1 ? 0 : (int)v))));
         AddBody(FormUi.Toggle(app, Keys.SwitcherInstant, "", Strings.InstantSelection, Strings.InstantSelectionCaption));
         AddBody(FormUi.Toggle(app, Keys.SwitcherSearchPin, "", Strings.PinSearch, Strings.PinSearchCaption));
         var hintsRow = FormUi.Toggle(app, Keys.SwitcherHints, "", Strings.ShortcutHints, Strings.ShortcutHintsCaption);

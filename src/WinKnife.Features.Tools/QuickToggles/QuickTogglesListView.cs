@@ -284,13 +284,13 @@ internal sealed class QuickTogglesListView : Border
         badge.SetResourceReference(Border.BackgroundProperty, ThemeKeys.ControlFill);
         var badgeRow = new StackPanel { Orientation = Orientation.Horizontal };
         badgeRow.Children.Add(UiKit.Icon(Glyphs.EyeOff, 8, ThemeKeys.TextSecondary, FontWeights.Bold));
-        var hiddenText = UiKit.Text("Hidden", 9.5, FontWeights.Bold, ThemeKeys.TextSecondary);
+        var hiddenText = UiKit.Text(Loc.T("Hidden"), 9.5, FontWeights.Bold, ThemeKeys.TextSecondary);
         hiddenText.Margin = new Thickness(3, 0, 0, 0);
         badgeRow.Children.Add(hiddenText);
         badge.Child = badgeRow;
         trailing.Children.Add(badge);
 
-        var eye = new Button { Width = 24, Height = 22, Padding = new Thickness(0), Cursor = Cursors.Hand, ToolTip = "Hide from panel", Visibility = _editing ? Visibility.Visible : Visibility.Collapsed, Content = UiKit.Icon(Glyphs.EyeOff, 11, ThemeKeys.TextSecondary, FontWeights.SemiBold) };
+        var eye = new Button { Width = 24, Height = 22, Padding = new Thickness(0), Cursor = Cursors.Hand, ToolTip = Loc.T("Hide from panel"), Visibility = _editing ? Visibility.Visible : Visibility.Collapsed, Content = UiKit.Icon(Glyphs.EyeOff, 11, ThemeKeys.TextSecondary, FontWeights.SemiBold) };
         eye.SetResourceReference(StyleProperty, ThemeKeys.ButtonPlain);
         trailing.Children.Add(eye);
 
@@ -453,11 +453,11 @@ internal sealed class QuickTogglesListView : Border
         row.Title.SetResourceReference(TextBlock.ForegroundProperty, hidden ? ThemeKeys.TextSecondary : ThemeKeys.TextPrimary);
 
         var plain = QuickToggleOps.Caption(id);
-        var caption = failed ? "Could not complete." : plain;
+        var caption = failed ? Loc.T("Could not complete.") : plain;
         var visibleCaption = failed || _editing || QuickToggleOps.CaptionStaysVisible(id);
         if (id == "ejectDisks")
         {
-            caption = failed ? "Could not complete." : running ? "Ejecting…" : _ejectCount == 0 ? "No external disk ready to eject." : plain;
+            caption = failed ? Loc.T("Could not complete.") : running ? Loc.T("Ejecting…") : _ejectCount == 0 ? Loc.T("No external disk ready to eject.") : plain;
             visibleCaption |= caption != plain;
         }
 
@@ -477,7 +477,7 @@ internal sealed class QuickTogglesListView : Border
         row.HiddenBadge.Visibility = hidden ? Visibility.Visible : Visibility.Collapsed;
         var shown = IsRowVisible(id);
         row.Eye.Content = UiKit.Icon(shown ? Glyphs.EyeOff : Glyphs.Eye, 11, shown ? ThemeKeys.TextSecondary : ThemeKeys.Accent, FontWeights.SemiBold);
-        row.Eye.ToolTip = shown ? "Hide from panel" : "Show in panel";
+        row.Eye.ToolTip = shown ? Loc.T("Hide from panel") : Loc.T("Show in panel");
         if (row.Switch is { } sw)
         {
             sw.IsOn = ToggleKeyboardLight.Level > 0;

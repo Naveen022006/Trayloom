@@ -16,84 +16,84 @@ internal static partial class Strings
 {
     public static class Monitor
     {
-        public const string Temperatures = "Temperatures";
-        public const string SensorsUnavailable = "Sensors unavailable on this PC";
-        public const string HardwareUsage = "Hardware usage";
-        public const string OpenTaskManager = "Open Task Manager";
-        public const string AppsUsingCpu = "Apps using CPU";
-        public const string AppsUsingGpu = "Apps using GPU";
-        public const string AppsUsingMemory = "Apps using memory";
-        public const string AppsUsingNetwork = "Apps using network";
-        public const string AppsUsingEnergy = "Apps using significant energy";
-        public const string Measuring = "Measuring…";
-        public const string NoNetworkApps = "No apps using network now";
-        public const string NetworkAppsAdmin = "Run as administrator to see apps using the network";
-        public const string NoEnergy = "No significant energy use";
-        public const string Memory = "Memory";
-        public const string Pressure = "Pressure";
-        public const string Compressed = "Compressed";
-        public const string CachedFiles = "Cached files";
-        public const string SwapUsed = "Swap used";
-        public const string PerCore = "Per core";
-        public const string Graphs = "Graphs";
-        public const string Normal = "Normal";
-        public const string Caution = "Caution";
-        public const string Critical = "Critical";
-        public const string Download = "Download";
-        public const string Upload = "Upload";
-        public const string ThisSession = "This session";
-        public const string LocalIPv4 = "Local IPv4";
-        public const string SpeedTest = "Speed test";
-        public const string TestAgain = "Test again";
-        public const string Testing = "Testing…";
-        public const string TestFailed = "Test failed";
-        public const string NoDisks = "No mounted disks found.";
-        public const string SelectDisk = "Select disk";
-        public const string DiskUsage = "Disk usage";
-        public const string LiveActivity = "Live activity";
-        public const string Smart = "SMART";
-        public const string SmartUnavailable = "SMART unavailable for this disk";
-        public const string ExternalProtection = "External protection";
-        public const string Tools = "Tools";
-        public const string Eject = "Eject";
-        public const string EjectAll = "Eject all";
-        public const string EjectBefore = "Eject before unplugging.";
-        public const string NoExternal = "No external disk ready to eject.";
-        public const string Ejecting = "Ejecting…";
-        public const string ReadyToRemove = "Ready to remove";
-        public const string EjectFailed = "Could not eject";
-        public const string Open = "Open";
-        public const string Storage = "Storage";
-        public const string Read = "Read";
-        public const string Write = "Write";
-        public const string PowerUnavailable = "Power metrics unavailable on this PC";
-        public const string Charge = "Battery";
-        public const string BatteryTemperature = "Battery temperature";
-        public const string System = "System";
-        public const string Adapter = "Adapter";
-        public const string PluggedIn = "Plugged in";
-        public const string BatteryRow = "Battery";
-        public const string Charging = "Charging";
-        public const string OnBattery = "On battery";
-        public const string TimeRemaining = "Battery time remaining";
-        public const string SystemEstimate = "System estimate";
-        public const string Calculating = "Calculating…";
-        public const string Health = "Battery health";
-        public const string PeripheralBattery = "Peripheral battery";
-        public const string ConnectedDevices = "Connected Devices";
-        public const string NoDevices = "No external devices connected";
-        public const string UsbDevice = "USB Device";
-        public const string NoPeripherals = "No devices found";
-        public const string Logical = "Logical CPU cores";
-        public const string CoresCaption = "Each bar is one logical core. Its fill height shows utilization, not remaining performance.";
+        public static  string Temperatures => Loc.T("Temperatures");
+        public static  string SensorsUnavailable => Loc.T("Sensors unavailable on this PC");
+        public static  string HardwareUsage => Loc.T("Hardware usage");
+        public static  string OpenTaskManager => Loc.T("Open Task Manager");
+        public static  string AppsUsingCpu => Loc.T("Apps using CPU");
+        public static  string AppsUsingGpu => Loc.T("Apps using GPU");
+        public static  string AppsUsingMemory => Loc.T("Apps using memory");
+        public static  string AppsUsingNetwork => Loc.T("Apps using network");
+        public static  string AppsUsingEnergy => Loc.T("Apps using significant energy");
+        public static  string Measuring => Loc.T("Measuring…");
+        public static  string NoNetworkApps => Loc.T("No apps using network now");
+        public static  string NetworkAppsAdmin => Loc.T("Run as administrator to see apps using the network");
+        public static  string NoEnergy => Loc.T("No significant energy use");
+        public static  string Memory => Loc.T("Memory");
+        public static  string Pressure => Loc.T("Pressure");
+        public static  string Compressed => Loc.T("Compressed");
+        public static  string CachedFiles => Loc.T("Cached files");
+        public static  string SwapUsed => Loc.T("Swap used");
+        public static  string PerCore => Loc.T("Per core");
+        public static  string Graphs => Loc.T("Graphs");
+        public static  string Normal => Loc.T("Normal");
+        public static  string Caution => Loc.T("Caution");
+        public static  string Critical => Loc.T("Critical");
+        public static  string Download => Loc.T("Download");
+        public static  string Upload => Loc.T("Upload");
+        public static  string ThisSession => Loc.T("This session");
+        public static  string LocalIPv4 => Loc.T("Local IPv4");
+        public static  string SpeedTest => Loc.T("Speed test");
+        public static  string TestAgain => Loc.T("Test again");
+        public static  string Testing => Loc.T("Testing…");
+        public static  string TestFailed => Loc.T("Test failed");
+        public static  string NoDisks => Loc.T("No mounted disks found.");
+        public static  string SelectDisk => Loc.T("Select disk");
+        public static  string DiskUsage => Loc.T("Disk usage");
+        public static  string LiveActivity => Loc.T("Live activity");
+        public static  string Smart => Loc.T("SMART");
+        public static  string SmartUnavailable => Loc.T("SMART unavailable for this disk");
+        public static  string ExternalProtection => Loc.T("External protection");
+        public static  string Tools => Loc.T("Tools");
+        public static  string Eject => Loc.T("Eject");
+        public static  string EjectAll => Loc.T("Eject all");
+        public static  string EjectBefore => Loc.T("Eject before unplugging.");
+        public static  string NoExternal => Loc.T("No external disk ready to eject.");
+        public static  string Ejecting => Loc.T("Ejecting…");
+        public static  string ReadyToRemove => Loc.T("Ready to remove");
+        public static  string EjectFailed => Loc.T("Could not eject");
+        public static  string Open => Loc.T("Open");
+        public static  string Storage => Loc.T("Storage");
+        public static  string Read => Loc.T("Read");
+        public static  string Write => Loc.T("Write");
+        public static  string PowerUnavailable => Loc.T("Power metrics unavailable on this PC");
+        public static  string Charge => Loc.T("Battery");
+        public static  string BatteryTemperature => Loc.T("Battery temperature");
+        public static  string System => Loc.T("System");
+        public static  string Adapter => Loc.T("Adapter");
+        public static  string PluggedIn => Loc.T("Plugged in");
+        public static  string BatteryRow => Loc.T("Battery");
+        public static  string Charging => Loc.T("Charging");
+        public static  string OnBattery => Loc.T("On battery");
+        public static  string TimeRemaining => Loc.T("Battery time remaining");
+        public static  string SystemEstimate => Loc.T("System estimate");
+        public static  string Calculating => Loc.T("Calculating…");
+        public static  string Health => Loc.T("Battery health");
+        public static  string PeripheralBattery => Loc.T("Peripheral battery");
+        public static  string ConnectedDevices => Loc.T("Connected Devices");
+        public static  string NoDevices => Loc.T("No external devices connected");
+        public static  string UsbDevice => Loc.T("USB Device");
+        public static  string NoPeripherals => Loc.T("No devices found");
+        public static  string Logical => Loc.T("Logical CPU cores");
+        public static  string CoresCaption => Loc.T("Each bar is one logical core. Its fill height shows utilization, not remaining performance.");
 
         public static string UpFor(string value) => $"Up for {value}";
 
         public static string Cycles(int n) => n == 1 ? "1 Cycle" : $"{n} Cycles";
 
-        public static string DeviceCount(int n) => n == 1 ? "1 device connected" : $"{n} devices connected";
+        public static string DeviceCount(int n) => n == 1 ? Loc.T("1 device connected") : Loc.F("{0} devices connected", n);
 
-        public static string Core(int n) => $"Core {n}";
+        public static string Core(int n) => Loc.F("Core {0}", n);
     }
 }
 
@@ -301,7 +301,7 @@ internal sealed class ProcessList : StackPanel
             {
                 var pid = row.Pid;
                 var menu = new ContextMenu();
-                var item = new MenuItem { Header = "Force Quit" };
+                var item = new MenuItem { Header = Loc.T("Force Quit") };
                 item.Click += (_, _) => ForceQuit(pid, row.Name);
                 menu.Items.Add(item);
                 grid.ContextMenu = menu;
@@ -313,7 +313,7 @@ internal sealed class ProcessList : StackPanel
 
     private static void ForceQuit(int pid, string name)
     {
-        if (MessageBox.Show($"Force quit {name}?", "Force Quit", MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK)
+        if (MessageBox.Show(Loc.F("Force quit {0}?", name), Loc.T("Force Quit"), MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK)
         {
             return;
         }
@@ -422,7 +422,7 @@ internal sealed class CoreMatrix : FrameworkElement
                 x += barWidth + (4 * scale);
             }
 
-            var label = name == "CPU" ? Strings.Monitor.Logical : name + " ×" + count;
+            var label = name == "CPU" ? Strings.Monitor.Logical : Loc.T(name) + " ×" + count;
             var text = new FormattedText(label, System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface(UiKit.TextFont, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal), 10, UiKit.BrushOf(ThemeKeys.TextSecondary), VisualTreeHelper.GetDpi(this).PixelsPerDip)
             {
                 MaxTextWidth = Math.Max(20, x - left - (4 * scale)),

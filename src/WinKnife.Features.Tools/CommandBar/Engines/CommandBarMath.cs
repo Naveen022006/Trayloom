@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Tools;
 
@@ -80,7 +81,7 @@ internal static class CommandBarMath
 
             var reusableNumber = v.ToString("R", culture);
             var reusable = v < 0 ? "(" + reusableNumber + ")" : reusableNumber;
-            var subtitle = closers.Length > 0 ? typed + closers + " · Return copies" : "Return copies";
+            var subtitle = closers.Length > 0 ? typed + closers + " · Return copies" : Loc.T("Return copies");
             return new MathAnswer(Format(shown, culture), reusable, subtitle);
         }
         catch (Reject)

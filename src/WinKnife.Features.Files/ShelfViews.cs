@@ -306,7 +306,7 @@ internal sealed class ShelfTile : Border
         items.Add(null);
         if (item.IsPile)
         {
-            items.Add((store.Expanded.Contains(item.Id) ? "Collapse pile" : "Expand pile", () => store.ToggleExpanded(item.Id), true, false));
+            items.Add((store.Expanded.Contains(item.Id) ? Loc.T("Collapse pile") : Loc.T("Expand pile"), () => store.ToggleExpanded(item.Id), true, false));
         }
 
         items.Add((item.Pinned ? Strings.Shelf.UnpinAction : Strings.Shelf.PinAction, () => store.TogglePin(item.Id), true, false));

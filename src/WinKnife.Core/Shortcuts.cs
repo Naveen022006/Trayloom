@@ -275,7 +275,7 @@ public sealed class ShortcutService : IShortcutService
         var role = Role(roleId);
         if (role is null)
         {
-            return new ShortcutSetResult(false, "Unknown shortcut.");
+            return new ShortcutSetResult(false, Loc.T("Unknown shortcut."));
         }
 
         if (hotkey is not null)
@@ -284,20 +284,20 @@ public sealed class ShortcutService : IShortcutService
             var functionKey = hotkey.Key is >= Key.F1 and <= Key.F24;
             if (!hasModifier && !(role.AllowBare || functionKey))
             {
-                return new ShortcutSetResult(false, "Use at least Control, Alt or Windows with a key.");
+                return new ShortcutSetResult(false, Loc.T("Use at least Control, Alt or Windows with a key."));
             }
 
             var other = FindConflict(hotkey, roleId);
             if (other is not null)
             {
-                return new ShortcutSetResult(false, $"This shortcut is already used by {other}.");
+                return new ShortcutSetResult(false, Loc.F("This shortcut is already used by {0}.", other));
             }
 
             if (!role.HookBased && !hotkey.Equals(GetHotkey(roleId)) && !hotkey.Equals(GetState(roleId).Effective))
             {
                 if (!_hotkeys.TryRegister(hotkey, () => { }, out var probe))
                 {
-                    return new ShortcutSetResult(false, "Nothing was captured. Windows or another app already uses that combination. Try another one.");
+                    return new ShortcutSetResult(false, Loc.T("Nothing was captured. Windows or another app already uses that combination. Try another one."));
                 }
 
                 probe.Dispose();
@@ -423,7 +423,7 @@ public sealed class ShortcutService : IShortcutService
                 if (reg is null)
                 {
                     registered = false;
-                    problem = "Windows rejected this shortcut. Choose another one.";
+                    problem = Loc.T("Windows rejected this shortcut. Choose another one.");
                 }
             }
 
@@ -495,94 +495,94 @@ public static class ShortcutRoles
         var ctrlAlt = HotkeyModifiers.Control | HotkeyModifiers.Alt;
 
         // Windows and taskbar
-        list.Add(R("switcher", "Apps", "switcher", W, new Hotkey(HotkeyModifiers.Alt, Key.Tab), ["switcherEnabled"], hook: true));
-        list.Add(R("switcherWindow", "Windows", "switcher", W, new Hotkey(HotkeyModifiers.Alt, Key.OemTilde), ["switcherEnabled"], hook: true));
-        list.Add(R("switcherAllWindows", "All windows", "switcher", W, new Hotkey(HotkeyModifiers.Control | HotkeyModifiers.Alt, Key.Tab), ["switcherEnabled", "switcherAllWindowsShortcutEnabled"], hook: true));
-        list.Add(R("pointerNextDisplay", "Move pointer to next display", "window-layout", W, Mac(Cac, Key.Z), ["pointerDisplayEnabled"]));
+        list.Add(R("switcher", Loc.T("Apps"), "switcher", W, new Hotkey(HotkeyModifiers.Alt, Key.Tab), ["switcherEnabled"], hook: true));
+        list.Add(R("switcherWindow", Loc.T("Windows"), "switcher", W, new Hotkey(HotkeyModifiers.Alt, Key.OemTilde), ["switcherEnabled"], hook: true));
+        list.Add(R("switcherAllWindows", Loc.T("All windows"), "switcher", W, new Hotkey(HotkeyModifiers.Control | HotkeyModifiers.Alt, Key.Tab), ["switcherEnabled", "switcherAllWindowsShortcutEnabled"], hook: true));
+        list.Add(R("pointerNextDisplay", Loc.T("Move pointer to next display"), "window-layout", W, Mac(Cac, Key.Z), ["pointerDisplayEnabled"]));
         foreach (var (id, title, def) in WindowLayoutActions(ctrlAlt))
         {
-            list.Add(new ShortcutRole("windowLayout." + id, "windowLayoutShortcut." + id, title, "window-layout", W, def, ["windowLayoutShortcutsEnabled"], Section: "Window layout"));
+            list.Add(new ShortcutRole("windowLayout." + id, "windowLayoutShortcut." + id, title, "window-layout", W, def, ["windowLayoutShortcutsEnabled"], Section: Loc.T("Window layout")));
         }
 
         // Mouse and keyboard
-        list.Add(R("snippetLibrary", "Quick snippet menu", "text-snippets", Mk, Mac(Cac, Key.L), ["snippetLibraryEnabled"]));
+        list.Add(R("snippetLibrary", Loc.T("Quick snippet menu"), "text-snippets", Mk, Mac(Cac, Key.L), ["snippetLibraryEnabled"]));
 
         // Clipboard and files
-        list.Add(R("shelf", "Shelf", "shelf", Cf, Mac(Cac, Key.D), ["shelfEnabled", "shelfShortcutEnabled"]));
-        list.Add(R("clipboardHistory", "Clipboard", "clipboard-history", Cf, Mac(Cac, Key.V), ["clipboardHistoryEnabled", "clipboardHistoryShortcutEnabled"]));
-        list.Add(R("pastePlain", "Paste as plain text", "paste-plain", Cf, Mac("⇧⌥⌘", Key.V), ["pastePlainEnabled"]));
-        list.Add(R("finderRename", "Rename shortcut", "finder-rename", Cf, new Hotkey(HotkeyModifiers.None, Key.F2), ["finderRenameEnabled"], hook: true, bare: true));
+        list.Add(R("shelf", Loc.T("Shelf"), "shelf", Cf, Mac(Cac, Key.D), ["shelfEnabled", "shelfShortcutEnabled"]));
+        list.Add(R("clipboardHistory", Loc.T("Clipboard"), "clipboard-history", Cf, Mac(Cac, Key.V), ["clipboardHistoryEnabled", "clipboardHistoryShortcutEnabled"]));
+        list.Add(R("pastePlain", Loc.T("Paste as plain text"), "paste-plain", Cf, Mac("⇧⌥⌘", Key.V), ["pastePlainEnabled"]));
+        list.Add(R("finderRename", Loc.T("Rename shortcut"), "finder-rename", Cf, new Hotkey(HotkeyModifiers.None, Key.F2), ["finderRenameEnabled"], hook: true, bare: true));
 
         // Sound
-        list.Add(R("soundOutputSwitcher", "Output switcher", "sound-output-switcher", So, Mac(Cac, Key.S), ["soundOutputSwitcherEnabled"]));
-        list.Add(R("micMute", "Mute microphone", "mic-mute", So, Mac(Cac, Key.M), ["micMuteShortcutEnabled"]));
+        list.Add(R("soundOutputSwitcher", Loc.T("Output switcher"), "sound-output-switcher", So, Mac(Cac, Key.S), ["soundOutputSwitcherEnabled"]));
+        list.Add(R("micMute", Loc.T("Mute microphone"), "mic-mute", So, Mac(Cac, Key.M), ["micMuteShortcutEnabled"]));
 
         // Energy and display
-        list.Add(R("keepAwake", "Keep awake", "keep-awake", En, Mac(Cac, Key.K), ["hotkeyEnabled"]));
-        list.Add(R("displayBrightnessDecrease", "Decrease display brightness", "brightness", En, Mac("⇧⌘", Key.OemMinus), ["brightnessControlEnabled", "displayBrightnessShortcutsEnabled"]));
-        list.Add(R("displayBrightnessIncrease", "Increase display brightness", "brightness", En, Mac("⇧⌘", Key.OemPlus), ["brightnessControlEnabled", "displayBrightnessShortcutsEnabled"]));
+        list.Add(R("keepAwake", Loc.T("Keep awake"), "keep-awake", En, Mac(Cac, Key.K), ["hotkeyEnabled"]));
+        list.Add(R("displayBrightnessDecrease", Loc.T("Decrease display brightness"), "brightness", En, Mac("⇧⌘", Key.OemMinus), ["brightnessControlEnabled", "displayBrightnessShortcutsEnabled"]));
+        list.Add(R("displayBrightnessIncrease", Loc.T("Increase display brightness"), "brightness", En, Mac("⇧⌘", Key.OemPlus), ["brightnessControlEnabled", "displayBrightnessShortcutsEnabled"]));
 
         // Tools
-        list.Add(R("quickLauncher", "Quick panel", "quick-launcher", To, Mac("⌃⌘", Key.V), ["quickLauncherShortcutEnabled"]));
-        list.Add(R("commandBar", "Command Bar", "command-bar", To, new Hotkey(HotkeyModifiers.Control | HotkeyModifiers.Alt, Key.Space), ["commandBarShortcutEnabled"]));
-        list.Add(R("scratchpad", "Scratchpad", "scratchpad", To, Mac(Cac, Key.N), ["scratchpadShortcutEnabled"]));
-        list.Add(R("cameraPreview", "Camera preview", "camera-preview", To, Mac(Cac, Key.W), ["cameraPreviewShortcutEnabled"]));
-        list.Add(R("quitAll", "Quit all apps", "quit-apps", To, Mac(Cac, Key.Q), ["quitAppsShortcutEnabled"]));
-        list.Add(R("quitAllExceptFront", "Quit all apps except the front one", "quit-apps", To, Mac(Cac, Key.O), ["quitAppsExceptFrontShortcutEnabled"]));
-        list.Add(R("radialMenu", "Radial menu", "radial-menu", To, Mac(Cac, Key.Space), ["radialMenuEnabled"], ro: true));
+        list.Add(R("quickLauncher", Loc.T("Quick panel"), "quick-launcher", To, Mac("⌃⌘", Key.V), ["quickLauncherShortcutEnabled"]));
+        list.Add(R("commandBar", Loc.T("Command Bar"), "command-bar", To, new Hotkey(HotkeyModifiers.Control | HotkeyModifiers.Alt, Key.Space), ["commandBarShortcutEnabled"]));
+        list.Add(R("scratchpad", Loc.T("Scratchpad"), "scratchpad", To, Mac(Cac, Key.N), ["scratchpadShortcutEnabled"]));
+        list.Add(R("cameraPreview", Loc.T("Camera preview"), "camera-preview", To, Mac(Cac, Key.W), ["cameraPreviewShortcutEnabled"]));
+        list.Add(R("quitAll", Loc.T("Quit all apps"), "quit-apps", To, Mac(Cac, Key.Q), ["quitAppsShortcutEnabled"]));
+        list.Add(R("quitAllExceptFront", Loc.T("Quit all apps except the front one"), "quit-apps", To, Mac(Cac, Key.O), ["quitAppsExceptFrontShortcutEnabled"]));
+        list.Add(R("radialMenu", Loc.T("Radial menu"), "radial-menu", To, Mac(Cac, Key.Space), ["radialMenuEnabled"], ro: true));
 
         // Screen capture (Tools group, "Screen capture" header)
         const string capture = "Screen capture";
-        list.Add(R("screenshot", "Screenshot", "screenshot", To, Mac(Cac, Key.D4), ["screenshotShortcutEnabled"], capture));
-        list.Add(R("screenRecorder", "Screen recording", "screen-recorder", To, Mac(Cac, Key.D5), ["recorderShortcutEnabled"], capture));
-        list.Add(R("screenOCR", "Copy text from screen", "screen-ocr", To, Mac(Cac, Key.T), ["screenOCRShortcutEnabled"], capture));
-        list.Add(R("colorPicker", "Color picker", "color-picker", To, Mac(Cac, Key.C), ["colorPickerShortcutEnabled"], capture));
-        list.Add(R("recentCaptures", "Recent captures", "screenshot", To, Mac(Cac, Key.H), ["recentCapturesShortcutEnabled"], capture));
-        list.Add(R("screenshotFullScreen", "Capture the whole screen", "screenshot", To, Mac(Cac, Key.D3), ["screenshotFullScreenShortcutEnabled"], capture));
-        list.Add(R("screenshotLastCapture", "Edit latest screenshot", "screenshot", To, Mac(Cac, Key.E), ["screenshotLastCaptureShortcutEnabled"], capture));
-        list.Add(R("screenshotClipboard", "Edit clipboard image", "screenshot", To, Mac(Cac, Key.P), ["screenshotClipboardShortcutEnabled"], capture));
-        list.Add(R("screenshotUpload", "Upload latest screenshot", "screenshot", To, Mac(Cac, Key.U), ["screenshotUploadShortcutEnabled", "screenshotSharingEnabled"], capture));
+        list.Add(R("screenshot", Loc.T("Screenshot"), "screenshot", To, Mac(Cac, Key.D4), ["screenshotShortcutEnabled"], capture));
+        list.Add(R("screenRecorder", Loc.T("Screen recording"), "screen-recorder", To, Mac(Cac, Key.D5), ["recorderShortcutEnabled"], capture));
+        list.Add(R("screenOCR", Loc.T("Copy text from screen"), "screen-ocr", To, Mac(Cac, Key.T), ["screenOCRShortcutEnabled"], capture));
+        list.Add(R("colorPicker", Loc.T("Color picker"), "color-picker", To, Mac(Cac, Key.C), ["colorPickerShortcutEnabled"], capture));
+        list.Add(R("recentCaptures", Loc.T("Recent captures"), "screenshot", To, Mac(Cac, Key.H), ["recentCapturesShortcutEnabled"], capture));
+        list.Add(R("screenshotFullScreen", Loc.T("Capture the whole screen"), "screenshot", To, Mac(Cac, Key.D3), ["screenshotFullScreenShortcutEnabled"], capture));
+        list.Add(R("screenshotLastCapture", Loc.T("Edit latest screenshot"), "screenshot", To, Mac(Cac, Key.E), ["screenshotLastCaptureShortcutEnabled"], capture));
+        list.Add(R("screenshotClipboard", Loc.T("Edit clipboard image"), "screenshot", To, Mac(Cac, Key.P), ["screenshotClipboardShortcutEnabled"], capture));
+        list.Add(R("screenshotUpload", Loc.T("Upload latest screenshot"), "screenshot", To, Mac(Cac, Key.U), ["screenshotUploadShortcutEnabled", "screenshotSharingEnabled"], capture));
 
         // Dynamic Island
-        list.Add(R("notch", "Dynamic Island", "notch", Is, Mac(Cac, Key.I), ["notchEnabled", "notchShortcutEnabled"]));
+        list.Add(R("notch", Loc.T("Dynamic Island"), "notch", Is, Mac(Cac, Key.I), ["notchEnabled", "notchShortcutEnabled"]));
         return list;
     }
 
     private static IEnumerable<(string Id, string Title, Hotkey? Default)> WindowLayoutActions(HotkeyModifiers ca)
     {
         Hotkey? K(Key key) => new(ca, key);
-        yield return ("left", "Left", K(Key.Left));
-        yield return ("right", "Right", K(Key.Right));
-        yield return ("top", "Top", K(Key.Up));
-        yield return ("bottom", "Bottom", K(Key.Down));
-        yield return ("centerHalf", "Center half", null);
-        yield return ("leftThird", "Left 1/3", K(Key.D));
-        yield return ("centerThird", "Center 1/3", K(Key.F));
-        yield return ("rightThird", "Right 1/3", K(Key.G));
-        yield return ("leftTwoThirds", "Left 2/3", K(Key.E));
-        yield return ("rightTwoThirds", "Right 2/3", K(Key.T));
+        yield return ("left", Loc.T("Left"), K(Key.Left));
+        yield return ("right", Loc.T("Right"), K(Key.Right));
+        yield return ("top", Loc.T("Top"), K(Key.Up));
+        yield return ("bottom", Loc.T("Bottom"), K(Key.Down));
+        yield return ("centerHalf", Loc.T("Center half"), null);
+        yield return ("leftThird", Loc.T("Left 1/3"), K(Key.D));
+        yield return ("centerThird", Loc.T("Center 1/3"), K(Key.F));
+        yield return ("rightThird", Loc.T("Right 1/3"), K(Key.G));
+        yield return ("leftTwoThirds", Loc.T("Left 2/3"), K(Key.E));
+        yield return ("rightTwoThirds", Loc.T("Right 2/3"), K(Key.T));
         foreach (var (id, title) in new[]
         {
-            ("centerTwoThirds", "Center 2/3"), ("topThird", "Top 1/3"), ("middleThird", "Middle 1/3"), ("bottomThird", "Bottom 1/3"),
-            ("topTwoThirds", "Top 2/3"), ("bottomTwoThirds", "Bottom 2/3"), ("topQuarter", "Top 1/4"), ("upperMiddleQuarter", "Upper middle 1/4"),
-            ("lowerMiddleQuarter", "Lower middle 1/4"), ("bottomQuarter", "Bottom 1/4"), ("leftQuarter", "Left 1/4"), ("leftMiddleQuarter", "Left middle 1/4"),
-            ("rightMiddleQuarter", "Right middle 1/4"), ("rightQuarter", "Right 1/4"), ("topLeftSixth", "Top left 1/6"), ("topCenterSixth", "Top center 1/6"),
-            ("topRightSixth", "Top right 1/6"), ("bottomLeftSixth", "Bottom left 1/6"), ("bottomCenterSixth", "Bottom center 1/6"), ("bottomRightSixth", "Bottom right 1/6"),
+            ("centerTwoThirds", Loc.T("Center 2/3")), ("topThird", Loc.T("Top 1/3")), ("middleThird", Loc.T("Middle 1/3")), ("bottomThird", Loc.T("Bottom 1/3")),
+            ("topTwoThirds", Loc.T("Top 2/3")), ("bottomTwoThirds", Loc.T("Bottom 2/3")), ("topQuarter", Loc.T("Top 1/4")), ("upperMiddleQuarter", Loc.T("Upper middle 1/4")),
+            ("lowerMiddleQuarter", Loc.T("Lower middle 1/4")), ("bottomQuarter", Loc.T("Bottom 1/4")), ("leftQuarter", Loc.T("Left 1/4")), ("leftMiddleQuarter", Loc.T("Left middle 1/4")),
+            ("rightMiddleQuarter", Loc.T("Right middle 1/4")), ("rightQuarter", Loc.T("Right 1/4")), ("topLeftSixth", Loc.T("Top left 1/6")), ("topCenterSixth", Loc.T("Top center 1/6")),
+            ("topRightSixth", Loc.T("Top right 1/6")), ("bottomLeftSixth", Loc.T("Bottom left 1/6")), ("bottomCenterSixth", Loc.T("Bottom center 1/6")), ("bottomRightSixth", Loc.T("Bottom right 1/6")),
         })
         {
             yield return (id, title, null);
         }
 
-        yield return ("topLeft", "Top left", K(Key.U));
-        yield return ("topRight", "Top right", K(Key.I));
-        yield return ("bottomLeft", "Bottom left", K(Key.J));
-        yield return ("bottomRight", "Bottom right", K(Key.K));
-        yield return ("maximize", "Maximize", K(Key.Return));
-        yield return ("maximizeWithMargin", "Maximize with Margin", null);
-        yield return ("fullScreen", "Full Screen", null);
-        yield return ("center", "Center", K(Key.C));
-        yield return ("restore", "Restore", K(Key.R));
-        yield return ("previousDisplay", "Previous display", null);
-        yield return ("nextDisplay", "Next display", HotkeyMap.Mac("⌃⌥⌘", Key.Right));
+        yield return ("topLeft", Loc.T("Top left"), K(Key.U));
+        yield return ("topRight", Loc.T("Top right"), K(Key.I));
+        yield return ("bottomLeft", Loc.T("Bottom left"), K(Key.J));
+        yield return ("bottomRight", Loc.T("Bottom right"), K(Key.K));
+        yield return ("maximize", Loc.T("Maximize"), K(Key.Return));
+        yield return ("maximizeWithMargin", Loc.T("Maximize with Margin"), null);
+        yield return ("fullScreen", Loc.T("Full Screen"), null);
+        yield return ("center", Loc.T("Center"), K(Key.C));
+        yield return ("restore", Loc.T("Restore"), K(Key.R));
+        yield return ("previousDisplay", Loc.T("Previous display"), null);
+        yield return ("nextDisplay", Loc.T("Next display"), HotkeyMap.Mac("⌃⌥⌘", Key.Right));
     }
 }

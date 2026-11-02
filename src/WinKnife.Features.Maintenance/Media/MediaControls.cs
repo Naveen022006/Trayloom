@@ -8,6 +8,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using WinKnife.Core.Ui;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Maintenance;
 
@@ -107,10 +108,10 @@ internal static class MediaControls
     public static FrameworkElement Compression(double quality, Action<double> onPick, bool compact)
     {
         var column = new StackPanel();
-        column.Children.Add(UiKit.Text("Compression", compact ? 10 : 11, FontWeights.SemiBold, ThemeKeys.TextPrimary));
+        column.Children.Add(UiKit.Text(Loc.T("Compression"), compact ? 10 : 11, FontWeights.SemiBold, ThemeKeys.TextPrimary));
         var selected = Ms.NearestLevel(quality);
         var grid = new Grid { Margin = new Thickness(0, 5, 0, 0) };
-        string[] names = ["Low", "Medium", "High"];
+        string[] names = ["Low", Loc.T("Medium"), Loc.T("High")];
         for (var i = 0; i < 3; i++)
         {
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -142,9 +143,9 @@ internal static class MediaControls
         column.Children.Add(grid);
         var description = V.Secondary(selected switch
         {
-            0 => "High quality, large file size",
-            1 => "Balanced quality and file size",
-            _ => "Low quality, small file size",
+            0 => Loc.T("High quality, large file size"),
+            1 => Loc.T("Balanced quality and file size"),
+            _ => Loc.T("Low quality, small file size"),
         }, compact ? 9.5 : 10.5);
         description.Margin = new Thickness(0, 5, 0, 0);
         column.Children.Add(description);

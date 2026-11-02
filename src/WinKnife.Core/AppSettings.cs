@@ -228,7 +228,7 @@ public static class AppKeys
             [StartupDidNotFinish] = false,
             [SettingsWindowWidth] = 0.0,
             [SettingsWindowHeight] = 0.0,
-            [AppLanguage] = "en-US",
+            [AppLanguage] = Loc.SystemDefault,
             [AppAppearance] = "system",
             [HotkeyEnabled] = true,
             [AutoCheckUpdates] = true,

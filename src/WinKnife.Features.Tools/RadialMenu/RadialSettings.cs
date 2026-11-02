@@ -24,7 +24,7 @@ public sealed class RadialMenuMainSection : ISettingsSection
     public string? Anchor => "radialMenu";
 
     /// <inheritdoc />
-    public string? Title => "Radial menu";
+    public string? Title => Loc.T("Radial menu");
 
     /// <inheritdoc />
     public IReadOnlyList<string> Keywords => ["Opening behavior", "Press or hold", "Press to open", "Hold to select", "At the pointer", "At the screen center", "Try it", "wheel"];
@@ -43,8 +43,8 @@ public sealed class RadialMenuMainSection : ISettingsSection
     {
         var enabled = c.App.Get<bool>("radialMenuEnabled");
         var service = c.Services.Get<IRadialMenuService>();
-        var card = new SettingsCard("Radial menu");
-        card.Add(new SettingsRow(null, "Use the radial menu", null, new MacSwitch(enabled, SwitchSize.Regular, on =>
+        var card = new SettingsCard(Loc.T("Radial menu"));
+        card.Add(new SettingsRow(null, Loc.T("Use the radial menu"), null, new MacSwitch(enabled, SwitchSize.Regular, on =>
         {
             c.App.Set("radialMenuEnabled", on);
             RadialState.Raise(RadialChange.Enabled);
@@ -52,22 +52,22 @@ public sealed class RadialMenuMainSection : ISettingsSection
         card.AddCaption(RadialStrings.HubDescription);
         if (enabled && service?.RegistrationFailed == true)
         {
-            card.Add(UiKit.Text("This shortcut is already taken by another app.", 11.5, FontWeights.Normal, ThemeKeys.Orange, wrap: true));
+            card.Add(UiKit.Text(Loc.T("This shortcut is already taken by another app."), 11.5, FontWeights.Normal, ThemeKeys.Orange, wrap: true));
         }
 
         card.AddDivider();
         var mode = c.App.Get<string>("radialMenuActivationMode", "pressOrHold");
-        var picker = new PickerRow<string>(null, "Opening behavior", null, [("pressOrHold", "Press or hold"), ("press", "Press to open"), ("hold", "Hold to select")], mode is "press" or "hold" ? mode : "pressOrHold", v => c.App.Set("radialMenuActivationMode", v));
+        var picker = new PickerRow<string>(null, Loc.T("Opening behavior"), null, [("pressOrHold", Loc.T("Press or hold")), ("press", Loc.T("Press to open")), ("hold", Loc.T("Hold to select"))], mode is "press" or "hold" ? mode : "pressOrHold", v => c.App.Set("radialMenuActivationMode", v));
         picker.IsEnabled = enabled;
         picker.Opacity = enabled ? 1 : 0.4;
         card.Add(picker);
-        card.AddCaption("Press or hold keeps the current adaptive gesture. Press stays open; hold runs the highlighted action on release.");
+        card.AddCaption(Loc.T("Press or hold keeps the current adaptive gesture. Press stays open; hold runs the highlighted action on release."));
         card.AddDivider();
-        var segmented = new SegmentedControl(["At the pointer", "At the screen center"], c.App.Get<bool>("radialMenuAtPointer", true) ? 0 : 1);
+        var segmented = new SegmentedControl([Loc.T("At the pointer"), Loc.T("At the screen center")], c.App.Get<bool>("radialMenuAtPointer", true) ? 0 : 1);
         segmented.SelectionChanged += i => c.App.Set("radialMenuAtPointer", i == 0);
-        card.Add(new SettingsRow(null, "Opens", null, segmented));
+        card.Add(new SettingsRow(null, Loc.T("Opens"), null, segmented));
         card.AddDivider();
-        var tryIt = UiKit.Button("Try it", ButtonKind.Bordered, 12.5, onClick: () =>
+        var tryIt = UiKit.Button(Loc.T("Try it"), ButtonKind.Bordered, 12.5, onClick: () =>
         {
             var profile = RadialState.Selected(c);
             c.Services.Get<IRadialMenuService>()?.TryIt(profile);
@@ -91,7 +91,7 @@ public sealed class RadialMenuProfilesSection : ISettingsSection
     public string? Anchor => "radialProfiles";
 
     /// <inheritdoc />
-    public string? Title => "Profiles";
+    public string? Title => Loc.T("Profiles");
 
     /// <inheritdoc />
     public IReadOnlyList<string> Keywords => ["Profile", "Add profile", "Duplicate profile", "Delete profile", "Color", "Shortcut", "Mouse button", "Back side button", "Forward side button", "four-finger tap", "Button test"];
@@ -112,7 +112,7 @@ public sealed class RadialMenuProfilesSection : ISettingsSection
         var profiles = RadialState.Profiles(c);
         var selected = RadialState.Selected(c, profiles);
         var service = c.Services.Get<IRadialMenuService>();
-        var card = new SettingsCard("Profiles");
+        var card = new SettingsCard(Loc.T("Profiles"));
         var body = new StackPanel { IsEnabled = enabled, Opacity = enabled ? 1 : 0.4 };
         card.Add(body);
 
@@ -132,10 +132,10 @@ public sealed class RadialMenuProfilesSection : ISettingsSection
                 RadialState.Raise(RadialChange.Profiles);
             }
         };
-        var pickerRow = new SettingsRow(null, "Profile", null, combo);
+        var pickerRow = new SettingsRow(null, Loc.T("Profile"), null, combo);
         Grid.SetColumn(pickerRow, 0);
         row.Children.Add(pickerRow);
-        var add = IconButton("", "Add profile");
+        var add = IconButton("", Loc.T("Add profile"));
         add.Click += (_, _) =>
         {
             var menu = new ContextMenu { PlacementTarget = add, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
@@ -161,7 +161,7 @@ public sealed class RadialMenuProfilesSection : ISettingsSection
 
             menu.IsOpen = true;
         };
-        var duplicate = IconButton("", "Duplicate profile");
+        var duplicate = IconButton("", Loc.T("Duplicate profile"));
         duplicate.Click += (_, _) => RadialState.Mutate(c, (list, sel) =>
         {
             var copy = sel.Clone();
@@ -175,11 +175,11 @@ public sealed class RadialMenuProfilesSection : ISettingsSection
             RadialState.SelectedId = copy.Id;
             RadialState.Trail.Clear();
         }, RadialChange.Profiles);
-        var delete = IconButton("", "Delete profile");
+        var delete = IconButton("", Loc.T("Delete profile"));
         delete.IsEnabled = profiles.Count > 1;
         delete.Click += (_, _) =>
         {
-            if (!RadialDialogs.Confirm(Window.GetWindow(delete), $"Delete “{selected.DisplayName}”?", "Its actions, shortcut, mouse button and four-finger tap will be removed. This can’t be undone.", "Delete profile", true))
+            if (!RadialDialogs.Confirm(Window.GetWindow(delete), Loc.F("Delete “{0}”?", selected.DisplayName), Loc.T("Its actions, shortcut, mouse button and four-finger tap will be removed. This can’t be undone."), Loc.T("Delete profile"), true))
             {
                 return;
             }
@@ -202,14 +202,14 @@ public sealed class RadialMenuProfilesSection : ISettingsSection
 
         if (enabled && !selected.HasTrigger)
         {
-            body.AddSpaced(Caption("Picking a profile here only edits it. Give this one a shortcut, a mouse button or the four-finger tap below to open it."), 8);
+            body.AddSpaced(Caption(Loc.T("Picking a profile here only edits it. Give this one a shortcut, a mouse button or the four-finger tap below to open it.")), 8);
         }
 
         // ---- name
         var nameBox = RadialDialogs.NewTextBox(selected.Name, 220);
         nameBox.TextChanged += (_, _) => RadialState.Mutate(c, (_, sel) => sel.Name = nameBox.Text, null);
         nameBox.LostKeyboardFocus += (_, _) => RadialState.Raise(RadialChange.Profiles);
-        body.AddSpaced(new SettingsRow(null, "Profile name", null, RadialDialogs.WithPlaceholder(nameBox, "General")), 13);
+        body.AddSpaced(new SettingsRow(null, Loc.T("Profile name"), null, RadialDialogs.WithPlaceholder(nameBox, Loc.T("General"))), 13);
 
         // ---- colour
         var swatches = new StackPanel { Orientation = Orientation.Horizontal };
@@ -218,7 +218,7 @@ public sealed class RadialMenuProfilesSection : ISettingsSection
             swatches.Children.Add(Swatch(c, id, selected.Color == id));
         }
 
-        body.AddSpaced(new SettingsRow(null, "Color", null, swatches), 13);
+        body.AddSpaced(new SettingsRow(null, Loc.T("Color"), null, swatches), 13);
 
         // ---- shortcut
         var recorder = new HotkeyRecorder { Width = 150, Hotkey = Hotkey.TryParse(selected.Shortcut, out var hk) ? hk : null };
@@ -238,11 +238,11 @@ public sealed class RadialMenuProfilesSection : ISettingsSection
             error.Visibility = Visibility.Collapsed;
             RadialState.Mutate(c, (_, sel) => sel.Shortcut = h?.ToString() ?? "", RadialChange.Profiles);
         };
-        body.AddSpaced(new SettingsRow(null, "Shortcut", null, recorder), 13);
+        body.AddSpaced(new SettingsRow(null, Loc.T("Shortcut"), null, recorder), 13);
         body.Children.Add(error);
 
         // ---- mouse button
-        var mouse = new PickerRow<string>(null, "Mouse button", null, [("off", "Off"), ("back", "Back side button"), ("forward", "Forward side button")], selected.MouseButton is "back" or "forward" ? selected.MouseButton : "off", v =>
+        var mouse = new PickerRow<string>(null, Loc.T("Mouse button"), null, [("off", Loc.T("Off")), ("back", Loc.T("Back side button")), ("forward", Loc.T("Forward side button"))], selected.MouseButton is "back" or "forward" ? selected.MouseButton : "off", v =>
             RadialState.Mutate(c, (list, sel) =>
             {
                 if (v != "off")
@@ -256,20 +256,20 @@ public sealed class RadialMenuProfilesSection : ISettingsSection
                 sel.MouseButton = v;
             }, RadialChange.Profiles));
         body.AddSpaced(mouse, 13);
-        body.AddSpaced(Caption("Only extra mouse buttons work here. With a mouse without extra buttons, use the keyboard shortcut above. With a trackpad, you can also use the four-finger tap below."), 8);
+        body.AddSpaced(Caption(Loc.T("Only extra mouse buttons work here. With a mouse without extra buttons, use the keyboard shortcut above. With a trackpad, you can also use the four-finger tap below.")), 8);
         if (selected.MouseButton != "off")
         {
             if (selected.MouseButton is "back" or "forward")
             {
-                body.AddSpaced(Caption("While this is on, that button no longer goes back or forward in apps. If you navigate with it, leave this off."), 8);
+                body.AddSpaced(Caption(Loc.T("While this is on, that button no longer goes back or forward in apps. If you navigate with it, leave this off.")), 8);
             }
 
             body.AddSpaced(new RadialButtonTestRow(service, selected.MouseButton), 10);
-            body.AddSpaced(Caption("If nothing lights up, Windows is not sending that button to apps. Mice that come with their own software often turn the side buttons into something else. Change it back there, or give the button a key combination and use that combination above."), 6);
+            body.AddSpaced(Caption(Loc.T("If nothing lights up, Windows is not sending that button to apps. Mice that come with their own software often turn the side buttons into something else. Change it back there, or give the button a key combination and use that combination above.")), 6);
         }
 
         // ---- four-finger tap
-        body.AddSpaced(new SettingsRow(null, "Open with a four-finger tap", null, new MacSwitch(selected.TrackpadTap, SwitchSize.Regular, on =>
+        body.AddSpaced(new SettingsRow(null, Loc.T("Open with a four-finger tap"), null, new MacSwitch(selected.TrackpadTap, SwitchSize.Regular, on =>
             RadialState.Mutate(c, (list, sel) =>
             {
                 if (on)
@@ -282,10 +282,10 @@ public sealed class RadialMenuProfilesSection : ISettingsSection
 
                 sel.TrackpadTap = on;
             }, RadialChange.Profiles))), 13);
-        body.AddSpaced(Caption("Precision touchpads only. Windows may also run its own four-finger gesture, set in Settings > Bluetooth & devices > Touchpad."), 6);
+        body.AddSpaced(Caption(Loc.T("Precision touchpads only. Windows may also run its own four-finger gesture, set in Settings > Bluetooth & devices > Touchpad.")), 6);
         if (selected.TrackpadTap && c.App.Get<bool>("middleClickEnabled") && c.App.Get<int>("middleClickTapFingers") > 0)
         {
-            body.AddSpaced(UiKit.Text("Middle click already uses the four-finger tap, so the tap does not open this wheel.", 11.5, FontWeights.Normal, ThemeKeys.Orange, wrap: true), 6);
+            body.AddSpaced(UiKit.Text(Loc.T("Middle click already uses the four-finger tap, so the tap does not open this wheel."), 11.5, FontWeights.Normal, ThemeKeys.Orange, wrap: true), 6);
         }
 
         return card;
@@ -309,12 +309,12 @@ public sealed class RadialMenuProfilesSection : ISettingsSection
         var other = profiles.FirstOrDefault(p => p.Id != selected.Id && p.Shortcut == text);
         if (other is not null)
         {
-            return $"This shortcut is already used by {other.DisplayName}.";
+            return Loc.F("This shortcut is already used by {0}.", other.DisplayName);
         }
 
         if (c.Shortcuts.FindConflict(hotkey, "radialMenu") is { } role)
         {
-            return $"This shortcut is already used by {role}.";
+            return Loc.F("This shortcut is already used by {0}.", role);
         }
 
         if (selected.Shortcut != text && c.Hotkeys.TryRegister(hotkey, () => { }, out var probe))
@@ -323,7 +323,7 @@ public sealed class RadialMenuProfilesSection : ISettingsSection
         }
         else if (selected.Shortcut != text)
         {
-            return "Nothing was captured. Windows or another app already uses that combination. Try another one.";
+            return Loc.T("Nothing was captured. Windows or another app already uses that combination. Try another one.");
         }
 
         return null;
@@ -377,7 +377,7 @@ internal sealed class RadialButtonTestRow : Grid
         _icon = UiKit.Icon("", 14, ThemeKeys.Orange);
         _icon.Margin = new Thickness(0, 0, 8, 0);
         Children.Add(_icon);
-        var label = UiKit.Text("Button test", 13, FontWeights.Normal, ThemeKeys.TextPrimary);
+        var label = UiKit.Text(Loc.T("Button test"), 13, FontWeights.Normal, ThemeKeys.TextPrimary);
         SetColumn(label, 1);
         Children.Add(label);
         _status = UiKit.Text("", 12, FontWeights.Normal, ThemeKeys.TextSecondary);
@@ -411,19 +411,19 @@ internal sealed class RadialButtonTestRow : Grid
         string brush;
         if (_service is null || !_service.WatchingMouse)
         {
-            (glyph, text, brush) = ("", "WinKnife cannot watch the mouse right now", ThemeKeys.Orange);
+            (glyph, text, brush) = ("", Loc.T("WinKnife cannot watch the mouse right now"), ThemeKeys.Orange);
         }
         else if (_service.LastMouseButtonSeen is null)
         {
-            (glyph, text, brush) = ("", "Press the button now", ThemeKeys.TextSecondary);
+            (glyph, text, brush) = ("", Loc.T("Press the button now"), ThemeKeys.TextSecondary);
         }
         else if (_service.LastMouseButtonSeen == _expected)
         {
-            (glyph, text, brush) = ("", "WinKnife sees this button", ThemeKeys.Green);
+            (glyph, text, brush) = ("", Loc.T("WinKnife sees this button"), ThemeKeys.Green);
         }
         else
         {
-            (glyph, text, brush) = ("", "That was a different button", ThemeKeys.Orange);
+            (glyph, text, brush) = ("", Loc.T("That was a different button"), ThemeKeys.Orange);
         }
 
         _icon.Text = glyph;
@@ -446,7 +446,7 @@ public sealed class RadialMenuActionsSection : ISettingsSection
     public string? Anchor => "radialActions";
 
     /// <inheritdoc />
-    public string? Title => "Actions";
+    public string? Title => Loc.T("Actions");
 
     /// <inheritdoc />
     public IReadOnlyList<string> Keywords => ["Add action", "Show as list", "Hide list", "Reset", "canvas", "submenu"];
@@ -465,12 +465,12 @@ public sealed class RadialMenuActionsSection : ISettingsSection
     {
         var profile = RadialState.Selected(c);
         var level = RadialState.Level(profile);
-        var card = new SettingsCard("Actions");
+        var card = new SettingsCard(Loc.T("Actions"));
         card.Add(new RadialVisualCanvas(c));
-        card.AddCaption("Click a button to choose what it starts, or to remove it. Drag a button to move it.");
+        card.AddCaption(Loc.T("Click a button to choose what it starts, or to remove it. Drag a button to move it."));
         if (level.Count < RadialModel.MaxItems)
         {
-            var add = UiKit.Button("Add action", ButtonKind.Bordered, 12.5, "");
+            var add = UiKit.Button(Loc.T("Add action"), ButtonKind.Bordered, 12.5, "");
             add.HorizontalAlignment = HorizontalAlignment.Left;
             add.Click += (_, _) => RadialItemOps.Add(add, c);
             card.Add(add);
@@ -481,7 +481,7 @@ public sealed class RadialMenuActionsSection : ISettingsSection
         var headerRow = new Grid();
         headerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         headerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        headerRow.Children.Add(UiKit.Text(RadialState.ListOpen ? "Hide list" : "Show as list", 13, FontWeights.Normal, ThemeKeys.TextPrimary));
+        headerRow.Children.Add(UiKit.Text(RadialState.ListOpen ? Loc.T("Hide list") : Loc.T("Show as list"), 13, FontWeights.Normal, ThemeKeys.TextPrimary));
         var chevron = UiKit.Icon("", 10, ThemeKeys.TextSecondary, FontWeights.SemiBold);
         chevron.RenderTransformOrigin = new Point(0.5, 0.5);
         chevron.RenderTransform = new RotateTransform(RadialState.ListOpen ? 90 : 0);
@@ -499,7 +499,7 @@ public sealed class RadialMenuActionsSection : ISettingsSection
             card.Add(BuildList(c, profile, level));
         }
 
-        card.AddCaption(level.Count >= RadialModel.MaxItems ? "A wheel holds up to 12 actions." : RadialStrings.HubDescription);
+        card.AddCaption(level.Count >= RadialModel.MaxItems ? Loc.T("A wheel holds up to 12 actions.") : RadialStrings.HubDescription);
         return card;
     }
 
@@ -515,7 +515,7 @@ public sealed class RadialMenuActionsSection : ISettingsSection
 
         if (level.Count == 0)
         {
-            list.Children.Add(UiKit.Text("No actions here yet.", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary));
+            list.Children.Add(UiKit.Text(Loc.T("No actions here yet."), 11.5, FontWeights.Normal, ThemeKeys.TextSecondary));
             return list;
         }
 
@@ -624,14 +624,14 @@ public sealed class RadialMenuActionsSection : ISettingsSection
         row.Children.Add(text);
         if (item.Kind == RadialKinds.Submenu)
         {
-            var edit = UiKit.Button("Edit actions >", ButtonKind.Plain, 11.5, onClick: () => RadialItemOps.DrillInto(c, item.Id));
-            edit.ToolTip = "Edit actions";
+            var edit = UiKit.Button(Loc.T("Edit actions >"), ButtonKind.Plain, 11.5, onClick: () => RadialItemOps.DrillInto(c, item.Id));
+            edit.ToolTip = Loc.T("Edit actions");
             Grid.SetColumn(edit, 3);
             row.Children.Add(edit);
         }
 
         var menu = new ContextMenu();
-        var remove = new MenuItem { Header = "Remove" };
+        var remove = new MenuItem { Header = Loc.T("Remove") };
         remove.Click += (_, _) => RadialItemOps.Remove(c, item.Id);
         menu.Items.Add(remove);
         row.ContextMenu = menu;

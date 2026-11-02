@@ -92,7 +92,7 @@ internal static class RadialState
             list = item.Children;
         }
 
-        return item is null ? null : (item.Name.Length > 0 ? item.Name : "Submenu");
+        return item is null ? null : (item.Name.Length > 0 ? item.Name : Loc.T("Submenu"));
     }
 
     /// <summary>Loads, edits, sanitises and stores the profiles; then raises <paramref name="change"/> (null = silent).</summary>
@@ -173,7 +173,7 @@ internal static class RadialDialogs
         text.Margin = new Thickness(0, 8, 0, 18);
         stack.Children.Add(text);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-        var cancel = UiKit.Button("Cancel", ButtonKind.Bordered, 12.5, onClick: window.Close);
+        var cancel = UiKit.Button(Loc.T("Cancel"), ButtonKind.Bordered, 12.5, onClick: window.Close);
         var ok = UiKit.Button(confirmText, destructive ? ButtonKind.Destructive : ButtonKind.Prominent, 12.5, onClick: () =>
         {
             result = true;

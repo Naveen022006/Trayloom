@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Maintenance;
 
@@ -200,12 +201,12 @@ internal static class WaRules
 
     public static string OrganizerCategoryFolder(WaCategory category) => category switch
     {
-        WaCategory.Image => "Images",
-        WaCategory.Video => "Videos",
+        WaCategory.Image => Loc.T("Images"),
+        WaCategory.Video => Loc.T("Videos"),
         WaCategory.Audio => "Audio",
-        WaCategory.Document => "Documents",
-        WaCategory.Archive => "Archives",
-        _ => "Other",
+        WaCategory.Document => Loc.T("Documents"),
+        WaCategory.Archive => Loc.T("Archives"),
+        _ => Loc.T("Other"),
     };
 
     public static string[] OrganizerRelativeComponents(WaLayout layout, WaCategory category, DateTime date) => layout switch

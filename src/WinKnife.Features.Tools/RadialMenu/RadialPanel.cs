@@ -43,14 +43,14 @@ public sealed class RadialMenuPanelSection : IPanelSection
 
         var enabled = app.Get<bool>("radialMenuEnabled");
         var accessory = new StackPanel { Margin = new Thickness(41, 0, 10, 8), Visibility = enabled ? Visibility.Visible : Visibility.Collapsed };
-        accessory.Children.Add(PanelButtons.Mini("Manage the menu", null, () =>
+        accessory.Children.Add(PanelButtons.Mini(Loc.T("Manage the menu"), null, () =>
         {
             context.ClosePanel();
             context.Shell.OpenSettings(SettingsPages.RadialMenu);
         }));
         ((FrameworkElement)accessory.Children[0]).HorizontalAlignment = HorizontalAlignment.Left;
 
-        var toggle = new PanelToggleRow("\uE80A", "Radial menu", RadialStrings.PanelCaption, enabled, on =>
+        var toggle = new PanelToggleRow("\uE80A", Loc.T("Radial menu"), RadialStrings.PanelCaption, enabled, on =>
         {
             app.Set("radialMenuEnabled", on);
             accessory.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
@@ -71,7 +71,7 @@ public sealed class RadialMenuPanelSection : IPanelSection
                 CornerRadius = new CornerRadius(7),
                 Margin = new Thickness(0, 0, 10, 0),
                 Cursor = Cursors.Hand,
-                ToolTip = visible ? "Hide from panel" : "Show in panel",
+                ToolTip = visible ? Loc.T("Hide from panel") : Loc.T("Show in panel"),
                 Child = UiKit.Icon(visible ? Glyphs.EyeOff : Glyphs.Eye, 12, visible ? ThemeKeys.TextSecondary : ThemeKeys.Accent),
             };
             eye.SetResourceReference(Border.BackgroundProperty, ThemeKeys.ControlFill);

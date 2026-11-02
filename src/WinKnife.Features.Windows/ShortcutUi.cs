@@ -44,7 +44,7 @@ internal static class ShortcutUi
 
         recorder.GotKeyboardFocus += (_, _) =>
         {
-            noteBlock.Text = $"{Strings.ShortcutRecording} Escape cancels. Delete clears.";
+            noteBlock.Text = Loc.F("{0} Escape cancels. Delete clears.", Strings.ShortcutRecording);
             noteBlock.Visibility = Visibility.Visible;
         };
         recorder.LostKeyboardFocus += (_, _) =>

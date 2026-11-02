@@ -14,14 +14,6 @@ namespace WinKnife.App;
 /// <summary>The app-wide cards of the General page: Launch at login, Language, Appearance, Feedback (spec 02a section 2).</summary>
 internal static class GeneralPage
 {
-    private static readonly (string Code, string Name)[] Languages =
-    [
-        ("en-US", "English (US)"), ("pt-BR", "Português (Brasil)"), ("tr", "Türkçe"), ("ru", "Русский"),
-        ("es", "Español"), ("sk", "Slovenčina"), ("de", "Deutsch"), ("fr", "Français"), ("it", "Italiano"),
-        ("ja", "日本語"), ("ko", "한국어"), ("uk", "Українська"),
-        ("zh-Hans", "简体中文"), ("zh-TW", "繁體中文（台灣）"), ("zh-HK", "繁體中文（香港）"),
-    ];
-
     public static FrameworkElement Build(ShellServices s, Action rebuild)
     {
         var stack = new StackPanel();
@@ -43,37 +35,37 @@ internal static class GeneralPage
         var head = new Grid();
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        head.Children.Add(UiKit.Text("Getting started", 14, FontWeights.SemiBold, ThemeKeys.TextPrimary));
-        var hide = UiKit.Button("Hide", ButtonKind.Plain, 12, onClick: () =>
+        head.Children.Add(UiKit.Text(Loc.T("Getting started"), 14, FontWeights.SemiBold, ThemeKeys.TextPrimary));
+        var hide = UiKit.Button(Loc.T("Hide"), ButtonKind.Plain, 12, onClick: () =>
         {
             s.App.Set(AppKeys.GettingStartedDismissed, true);
             rebuild();
         });
-        hide.ToolTip = "Hide this card. “Review introduction” in About brings the tour back.";
+        hide.ToolTip = Loc.T("Hide this card. “Review introduction” in About brings the tour back.");
         Grid.SetColumn(hide, 1);
         head.Children.Add(hide);
         card.Add(head);
 
-        card.Add(new SettingsRow(Glyphs.Search, "Find the WinKnife icon", "It sits next to the clock; click it for the panel, right-click it for the menu. If it is hidden, click the ^ arrow first.",
-            UiKit.Button("Pin it next to the clock", ButtonKind.Bordered, 12, onClick: () => UiKit.OpenUrl("ms-settings:taskbar"))));
+        card.Add(new SettingsRow(Glyphs.Search, Loc.T("Find the WinKnife icon"), Loc.T("It sits next to the clock; click it for the panel, right-click it for the menu. If it is hidden, click the ^ arrow first."),
+            UiKit.Button(Loc.T("Pin it next to the clock"), ButtonKind.Bordered, 12, onClick: () => UiKit.OpenUrl("ms-settings:taskbar"))));
         card.AddDivider();
         var installed = s.Runtime.AvailableCount;
         var total = s.Runtime.InstallableCount;
-        card.Add(new SettingsRow(Glyphs.Add, "Add features", $"{installed} of {total} features installed. Install only what you use; the panel and Settings grow with them.",
-            UiKit.Button("Open Features", ButtonKind.Prominent, 12, onClick: () => s.Shell.OpenFeatures())));
+        card.Add(new SettingsRow(Glyphs.Add, Loc.T("Add features"), Loc.F("{0} of {1} features installed. Install only what you use; the panel and Settings grow with them.", installed, total),
+            UiKit.Button(Loc.T("Open Features"), ButtonKind.Prominent, 12, onClick: () => s.Shell.OpenFeatures())));
         if (!InstallManager.IsInstalledCopy && !InstallManager.IsDevelopmentBuild)
         {
             card.AddDivider();
-            card.Add(new SettingsRow("", "Install WinKnife", "Add it to the Start menu and keep it if you delete the download. No administrator password needed.",
+            card.Add(new SettingsRow("", Loc.T("Install WinKnife"), Loc.T("Add it to the Start menu and keep it if you delete the download. No administrator password needed."),
                 UiKit.Button("Install…", ButtonKind.Bordered, 12, onClick: () => s.Shell.ShowInstallOffer())));
         }
 
         card.AddDivider();
-        card.Add(new SettingsRow(Glyphs.Info, "Take the tour again", "The short introduction: bundles, start with Windows, where the icon is.",
-            UiKit.Button("Review introduction", ButtonKind.Bordered, 12, onClick: () => s.Shell.ShowOnboarding())));
+        card.Add(new SettingsRow(Glyphs.Info, Loc.T("Take the tour again"), Loc.T("The short introduction: bundles, start with Windows, where the icon is."),
+            UiKit.Button(Loc.T("Review introduction"), ButtonKind.Bordered, 12, onClick: () => s.Shell.ShowOnboarding())));
         card.AddDivider();
-        card.Add(new SettingsRow(Glyphs.Warning, "Something not working?", "Opens the folder with WinKnife’s log file, to read or send along.",
-            UiKit.Button("Report a problem", ButtonKind.Bordered, 12, onClick: () => s.Shell.ReportProblem())));
+        card.Add(new SettingsRow(Glyphs.Warning, Loc.T("Something not working?"), Loc.T("Opens the folder with WinKnife’s log file, to read or send along."),
+            UiKit.Button(Loc.T("Report a problem"), ButtonKind.Bordered, 12, onClick: () => s.Shell.ReportProblem())));
         return card;
     }
 
@@ -99,12 +91,12 @@ internal static class GeneralPage
 
             rebuild();
         };
-        card.Add(new SettingsRow("", "Launch at login", "Opens by itself every time you turn on your PC.", toggle));
+        card.Add(new SettingsRow("", Loc.T("Launch at login"), Loc.T("Opens by itself every time you turn on your PC."), toggle));
         if (enabled && AutoStart.IsDisabledByUser)
         {
             var note = new StackPanel { Margin = new Thickness(SettingsRow.TextInset, 0, 0, 0) };
-            note.Children.Add(UiKit.Text("The login item is registered, but Windows still needs your approval. In Settings > Apps > Startup, allow WinKnife to start at sign-in.", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true));
-            var open = UiKit.Button("Open Windows Settings…", ButtonKind.Bordered, 12, onClick: () => UiKit.OpenUrl("ms-settings:startupapps"));
+            note.Children.Add(UiKit.Text(Loc.T("The login item is registered, but Windows still needs your approval. In Settings > Apps > Startup, allow WinKnife to start at sign-in."), 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true));
+            var open = UiKit.Button(Loc.T("Open Windows Settings…"), ButtonKind.Bordered, 12, onClick: () => UiKit.OpenUrl("ms-settings:startupapps"));
             open.HorizontalAlignment = HorizontalAlignment.Left;
             open.Margin = new Thickness(0, 6, 0, 0);
             note.Children.Add(open);
@@ -118,17 +110,20 @@ internal static class GeneralPage
         }
 
         card.AddDivider();
-        var current = s.App.Get<string>(AppKeys.AppLanguage);
-        var combo = new ComboBox { MinWidth = 170, ItemsSource = Languages.Select(l => l.Name).ToList() };
-        combo.SelectedIndex = Math.Max(0, Array.FindIndex(Languages, l => l.Code == current));
+        // "System default" follows the Windows display language; the 15 names are shown in their own language and script.
+        var choices = new List<(string Code, string Name)> { (Loc.SystemDefault, Loc.T("System default")) };
+        choices.AddRange(AppLanguage.All.Select(l => (l.Code, l.NativeName)));
+        var current = Loc.Setting;
+        var combo = new ComboBox { MinWidth = 170, ItemsSource = choices.Select(l => l.Name).ToList() };
+        combo.SelectedIndex = Math.Max(0, choices.FindIndex(l => string.Equals(l.Code, current, StringComparison.OrdinalIgnoreCase)));
         combo.SelectionChanged += (_, _) =>
         {
-            if (combo.SelectedIndex >= 0)
+            if (combo.SelectedIndex >= 0 && !string.Equals(choices[combo.SelectedIndex].Code, Loc.Setting, StringComparison.OrdinalIgnoreCase))
             {
-                s.App.Set(AppKeys.AppLanguage, Languages[combo.SelectedIndex].Code);
+                s.App.Set(AppKeys.AppLanguage, choices[combo.SelectedIndex].Code);
             }
         };
-        card.Add(new SettingsRow("", "Language", null, combo));
+        card.Add(new SettingsRow("", Loc.T("Language"), null, combo));
         return card;
     }
 
@@ -146,10 +141,10 @@ internal static class GeneralPage
 
     private static UIElement AppearanceCard(ShellServices s, Action rebuild)
     {
-        var card = new SettingsCard("Appearance");
+        var card = new SettingsCard(Loc.T("Appearance"));
         var current = s.App.Get<string>(AppKeys.AppAppearance);
         var grid = new Grid();
-        var modes = new[] { ("system", "System"), ("light", "Light"), ("dark", "Dark") };
+        var modes = new[] { ("system", Loc.T("System")), ("light", Loc.T("Light")), ("dark", Loc.T("Dark")) };
         for (var i = 0; i < modes.Length; i++)
         {
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -189,7 +184,7 @@ internal static class GeneralPage
         }
 
         card.Add(grid);
-        card.AddCaption("Applies to WinKnife’s own windows and panels, not to the whole PC.");
+        card.AddCaption(Loc.T("Applies to WinKnife’s own windows and panels, not to the whole PC."));
         return card;
     }
 

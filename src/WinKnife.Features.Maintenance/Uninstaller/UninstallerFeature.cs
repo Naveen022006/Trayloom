@@ -15,7 +15,7 @@ public sealed class UninstallerFeature : IFeature
 
     public IReadOnlyList<FeatureAction> Actions =>
     [
-        new FeatureAction("open", "Uninstall an app…", () => _context?.Shell.OpenSettings(SettingsPages.Uninstaller), G.Trash),
+        new FeatureAction("open", Loc.T("Uninstall an app…"), () => _context?.Shell.OpenSettings(SettingsPages.Uninstaller), G.Trash),
     ];
 
     private IUninstallService? _service;
@@ -51,7 +51,7 @@ public sealed class UninstallerSettingsSection : ISettingsSection
 
     public string PageId => SettingsPages.Uninstaller;
 
-    public string? Title => "Uninstaller";
+    public string? Title => Loc.T("Uninstaller");
 
     public IReadOnlyList<string> Keywords => ["Drag a program here", "Choose program", "remove apps", "leftovers", "Show in Command Bar"];
 
@@ -73,11 +73,11 @@ public sealed class UninstallerUtility : IPanelUtility
 
     public string Id => "uninstaller";
 
-    public string Title => "Uninstaller";
+    public string Title => Loc.T("Uninstaller");
 
     public string Glyph => G.Trash;
 
-    public string? Caption => "Removes an app together with the caches, preferences, logs and leftovers it leaves behind.";
+    public string? Caption => Loc.T("Removes an app together with the caches, preferences, logs and leftovers it leaves behind.");
 
     public string? SettingsDestination => SettingsPages.Uninstaller;
 

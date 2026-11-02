@@ -44,7 +44,7 @@ public sealed class IslandControlsPanelSection : IPanelSection
 
         var on = app.Get<bool>(K.Enabled);
         var stack = new StackPanel();
-        var row = new PanelToggleRow(G.Controls, "Dynamic Island", "Your music, controls and everyday tools at the top of your screen.", on, value =>
+        var row = new PanelToggleRow(G.Controls, Loc.T("Dynamic Island"), Loc.T("Your music, controls and everyday tools at the top of your screen."), on, value =>
         {
             app.Set(K.Enabled, value);
             context.RequestRelayout();
@@ -79,7 +79,7 @@ public sealed class IslandControlsPanelSection : IPanelSection
         stack.Children.Add(group);
         if (on)
         {
-            var manage = PanelButtons.Mini("Settings", null, () =>
+            var manage = PanelButtons.Mini(Loc.T("Settings"), null, () =>
             {
                 context.ClosePanel();
                 context.InvokeAfterClose(() => context.Shell.OpenSettings(SettingsPages.Island));

@@ -48,14 +48,14 @@ internal static class EdgeSnapModel
 
     public static string PlaceName(SnapZone zone) => zone switch
     {
-        SnapZone.TopLeft => "Top left",
-        SnapZone.Top => "Top center",
-        SnapZone.TopRight => "Top right",
-        SnapZone.Left => "Center left",
-        SnapZone.Right => "Center right",
-        SnapZone.BottomLeft => "Bottom left",
-        SnapZone.Bottom => "Bottom center",
-        _ => "Bottom right",
+        SnapZone.TopLeft => Loc.T("Top left"),
+        SnapZone.Top => Loc.T("Top center"),
+        SnapZone.TopRight => Loc.T("Top right"),
+        SnapZone.Left => Loc.T("Center left"),
+        SnapZone.Right => Loc.T("Center right"),
+        SnapZone.BottomLeft => Loc.T("Bottom left"),
+        SnapZone.Bottom => Loc.T("Bottom center"),
+        _ => Loc.T("Bottom right"),
     };
 
     public static bool IsCorner(SnapZone zone) => zone is SnapZone.TopLeft or SnapZone.TopRight or SnapZone.BottomLeft or SnapZone.BottomRight;

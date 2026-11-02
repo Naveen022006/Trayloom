@@ -31,7 +31,7 @@ public sealed class CleanUrlFeature : IFeature, ICleanUrlHost
 
     public IReadOnlyList<FeatureAction> Actions =>
     [
-        new FeatureAction("clean-clipboard", "Clean the copied link", CleanNow, ""),
+        new FeatureAction("clean-clipboard", Loc.T("Clean the copied link"), CleanNow, ""),
     ];
 
     public event Action? Changed;

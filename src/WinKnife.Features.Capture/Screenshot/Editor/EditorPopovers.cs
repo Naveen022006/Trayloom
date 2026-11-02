@@ -146,10 +146,10 @@ internal sealed class BackdropPopover : StackPanel
         {
             var s = saved;
             var cell = PopoverKit.Cell(SwatchOf(s), false);
-            cell.ToolTip = "Custom";
+            cell.ToolTip = Loc.T("Custom");
             cell.MouseLeftButtonUp += (_, _) => Apply(s.Clone());
             var menu = new ContextMenu();
-            var remove = new MenuItem { Header = "Remove" };
+            var remove = new MenuItem { Header = Loc.T("Remove") };
             remove.Click += (_, _) =>
             {
                 var list = Saved();
@@ -168,13 +168,13 @@ internal sealed class BackdropPopover : StackPanel
             if (img is not null)
             {
                 var cell = PopoverKit.Cell(new Image { Source = img, Stretch = Stretch.UniformToFill }, _style.Kind == "image" && _style.ImagePath == wall);
-                cell.ToolTip = "Wallpaper";
+                cell.ToolTip = Loc.T("Wallpaper");
                 cell.MouseLeftButtonUp += (_, _) => Apply(new BackdropStyle { Kind = "image", ImagePath = wall });
                 grid.Children.Add(cell);
             }
         }
 
-        var imageCell = PopoverKit.Cell(new Grid { Children = { Ed.Label("Image…", 11, FontWeights.Medium, Ed.FgDim) } }, _style.Kind == "image" && _style.ImagePath is not null && PopoverKit.DesktopWallpaper() != _style.ImagePath);
+        var imageCell = PopoverKit.Cell(new Grid { Children = { Ed.Label(Loc.T("Image…"), 11, FontWeights.Medium, Ed.FgDim) } }, _style.Kind == "image" && _style.ImagePath is not null && PopoverKit.DesktopWallpaper() != _style.ImagePath);
         ((Grid)imageCell.Child).Children[0].SetValue(HorizontalAlignmentProperty, HorizontalAlignment.Center);
         imageCell.BorderBrush = new SolidColorBrush(Color.FromArgb(70, 255, 255, 255));
         imageCell.MouseLeftButtonUp += (_, _) =>
@@ -193,7 +193,7 @@ internal sealed class BackdropPopover : StackPanel
         ((Border)Children[^1]).Margin = new Thickness(0, 8, 0, 8);
 
         // custom section
-        var seg = new SegmentedPair("Solid", "Gradient", _customGradient ? 1 : 0, i =>
+        var seg = new SegmentedPair(Loc.T("Solid"), Loc.T("Gradient"), _customGradient ? 1 : 0, i =>
         {
             _customGradient = i == 1;
             var c1 = _style.Colors is { Count: > 0 } ? _style.Colors[0] : [0.20, 0.47, 0.96];
@@ -220,7 +220,7 @@ internal sealed class BackdropPopover : StackPanel
             wells.Children.Add(well);
         }
 
-        var save = new EdButton(G.Add, null, "Save background", () =>
+        var save = new EdButton(G.Add, null, Loc.T("Save background"), () =>
         {
             if (_style.IsNone)
             {
@@ -347,7 +347,7 @@ internal sealed class WatermarkPopover : StackPanel
         Children.Clear();
         var seg = new Border { CornerRadius = new CornerRadius(7), Background = Ed.Faint, Padding = new Thickness(2), Margin = new Thickness(0, 0, 0, 10) };
         var row = new UniformGrid { Columns = 3 };
-        var kinds = new[] { ("none", Strings.None), ("text", "Text"), ("image", "Image") };
+        var kinds = new[] { ("none", Strings.None), ("text", Loc.T("Text")), ("image", Loc.T("Image")) };
         foreach (var (kind, title) in kinds)
         {
             var sel = _style.Kind == kind;
@@ -446,7 +446,7 @@ internal sealed class WatermarkPopover : StackPanel
                     Rebuild();
                 };
                 var menu = new ContextMenu();
-                var remove = new MenuItem { Header = "Remove" };
+                var remove = new MenuItem { Header = Loc.T("Remove") };
                 remove.Click += (_, _) =>
                 {
                     var list = Saved();
@@ -462,7 +462,7 @@ internal sealed class WatermarkPopover : StackPanel
             var canSave = !_style.IsNone && !saved.Any(x => x.SameLook(_style));
             var add = PopoverKit.Cell(new Grid { Children = { Ed.Icon(G.Add, 12, Ed.FgDim) } }, false);
             add.BorderBrush = new SolidColorBrush(Color.FromArgb(70, 255, 255, 255));
-            add.ToolTip = "Save watermark";
+            add.ToolTip = Loc.T("Save watermark");
             add.Opacity = canSave ? 1 : 0.4;
             add.MouseLeftButtonUp += (_, _) =>
             {
@@ -485,7 +485,7 @@ internal sealed class WatermarkPopover : StackPanel
         var posRow = new Grid { Margin = new Thickness(0, 0, 0, 6), IsEnabled = enabled, Opacity = enabled ? 1 : 0.4 };
         posRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(80) });
         posRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        posRow.Children.Add(Ed.Label("Position", 12));
+        posRow.Children.Add(Ed.Label(Loc.T("Position"), 12));
         var pg = new UniformGrid { Columns = 3, Width = 100, HorizontalAlignment = HorizontalAlignment.Left };
         for (var i = 0; i < 9; i++)
         {
@@ -503,8 +503,8 @@ internal sealed class WatermarkPopover : StackPanel
         Grid.SetColumn(pg, 1);
         posRow.Children.Add(pg);
         Children.Add(posRow);
-        Children.Add(PopoverKit.LabeledSlider("Size", 0, 1, _style.Size, v => { _style.Size = v; Push(); }, enabled, 80));
-        Children.Add(PopoverKit.LabeledSlider("Opacity", 0.05, 1, _style.Opacity, v => { _style.Opacity = v; Push(); }, enabled, 80));
-        Children.Add(PopoverKit.LabeledSlider("Rotation", -90, 90, _style.Rotation, v => { _style.Rotation = Math.Round(v); Push(); }, enabled, 80, "{0:0}°", 1));
+        Children.Add(PopoverKit.LabeledSlider(Loc.T("Size"), 0, 1, _style.Size, v => { _style.Size = v; Push(); }, enabled, 80));
+        Children.Add(PopoverKit.LabeledSlider(Loc.T("Opacity"), 0.05, 1, _style.Opacity, v => { _style.Opacity = v; Push(); }, enabled, 80));
+        Children.Add(PopoverKit.LabeledSlider(Loc.T("Rotation"), -90, 90, _style.Rotation, v => { _style.Rotation = Math.Round(v); Push(); }, enabled, 80, "{0:0}°", 1));
     }
 }

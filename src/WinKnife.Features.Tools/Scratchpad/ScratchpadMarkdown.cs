@@ -434,7 +434,7 @@ internal static class ScratchpadReading
             grid.Children.Add(ring);
         }
 
-        grid.ToolTip = block.Checked ? "Done" : "Not done";
+        grid.ToolTip = block.Checked ? Loc.T("Done") : Loc.T("Not done");
         var offset = block.BoxOffset;
         grid.MouseLeftButtonDown += (_, e) =>
         {

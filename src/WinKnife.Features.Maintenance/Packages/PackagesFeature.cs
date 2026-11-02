@@ -55,7 +55,7 @@ public sealed class PackagesUtility : IPanelUtility
 
     public string Glyph => G.Package;
 
-    public string? Caption => "Search, install and remove apps with winget.";
+    public string? Caption => Loc.T("Search, install and remove apps with winget.");
 
     public string? SettingsDestination => SettingsPages.Packages;
 

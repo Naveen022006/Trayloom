@@ -3,6 +3,7 @@
 
 using System.Runtime.InteropServices;
 using WinKnife.Core.Native;
+using WinKnife.Core;
 
 namespace WinKnife.Features.SystemTools;
 
@@ -187,7 +188,7 @@ internal static class DisplayNative
             config.TryGetValue(device, out var target);
             var isInternal = target.Internal;
             var friendly = string.IsNullOrWhiteSpace(target.Name)
-                ? (isInternal ? "Built-in display" : device.TrimStart('\\', '.'))
+                ? (isInternal ? Loc.T("Built-in display") : device.TrimStart('\\', '.'))
                 : target.Name;
             if (config.Count == 0 && internalBrightness.Count > 0 && !internalAssigned)
             {

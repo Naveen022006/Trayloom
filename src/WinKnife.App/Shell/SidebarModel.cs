@@ -29,7 +29,9 @@ internal static class SidebarModel
 {
     private static readonly string[] MonitorIds = ["monitor-cpu", "monitor-gpu", "monitor-memory", "monitor-network", "monitor-disk", "monitor-power", "connected-devices", "fan-control"];
 
-    public static IReadOnlyList<SidebarSection> All { get; } = Build();
+    public static IReadOnlyList<SidebarSection> All => _loc_All.Value;
+
+    private static readonly LocValue<IReadOnlyList<SidebarSection>> _loc_All = new(() => Build());
 
     private static SidebarRow Page(string id, string title, string glyph, string dest, params string[] gates) =>
         new(id, title, glyph, dest, gates);
@@ -37,35 +39,35 @@ internal static class SidebarModel
     private static SidebarRow Feature(string catalogId)
     {
         var e = FeatureCatalog.Get(catalogId)!;
-        return new SidebarRow(e.Id, e.Title, e.Glyph, e.Destination == SettingsPages.Features ? SettingsPages.Features : e.Destination, [e.Id], e.Id, e.IsBeta ? "Beta" : null);
+        return new SidebarRow(e.Id, e.Title, e.Glyph, e.Destination == SettingsPages.Features ? SettingsPages.Features : e.Destination, [e.Id], e.Id, e.IsBeta ? Loc.T("Beta") : null);
     }
 
     private static SidebarSection Features(string title, params string[] ids) => new(title, [.. ids.Select(Feature)]);
 
     private static IReadOnlyList<SidebarSection> Build() =>
     [
-        new("Essentials",
+        new(Loc.T("Essentials"),
         [
-            Page("general", "General", "", "general"),
-            Page("tray", "Tray & panel", "", "general#" + SettingsPages.PanelConfigurationAnchor),
-            Page("features", "Features", "", "features"),
-            Page("island", "Dynamic Island", "", "island", "notch"),
-            Page("monitor", "Monitor", "", "monitor", MonitorIds),
+            Page("general", Loc.T("General"), "", "general"),
+            Page("tray", Loc.T("Tray & panel"), "", "general#" + SettingsPages.PanelConfigurationAnchor),
+            Page("features", Loc.T("Features"), "", "features"),
+            Page("island", Loc.T("Dynamic Island"), "", "island", "notch"),
+            Page("monitor", Loc.T("Monitor"), "", "monitor", MonitorIds),
         ]),
-        Features("Utilities", "command-bar", "quick-launcher", "quick-toggles", "quit-apps", "camera-preview", "wallpaper", "scratchpad", "cleaning-mode", "screenshot", "screen-recorder", "screen-ocr", "color-picker", "radial-menu"),
-        Features("Sound", "music-block", "mixer", "sound-output-switcher", "audio-priority", "mic-mute"),
-        Features("Energy and display", "keep-awake", "brightness", "extra-brightness", "bluetooth-sleep"),
-        Features("Windows and taskbar", "switcher", "dock-preview", "dock-click", "window-layout", "window-maximizer", "auto-quit", "spaces-order"),
-        Features("Mouse and keyboard", "scroll-inverter", "scroll-horizontal", "scroll-zoom", "middle-click", "focus-follows-mouse", "smooth-scroll", "linear-scroll", "mouse-acceleration", "mouse-navigation", "mouse-button-shortcuts", "mouse-click-debounce", "quit-window-protection", "keyboard-debounce", "super-key", "text-snippets"),
-        Features("Files", "clipboard-history", "paste-plain", "finder-cut-paste", "finder-rename", "shelf", "media-tools", "url-cleaner"),
-        Features("App management", "app-updates", "cleaner", "homebrew", "uninstaller", "kill-process", "port-manager"),
+        Features(Loc.T("Utilities"), "command-bar", "quick-launcher", "quick-toggles", "quit-apps", "camera-preview", "wallpaper", "scratchpad", "cleaning-mode", "screenshot", "screen-recorder", "screen-ocr", "color-picker", "radial-menu"),
+        Features(Loc.T("Sound"), "music-block", "mixer", "sound-output-switcher", "audio-priority", "mic-mute"),
+        Features(Loc.T("Energy and display"), "keep-awake", "brightness", "extra-brightness", "bluetooth-sleep"),
+        Features(Loc.T("Windows and taskbar"), "switcher", "dock-preview", "dock-click", "window-layout", "window-maximizer", "auto-quit", "spaces-order"),
+        Features(Loc.T("Mouse and keyboard"), "scroll-inverter", "scroll-horizontal", "scroll-zoom", "middle-click", "focus-follows-mouse", "smooth-scroll", "linear-scroll", "mouse-acceleration", "mouse-navigation", "mouse-button-shortcuts", "mouse-click-debounce", "quit-window-protection", "keyboard-debounce", "super-key", "text-snippets"),
+        Features(Loc.T("Files"), "clipboard-history", "paste-plain", "finder-cut-paste", "finder-rename", "shelf", "media-tools", "url-cleaner"),
+        Features(Loc.T("App management"), "app-updates", "cleaner", "homebrew", "uninstaller", "kill-process", "port-manager"),
         new("App",
         [
-            Page("shortcuts", "Keyboard shortcuts", "", "shortcuts"),
-            Page("advanced", "Advanced", "", "advanced"),
-            Page("about", "About", "", "about"),
-            Page("whats-new", "What’s New", "", "whats-new"),
-            Page("support", "Support", "", "support"),
+            Page("shortcuts", Loc.T("Keyboard shortcuts"), "", "shortcuts"),
+            Page("advanced", Loc.T("Advanced"), "", "advanced"),
+            Page("about", Loc.T("About"), "", "about"),
+            Page("whats-new", Loc.T("What’s New"), "", "whats-new"),
+            Page("support", Loc.T("Support"), "", "support"),
         ]),
     ];
 

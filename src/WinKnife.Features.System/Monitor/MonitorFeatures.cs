@@ -50,7 +50,7 @@ public abstract class MonitorFeatureBase : IFeature
 
     public IReadOnlyList<FeatureAction> Actions =>
         FirstOwner == Id && _context is not null
-            ? [new FeatureAction("open", "System monitor", () => _context?.Shell.OpenPanel(PanelTabs.System), "")]
+            ? [new FeatureAction("open", Loc.T("System monitor"), () => _context?.Shell.OpenPanel(PanelTabs.System), "")]
             : [];
 
     private static string? FirstOwner { get; set; }

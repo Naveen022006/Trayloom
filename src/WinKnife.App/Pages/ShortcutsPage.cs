@@ -25,7 +25,7 @@ internal static class ShortcutsPage
     public static FrameworkElement Build(ShellServices s, Action rebuild)
     {
         var stack = new StackPanel();
-        stack.AddSpaced(new SettingsPageHeader("Keyboard shortcuts", "Edit every global shortcut from the features installed on this PC. Inactive shortcuts stay saved but do not run."), 20);
+        stack.AddSpaced(new SettingsPageHeader(Loc.T("Keyboard shortcuts"), Loc.T("Edit every global shortcut from the features installed on this PC. Inactive shortcuts stay saved but do not run.")), 20);
 
         var roles = s.Shortcuts.Roles.Where(r => r.FeatureId is null || s.Runtime.IsAvailable(r.FeatureId)).ToList();
         foreach (var group in GroupOrder)
@@ -36,7 +36,7 @@ internal static class ShortcutsPage
                 continue;
             }
 
-            var card = new SettingsCard(group == FeatureGroup.Island ? "Dynamic Island" : group.DisplayName());
+            var card = new SettingsCard(group == FeatureGroup.Island ? Loc.T("Dynamic Island") : group.DisplayName());
             var first = true;
             foreach (var chunk in Chunks(inGroup))
             {
@@ -80,7 +80,7 @@ internal static class ShortcutsPage
         if (s.Runtime.IsAvailable("command-bar"))
         {
             var card = new SettingsCard();
-            card.Add(new SettingsRow("", "App shortcuts", "Open apps with their own shortcuts, even when the bar is closed. Set search names and pin favorites here.", UiKit.Button("Open Command Bar settings", ButtonKind.Bordered, 12, onClick: () => s.Shell.OpenSettings(SettingsPages.CommandBar))));
+            card.Add(new SettingsRow("", Loc.T("App shortcuts"), Loc.T("Open apps with their own shortcuts, even when the bar is closed. Set search names and pin favorites here."), UiKit.Button(Loc.T("Open Command Bar settings"), ButtonKind.Bordered, 12, onClick: () => s.Shell.OpenSettings(SettingsPages.CommandBar))));
             stack.AddSpaced(card, 20);
         }
 
@@ -147,7 +147,7 @@ internal static class ShortcutsPage
             var dot = new Ellipse { Width = 5, Height = 5, VerticalAlignment = VerticalAlignment.Center };
             dot.SetResourceReference(Shape.FillProperty, active ? ThemeKeys.Green : ThemeKeys.TextTertiary);
             line.Children.Add(dot);
-            var status = UiKit.Text(active ? "Active" : "Inactive", 11, FontWeights.Normal, ThemeKeys.TextSecondary);
+            var status = UiKit.Text(active ? Loc.T("Active") : Loc.T("Inactive"), 11, FontWeights.Normal, ThemeKeys.TextSecondary);
             status.Margin = new Thickness(5, 0, 0, 0);
             line.Children.Add(status);
             col.Children.Add(line);
@@ -171,8 +171,8 @@ internal static class ShortcutsPage
         error.Visibility = Visibility.Collapsed;
         if (role.ReadOnly)
         {
-            right.Children.Add(UiKit.Text(state.Configured?.ToString() ?? "None", 12, FontWeights.Normal, ThemeKeys.TextSecondary));
-            var manage = UiKit.Button("Manage the menu", ButtonKind.Bordered, 12, onClick: () => s.Shell.OpenSettings(SettingsPages.RadialMenu));
+            right.Children.Add(UiKit.Text(state.Configured?.ToString() ?? Loc.T("None"), 12, FontWeights.Normal, ThemeKeys.TextSecondary));
+            var manage = UiKit.Button(Loc.T("Manage the menu"), ButtonKind.Bordered, 12, onClick: () => s.Shell.OpenSettings(SettingsPages.RadialMenu));
             manage.Margin = new Thickness(10, 0, 0, 0);
             right.Children.Add(manage);
         }
@@ -184,7 +184,7 @@ internal static class ShortcutsPage
                 var result = s.Shortcuts.TrySet(role.Id, hotkey);
                 if (!result.Ok)
                 {
-                    error.Text = result.Error ?? "This shortcut could not be set.";
+                    error.Text = result.Error ?? Loc.T("This shortcut could not be set.");
                     error.Visibility = Visibility.Visible;
                     recorder.Hotkey = s.Shortcuts.GetHotkey(role.Id);
                     return;
@@ -193,7 +193,7 @@ internal static class ShortcutsPage
                 rebuild();
             };
             right.Children.Add(recorder);
-            var clear = new Button { Content = UiKit.Icon(Glyphs.CloseCircle, 12, ThemeKeys.TextSecondary), ToolTip = "Remove shortcut", IsEnabled = state.Configured is not null, Margin = new Thickness(6, 0, 0, 0) };
+            var clear = new Button { Content = UiKit.Icon(Glyphs.CloseCircle, 12, ThemeKeys.TextSecondary), ToolTip = Loc.T("Remove shortcut"), IsEnabled = state.Configured is not null, Margin = new Thickness(6, 0, 0, 0) };
             clear.SetResourceReference(FrameworkElement.StyleProperty, ThemeKeys.ButtonPlain);
             clear.Click += (_, _) =>
             {
@@ -201,7 +201,7 @@ internal static class ShortcutsPage
                 rebuild();
             };
             right.Children.Add(clear);
-            var reset = UiKit.Button("Reset", ButtonKind.Bordered, 12, onClick: () =>
+            var reset = UiKit.Button(Loc.T("Reset"), ButtonKind.Bordered, 12, onClick: () =>
             {
                 s.Shortcuts.Reset(role.Id);
                 rebuild();

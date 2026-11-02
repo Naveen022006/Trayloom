@@ -843,7 +843,7 @@ internal sealed partial class IslandWindow
                     else if (id == "control.microphone")
                     {
                         var muted = _core.Audio.MicMuted;
-                        title = muted ? "Unmute microphone" : "Mute microphone";
+                        title = muted ? Loc.T("Unmute microphone") : Loc.T("Mute microphone");
                         glyph = muted ? G.MicOff : G.Mic;
                         selected = muted;
                     }

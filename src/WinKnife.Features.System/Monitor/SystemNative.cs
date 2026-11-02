@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using WinKnife.Core;
 
 namespace WinKnife.Features.SystemTools;
 

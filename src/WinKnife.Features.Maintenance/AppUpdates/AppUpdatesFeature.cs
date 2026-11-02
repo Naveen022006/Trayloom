@@ -15,7 +15,7 @@ public sealed class AppUpdatesFeature : IFeature
 
     public IReadOnlyList<FeatureAction> Actions =>
     [
-        new FeatureAction("check", "Check for app updates", () =>
+        new FeatureAction("check", Loc.T("Check for app updates"), () =>
         {
             _ = AppUpdatesService.Shared.CheckAsync(false);
             _context?.Shell.OpenSettings(SettingsPages.AppUpdates);

@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Agents;
 
@@ -34,11 +35,11 @@ internal static class AgentSessionCard
         var accessory = new StackPanel { Orientation = Orientation.Horizontal };
         if (waiting > 0)
         {
-            accessory.Children.Add(AU.Chip(waiting == 1 ? "Waiting for you" : waiting + " waiting for you", AgentColors.Orange));
+            accessory.Children.Add(AU.Chip(waiting == 1 ? Loc.T("Waiting for you") : waiting + " waiting for you", AgentColors.Orange));
         }
         else if (working > 0)
         {
-            accessory.Children.Add(AU.Chip(working == 1 ? "1 working" : working + " working", AgentColors.Green));
+            accessory.Children.Add(AU.Chip(working == 1 ? Loc.T("1 working") : working + " working", AgentColors.Green));
         }
 
         if (sessions.Count > 0)
@@ -127,7 +128,7 @@ internal static class AgentSessionCard
         {
             var chip = AU.Chip("+" + session.Agents + (session.Agents == 1 ? " agent" : " agents"), Colors.White);
             chip.Margin = new Thickness(6, 0, 0, 0);
-            AU.Tip(chip, "Subagents working for this session right now");
+            AU.Tip(chip, Loc.T("Subagents working for this session right now"));
             top.Children.Add(chip);
         }
 
@@ -142,7 +143,7 @@ internal static class AgentSessionCard
         {
             case AgentSessionState.Waiting:
             {
-                var pill = AU.Chip("Waiting for you", AgentColors.Orange);
+                var pill = AU.Chip(Loc.T("Waiting for you"), AgentColors.Orange);
                 pill.HorizontalAlignment = HorizontalAlignment.Right;
                 right.Children.Add(pill);
                 var clock = AU.Text("", 9.5, FontWeights.Medium, amber, mono: true);
@@ -160,14 +161,14 @@ internal static class AgentSessionCard
                 clock.Text = AgentFormat.Clock((c.Now - session.Since).TotalSeconds);
                 clocks.Add((clock, session.Since, ""));
                 right.Children.Add(clock);
-                right.Children.Add(AU.Text("Working", 9, null, AgentColors.Secondary));
+                right.Children.Add(AU.Text(Loc.T("Working"), 9, null, AgentColors.Secondary));
                 ((TextBlock)right.Children[1]).HorizontalAlignment = HorizontalAlignment.Right;
                 break;
             }
 
             default:
             {
-                var idle = AU.Text("Idle", 10.5, FontWeights.Medium, AgentColors.Secondary);
+                var idle = AU.Text(Loc.T("Idle"), 10.5, FontWeights.Medium, AgentColors.Secondary);
                 idle.HorizontalAlignment = HorizontalAlignment.Right;
                 right.Children.Add(idle);
                 var since = AU.Text(AgentFormat.Relative(session.LastActivity, c.Now, false), 9, null, AgentColors.Tertiary);
