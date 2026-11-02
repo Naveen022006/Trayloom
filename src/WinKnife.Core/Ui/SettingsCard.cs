@@ -6,14 +6,17 @@ using System.Windows.Controls;
 
 namespace WinKnife.Core.Ui;
 
-/// <summary>A rounded settings row: title and optional description on the left, a control on the right.</summary>
-public sealed class SettingsCard : Border
+/// <summary>
+/// v1 single-row card (title + description on the left, a control on the right). Kept for v1 feature views; new code uses
+/// <see cref="SettingsCard"/> + <see cref="SettingsRow"/>.
+/// </summary>
+public sealed class LegacySettingsCard : Border
 {
     /// <summary>Creates a card.</summary>
     /// <param name="title">Primary label.</param>
     /// <param name="description">Optional muted explanation below the title.</param>
     /// <param name="control">Optional control shown at the right edge.</param>
-    public SettingsCard(string title, string? description = null, UIElement? control = null)
+    public LegacySettingsCard(string title, string? description = null, UIElement? control = null)
     {
         SetResourceReference(StyleProperty, ThemeKeys.CardStyle);
 
@@ -70,11 +73,8 @@ public sealed class SettingsViewBuilder
     /// <summary>Adds a switch bound to a boolean setting.</summary>
     public SettingsViewBuilder AddToggle(string key, string title, bool fallback, string? description = null)
     {
-        var toggle = new CheckBox { IsChecked = _settings.Get(key, fallback) };
-        toggle.SetResourceReference(FrameworkElement.StyleProperty, ThemeKeys.SwitchStyle);
-        toggle.Checked += (_, _) => _settings.Set(key, true);
-        toggle.Unchecked += (_, _) => _settings.Set(key, false);
-        return Add(new SettingsCard(title, description, toggle));
+        var toggle = new MacSwitch(_settings.Get(key, fallback), SwitchSize.Regular, on => _settings.Set(key, on));
+        return Add(Row(title, description, toggle));
     }
 
     /// <summary>Adds a slider bound to a double setting.</summary>
@@ -101,7 +101,7 @@ public sealed class SettingsViewBuilder
         var row = new StackPanel { Orientation = Orientation.Horizontal };
         row.Children.Add(slider);
         row.Children.Add(label);
-        return Add(new SettingsCard(title, description, row));
+        return Add(Row(title, description, row));
     }
 
     /// <summary>Adds a slider bound to an integer setting.</summary>
@@ -128,7 +128,7 @@ public sealed class SettingsViewBuilder
         var row = new StackPanel { Orientation = Orientation.Horizontal };
         row.Children.Add(slider);
         row.Children.Add(label);
-        return Add(new SettingsCard(title, description, row));
+        return Add(Row(title, description, row));
     }
 
     /// <summary>Adds a drop-down bound to a setting of type <typeparamref name="T"/> (string, int, enum...).</summary>
@@ -149,7 +149,7 @@ public sealed class SettingsViewBuilder
                 _settings.Set(key, choice.Value);
             }
         };
-        return Add(new SettingsCard(title, description, combo));
+        return Add(Row(title, description, combo));
     }
 
     /// <summary>Adds a hotkey recorder bound to a <see cref="Hotkey"/> setting (null = not set).</summary>
@@ -157,22 +157,27 @@ public sealed class SettingsViewBuilder
     {
         var recorder = new HotkeyRecorder { Hotkey = _settings.Get(key, fallback) };
         recorder.HotkeyChanged += (_, hotkey) => _settings.Set(key, hotkey);
-        return Add(new SettingsCard(title, description, recorder));
+        return Add(Row(title, description, recorder));
     }
 
     /// <summary>Adds a single-line text box bound to a string setting.</summary>
     public SettingsViewBuilder AddText(string key, string title, string fallback, string? description = null)
     {
         var box = new TextBox { Text = _settings.Get(key, fallback), MinWidth = 220 };
+        box.SetResourceReference(FrameworkElement.StyleProperty, ThemeKeys.TextBoxStyle);
         box.TextChanged += (_, _) => _settings.Set(key, box.Text);
-        return Add(new SettingsCard(title, description, box));
+        return Add(Row(title, description, box));
     }
+
+    private static SettingsCard Row(string title, string? description, UIElement accessory) =>
+        new SettingsCard().Add(new SettingsRow(null, title, description, accessory));
 
     /// <summary>Adds a muted explanatory paragraph.</summary>
     public SettingsViewBuilder AddNote(string text)
     {
         var block = new TextBlock { Text = text, Margin = new Thickness(2, 0, 2, 0) };
         block.SetResourceReference(FrameworkElement.StyleProperty, ThemeKeys.MutedTextStyle);
+        block.SetResourceReference(TextBlock.ForegroundProperty, ThemeKeys.TextSecondary);
         return Add(block);
     }
 

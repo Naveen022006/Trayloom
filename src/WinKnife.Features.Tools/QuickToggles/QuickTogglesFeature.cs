@@ -74,7 +74,7 @@ public sealed class QuickTogglesFeature : ToolFeatureBase
             // Re-read after the system had a moment to apply the change.
             Ctx.Ui.BeginInvoke(() => box.IsChecked = read(), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
         };
-        var card = new SettingsCard(title, description, box) { Margin = new Thickness(0, 0, 0, 8) };
+        var card = new LegacySettingsCard(title, description, box) { Margin = new Thickness(0, 0, 0, 8) };
         return card;
     }
 

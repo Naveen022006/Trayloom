@@ -23,10 +23,11 @@ public class HotkeyRecorder : TextBox
     /// <summary>Creates the recorder.</summary>
     public HotkeyRecorder()
     {
+        SetResourceReference(StyleProperty, ThemeKeys.HotkeyRecorderStyle);
         IsReadOnly = true;
         IsReadOnlyCaretVisible = false;
         Cursor = Cursors.Hand;
-        MinWidth = 150;
+        MinWidth = 108;
         IsUndoEnabled = false;
         ContextMenu = null;
         Refresh();
@@ -46,7 +47,7 @@ public class HotkeyRecorder : TextBox
     protected override void OnGotKeyboardFocus(KeyboardFocusChangedEventArgs e)
     {
         base.OnGotKeyboardFocus(e);
-        Text = "Press a shortcut...";
+        Text = "Press keys";
     }
 
     /// <inheritdoc />
@@ -130,7 +131,7 @@ public class HotkeyRecorder : TextBox
     {
         if (!IsKeyboardFocused)
         {
-            Text = Hotkey?.ToString() ?? "Not set";
+            Text = Hotkey?.ToString() ?? "None";
         }
     }
 }

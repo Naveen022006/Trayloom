@@ -13,11 +13,10 @@
     </Style>
 
     <Style x:Key="WK.CardStyle" TargetType="Border">
-        <Setter Property="Background" Value="{DynamicResource WK.Surface}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource WK.Border}" />
-        <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="CornerRadius" Value="8" />
-        <Setter Property="Padding" Value="14,12" />
+        <Setter Property="Background" Value="{DynamicResource WK.Settings.Card}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="CornerRadius" Value="16" />
+        <Setter Property="Padding" Value="16" />
     </Style>
 
     <Style x:Key="WK.TitleTextStyle" TargetType="TextBlock">
@@ -45,36 +44,49 @@
         <Setter Property="HorizontalAlignment" Value="Center" />
     </Style>
 
-    <!-- Toggle switch look for a CheckBox. -->
+    <!-- Mac-style switch (regular 40x22). Small = 34x18, Mini = 28x15. Track on = accent, thumb white. -->
     <Style x:Key="WK.SwitchStyle" TargetType="CheckBox">
         <Setter Property="Foreground" Value="{DynamicResource WK.Text}" />
         <Setter Property="Padding" Value="10,0,0,0" />
         <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Focusable" Value="True" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="CheckBox">
                     <StackPanel Orientation="Horizontal" Background="Transparent">
                         <Grid Width="40" Height="22" VerticalAlignment="Center">
-                            <Border x:Name="Track" CornerRadius="11" BorderThickness="1"
-                                    Background="{DynamicResource WK.SwitchOff}"
-                                    BorderBrush="{DynamicResource WK.Border}" />
-                            <Ellipse x:Name="Thumb" Width="14" Height="14" Margin="4,0,0,0"
-                                     HorizontalAlignment="Left"
-                                     Fill="{DynamicResource WK.TextMuted}" />
+                            <Border x:Name="Track" CornerRadius="11" Background="{DynamicResource WK.SwitchOff}" />
+                            <Ellipse x:Name="Thumb" Width="18" Height="18" Margin="2" HorizontalAlignment="Left" Fill="White">
+                                <Ellipse.Effect>
+                                    <DropShadowEffect BlurRadius="3" ShadowDepth="1" Opacity="0.28" />
+                                </Ellipse.Effect>
+                                <Ellipse.RenderTransform>
+                                    <TranslateTransform x:Name="ThumbMove" X="0" />
+                                </Ellipse.RenderTransform>
+                            </Ellipse>
                         </Grid>
-                        <ContentPresenter Margin="{TemplateBinding Padding}" VerticalAlignment="Center"
-                                          RecognizesAccessKey="True" />
+                        <ContentPresenter Margin="{TemplateBinding Padding}" VerticalAlignment="Center" RecognizesAccessKey="True" />
                     </StackPanel>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsChecked" Value="True">
                             <Setter TargetName="Track" Property="Background" Value="{DynamicResource WK.Accent}" />
-                            <Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource WK.Accent}" />
-                            <Setter TargetName="Thumb" Property="Fill" Value="{DynamicResource WK.AccentText}" />
-                            <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right" />
-                            <Setter TargetName="Thumb" Property="Margin" Value="0,0,4,0" />
+                            <Trigger.EnterActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="ThumbMove" Storyboard.TargetProperty="X" To="18" Duration="0:0:0.14" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="ThumbMove" Storyboard.TargetProperty="X" To="0" Duration="0:0:0.14" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.ExitActions>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
-                            <Setter Property="Opacity" Value="0.5" />
+                            <Setter Property="Opacity" Value="0.45" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -82,7 +94,94 @@
         </Setter>
     </Style>
 
-    <!-- Square tile button used by the quick panel. -->
+    <Style x:Key="WK.SwitchSmallStyle" TargetType="CheckBox" BasedOn="{StaticResource WK.SwitchStyle}">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <StackPanel Orientation="Horizontal" Background="Transparent">
+                        <Grid Width="34" Height="19" VerticalAlignment="Center">
+                            <Border x:Name="Track" CornerRadius="9.5" Background="{DynamicResource WK.SwitchOff}" />
+                            <Ellipse x:Name="Thumb" Width="15" Height="15" Margin="2" HorizontalAlignment="Left" Fill="White">
+                                <Ellipse.Effect>
+                                    <DropShadowEffect BlurRadius="3" ShadowDepth="1" Opacity="0.28" />
+                                </Ellipse.Effect>
+                                <Ellipse.RenderTransform>
+                                    <TranslateTransform x:Name="ThumbMove" X="0" />
+                                </Ellipse.RenderTransform>
+                            </Ellipse>
+                        </Grid>
+                        <ContentPresenter Margin="{TemplateBinding Padding}" VerticalAlignment="Center" RecognizesAccessKey="True" />
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Track" Property="Background" Value="{DynamicResource WK.Accent}" />
+                            <Trigger.EnterActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="ThumbMove" Storyboard.TargetProperty="X" To="15" Duration="0:0:0.14" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="ThumbMove" Storyboard.TargetProperty="X" To="0" Duration="0:0:0.14" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.ExitActions>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="WK.SwitchMiniStyle" TargetType="CheckBox" BasedOn="{StaticResource WK.SwitchStyle}">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <StackPanel Orientation="Horizontal" Background="Transparent">
+                        <Grid Width="28" Height="16" VerticalAlignment="Center">
+                            <Border x:Name="Track" CornerRadius="8" Background="{DynamicResource WK.SwitchOff}" />
+                            <Ellipse x:Name="Thumb" Width="12" Height="12" Margin="2" HorizontalAlignment="Left" Fill="White">
+                                <Ellipse.RenderTransform>
+                                    <TranslateTransform x:Name="ThumbMove" X="0" />
+                                </Ellipse.RenderTransform>
+                            </Ellipse>
+                        </Grid>
+                        <ContentPresenter Margin="{TemplateBinding Padding}" VerticalAlignment="Center" RecognizesAccessKey="True" />
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Track" Property="Background" Value="{DynamicResource WK.Accent}" />
+                            <Trigger.EnterActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="ThumbMove" Storyboard.TargetProperty="X" To="12" Duration="0:0:0.14" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="ThumbMove" Storyboard.TargetProperty="X" To="0" Duration="0:0:0.14" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.ExitActions>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Square tile button (legacy v1 quick panel). -->
     <Style x:Key="WK.TileStyle" TargetType="Button">
         <Setter Property="Foreground" Value="{DynamicResource WK.Text}" />
         <Setter Property="Width" Value="104" />
@@ -112,24 +211,124 @@
         </Setter>
     </Style>
 
-    <!-- Primary (accent coloured) button. -->
-    <Style x:Key="WK.AccentButtonStyle" TargetType="Button">
-        <Setter Property="Foreground" Value="{DynamicResource WK.AccentText}" />
-        <Setter Property="Padding" Value="16,7" />
+    <!-- Buttons: bordered (flat grey), prominent (accent), plain (hover only), destructive (red). -->
+    <Style x:Key="WK.Button.Bordered" TargetType="Button">
+        <Setter Property="Foreground" Value="{DynamicResource WK.Text.Primary}" />
+        <Setter Property="Background" Value="{DynamicResource WK.Settings.Control}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Padding" Value="11,4" />
         <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="Root" CornerRadius="6" Background="{DynamicResource WK.Accent}"
-                            Padding="{TemplateBinding Padding}">
+                    <Grid x:Name="Root">
+                        <Border CornerRadius="6" Background="{TemplateBinding Background}" />
+                        <Border x:Name="Hover" CornerRadius="6" Background="{DynamicResource WK.Row.Hover}" Opacity="0" />
+                        <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Hover" Property="Opacity" Value="1" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Root" Property="Opacity" Value="0.8" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="WK.Button.Prominent" TargetType="Button" BasedOn="{StaticResource WK.Button.Bordered}">
+        <Setter Property="Foreground" Value="White" />
+        <Setter Property="Background" Value="{DynamicResource WK.Accent}" />
+    </Style>
+
+    <Style x:Key="WK.AccentButtonStyle" TargetType="Button" BasedOn="{StaticResource WK.Button.Prominent}">
+        <Setter Property="Padding" Value="16,7" />
+        <Setter Property="FontSize" Value="13" />
+    </Style>
+
+    <Style x:Key="WK.Button.Destructive" TargetType="Button" BasedOn="{StaticResource WK.Button.Bordered}">
+        <Setter Property="Foreground" Value="White" />
+        <Setter Property="Background" Value="{DynamicResource WK.Red}" />
+    </Style>
+
+    <Style x:Key="WK.Button.Plain" TargetType="Button">
+        <Setter Property="Foreground" Value="{DynamicResource WK.Text.Secondary}" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Padding" Value="6,3" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Root" CornerRadius="6" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Root" Property="Opacity" Value="0.9" />
+                            <Setter TargetName="Root" Property="Background" Value="{DynamicResource WK.Row.Hover}" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
-                            <Setter TargetName="Root" Property="Opacity" Value="0.5" />
+                            <Setter Property="Opacity" Value="0.45" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Rounded text box (search fields, URL fields...). -->
+    <Style x:Key="WK.TextBoxStyle" TargetType="TextBox">
+        <Setter Property="Foreground" Value="{DynamicResource WK.Text.Primary}" />
+        <Setter Property="CaretBrush" Value="{DynamicResource WK.Text.Primary}" />
+        <Setter Property="Background" Value="{DynamicResource WK.Settings.Control}" />
+        <Setter Property="Padding" Value="8,5" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="SelectionBrush" Value="{DynamicResource WK.Accent}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TextBox">
+                    <Border CornerRadius="7" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                        <ScrollViewer x:Name="PART_ContentHost" Focusable="False" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Shortcut recorder: a small button-like field (width 108 in Vorssaint). -->
+    <Style x:Key="WK.HotkeyRecorderStyle" TargetType="TextBox">
+        <Setter Property="Foreground" Value="{DynamicResource WK.Text.Primary}" />
+        <Setter Property="Background" Value="{DynamicResource WK.Settings.Control}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Padding" Value="8,4" />
+        <Setter Property="TextAlignment" Value="Center" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TextBox">
+                    <Border x:Name="Root" CornerRadius="6" Background="{TemplateBinding Background}" BorderThickness="1.2" BorderBrush="Transparent" Padding="{TemplateBinding Padding}">
+                        <ScrollViewer x:Name="PART_ContentHost" Focusable="False" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource WK.Accent}" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Root" Property="Background" Value="{DynamicResource WK.SurfaceHover}" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

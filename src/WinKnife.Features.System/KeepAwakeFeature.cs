@@ -79,7 +79,7 @@ public sealed class KeepAwakeFeature : IFeature
         UpdateStatus();
 
         var panel = new StackPanel();
-        panel.Children.Add(new SettingsCard("Keep this PC awake", "Turns on immediately with the duration below; 15 min, 1 h and 2 h shortcuts are in the quick panel.", toggle));
+        panel.Children.Add(new LegacySettingsCard("Keep this PC awake", "Turns on immediately with the duration below; 15 min, 1 h and 2 h shortcuts are in the quick panel.", toggle));
         var settings = new SettingsViewBuilder(_context.Settings)
             .AddChoice(
                 "minutes",

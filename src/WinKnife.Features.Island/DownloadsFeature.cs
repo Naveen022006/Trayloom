@@ -92,7 +92,7 @@ public sealed class IslandDownloadsFeature : IFeature
         row.Children.Add(browse);
 
         return new SettingsViewBuilder(settings)
-            .Add(new SettingsCard("Folder to watch", "Leave empty to use your Downloads folder.", row))
+            .Add(new LegacySettingsCard("Folder to watch", "Leave empty to use your Downloads folder.", row))
             .AddToggle("announce", "Show new downloads in the collapsed island", true)
             .Build();
     }
