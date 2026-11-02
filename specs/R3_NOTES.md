@@ -43,6 +43,9 @@
 
 - System: App tray must honour `micMuteMenuBarIndicator`, keep-awake `keepAwakeActiveIcon`/`keepAwakeIconTint`/`showCountdownInMenuBar`; add `ITrayMetricsState` to Core so `menuBarHideIconWithMetrics` works (System will publish it); Excluded drives list contributed by System as `quick-tools#diskExclusions` — make sure Tools' Quick toggles card doesn't render a second copy; mic mute: unmute when the FEATURE is uninstalled (keep persistence across app relaunch only); per-app output routing disabled on build 26300 (vtable unknown) — leave hidden; Extra brightness stays unavailable.
 
+- Maintenance: Core contract so Command Bar can reach kill service (browse, `kill.<pid>`) and uninstall finder (public hooks exist: `UninstallerFeature.SelectAsync`, `MediaToolsFeature.OpenWith`); App verbs `--elevated-clean` / `--kill-batch` or `IShell.Restart(elevated)` (single-instance mutex vs elevated relaunch helper waiting 2 s); panel keys `panelUtility<Name>` vs `panelUtilityShow.<id>` (ids: appUpdates, cleaner, homebrew, media, uninstaller, portManager); pages Packages/Kill Process/Port Manager draw their own title → avoid duplicate heading with shell header; winget page: sidebar says "Packages", view header says "winget" — pick one; Video "Edit" hidden until recorder editor wired (Capture has one now → connect via action).
+- Build has 17 warnings — review.
+
 ## Live verification still needed (agents could not run the exe)
 - Windows project: switcher Alt+Tab takeover, taskbar preview/clicks via UIA, edge snap, quit on close.
 - Tools project: command bar hotkey + search, quick panel, quick toggles (NOT destructive ones), radial menu triggers, cleaning mode (only with user present).

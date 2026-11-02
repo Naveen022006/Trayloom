@@ -492,6 +492,12 @@ public sealed class FeatureRegistry : IActionCatalog, IDisposable
         public IDisposable SubscribeMouse(Func<MouseHookEvent, bool> handler, int priority = 0) =>
             Track(inner.SubscribeMouse(handler, priority));
 
+        public IDisposable PauseOthers() => Track(inner.PauseOthers());
+
+        public bool KeyboardHookInstalled => inner.KeyboardHookInstalled;
+
+        public bool MouseHookInstalled => inner.MouseHookInstalled;
+
         public void Dispose()
         {
             IDisposable[] subs;

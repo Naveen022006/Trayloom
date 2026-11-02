@@ -390,10 +390,27 @@ internal sealed class OnboardingWindow : Window
         }
 
         stack.Children.Add(card);
+        // Disclosure (collapsed): the remaining permissions, without the ones already listed above.
         var other = new SettingsCard();
-        other.Add(UiKit.Text("Other permissions", 13.5, FontWeights.SemiBold, ThemeKeys.TextPrimary));
+        var disclosure = new Grid { Background = Brushes.Transparent, Cursor = Cursors.Hand };
+        disclosure.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        disclosure.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        disclosure.Children.Add(UiKit.Text("Other permissions", 13.5, FontWeights.SemiBold, ThemeKeys.TextPrimary));
+        var chevron = UiKit.Icon(Glyphs.ChevronRightSmall, 10, ThemeKeys.TextSecondary, FontWeights.Bold);
+        chevron.RenderTransformOrigin = new Point(0.5, 0.5);
+        Grid.SetColumn(chevron, 1);
+        disclosure.Children.Add(chevron);
+        other.Add(disclosure);
         other.AddCaption("Optional. Grant these now or later, when a feature needs them.");
-        other.Add(PermissionsPage.Build(_s));
+        var rest = PermissionsPage.Build(_s, selectedPerms);
+        rest.Visibility = Visibility.Collapsed;
+        other.Add(rest);
+        disclosure.MouseLeftButtonUp += (_, _) =>
+        {
+            var open = rest.Visibility != Visibility.Visible;
+            rest.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+            chevron.RenderTransform = new RotateTransform(open ? 90 : 0);
+        };
         stack.AddSpaced(other, 14);
         var foot = UiKit.Text("Some features need WinKnife to run as administrator.", 11.5, FontWeights.Normal, ThemeKeys.TextTertiary, wrap: true);
         foot.Margin = new Thickness(0, 12, 0, 0);

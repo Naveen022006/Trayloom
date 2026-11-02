@@ -20,6 +20,9 @@ public class HotkeyRecorder : TextBox
         typeof(HotkeyRecorder),
         new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault, OnHotkeyChanged));
 
+    /// <summary>Allows a bare key without a modifier (Vorssaint's bare-key recorders). Default false: only F-keys are accepted bare.</summary>
+    public bool AllowBareKey { get; set; }
+
     /// <summary>Creates the recorder.</summary>
     public HotkeyRecorder()
     {
@@ -27,7 +30,7 @@ public class HotkeyRecorder : TextBox
         IsReadOnly = true;
         IsReadOnlyCaretVisible = false;
         Cursor = Cursors.Hand;
-        MinWidth = 108;
+        MinWidth = 150;
         IsUndoEnabled = false;
         ContextMenu = null;
         Refresh();
@@ -108,7 +111,7 @@ public class HotkeyRecorder : TextBox
 
         // A bare letter/digit would hijack normal typing system-wide; require a modifier except for F-keys.
         var isFunctionKey = key is >= Key.F1 and <= Key.F24;
-        if (mods == HotkeyModifiers.None && !isFunctionKey)
+        if (mods == HotkeyModifiers.None && !isFunctionKey && !AllowBareKey)
         {
             return;
         }

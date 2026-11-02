@@ -114,4 +114,19 @@ public interface IShelfService
 {
     /// <summary>Shows or hides the shelf.</summary>
     void Toggle();
+
+    /// <summary>Puts files / folders on the shelf (existing paths only; duplicates are ignored). Returns how many were added.</summary>
+    int Add(IEnumerable<string> paths);
+
+    /// <summary>Paths of the files and folders on the shelf (images and notes are not listed).</summary>
+    IReadOnlyList<string> Paths { get; }
+
+    /// <summary>Removes shelf entries that point at these paths.</summary>
+    void Remove(IEnumerable<string> paths);
+
+    /// <summary>Clears the shelf (pinned items stay).</summary>
+    void Clear();
+
+    /// <summary>Raised (UI thread) when the contents changed.</summary>
+    event Action? Changed;
 }

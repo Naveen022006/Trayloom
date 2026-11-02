@@ -269,20 +269,18 @@ internal sealed class TrayPanel : Window
     private bool TabHasContent(PanelTabInfo tab)
     {
         // A tab needs its gating features installed (brightness: also the control enabled) and at least one contribution.
-        var legacy = LegacyPanel.ActionsFor(_s.Host.Features, tab.Id).Count > 0;
         if (tab.Id == PanelTabs.Brightness && !_s.App.Get<bool>(AppKeys.BrightnessControlEnabled))
         {
             return false;
         }
 
-        if (!_s.Runtime.AnyAvailable(tab.GateFeatures) && !legacy)
+        if (!_s.Runtime.AnyAvailable(tab.GateFeatures))
         {
             return false;
         }
 
-        return legacy
-            || _s.Contributions.PanelSections(tab.Id).Count > 0
-            || (tab.Id == PanelTabs.Utilities && _s.Contributions.PanelUtilities().Count > 0);
+        return _s.Contributions.PanelSections(tab.Id).Count > 0
+            || (tab.Id == PanelTabs.Utilities && _s.Contributions.PanelUtilities().Any(u => !u.HostedOnly));
     }
 
     private UIElement TabBar(IReadOnlyList<PanelTabInfo> tabs)
@@ -417,7 +415,10 @@ internal sealed class TrayPanel : Window
             stack.Children.Add(Spaced(UtilitiesBody(ctx), 10));
         }
 
-        var groups = tabId == PanelTabs.Controls ? sections.GroupBy(x => x.Category ?? string.Empty).ToList() : [];
+        string[] categoryOrder = [PanelTabs.CategoryWindows, PanelTabs.CategoryInput, PanelTabs.CategoryFiles];
+        var groups = tabId == PanelTabs.Controls
+            ? sections.GroupBy(x => x.Category ?? string.Empty).OrderBy(g => Array.IndexOf(categoryOrder, g.Key) is var at && at >= 0 ? at : int.MaxValue).ToList()
+            : [];
         if (tabId == PanelTabs.Controls)
         {
             foreach (var group in groups)
@@ -442,19 +443,6 @@ internal sealed class TrayPanel : Window
 
                 stack.Children.Add(Spaced(view, 10));
             }
-        }
-
-        var legacy = LegacyPanel.ActionsFor(_s.Host.Features, tabId);
-        if (legacy.Count > 0)
-        {
-            var group = new PanelRowGroup();
-            foreach (var (feature, entry, action) in legacy)
-            {
-                var captured = action;
-                group.Add(new PanelActionRow(action.Glyph is { Length: > 0 } g ? g : entry.Glyph, action.Title, entry.Title, () => InvokeAfterClose(captured.Invoke, 150, close: true), null, showCaption: true));
-            }
-
-            stack.Children.Add(Spaced(group, 10));
         }
 
         return stack;
@@ -523,29 +511,60 @@ internal sealed class TrayPanel : Window
 
     // ---- Utilities tab -----------------------------------------------------------------------------------
 
-    private const string UtilityOrderKey = "panelUtilityOrder";
+    /// <summary>Default order of the Utilities rows (spec 01 5.8); a saved <c>panelUtilityOrder</c> goes first.</summary>
+    private static readonly string[] DefaultUtilityOrder =
+    [
+        "screenshot", "quickLauncher", "appUpdates", "cleaner", "homebrew", "media", "clipboard", "windowLayout", "uninstaller",
+        "cleanURL", "cleaning", "screenOCR", "colorPicker", "cameraPreview", "scratchpad", "commandBar", "screenRecorder", "portManager",
+    ];
 
-    private static string UtilityShowKey(string id) => "panelUtilityShow." + id;
+    private static readonly Dictionary<string, bool> HostedCache = new(StringComparer.Ordinal);
 
     private void ResetUtilityLayout()
     {
-        _s.App.Reset(UtilityOrderKey);
+        _s.App.Reset(PanelKeys.UtilityOrder);
         foreach (var u in _s.Contributions.PanelUtilities())
         {
-            _s.App.Reset(UtilityShowKey(u.Id));
+            _s.App.Reset(PanelKeys.Utility(u.Id));
         }
+    }
+
+    /// <summary>True when the utility opens a hosted view (probed once: creating the view just to test for null would build every hosted panel on each rebuild).</summary>
+    private bool IsHosted(IPanelUtility u, PanelContext ctx)
+    {
+        if (!HostedCache.TryGetValue(u.Id, out var hosted))
+        {
+            try
+            {
+                hosted = u.CreateHostedView(ctx) is not null;
+            }
+            catch (Exception ex)
+            {
+                _s.Log.Error($"Hosted utility {u.Id} probe failed", ex);
+                hosted = false;
+            }
+
+            HostedCache[u.Id] = hosted;
+        }
+
+        return hosted;
     }
 
     private FrameworkElement UtilitiesBody(PanelContext ctx)
     {
-        var all = _s.Contributions.PanelUtilities().ToList();
-        var order = _s.App.Get<string>(UtilityOrderKey).Split(',', StringSplitOptions.RemoveEmptyEntries).ToList();
+        var all = _s.Contributions.PanelUtilities().Where(u => !u.HostedOnly).ToList();
+        var order = (_s.App.Get<string>(PanelKeys.UtilityOrder) ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries).ToList();
+        foreach (var id in DefaultUtilityOrder.Where(id => !order.Contains(id)))
+        {
+            order.Add(id);
+        }
+
         all = [.. all.OrderBy(u => order.IndexOf(u.Id) is var i && i >= 0 ? i : int.MaxValue)];
         var group = new PanelRowGroup();
         var host = new StackPanel();
         foreach (var u in all)
         {
-            var shown = _s.App.Get<bool>(UtilityShowKey(u.Id), true);
+            var shown = _s.App.Get<bool>(PanelKeys.Utility(u.Id), true);
             if (!shown && !_editing)
             {
                 continue;
@@ -555,7 +574,6 @@ internal sealed class TrayPanel : Window
             host.Children.Add(row);
         }
 
-        // Legacy rows are appended by BuildBody; here only contributed utilities.
         if (host.Children.Count == 0)
         {
             return new StackPanel();
@@ -569,7 +587,7 @@ internal sealed class TrayPanel : Window
     private FrameworkElement UtilityRow(IPanelUtility u, PanelContext ctx, bool shown)
     {
         var wrapper = new StackPanel { Tag = u.Id };
-        var hosted = u.CreateHostedView(ctx) is not null;
+        var hosted = IsHosted(u, ctx);
         var row = new PanelActionRow(u.Glyph, u.Title, u.Caption, () =>
         {
             if (_editing)
@@ -594,7 +612,7 @@ internal sealed class TrayPanel : Window
             eye.SetResourceReference(FrameworkElement.StyleProperty, ThemeKeys.ButtonPlain);
             eye.Click += (_, e) =>
             {
-                _s.App.Set(UtilityShowKey(u.Id), !shown);
+                _s.App.Set(PanelKeys.Utility(u.Id), !shown);
                 Rebuild();
             };
             Grid.SetColumn(eye, 4);
@@ -696,8 +714,9 @@ internal sealed class TrayPanel : Window
         var expanded = key.Length == 0 || _editing || _s.App.Get<bool>(key);
         if (title.Length > 0)
         {
-            var enabled = sections.Sum(x => x.CategoryCounts.Enabled);
-            var total = sections.Sum(x => x.CategoryCounts.Total);
+            var counts = sections.Select(x => x.GetCategoryCounts(ctx)).ToList();
+            var enabled = counts.Sum(x => x.Enabled);
+            var total = counts.Sum(x => x.Total);
             var head = new Grid { Background = Brushes.Transparent, Cursor = Cursors.Hand };
             head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });

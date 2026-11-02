@@ -130,7 +130,7 @@ public static class FeatureCatalog
         list.Add(Def("port-manager", T, "Port Manager", "View active listening ports and, with Kill Process installed, terminate the processes using them", "", Idle, "", false, "port-manager", [], legacy: "port-manager"));
 
         // ---- Dynamic Island ------------------------------------------------------------------------------------
-        list.Add(Def("notch", I, "Dynamic Island", "Your music, controls and everyday tools, together at the top of your screen. Optional. Turn it off to keep using the separate panels.", "", Per, "A,AP", true, "island", [], experimental: true, legacy: "island"));
+        list.Add(Def("notch", I, "Dynamic Island", "Your music, controls and everyday tools, together at the top of your screen. Optional. Turn it off to keep using the separate panels.", "", Per, "A,AP", true, "island", ["notchEnabled", "notchShortcutEnabled"], ["notchEnabled"], experimental: true, legacy: "island"));
         list.Add(Def("notch-calendar", I, "Calendar", "Browse the month and your upcoming appointments in the Dynamic Island.", "", Per, "Cal", true, "island", [], legacy: "island-calendar"));
         list.Add(Def("notch-notifications", I, "Notifications", "New system notifications in the Dynamic Island.", "", Idle, "A", true, "island", [], support: WindowsSupport.Adapted));
         list.Add(Def("notch-gestures", I, "Dynamic Island Gestures", "Open and close the Dynamic Island with scrolling, and swipe to change tracks.", "", Idle, "", true, "island", [], legacy: "island-gestures"));
@@ -140,9 +140,9 @@ public static class FeatureCatalog
         list.Add(Def("notch-queue", I, "Up next", "See the actual upcoming songs shared by your player.", "", Idle, "", true, "island", []));
         list.Add(Def("notch-live-equalizer", I, "Bars follow the music", "Move the Dynamic Island bars with the sound your player makes.", "", Per, "C", true, "island", []));
         list.Add(Def("notch-downloads", I, "Downloads", "See files arriving in a folder you choose, directly in the Dynamic Island.", "", Idle, "F", true, "island", [], legacy: "island-downloads"));
-        list.Add(Def("notch-agents", I, "AI Agents", "Follow plan limits, tokens, API value and the work in progress of Claude, Codex, OpenCode and GitHub Copilot in the Dynamic Island.", "", Per, "", true, "island", []));
+        list.Add(Def("notch-agents", I, "AI Agents", "Follow plan limits, tokens, API value and the work in progress of Claude, Codex, OpenCode and GitHub Copilot in the Dynamic Island.", "", Per, "", true, "island", ["notchAgentsEnabled"]));
         list.Add(Def("notch-watch", I, "Watch", "Turn any part of any window into a live activity in the Dynamic Island, with an alert when it changes, finishes or shows what you are waiting for.", "", Idle, "S,N", true, "island", []));
-        list.Add(Def("notch-mascot", I, "Companion", "A little friend in the Dynamic Island who says hello now and then and reacts to what happens on your PC.", "", Per, "", false, "island#companion", []));
+        list.Add(Def("notch-mascot", I, "Companion", "A little friend in the Dynamic Island who says hello now and then and reacts to what happens on your PC.", "", Per, "", false, "island#companion", ["notchMascotEnabled"]));
 
         // ---- System monitor ------------------------------------------------------------------------------------
         list.Add(Def("monitor-cpu", Mon, "CPU", "Processor usage and temperature", "", Per, "N", true, "monitor", [], legacy: "monitor-cpu"));

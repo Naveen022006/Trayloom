@@ -70,20 +70,7 @@
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsChecked" Value="True">
                             <Setter TargetName="Track" Property="Background" Value="{DynamicResource WK.Accent}" />
-                            <Trigger.EnterActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <DoubleAnimation Storyboard.TargetName="ThumbMove" Storyboard.TargetProperty="X" To="18" Duration="0:0:0.14" />
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.EnterActions>
-                            <Trigger.ExitActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <DoubleAnimation Storyboard.TargetName="ThumbMove" Storyboard.TargetProperty="X" To="0" Duration="0:0:0.14" />
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.ExitActions>
+                            <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.45" />
@@ -115,20 +102,7 @@
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsChecked" Value="True">
                             <Setter TargetName="Track" Property="Background" Value="{DynamicResource WK.Accent}" />
-                            <Trigger.EnterActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <DoubleAnimation Storyboard.TargetName="ThumbMove" Storyboard.TargetProperty="X" To="15" Duration="0:0:0.14" />
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.EnterActions>
-                            <Trigger.ExitActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <DoubleAnimation Storyboard.TargetName="ThumbMove" Storyboard.TargetProperty="X" To="0" Duration="0:0:0.14" />
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.ExitActions>
+                            <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.45" />
@@ -157,20 +131,7 @@
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsChecked" Value="True">
                             <Setter TargetName="Track" Property="Background" Value="{DynamicResource WK.Accent}" />
-                            <Trigger.EnterActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <DoubleAnimation Storyboard.TargetName="ThumbMove" Storyboard.TargetProperty="X" To="12" Duration="0:0:0.14" />
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.EnterActions>
-                            <Trigger.ExitActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <DoubleAnimation Storyboard.TargetName="ThumbMove" Storyboard.TargetProperty="X" To="0" Duration="0:0:0.14" />
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.ExitActions>
+                            <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.45" />

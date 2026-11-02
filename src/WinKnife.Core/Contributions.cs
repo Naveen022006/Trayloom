@@ -68,6 +68,26 @@ public static class PanelTabs
 /// <param name="AvailableOnWindows">False for tabs that cannot exist on Windows.</param>
 public sealed record PanelTabInfo(string Id, string Title, string Glyph, string Description, IReadOnlyList<string> GateFeatures, bool SupportsEditing, bool AvailableOnWindows = true);
 
+/// <summary>Settings keys of the panel layout (Vorssaint names).</summary>
+public static class PanelKeys
+{
+    /// <summary>Order of the Utilities rows (comma separated utility ids).</summary>
+    public const string UtilityOrder = "panelUtilityOrder";
+
+    /// <summary>Order of the Controls items.</summary>
+    public const string ControlOrder = "panelControlOrder";
+
+    /// <summary>Visibility key of a utility row: <c>panelUtility&lt;Name&gt;</c> (id with the first letter upper-cased).</summary>
+    public static string Utility(string utilityId) => utilityId switch
+    {
+        "cleanURL" => "panelUtilityURLCleaner",
+        _ => "panelUtility" + char.ToUpperInvariant(utilityId[0]) + utilityId[1..],
+    };
+
+    /// <summary>Visibility key of a Controls item: <c>panelControl&lt;Item&gt;</c>.</summary>
+    public static string Control(string item) => "panelControl" + item;
+}
+
 /// <summary>Opens parts of the shell. Implemented by <c>WinKnife.App</c>; reachable from every context.</summary>
 public interface IShell
 {
@@ -307,8 +327,11 @@ public interface IPanelSection : IContributionProvider
     /// <summary>Controls tab only: <see cref="PanelTabs.CategoryWindows"/>, <see cref="PanelTabs.CategoryInput"/> or <see cref="PanelTabs.CategoryFiles"/>.</summary>
     string? Category => null;
 
-    /// <summary>Controls tab only: <c>(enabled, total)</c> shown on the category header (e.g. 6/6). Evaluated when the tab is built.</summary>
+    /// <summary>Controls tab only: <c>(enabled, total)</c> shown on the category header (e.g. 6/6). Prefer <see cref="GetCategoryCounts"/>, which has a context.</summary>
     (int Enabled, int Total) CategoryCounts => (0, 0);
+
+    /// <summary>Controls tab only: the counts of this section, evaluated with a live context when the tab is built.</summary>
+    (int Enabled, int Total) GetCategoryCounts(IPanelContext context) => CategoryCounts;
 
     /// <summary>Builds the section content (usually a <c>PanelCard</c> or <c>PanelRowGroup</c>).</summary>
     FrameworkElement CreateView(IPanelContext context);
@@ -320,8 +343,14 @@ public interface IPanelSection : IContributionProvider
 /// </summary>
 public interface IPanelUtility : IContributionProvider
 {
-    /// <summary>Stable id (persisted in the panel order / visibility keys).</summary>
+    /// <summary>
+    /// Stable id (persisted in the panel order). Visibility is stored under Vorssaint's key <c>panelUtility&lt;Name&gt;</c>
+    /// (<see cref="PanelKeys.Utility"/>), the single source of truth shared with the feature's own "Show in panel" switch.
+    /// </summary>
     string Id { get; }
+
+    /// <summary>True for utilities that only exist as a hosted view (reached through <see cref="IPanelContext.HostUtility"/>, e.g. Recent captures); they never get a row.</summary>
+    bool HostedOnly => false;
 
     /// <summary>Row title.</summary>
     string Title { get; }

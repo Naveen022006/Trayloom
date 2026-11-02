@@ -226,7 +226,9 @@ public sealed class FeatureRuntime : IFeatureRuntime
                 continue;
             }
 
-            if (target && enablingFirstInstalls)
+            // The Dynamic Island is always switched on by its first install (also through "Install all", bundles and onboarding):
+            // otherwise a user who just installed it would see nothing.
+            if (target && (enablingFirstInstalls || entry.Id == "notch"))
             {
                 EnableOnFirstInstall(entry);
             }

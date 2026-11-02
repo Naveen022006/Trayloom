@@ -64,7 +64,9 @@ public static class HotkeyMap
             return null;
         }
 
-        var mods = (hotkey.Modifiers & ~HotkeyModifiers.Win) | HotkeyModifiers.Shift;
+        // Ctrl+Win+X would become Ctrl+Shift+X, which many apps use (paste as plain text, reopen tab...): Ctrl+Alt+X stays out of the way.
+        var replacement = (hotkey.Modifiers & ~HotkeyModifiers.Win) == HotkeyModifiers.Control ? HotkeyModifiers.Alt : HotkeyModifiers.Shift;
+        var mods = (hotkey.Modifiers & ~HotkeyModifiers.Win) | replacement;
         var result = new Hotkey(mods, hotkey.Key);
         return IsReserved(result) ? null : result;
     }
@@ -110,7 +112,7 @@ public sealed record ShortcutSetResult(bool Ok, string? Error);
 
 /// <summary>
 /// Central registry of user-configurable global shortcuts. Features <see cref="Bind"/> a callback to a role; the
-/// service reads the saved/default hotkey, registers it while the role is active, falls back from Win to Shift when
+/// service reads the saved/default hotkey, registers it while the role is active, falls back from Win to Shift (Ctrl+Win to Ctrl+Alt) when
 /// Windows reserves the combination, re-registers when the shortcut or an enable key changes, and reports conflicts
 /// the Keyboard shortcuts page and the feature pages can show.
 /// </summary>

@@ -173,7 +173,7 @@ public static class SettingsPages
         [WindowLayout] = "Window layout",
         [QuitOnClose] = "Quit on close",
         [QuitProtection] = "Quit & close protection",
-        [Mouse] = "Mouse & Trackpad",
+        [Mouse] = "Mouse & Touchpad",
         [Debounce] = "Debounce",
         [SuperKey] = "Super key",
         [TextSnippets] = "Text snippets",

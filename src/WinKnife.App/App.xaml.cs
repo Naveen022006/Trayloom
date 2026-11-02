@@ -75,6 +75,12 @@ public partial class App : Application
             // Ask the running instance to quit (--quit) or to recover (show the panel / Settings), then leave.
             try
             {
+                if (!quitRequested && e.Args.Any(a => DevFlags.Contains(a)))
+                {
+                    // Hand the developer flags to the running instance.
+                    File.WriteAllLines(DevCommandFile, e.Args);
+                }
+
                 using var existing = EventWaitHandle.OpenExisting(quitRequested ? QuitEventName : ActivateEventName);
                 existing.Set();
             }
@@ -94,7 +100,7 @@ public partial class App : Application
         _activateEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ActivateEventName);
         _activateWait = ThreadPool.RegisterWaitForSingleObject(
             _activateEvent,
-            (_, _) => Dispatcher.BeginInvoke(() => _shell?.Recover()),
+            (_, _) => Dispatcher.BeginInvoke(OnActivateRequested),
             null,
             Timeout.Infinite,
             executeOnlyOnce: false);
@@ -147,54 +153,115 @@ public partial class App : Application
         _shell = new AppShell(_host);
         _host.Contributions.Discover();
         _host.Runtime.Initialize();
-        foreach (var feature in _host.Features.Features)
-        {
-            if (FeatureCatalog.Get(feature.CatalogId) is not null)
-            {
-                // TEMPORARY: show v1 settings views until the feature project contributes real sections.
-                _host.Contributions.AddProvider(new LegacySettingsSection(feature, _host.Features));
-            }
-        }
-
+        MigratePanelKeys();
         _shell.Start();
         if (!_host.App.Get<bool>(AppKeys.HasOnboarded) && !previousStartFailed)
         {
             Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => _shell.ShowOnboarding());
         }
 
-        // Developer flags used by the screenshot scripts: --open-settings <page#anchor>, --open-panel [tab].
-        var settingsIndex = Array.FindIndex(e.Args, a => a == "--open-settings");
-        if (settingsIndex >= 0 && settingsIndex + 1 < e.Args.Length)
+        RunDevFlags(e.Args, startup: true);
+    }
+
+    private static string DevCommandFile => Path.Combine(AppPaths.Root, "devcmd.txt");
+
+    /// <summary>
+    /// Developer flags used by the screenshot scripts: <c>--open-settings &lt;page#anchor&gt;</c>, <c>--open-panel [tab]</c>, <c>--open-menu</c>,
+    /// <c>--search &lt;text&gt;</c>, <c>--dev-uninstall &lt;id&gt;</c>, <c>--dev-install &lt;id&gt;</c>, <c>--action &lt;feature&gt; &lt;action&gt;</c>, <c>--dump-info &lt;file&gt;</c>,
+    /// <c>--close-panel</c>. A second launch with any of them hands them to the running instance (through <c>devcmd.txt</c>).
+    /// </summary>
+    private void RunDevFlags(string[] args, bool startup)
+    {
+        var shell = _shell!;
+        var priority = startup ? DispatcherPriority.ApplicationIdle : DispatcherPriority.Normal;
+        string? Arg(string flag, int offset = 1)
         {
-            var destination = e.Args[settingsIndex + 1];
-            Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => _shell.OpenSettings(destination));
+            var i = Array.FindIndex(args, a => a == flag);
+            return i >= 0 && i + offset < args.Length ? args[i + offset] : null;
         }
 
-        var searchIndex = Array.FindIndex(e.Args, a => a == "--search");
-        if (searchIndex >= 0 && searchIndex + 1 < e.Args.Length)
+        if (Arg("--open-settings") is { } destination)
         {
-            var query = e.Args[searchIndex + 1];
-            Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => _shell.SearchForDevelopment(query));
+            Dispatcher.BeginInvoke(priority, () => shell.OpenSettings(destination));
         }
 
-        var uninstallIndex = Array.FindIndex(e.Args, a => a == "--dev-uninstall");
-        if (uninstallIndex >= 0 && uninstallIndex + 1 < e.Args.Length)
+        if (Arg("--search") is { } query)
         {
-            var id = e.Args[uninstallIndex + 1];
-            Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => _host!.Runtime.SetAvailable([id], false));
+            Dispatcher.BeginInvoke(priority, () => shell.SearchForDevelopment(query));
         }
 
-        if (e.Args.Contains("--open-menu"))
+        if (Arg("--dev-uninstall") is { } uninstall)
         {
-            Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => _shell.ShowMenuForDevelopment());
+            Dispatcher.BeginInvoke(priority, () => _host!.Runtime.SetAvailable([uninstall], false));
         }
 
-        var panelIndex = Array.FindIndex(e.Args, a => a == "--open-panel");
+        if (Arg("--dev-install") is { } install)
+        {
+            Dispatcher.BeginInvoke(priority, () => _host!.Runtime.SetAvailable([install], true));
+        }
+
+        if (Arg("--dump-info") is { } dump)
+        {
+            Dispatcher.BeginInvoke(priority, () => DumpInfo(dump));
+        }
+
+        if (Arg("--action") is { } feature && Arg("--action", 2) is { } actionId)
+        {
+            Dispatcher.BeginInvoke(priority, () =>
+            {
+                var hit = _host!.Features.All.FirstOrDefault(x => x.Feature.CatalogId == FeatureCatalog.Resolve(feature) && x.Action.Id == actionId);
+                if (hit.Action is null)
+                {
+                    _host.Log.Warn($"--action: {feature}/{actionId} not found");
+                    return;
+                }
+
+                hit.Action.Invoke();
+            });
+        }
+
+        if (args.Contains("--close-panel"))
+        {
+            Dispatcher.BeginInvoke(priority, () => shell.ClosePanel());
+        }
+
+        if (args.Contains("--open-menu"))
+        {
+            Dispatcher.BeginInvoke(priority, () => shell.ShowMenuForDevelopment());
+        }
+
+        var panelIndex = Array.FindIndex(args, a => a == "--open-panel");
         if (panelIndex >= 0)
         {
-            var tab = panelIndex + 1 < e.Args.Length && !e.Args[panelIndex + 1].StartsWith("--", StringComparison.Ordinal) ? e.Args[panelIndex + 1] : null;
-            Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => _shell.OpenPanelForDevelopment(tab));
+            var tab = panelIndex + 1 < args.Length && !args[panelIndex + 1].StartsWith("--", StringComparison.Ordinal) ? args[panelIndex + 1] : null;
+            Dispatcher.BeginInvoke(priority, () => shell.OpenPanelForDevelopment(tab));
         }
+    }
+
+    private static readonly string[] DevFlags = ["--open-settings", "--open-panel", "--open-menu", "--search", "--dev-uninstall", "--dev-install", "--action", "--dump-info", "--close-panel"];
+
+    /// <summary>Activation request: a pending developer command wins over "recover" (show the panel / Settings).</summary>
+    private void OnActivateRequested()
+    {
+        try
+        {
+            if (File.Exists(DevCommandFile))
+            {
+                var lines = File.ReadAllLines(DevCommandFile);
+                File.Delete(DevCommandFile);
+                if (lines.Length > 0 && _shell is not null)
+                {
+                    RunDevFlags(lines, startup: false);
+                    return;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _host?.Log.Warn("Developer command failed: " + ex.Message);
+        }
+
+        _shell?.Recover();
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -241,6 +308,114 @@ public partial class App : Application
         }
 
         base.OnExit(e);
+    }
+
+    /// <summary>One-time move of the old <c>panelUtilityShow.&lt;id&gt;</c> keys to Vorssaint's <c>panelUtility&lt;Name&gt;</c> keys (single source of truth).</summary>
+    private void MigratePanelKeys()
+    {
+        try
+        {
+            var app = _host!.App;
+            foreach (var utility in _host.Contributions.PanelUtilities())
+            {
+                var legacy = "panelUtilityShow." + utility.Id;
+                if (!app.IsSet(legacy))
+                {
+                    continue;
+                }
+
+                var key = PanelKeys.Utility(utility.Id);
+                if (!app.IsSet(key))
+                {
+                    app.Set(key, app.Get<bool>(legacy));
+                }
+
+                app.Reset(legacy);
+            }
+        }
+        catch (Exception ex)
+        {
+            _host?.Log.Warn("Panel key migration failed: " + ex.Message);
+        }
+    }
+
+    /// <summary>Developer flag <c>--dump-info &lt;file&gt;</c>: writes features, actions, contributions and shortcut defaults, finds duplicates.</summary>
+    private void DumpInfo(string path)
+    {
+        var sb = new System.Text.StringBuilder();
+        var host = _host!;
+        sb.AppendLine("# features (IFeature.Id -> catalog id) and actions");
+        var seen = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var f in host.Features.Features)
+        {
+            var assembly = f.GetType().Assembly.GetName().Name;
+            sb.AppendLine($"{f.Id} -> {f.CatalogId} [{assembly}] running={host.Runtime.IsRunning(f.CatalogId)}");
+            if (seen.TryGetValue(f.CatalogId, out var other))
+            {
+                sb.AppendLine($"  !! DUPLICATE catalog id {f.CatalogId}: also {other}");
+            }
+            else
+            {
+                seen[f.CatalogId] = f.Id + " [" + assembly + "]";
+            }
+
+            if (FeatureCatalog.Get(f.CatalogId) is null)
+            {
+                sb.AppendLine("  !! no catalog entry");
+            }
+
+            try
+            {
+                foreach (var a in f.Actions)
+                {
+                    sb.AppendLine($"  action {a.Id} | {a.Title}");
+                }
+            }
+            catch (Exception ex)
+            {
+                sb.AppendLine("  actions failed: " + ex.Message);
+            }
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("# catalog entries without an IFeature class");
+        foreach (var e in FeatureCatalog.All.Where(c => host.Features.Features.All(f => f.CatalogId != c.Id)))
+        {
+            sb.AppendLine($"{e.Id} support={e.Support}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("# panel utilities");
+        foreach (var u in host.Contributions.PanelUtilities())
+        {
+            sb.AppendLine($"{u.Id} key={PanelKeys.Utility(u.Id)} hostedOnly={u.HostedOnly} gate={string.Join(",", u.FeatureIds)}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("# shortcut defaults (role: effective, problem) and duplicates");
+        var byKey = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var role in ShortcutRoles.CreateStatic())
+        {
+            var hk = role.Default;
+            sb.AppendLine($"{role.Id,-32} {(hk is null ? "-" : hk.ToString()),-22} group={role.Group} keys={string.Join("+", role.EnableKeys)}");
+            if (hk is not null)
+            {
+                var k = hk.ToString()!;
+                if (!byKey.TryGetValue(k, out var list))
+                {
+                    byKey[k] = list = [];
+                }
+
+                list.Add(role.Id);
+            }
+        }
+
+        foreach (var (k, list) in byKey.Where(p => p.Value.Count > 1))
+        {
+            sb.AppendLine($"!! DUPLICATE default {k}: {string.Join(", ", list)}");
+        }
+
+        File.WriteAllText(path, sb.ToString());
     }
 
     private static void LoadFeatureAssemblies(ILog log)

@@ -27,7 +27,7 @@ internal static class GeneralPage
         var stack = new StackPanel();
         stack.AddSpaced(LaunchCard(s, rebuild), 20);
         stack.AddSpaced(AppearanceCard(s, rebuild), 20);
-        stack.AddSpaced(FeedbackCard(), 20);
+        // The Feedback card is contributed by the Tools project (it owns the feedback window).
         return stack;
     }
 
@@ -227,11 +227,4 @@ internal static class GeneralPage
         return both;
     }
 
-    private static UIElement FeedbackCard()
-    {
-        var card = new SettingsCard();
-        var button = UiKit.Button("Send feedback", ButtonKind.Bordered, 13, onClick: () => UiKit.OpenUrl(AppInfo.IssuesUrl));
-        card.Add(new SettingsRow("", "Feedback", "Send a bug report or feature idea directly to the person who maintains WinKnife.", button));
-        return card;
-    }
 }

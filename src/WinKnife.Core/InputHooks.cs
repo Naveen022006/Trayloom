@@ -127,6 +127,18 @@ public interface IInputHooks
 
     /// <summary>Subscribes to mouse events. Return <c>true</c> from the handler to swallow the event.</summary>
     IDisposable SubscribeMouse(Func<MouseHookEvent, bool> handler, int priority = 0);
+
+    /// <summary>
+    /// While the returned scope is alive only subscriptions with priority <see cref="int.MaxValue"/> (Cleaning Mode) see events;
+    /// every other hook-based feature (scroll inversion, debounce, snippets, gestures...) is paused. Dispose to resume.
+    /// </summary>
+    IDisposable PauseOthers();
+
+    /// <summary>True while the low-level keyboard hook is installed (false while nobody subscribed or when Windows refused it).</summary>
+    bool KeyboardHookInstalled { get; }
+
+    /// <summary>True while the low-level mouse hook is installed.</summary>
+    bool MouseHookInstalled { get; }
 }
 
 /// <summary>Default <see cref="IInputHooks"/> implementation: one dedicated thread with a message loop.</summary>
@@ -169,6 +181,7 @@ public sealed class InputHooks : IInputHooks, IDisposable
     private long _sequence;
     private bool _disposed;
     private long _lastErrorTick;
+    private int _pauseDepth;
 
     /// <summary>Creates the hook service; no thread or hook exists until the first subscription.</summary>
     public InputHooks(ILog log)
@@ -208,6 +221,32 @@ public sealed class InputHooks : IInputHooks, IDisposable
 
         RequestSync();
         return sub;
+    }
+
+    /// <inheritdoc />
+    public bool KeyboardHookInstalled => _keyboardHook != 0;
+
+    /// <inheritdoc />
+    public bool MouseHookInstalled => _mouseHook != 0;
+
+    /// <inheritdoc />
+    public IDisposable PauseOthers()
+    {
+        Interlocked.Increment(ref _pauseDepth);
+        return new PauseScope(this);
+    }
+
+    private sealed class PauseScope(InputHooks owner) : IDisposable
+    {
+        private int _done;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _done, 1) == 0)
+            {
+                Interlocked.Decrement(ref owner._pauseDepth);
+            }
+        }
     }
 
     /// <inheritdoc />
@@ -379,8 +418,14 @@ public sealed class InputHooks : IInputHooks, IDisposable
             {
                 var data = *(KBDLLHOOKSTRUCT*)lParam;
                 var evt = new KeyboardHookEvent((int)wParam, (int)data.vkCode, (int)data.scanCode, data.flags, data.time, data.dwExtraInfo, ReadModifiers());
+                var paused = Volatile.Read(ref _pauseDepth) > 0;
                 foreach (var sub in subs)
                 {
+                    if (paused && sub.Priority != int.MaxValue)
+                    {
+                        continue;
+                    }
+
                     try
                     {
                         if (sub.Handler(evt))
@@ -412,8 +457,14 @@ public sealed class InputHooks : IInputHooks, IDisposable
                 var wheel = message is WM_MOUSEWHEEL or WM_MOUSEHWHEEL ? high : 0;
                 var xButton = message is WM_XBUTTONDOWN or WM_XBUTTONUP ? high : 0;
                 var evt = new MouseHookEvent((int)message, data.pt.X, data.pt.Y, wheel, xButton, data.flags, data.time, data.dwExtraInfo, ReadModifiers());
+                var paused = Volatile.Read(ref _pauseDepth) > 0;
                 foreach (var sub in subs)
                 {
+                    if (paused && sub.Priority != int.MaxValue)
+                    {
+                        continue;
+                    }
+
                     try
                     {
                         if (sub.Handler(evt))

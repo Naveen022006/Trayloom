@@ -232,6 +232,8 @@ public static class AppKeys
             [NotchLiquidGlassEnabled] = false,
             [PanelSectionOrder] = string.Empty,
             [PanelCollapsedSections] = string.Empty,
+            [PanelKeys.UtilityOrder] = string.Empty,
+            [PanelKeys.ControlOrder] = string.Empty,
             [BrightnessControlEnabled] = false,
             [FeaturesTabSelected] = 0,
             [TrayTipShown] = false,

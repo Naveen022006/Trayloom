@@ -110,10 +110,54 @@ internal sealed class SettingsWindow : Window
             _s.Contributions.Changed -= OnContributionsChanged;
         };
         SizeChanged += (_, _) => ScheduleSizeSave();
+        Loaded += (_, _) => FitToWorkArea();
         PreviewKeyDown += OnPreviewKeyDown;
         SourceInitialized += (_, _) => HwndSource.FromHwnd(new WindowInteropHelper(this).Handle)?.AddHook(WndProc);
         ThemeManager.ThemeChanged += OnThemeChanged;
         Closed += (_, _) => ThemeManager.ThemeChanged -= OnThemeChanged;
+    }
+
+    /// <summary>
+    /// The saved / default size is in DIPs of the primary monitor; on a smaller or more scaled monitor the window could be taller
+    /// than the work area. Clamp the size to the monitor the window opened on and keep it fully on screen.
+    /// </summary>
+    private void FitToWorkArea()
+    {
+        try
+        {
+            var handle = new WindowInteropHelper(this).Handle;
+            var area = System.Windows.Forms.Screen.FromHandle(handle).WorkingArea;
+            var dpi = VisualTreeHelper.GetDpi(this);
+            var maxWidth = area.Width / dpi.DpiScaleX - 16;
+            var maxHeight = area.Height / dpi.DpiScaleY - 16;
+            if (Height > maxHeight)
+            {
+                Height = Math.Max(MinHeight, maxHeight);
+            }
+
+            if (Width > maxWidth)
+            {
+                Width = Math.Max(MinWidth, maxWidth);
+            }
+
+            var left = area.Left / dpi.DpiScaleX;
+            var top = area.Top / dpi.DpiScaleY;
+            var right = area.Right / dpi.DpiScaleX;
+            var bottom = area.Bottom / dpi.DpiScaleY;
+            if (Left < left || Left + Width > right)
+            {
+                Left = Math.Max(left, left + ((right - left) - Width) / 2);
+            }
+
+            if (Top < top || Top + Height > bottom)
+            {
+                Top = Math.Max(top, top + ((bottom - top) - Height) / 2);
+            }
+        }
+        catch (Exception ex)
+        {
+            _s.Log.Warn("Could not fit Settings to the work area: " + ex.Message);
+        }
     }
 
     public void SetSearchForDevelopment(string query) => _search.Text = query;
@@ -294,7 +338,7 @@ internal sealed class SettingsWindow : Window
         RebuildSidebar(visit);
         var offset = keepScroll ? _detailScroll.VerticalOffset : 0;
         var content = PageComposer.Build(_s, visit, _hubState, _router, () => RebuildAll(false, keepScroll: true), out var anchors);
-        var wrapper = new Border { Padding = new Thickness(22), Child = new Border { MaxWidth = 760, HorizontalAlignment = HorizontalAlignment.Center, Child = content } };
+        var wrapper = new Border { Padding = new Thickness(22), Child = new Border { MaxWidth = 760, HorizontalAlignment = HorizontalAlignment.Stretch, Child = content } };
         _detailHost.Child = wrapper;
         _builtRevision = _s.Runtime.Revision;
         _builtRequest = _router.RequestId;

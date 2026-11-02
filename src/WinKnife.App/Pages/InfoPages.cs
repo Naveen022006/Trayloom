@@ -83,7 +83,7 @@ internal static class AboutPage
 
         updates.Add(Toggle(s, AppKeys.ReleaseNotesOnUpdate, "Show what’s new after updating"));
         var status = new StackPanel { Orientation = Orientation.Horizontal };
-        var last = s.App.Get<string>("updateLastChecked");
+        var last = s.App.Get<string>("updateLastChecked") ?? string.Empty;
         var checkButton = UiKit.Button("Check now", ButtonKind.Bordered, 13);
         checkButton.Click += (_, _) =>
         {

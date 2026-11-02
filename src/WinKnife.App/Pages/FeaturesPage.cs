@@ -529,8 +529,10 @@ internal static class FeaturesPage
 
         var button = installed
             ? UiKit.Button("Uninstall", ButtonKind.Bordered, 13)
-            : UiKit.Button("Install", ButtonKind.Prominent, 13);
-        button.MinWidth = 78;
+            : UiKit.Button("Install", ButtonKind.Bordered, 13);
+        button.MinWidth = 72;
+        button.Padding = new Thickness(12, 4, 12, 4);
+        button.HorizontalAlignment = HorizontalAlignment.Right;
         button.VerticalAlignment = VerticalAlignment.Center;
         if (!installed && unavailable)
         {

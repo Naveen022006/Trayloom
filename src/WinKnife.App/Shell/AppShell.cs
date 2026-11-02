@@ -26,6 +26,9 @@ internal sealed class AppShell : IShell
     private OnboardingWindow? _onboarding;
     private DispatcherTimer? _trayTimer;
     private bool _deleteDataOnExit;
+    private ITrayMetricsState? _hookedMetrics;
+    private IKeepAwakeService? _hookedKeepAwake;
+    private IMicMuteState? _hookedMic;
 
     public AppShell(CoreHost host)
     {
@@ -54,9 +57,13 @@ internal sealed class AppShell : IShell
             {
                 Application.Current.Dispatcher.BeginInvoke(() => _tray!.GlyphCode = _s.App.Get<string>(AppKeys.MenuBarIconSymbol));
             }
+            else if (key is "micMuteMenuBarIndicator" or "keepAwakeActiveIcon" or "keepAwakeIconTint" or "showCountdownInMenuBar" or "menuBarHideIconWithMetrics")
+            {
+                Application.Current.Dispatcher.BeginInvoke(UpdateTrayState);
+            }
         };
         _host.Services.Changed += () => Application.Current.Dispatcher.BeginInvoke(UpdateTrayState);
-        _trayTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
+        _trayTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
         _trayTimer.Tick += (_, _) => UpdateTrayState();
         _trayTimer.Start();
         UpdateTrayState();
@@ -259,19 +266,101 @@ internal sealed class AppShell : IShell
 
         var keepAwake = _host.Services.Get<IKeepAwakeService>();
         var mic = _host.Services.Get<IMicMuteState>();
+        var metrics = _host.Services.Get<ITrayMetricsState>();
+        var app = _s.App;
+        void Refresh() => Application.Current?.Dispatcher.BeginInvoke(UpdateTrayState);
+        if (!ReferenceEquals(metrics, _hookedMetrics))
+        {
+            if (_hookedMetrics is not null)
+            {
+                _hookedMetrics.Changed -= Refresh;
+            }
+
+            _hookedMetrics = metrics;
+            if (metrics is not null)
+            {
+                metrics.Changed += Refresh;
+            }
+        }
+
+        if (!ReferenceEquals(keepAwake, _hookedKeepAwake))
+        {
+            if (_hookedKeepAwake is not null)
+            {
+                _hookedKeepAwake.Changed -= Refresh;
+            }
+
+            _hookedKeepAwake = keepAwake;
+            if (keepAwake is not null)
+            {
+                keepAwake.Changed += Refresh;
+            }
+        }
+
+        if (!ReferenceEquals(mic, _hookedMic))
+        {
+            if (_hookedMic is not null)
+            {
+                _hookedMic.Changed -= Refresh;
+            }
+
+            _hookedMic = mic;
+            if (mic is not null)
+            {
+                mic.Changed += Refresh;
+            }
+        }
+
+        var micShown = mic is { IsMuted: true } && app.Get<bool>("micMuteMenuBarIndicator", true);
         if (keepAwake is { IsActive: true })
         {
+            var left = keepAwake.EndsAt is { } e ? e - DateTime.Now : (TimeSpan?)null;
             _tray.Tooltip = keepAwake.EndsAt is { } end
-                ? $"WinKnife: awake until {end:t}"
+                ? $"WinKnife: awake until {end:t} ({FormatLeft(left!.Value)} left)"
                 : "WinKnife: awake indefinitely";
-            _tray.Badge = Color.FromRgb(0xFF, 0x9F, 0x0A);
+            _tray.Badge = micShown ? Color.FromRgb(0xFF, 0x45, 0x3A) : null;
+            var (glyph, font) = app.Get<string>("keepAwakeActiveIcon") switch
+            {
+                "coffee" => ("☕", "Segoe UI Symbol"),
+                "eye" => ("", (string?)null),
+                "moon" => ("", null),
+                "light" => ("", null),
+                _ => ((string?)null, (string?)null),
+            };
+            var tint = app.Get<string>("keepAwakeIconTint") switch
+            {
+                "green" => Color.FromRgb(0x34, 0xC7, 0x59),
+                "blue" => Color.FromRgb(0x0A, 0x84, 0xFF),
+                "purple" => Color.FromRgb(0xBF, 0x5A, 0xF2),
+                "pink" => Color.FromRgb(0xFF, 0x37, 0x5F),
+                "none" => (Color?)null,
+                _ => Color.FromRgb(0xFF, 0x95, 0x00),
+            };
+            string? overlay = null;
+            if (app.Get<bool>("showCountdownInMenuBar"))
+            {
+                overlay = left is { } l ? CompactLeft(l) : "∞";
+            }
+
+            _tray.SetLook(tint, glyph, font, overlay);
         }
         else
         {
             _tray.Tooltip = "WinKnife: normal sleep";
-            _tray.Badge = mic is { IsMuted: true } ? Color.FromRgb(0xFF, 0x45, 0x3A) : null;
+            _tray.Badge = micShown ? Color.FromRgb(0xFF, 0x45, 0x3A) : null;
+            _tray.SetLook(null, null, null, null);
         }
+
+        // With live metrics in the tray the icon steps aside (menuBarHideIconWithMetrics), unless a signal needs it.
+        var signal = keepAwake is { IsActive: true } || micShown;
+        _tray.Visible = !(app.Get<bool>("menuBarHideIconWithMetrics") && metrics is { HasMetrics: true } && !signal);
     }
+
+    private static string FormatLeft(TimeSpan span) =>
+        span.TotalHours >= 1 ? $"{(int)span.TotalHours} h {span.Minutes} min" : $"{Math.Max(0, (int)Math.Ceiling(span.TotalMinutes))} min";
+
+    private static string CompactLeft(TimeSpan span) =>
+        span.TotalHours >= 1 ? $"{(int)Math.Ceiling(span.TotalHours)}h" : $"{Math.Max(0, (int)Math.Ceiling(span.TotalMinutes))}";
 
     private FeatureAction? FindAction(string featureId, string actionId) =>
         _host.Features.All.Where(a => a.Feature.CatalogId == featureId && a.Action.Id == actionId).Select(a => a.Action).FirstOrDefault();

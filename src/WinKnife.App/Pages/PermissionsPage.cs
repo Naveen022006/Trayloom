@@ -16,7 +16,7 @@ namespace WinKnife.App;
 /// </summary>
 internal static class PermissionsPage
 {
-    public static FrameworkElement Build(ShellServices s)
+    public static FrameworkElement Build(ShellServices s, IReadOnlyCollection<AppPermission>? exclude = null)
     {
         var card = new SettingsCard();
         var host = new StackPanel();
@@ -27,6 +27,11 @@ internal static class PermissionsPage
             var index = 0;
             foreach (var p in PermissionService.Rows)
             {
+                if (exclude is not null && exclude.Contains(p))
+                {
+                    continue;
+                }
+
                 if (index > 0)
                 {
                     host.Children.Add(Spaced(UiKit.Divider(42, 0), 12));

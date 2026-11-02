@@ -21,6 +21,11 @@ internal sealed class TrayController : IDisposable
     private string _glyphCode = string.Empty;
     private string _tooltip = "WinKnife: normal sleep";
     private Color? _badge;
+    private Color? _tint;
+    private string? _overrideGlyph;
+    private string? _overrideFont;
+    private string? _overlayText;
+    private bool _visible = true;
 
     public TrayController(ILog log)
     {
@@ -77,6 +82,41 @@ internal sealed class TrayController : IDisposable
         }
     }
 
+    /// <summary>Shows or hides the icon (hidden while the live metrics stand in for it).</summary>
+    public bool Visible
+    {
+        get => _visible;
+        set
+        {
+            if (_visible != value)
+            {
+                _visible = value;
+                if (_icon is not null)
+                {
+                    _icon.Visible = value;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Active-state look (keep awake): a tint for the mark, an optional replacement glyph (character + font family) and an optional
+    /// short text (remaining time) drawn instead of the mark. All null = the normal icon.
+    /// </summary>
+    public void SetLook(Color? tint, string? glyph, string? font, string? overlayText)
+    {
+        if (_tint == tint && _overrideGlyph == glyph && _overrideFont == font && _overlayText == overlayText)
+        {
+            return;
+        }
+
+        _tint = tint;
+        _overrideGlyph = glyph;
+        _overrideFont = font;
+        _overlayText = overlayText;
+        Render();
+    }
+
     public void ShowBalloon(string title, string message, NotificationLevel level)
     {
         var icon = level switch
@@ -103,7 +143,7 @@ internal sealed class TrayController : IDisposable
 
     private void Create()
     {
-        _icon = new Forms.NotifyIcon { Text = _tooltip, Visible = true };
+        _icon = new Forms.NotifyIcon { Text = _tooltip, Visible = _visible };
         _icon.MouseUp += (_, e) =>
         {
             var p = Screens.CursorPosition();
@@ -151,9 +191,17 @@ internal sealed class TrayController : IDisposable
         {
             var size = Math.Max(16, Forms.SystemInformation.SmallIconSize.Width);
             var light = ThemeManager.ReadTaskbarIsLight();
-            var color = light ? Color.FromRgb(0x18, 0x18, 0x1A) : Colors.White;
+            var color = _tint ?? (light ? Color.FromRgb(0x18, 0x18, 0x1A) : Colors.White);
             BitmapSource bmp;
-            if (_glyphCode.Length > 0 && int.TryParse(_glyphCode, System.Globalization.NumberStyles.HexNumber, null, out var code))
+            if (_overlayText is { Length: > 0 } overlay)
+            {
+                bmp = RenderText(overlay, size, color, _badge);
+            }
+            else if (_overrideGlyph is { Length: > 0 } glyph)
+            {
+                bmp = RenderGlyph(glyph, size, color, _badge, _overrideFont is null ? null : new FontFamily(_overrideFont));
+            }
+            else if (_glyphCode.Length > 0 && int.TryParse(_glyphCode, System.Globalization.NumberStyles.HexNumber, null, out var code))
             {
                 bmp = RenderGlyph(char.ConvertFromUtf32(code), size, color, _badge);
             }
@@ -173,12 +221,32 @@ internal sealed class TrayController : IDisposable
         }
     }
 
-    private static BitmapSource RenderGlyph(string glyph, int size, Color color, Color? badge)
+    private static BitmapSource RenderText(string value, int size, Color color, Color? badge)
     {
         var visual = new DrawingVisual();
         using (var dc = visual.RenderOpen())
         {
-            var text = new FormattedText(glyph, System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface(UiKit.IconFont, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal), size * 0.9, new SolidColorBrush(color), 1.0);
+            var text = new FormattedText(value, System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface(UiKit.TextFont, FontStyles.Normal, FontWeights.Bold, FontStretches.Normal), size * (value.Length > 2 ? 0.55 : 0.72), new SolidColorBrush(color), 1.0);
+            dc.DrawText(text, new Point((size - text.Width) / 2, (size - text.Height) / 2));
+            if (badge is { } b)
+            {
+                var r = size * 0.2;
+                dc.DrawEllipse(new SolidColorBrush(b), null, new Point(size - r - 0.5, size - r - 0.5), r, r);
+            }
+        }
+
+        var bmp = new RenderTargetBitmap(size, size, 96, 96, PixelFormats.Pbgra32);
+        bmp.Render(visual);
+        bmp.Freeze();
+        return bmp;
+    }
+
+    private static BitmapSource RenderGlyph(string glyph, int size, Color color, Color? badge, FontFamily? font = null)
+    {
+        var visual = new DrawingVisual();
+        using (var dc = visual.RenderOpen())
+        {
+            var text = new FormattedText(glyph, System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface(font ?? UiKit.IconFont, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal), size * 0.9, new SolidColorBrush(color), 1.0);
             dc.DrawText(text, new Point((size - text.Width) / 2, (size - text.Height) / 2));
             if (badge is { } b)
             {
