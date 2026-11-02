@@ -18,6 +18,20 @@ internal static class CaptureHost
 
     public static bool IsAttached => _services is not null;
 
+    /// <summary>Gives back the large frame buffers left behind by a recording, an export or a big capture (best effort).</summary>
+    public static void TrimMemory()
+    {
+        try
+        {
+            System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
+            GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+        }
+        catch (Exception)
+        {
+            // optional
+        }
+    }
+
     public static IAppSettings App => Services.App;
 
     public static Dispatcher Ui => _services?.Ui ?? System.Windows.Application.Current.Dispatcher;

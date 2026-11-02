@@ -715,6 +715,8 @@ internal sealed class CaptureSession
             }
 
             request.Done(result);
+            // The frozen screens of every monitor were large; hand them back once the result has been routed.
+            CaptureHost.Ui.BeginInvoke(DispatcherPriority.ApplicationIdle, CaptureHost.TrimMemory);
         });
     }
 }

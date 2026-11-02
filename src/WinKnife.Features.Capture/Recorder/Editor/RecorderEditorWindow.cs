@@ -90,6 +90,7 @@ internal sealed partial class RecorderEditorWindow : Window
             _audio.Dispose();
             _media.Close();
             Take.Delete();
+            Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, CaptureHost.TrimMemory);
         };
         Loaded += async (_, _) => await LoadThumbsAsync();
         Persist();

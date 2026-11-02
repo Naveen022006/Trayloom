@@ -137,6 +137,8 @@ internal sealed class WgcCapture : IDisposable
         _session.StartCapture();
     }
 
+    private byte[]? _scratch;
+
     private void OnFrame(Direct3D11CaptureFramePool sender, object args)
     {
         if (_disposed)
@@ -162,8 +164,10 @@ internal sealed class WgcCapture : IDisposable
             using var sb = SoftwareBitmap.CreateCopyFromSurfaceAsync(frame.Surface).AsTask().GetAwaiter().GetResult();
             var fw = sb.PixelWidth;
             var fh = sb.PixelHeight;
-            var src = new byte[fw * fh * 4];
-            sb.CopyToBuffer(src.AsBuffer());
+            // One full-screen read buffer is reused for every frame (a new 9 MB array per frame filled memory with garbage within seconds).
+            var need = fw * fh * 4;
+            var src = _scratch is { } s && s.Length >= need ? s : (_scratch = new byte[need]);
+            sb.CopyToBuffer(src.AsBuffer(0, need));
             var dst = new byte[_w * _h * 4];
             var ox = _pick.Window != 0 ? 0 : _pick.PixelRect.X;
             var oy = _pick.Window != 0 ? 0 : _pick.PixelRect.Y;

@@ -331,6 +331,7 @@ internal static class RecorderExporter
         }
         finally
         {
+            CaptureHost.TrimMemory();
             try
             {
                 File.Delete(staging);
@@ -433,6 +434,12 @@ internal static class RecorderExporter
                     var tOut = (double)i / fps;
                     var tEdit = tOut * speed;
                     var bytes = composed.Render(tEdit, composed.Plan.FrameIndex(tEdit), i);
+                    if (i > 0 && i % 90 == 0)
+                    {
+                        // every frame is a large array; collect now and then so a long export does not climb to gigabytes
+                        GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: false);
+                    }
+
                     if (!writer.TryAdd(new VideoFrame(bytes, TimeSpan.FromSeconds(tOut)), block: true))
                     {
                         break;

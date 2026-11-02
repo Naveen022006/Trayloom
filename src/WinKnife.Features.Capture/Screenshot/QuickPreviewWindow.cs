@@ -29,6 +29,7 @@ internal sealed class QuickPreviewWindow : Window
     private QrReading? _qr;
     private readonly StackPanel _actions = new() { Orientation = Orientation.Horizontal };
     private bool _closed;
+    private long _shownAt;
 
     public QuickPreviewWindow(ScreenshotService svc, Capture capture, string? savedPath, bool copied, int seconds, bool afterAction)
     {
@@ -70,7 +71,8 @@ internal sealed class QuickPreviewWindow : Window
         Deactivated += (_, _) =>
         {
             // click outside closes (not for persistent previews that never took focus)
-            if (IsLoaded && focus && !_closed)
+            // The capture overlay hands activation back to the previous window right after the preview opens; that is not a click outside.
+            if (IsLoaded && focus && !_closed && Environment.TickCount64 - _shownAt > 1200)
             {
                 Dispatcher.BeginInvoke(() =>
                 {
@@ -100,6 +102,7 @@ internal sealed class QuickPreviewWindow : Window
 
     public void Present()
     {
+        _shownAt = Environment.TickCount64;
         _svc.ApplyAffinity(this);
         Place();
         Opacity = 0;
