@@ -2,6 +2,10 @@
 // WinKnife — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
 
 using System.Runtime.InteropServices;
+using System.Text.Json;
+using NAudio.CoreAudioApi;
+using NAudio.Wave;
+using WinKnife.Core;
 
 namespace WinKnife.Features.SystemTools;
 
@@ -10,7 +14,9 @@ namespace WinKnife.Features.SystemTools;
 /// and the technique EarTrumpet uses). The interface layout is the "21H2" variant EarTrumpet still ships; it was re-verified by disassembling
 /// AudioSes.dll on build 26300 (slot 25 takes pid, flow, role, HSTRING and forwards to the implementation at +0xC8, slot 26 the same with an
 /// out HSTRING at +0xD0, slot 27 takes no argument at +0xD8). Builds older than 21390 use another layout, so <see cref="IsSupported"/> is false
-/// there and the row picker is hidden.
+/// there and the row picker is hidden. Because the layout is undocumented, the first use on every OS build runs a self-test (see
+/// <see cref="SelfTest"/>): the app routes its own silent test stream to the current default device and reads the choice back; when the
+/// read-back differs the route picker stays off for that build and the verdict is remembered.
 /// </summary>
 internal static class AppRouting
 {
@@ -30,19 +36,13 @@ internal static class AppRouting
     private static SetFn? _set;
     private static GetFn? _get;
     private static bool _initialised;
-    private static bool _supported;
-    private static int _slot = 25;
+    private static bool _ready;
+    private static bool _verdictOk;
+    private static Task? _selfTestTask;
+    private const int Slot = 25;
 
-    /// <summary>Diagnostic: re-initialises with another vtable slot for SetPersistedDefaultAudioEndpoint.</summary>
-    internal static void Configure(int slot)
-    {
-        lock (Gate)
-        {
-            _slot = slot;
-            _initialised = false;
-            _supported = false;
-        }
-    }
+    /// <summary>Where self-test results and failures are logged (set by the Volume mixer feature).</summary>
+    internal static ILog? Log { get; set; }
 
     /// <summary>True when per-app routing can be used on this machine.</summary>
     public static bool IsSupported
@@ -50,15 +50,37 @@ internal static class AppRouting
         get
         {
             Init();
-            return _supported;
+            if (!_ready)
+            {
+                return false;
+            }
+
+            var task = _selfTestTask;
+            if (task is not null && !task.IsCompleted)
+            {
+                // Only the very first use on a build waits (about a quarter of a second); never from the test's own thread.
+                try
+                {
+                    task.Wait(TimeSpan.FromSeconds(4));
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            return _verdictOk;
         }
     }
 
+    /// <summary>Starts the build self-test early (does nothing when this build already has a verdict).</summary>
+    public static void WarmUp() => Init();
+
     /// <summary>The device id the app's render streams are pinned to (null = follows the default device).</summary>
-    public static string? Get(uint processId)
+    public static string? Get(uint processId) => IsSupported ? GetCore(processId) : null;
+
+    private static string? GetCore(uint processId)
     {
-        Init();
-        if (!_supported || _get is null)
+        if (!_ready || _get is null)
         {
             return null;
         }
@@ -90,13 +112,12 @@ internal static class AppRouting
     }
 
     /// <summary>Pins the app's render streams to <paramref name="endpointId"/> (null clears the choice). Streams already open follow after they restart.</summary>
-    public static bool Set(uint processId, string? endpointId) => SetRaw(processId, endpointId is null ? null : Prefix + endpointId + RenderSuffix);
+    public static bool Set(uint processId, string? endpointId) => IsSupported && SetCore(processId, endpointId);
 
-    /// <summary>Diagnostic: sets the persisted endpoint with an arbitrary device string.</summary>
-    internal static bool SetRaw(uint processId, string? deviceString)
+    private static bool SetCore(uint processId, string? endpointId)
     {
-        Init();
-        if (!_supported || _set is null)
+        var deviceString = endpointId is null ? null : Prefix + endpointId + RenderSuffix;
+        if (!_ready || _set is null)
         {
             return false;
         }
@@ -155,8 +176,7 @@ internal static class AppRouting
             try
             {
                 // Verified layout: Windows 11 21H2 and every later build checked so far, including the 26300 Insider build (see the class summary).
-                var build = Environment.OSVersion.Version.Build;
-                if (build < 21390)
+                if (Environment.OSVersion.Version.Build < 21390)
                 {
                     return;
                 }
@@ -177,15 +197,174 @@ internal static class AppRouting
 
                 var vtable = Marshal.ReadIntPtr(_factory);
                 // IInspectable occupies slots 0-5, then 19 methods precede SetPersistedDefaultAudioEndpoint (slot 25) / GetPersisted (slot 26).
-                _set = Marshal.GetDelegateForFunctionPointer<SetFn>(Marshal.ReadIntPtr(vtable, _slot * nint.Size));
-                _get = Marshal.GetDelegateForFunctionPointer<GetFn>(Marshal.ReadIntPtr(vtable, (_slot + 1) * nint.Size));
+                _set = Marshal.GetDelegateForFunctionPointer<SetFn>(Marshal.ReadIntPtr(vtable, Slot * nint.Size));
+                _get = Marshal.GetDelegateForFunctionPointer<GetFn>(Marshal.ReadIntPtr(vtable, (Slot + 1) * nint.Size));
 
-                _supported = true;
+                _ready = true;
+                BeginVerdict();
             }
             catch (Exception)
             {
-                _supported = false;
+                _ready = false;
             }
+        }
+    }
+
+    private static string BuildKey()
+    {
+        // The audio policy code lives in AudioSes.dll / combase.dll, so the cumulative update number is part of "the build".
+        var ubr = 0;
+        try
+        {
+            ubr = Convert.ToInt32(Microsoft.Win32.Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion", "UBR", 0) ?? 0);
+        }
+        catch (Exception)
+        {
+        }
+
+        return $"{Environment.OSVersion.Version.Build}.{ubr}";
+    }
+
+    private static string VerdictFile => Path.Combine(AppPaths.Root, "audio-routing-selftest.json");
+
+    private sealed record Verdict(string Build, bool Ok, string Detail, string Checked);
+
+    private static void BeginVerdict()
+    {
+        var key = BuildKey();
+        try
+        {
+            if (File.Exists(VerdictFile) && JsonSerializer.Deserialize<Verdict>(File.ReadAllText(VerdictFile)) is { } saved && saved.Build == key)
+            {
+                _verdictOk = saved.Ok;
+                if (!saved.Ok)
+                {
+                    Log?.Info($"Per-app output routing stays off on build {key}: {saved.Detail} (self-test from {saved.Checked}).");
+                }
+
+                return;
+            }
+        }
+        catch (Exception)
+        {
+            // Unreadable verdict: test again.
+        }
+
+        _selfTestTask = Task.Run(() => SelfTest(key));
+    }
+
+    /// <summary>
+    /// Self-test, once per OS build: opens this app's own silent playback stream on the current default output, pins this process (and nothing
+    /// else) to that same default device, reads the choice back with the policy Get call and then puts this process back the way it was. The
+    /// route is trusted only when the read-back matches the device id exactly; otherwise the picker is disabled for the build.
+    /// </summary>
+    private static void SelfTest(string key)
+    {
+        var pid = (uint)Environment.ProcessId;
+        string detail;
+        bool ok;
+        WasapiOut? player = null;
+        try
+        {
+            var deviceId = DefaultRenderId();
+            if (deviceId is null)
+            {
+                // No output device right now: cannot judge, so stay off for this run and test again next time.
+                Log?.Info("Per-app output routing self-test skipped: no default output device. The route picker stays off until it can run.");
+                _verdictOk = false;
+                return;
+            }
+
+            try
+            {
+                // A short, silent stream so that the process has a real render session while the route is written.
+                using var enumerator = new MMDeviceEnumerator();
+                using var device = enumerator.GetDevice(deviceId);
+                player = new WasapiOut(device, AudioClientShareMode.Shared, true, 50);
+                var silence = new SilenceProvider(WaveFormat.CreateIeeeFloatWaveFormat(48000, 2));
+                player.Init(silence);
+                player.Play();
+            }
+            catch (Exception ex)
+            {
+                // The stream is optional: the policy call is keyed by process id.
+                Log?.Info("Per-app output routing self-test: no silent stream (" + ex.Message + "), testing the policy call alone.");
+                player?.Dispose();
+                player = null;
+            }
+
+            var before = GetCore(pid);
+            var set = SetCore(pid, deviceId);
+            var back = GetCore(pid);
+            ok = set && string.Equals(back, deviceId, StringComparison.Ordinal);
+            if (!ok && set && string.Equals(back, deviceId, StringComparison.OrdinalIgnoreCase))
+            {
+                // Same GUID spelled with another letter case: the same device.
+                ok = true;
+            }
+
+            detail = ok ? "round trip matched" : $"set={(set ? "ok" : "failed")} ({LastResult}), wrote '{deviceId}', read back '{back ?? "(nothing)"}'";
+            SetCore(pid, before);
+            var after = GetCore(pid);
+            if (!string.Equals(after, before, StringComparison.OrdinalIgnoreCase))
+            {
+                Log?.Warn($"Per-app output routing self-test could not restore this process's own route (was '{before ?? "default"}', now '{after ?? "default"}').");
+            }
+        }
+        catch (Exception ex)
+        {
+            ok = false;
+            detail = "self-test threw " + ex.GetType().Name + ": " + ex.Message;
+        }
+        finally
+        {
+            try
+            {
+                player?.Stop();
+                player?.Dispose();
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        _verdictOk = ok;
+        if (ok)
+        {
+            Log?.Info($"Per-app output routing self-test passed on build {key}.");
+        }
+        else
+        {
+            Log?.Warn($"Per-app output routing is turned off on build {key}: {detail}.");
+        }
+
+        try
+        {
+            Directory.CreateDirectory(AppPaths.Root);
+            File.WriteAllText(VerdictFile, JsonSerializer.Serialize(new Verdict(key, ok, detail, DateTime.Now.ToString("s"))));
+        }
+        catch (Exception)
+        {
+            // Not persisted: the test just runs again next start.
+        }
+    }
+
+    private static string? DefaultRenderId()
+    {
+        try
+        {
+            using var enumerator = new MMDeviceEnumerator();
+            if (!enumerator.HasDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia))
+            {
+                return null;
+            }
+
+            using var device = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+            return device.ID;
+        }
+        catch (Exception)
+        {
+            return null;
         }
     }
 

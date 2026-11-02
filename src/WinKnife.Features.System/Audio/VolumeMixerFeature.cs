@@ -41,6 +41,8 @@ public sealed class VolumeMixerFeature : IFeature
     public void Start(IFeatureContext context)
     {
         _ctx = context;
+        AppRouting.Log = context.Log;
+        AppRouting.WarmUp();
         SystemDefaults.Register(context.App);
         context.App.Changed += OnSetting;
         try
