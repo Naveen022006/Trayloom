@@ -120,7 +120,7 @@ internal sealed class CommandBarWindow : Window
         var area = Screens.UnderCursor();
 
         // Move onto the target monitor first so WPF picks up that monitor's DPI, then centre using that DPI.
-        NativeMethods.SetWindowPos(handle, HWND_TOPMOST, (int)area.WorkArea.X, (int)area.WorkArea.Y, 100, 100, SWP_NOACTIVATE);
+        NativeMethods.SetWindowPos(handle, HWND_TOPMOST, (int)area.WorkArea.X, (int)area.WorkArea.Y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
         Opacity = 0;
         Show();
         var scale = VisualTreeHelper.GetDpi(this).DpiScaleX;

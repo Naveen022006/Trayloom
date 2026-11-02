@@ -173,7 +173,8 @@ internal static class WinUtil
     public static double PrepareOnMonitorAt(Window window, int x, int y)
     {
         var hwnd = new WindowInteropHelper(window).EnsureHandle();
-        NativeMethods.SetWindowPos(hwnd, 0, x, y, 100, 100, SWP_NOZORDER | SWP_NOACTIVATE);
+        // Move only: a placeholder size here would leave the window ~100 px wide after Show().
+        NativeMethods.SetWindowPos(hwnd, 0, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
         return NativeMethods.GetDpiForWindow(hwnd) / 96.0;
     }
 

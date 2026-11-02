@@ -328,3 +328,42 @@ internal static class WinApiPlacement
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool GetWindowPlacement(nint hwnd, ref WINDOWPLACEMENT placement);
 }
+
+internal static class WinApiDpi
+{
+    [DllImport(WinApi.User32)]
+    private static extern nint GetWindowDpiAwarenessContext(nint hwnd);
+
+    [DllImport(WinApi.User32)]
+    private static extern nint SetThreadDpiAwarenessContext(nint dpiContext);
+
+    /// <summary>
+    /// Switches the calling thread to the DPI awareness context of <paramref name="hwnd"/> until the result is disposed, so
+    /// work-area queries, GetWindowRect and SetWindowPos all use the same coordinate space as that window
+    /// (a window that is not per-monitor aware is otherwise placed with the wrong scale and overshoots the screen edge).
+    /// </summary>
+    public static IDisposable EnterWindowDpiContext(nint hwnd)
+    {
+        try
+        {
+            var context = GetWindowDpiAwarenessContext(hwnd);
+            var previous = context == 0 ? 0 : SetThreadDpiAwarenessContext(context);
+            return new DpiContextScope(previous);
+        }
+        catch (Exception)
+        {
+            return new DpiContextScope(0);
+        }
+    }
+
+    private sealed class DpiContextScope(nint previous) : IDisposable
+    {
+        public void Dispose()
+        {
+            if (previous != 0)
+            {
+                SetThreadDpiAwarenessContext(previous);
+            }
+        }
+    }
+}

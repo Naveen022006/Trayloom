@@ -153,6 +153,7 @@ public sealed class WindowLayoutFeature : IFeature
         }
 
         PruneDeadWindows();
+        using var dpi = WinApiDpi.EnterWindowDpiContext(hwnd);
         var canResize = (NativeMethods.GetWindowLongPtr(hwnd, WinApi.GWL_STYLE).ToInt64() & WinApi.WS_THICKFRAME) != 0;
         try
         {
