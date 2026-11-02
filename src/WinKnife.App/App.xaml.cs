@@ -27,6 +27,8 @@ public partial class App : Application
         "WinKnife.Features.Island",
         "WinKnife.Features.Capture",
         "WinKnife.Features.Agents",
+        "WinKnife.Features.Files",
+        "WinKnife.Features.Maintenance",
     ];
 
     private Mutex? _mutex;
