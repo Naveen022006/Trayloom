@@ -52,3 +52,18 @@
 - Capture project: real overlay interaction, editor Save buttons, recorder pill/editor interactions.
 - Files project: clipboard capture, cut/paste & rename hooks, shelf shake/edge/dock, tray pill position.
 - Input project: quit & close protection with real keystrokes, side buttons, mouse button shortcuts, focus follows mouse.
+
+## R3 status (integration pass)
+
+Done: MacSwitch thumb, hub buttons, HotkeyRecorder width/bare key, "Mouse & Touchpad", legacy adapters deleted, Vorssaint
+panel keys (`panelUtility<Name>` / `panelControl<Item>`, `panelUtilityShow.*` migrated), hosted-only utilities,
+`GetCategoryCounts(context)`, Core services (clipboard history, shelf Add/Paths, snippets, scratchpad, recording state,
+kill / uninstall / media, tray metrics, screenshot editor, `IInputHooks.PauseOthers` + hook status), tray icon keys
+(keep-awake icon / tint / countdown, mic indicator, hide with metrics), action-id verification (all ids the Command Bar,
+Quick panel, Radial menu and island call exist; window layout ids are `layout.<raw>`, e.g. `layout.leftHalf`), shortcut
+audit (no duplicates; `windowGestureModifiers` default Ctrl+Alt), island on first install, lyrics online off, mic mute undone on
+uninstall, harness friends removed, warnings fixed, no duplicate feature ids (`--dump-info`).
+
+Not done: shared app picker / AppBundleList in Core; Command Bar "Uninstall..." entries (the service is published);
+elevated relaunch verbs; recorder gaps; island mascot "celebrates" hook; live tests that need real input (Alt+Tab takeover,
+taskbar thumbnails, radial ring, selection overlays, recorder, camera, cleaning mode).

@@ -1,96 +1,85 @@
 # WinKnife
 
 WinKnife is a Windows 10/11 tray utility (.NET 9, WPF) that bundles many small system tweaks and tools into one
-"install what you need" app. Features are grouped, installed or uninstalled individually from the **Features hub**,
-and the actions of every installed feature show up in the tray **Quick panel** and in the **Command bar**.
+"install what you need" app. It is a Windows replica of the macOS utility [Vorssaint](https://vorssaint.com): the same
+tray panel, Settings window, Features hub, Dynamic Island, Command Bar and feature catalog (73 installable entries),
+rebuilt for Windows. Features are installed or uninstalled one by one from the **Features hub**; whatever is
+uninstalled disappears from the whole app and loads nothing.
 
-WinKnife is a Windows port of the macOS utility [Vorssaint](https://vorssaint.com) and is licensed under the same
-terms, **GPL-3.0-or-later** (see `LICENSE`). WinKnife is an independent project and is **not affiliated with or
-endorsed by Vorssaint**; the Vorssaint name, logo and icon are not used.
+WinKnife is licensed under the same terms as Vorssaint, **GPL-3.0-or-later** (see `LICENSE`). It is an independent
+project and is **not affiliated with or endorsed by Vorssaint**; the Vorssaint name, logo and icon are not used.
 
 * Settings: `%APPDATA%\WinKnife\settings.json` (override the folder with the `WINKNIFE_DATA` environment variable).
-* Log: `%APPDATA%\WinKnife\logs\winknife.log`.
-* On first run only the Command bar is installed; everything else is switched on in the Features hub.
-* Every feature undoes its side effects when uninstalled or when WinKnife quits (mouse acceleration, hooks,
-  hotkeys, wake locks, windows...).
-* `WinKnife.exe --quit` asks the running instance to shut down gracefully.
+* Log: `<settings folder>\logs\winknife.log`.
+* First run: onboarding, then only the **Essentials** bundle (Volume mixer, System monitor, Keep awake) is installed.
+  Everything else is one click away in the Features hub (Install all, bundles, or one by one).
+* Every feature undoes its side effects when uninstalled or when WinKnife quits (mouse acceleration, hooks, hotkeys,
+  wake locks, windows). Uninstalling *Mute microphone* while muted unmutes the microphone.
+* `WinKnife.exe --quit` asks the running instance to shut down gracefully; a second launch brings Settings forward.
 
-## Features
+## What is in it
 
-**Windows and taskbar**
-App switcher (Alt+Tab style with live previews and search), Window layout (halves, thirds, quarters, maximize,
-center, move between monitors).
+Catalog groups, as in the Features hub (Windows availability noted where it differs from the Mac).
 
-**Clipboard and files**
-Clipboard history (text and images, searchable popup), Paste as plain text, Clean URL (strips `utm_*`, `fbclid`, ...),
-Shelf (floating drop target for files).
+| Group | Features |
+| --- | --- |
+| Windows and taskbar | Window switcher (Alt+Tab replacement with previews), Taskbar Preview, Taskbar clicks (minimize / hide / cycle), Window layout (41 placements, edge snap, move/resize by dragging), Quit on close. *Unavailable on Windows:* Maximize windows, Keep Spaces in a fixed order. |
+| Mouse and keyboard | Invert mouse scrolling, Scroll sideways while holding a key, Zoom, Focus follows mouse, Smooth scrolling, Linear scrolling, Disable mouse acceleration, Side buttons, Mouse button shortcuts, Extra click filter, Debounce, Text snippets, Super key, Quit & close protection. *Unavailable:* Touchpad middle click (the precision touchpad owns its gestures). |
+| Clipboard and files | Clipboard history, Paste as plain text, Cut & paste and the F2 rename shortcut for File Explorer, Shelf, Clean URL. *Unavailable:* Disk image installer. |
+| Sound | Volume mixer (per-app volume and output), Output switcher, Audio device priority, Mute microphone, Music app blocker. |
+| Energy and display | Keep awake (timers, rules, lid closed), Displays (brightness, DDC/CI), Bluetooth sleep. *Unavailable:* Extra brightness. |
+| Tools | Quick panel, Quick toggles, Quit apps, Color picker, Copy text from screen, Cleaning Mode, Media, Cleaner, Uninstaller, Packages (winget), App updates, Screenshot (editor, scrolling capture, pins), Screen recording (Windows.Graphics.Capture + Media Foundation), Camera preview, Radial menu, Scratchpad, Command Bar, Wallpaper, Kill Process, Port Manager. |
+| Dynamic Island | The island itself plus Calendar, Notifications, Gestures, Timer, Accessory alerts, Lyrics (online lookup is **off** by default), Up next, Bars follow the music, Downloads, **AI Agents** (Claude Code, Codex, OpenCode, Copilot usage and limits, read locally), Watch, Companion. Installing the island switches it on. |
+| Monitor | CPU, GPU, Memory, Network, Disks, Power, Connected devices, shown in the tray panel and as a strip next to the tray icon. *Unavailable:* Fan control. |
 
-**Mouse and keyboard**
-Invert mouse scrolling, Scroll sideways with a key, Smooth scrolling, Linear scrolling, Disable mouse acceleration,
-Focus follows mouse, Side buttons, Mouse button shortcuts, Extra click filter, Keyboard debounce, Text snippets,
-Super key, Close protection (Alt+F4 / Ctrl+W / Ctrl+Q need a hold or double press).
+## Hotkeys
 
-**Sound**
-Volume mixer (per-app volume), Sound output switcher, Audio device priority, Mute microphone.
+macOS ⌘ becomes **Win** in multi-modifier global shortcuts (⌃⌥⌘ = Ctrl+Alt+Win, ⌃⌘ = Ctrl+Win); ⌃ is Ctrl, ⌥ is Alt.
+Shortcuts that act inside the front app use Windows conventions. All of them are editable in *Keyboard shortcuts*;
+every default is unique (checked by `WinKnife.exe --dump-info <file>`). A shortcut only registers while its feature is
+installed **and** its own switch is on, so a fresh install grabs nothing except the ones listed as "always".
 
-**Energy and display**
-Keep awake, Displays (brightness for built-in and DDC/CI external monitors).
-
-**Tools**
-Quick toggles (dark mode, desktop icons, hidden files and extensions, Recycle Bin, lock), Color picker, Copy text from
-screen (OCR), Screenshot (with annotation), Camera preview, Cleaning mode, Media compress, Cleaner, Uninstaller,
-App updates (winget), Radial menu, Scratchpad, Command bar, Kill process, Port manager, Wallpaper.
-
-**Dynamic Island**
-Dynamic Island (now playing pill) plus its extensions Island timer, Island calendar, Island downloads and Island
-gestures. The four extensions only show up when the **Dynamic Island** feature itself is installed; the Features hub
-says so on their pages.
-
-**System monitor**
-CPU, GPU, Memory, Network, Disk, Battery and power, Connected devices, all shown in one shared flyout.
-
-## Default hotkeys
-
-Every default is unique. Most features have no hotkey until you set one in their settings page (cleaner, uninstaller,
-kill process, port manager, wallpaper, media compress, app updates, cleaning mode, display brightness, extra
-screenshot shortcuts and so on). All hotkeys can be changed or cleared in the Features hub.
-
-| Feature | Default | Action |
+| Role | Default | Notes |
 | --- | --- | --- |
-| Paste as plain text | Ctrl+Alt+V | Paste clipboard without formatting |
-| Clipboard history | Ctrl+Alt+H | Open the history popup |
-| Shelf | Ctrl+Alt+Shift+F | Show or hide the shelf |
-| App switcher | Alt+` | Open the switcher (press again to move on) |
-| Mute microphone | Ctrl+Alt+M | Toggle microphone mute |
-| Volume mixer | Ctrl+Alt+A | Open the mixer |
-| Sound output switcher | Ctrl+Alt+O | Cycle the output device |
-| CPU monitor (opens the shared monitor flyout) | Ctrl+Alt+P | Show the system monitor |
-| Screenshot, region or window | Ctrl+Alt+S | Capture a region or click a window |
-| Screenshot, all screens | Ctrl+Alt+Shift+S | Capture every screen |
-| Copy text from screen | Ctrl+Alt+Shift+T | Draw a box, copy the recognised text |
-| Color picker | Ctrl+Alt+Shift+C | Pick a colour from the screen |
-| Camera preview | Ctrl+Alt+Shift+K | Show or hide the mirror |
-| Command bar | Ctrl+Alt+R | Open the command bar |
-| Radial menu | Ctrl+Alt+Q (hold) | Hold to show the ring, release to run |
-| Scratchpad | Ctrl+Alt+N | Show or hide all notes |
-| Window layout: left / right / top / bottom half | Ctrl+Alt+Left / Right / Up / Down | Snap the active window |
-| Window layout: quarters (top left, top right, bottom left, bottom right) | Ctrl+Alt+U / I / J / K | Snap to a corner |
-| Window layout: left third / center third / right third | Ctrl+Alt+D / F / G | Snap to a third |
-| Window layout: left two thirds / right two thirds | Ctrl+Alt+E / T | Snap to two thirds |
-| Window layout: maximize / center / restore | Ctrl+Alt+Enter / C / Backspace | Maximize, center, undo |
-| Window layout: next / previous monitor | Ctrl+Alt+Shift+Right / Left | Move to another display |
+| Command Bar | Ctrl+Alt+Space | Alt+Space stays with the Windows window menu |
+| Window switcher: apps / windows of the app / all windows | Alt+Tab / Alt+` / Ctrl+Alt+Tab | hook based; Alt+Tab replacement is a setting |
+| Window layout (per action) | Ctrl+Alt+Left / Right / Up / Down (halves), D F G (thirds), E T (two thirds), U I J K (corners), Enter (maximize), C (center), R (restore) | Ctrl+Alt+Win+Right = next display |
+| Move pointer to next display | Ctrl+Alt+Win+Z | |
+| Directional ring (window layout) | Ctrl+Alt+Shift+Space | hold + direction |
+| Move / resize by dragging | hold Ctrl+Alt (add Shift to resize) | was Ctrl+Win in the first port: that chord collides with the Windows desktop switcher |
+| Quick panel | Ctrl+Win+V | falls back to Ctrl+Alt+V when Windows or another app owns it (shown under the recorder) |
+| Clipboard history / Paste as plain text | Ctrl+Alt+Win+V / Alt+Shift+Win+V | |
+| Shelf, Quick snippet menu | Ctrl+Alt+Win+D, Ctrl+Alt+Win+L | |
+| Rename shortcut (File Explorer) | F2 | bare key, hook based |
+| Output switcher, Mute microphone, Keep awake | Ctrl+Alt+Win+S, +M, +K | |
+| Display brightness down / up | Shift+Win+- / Shift+Win+= | only with the brightness control on |
+| Scratchpad, Camera preview | Ctrl+Alt+Win+N, +W | |
+| Quit all apps / all except the front one | Ctrl+Alt+Win+Q / +O | |
+| Radial menu | Ctrl+Alt+Win+Space | |
+| Screenshot, whole screen, recent, edit latest, edit clipboard, upload | Ctrl+Alt+Win+4, +3, +H, +E, +P, +U | |
+| Screen recording, Copy text from screen, Color picker | Ctrl+Alt+Win+5, +T, +C | |
+| Dynamic Island | Ctrl+Alt+Win+I | |
 
-Notes on the choices:
+If Windows reserves a combination or another program owns it, WinKnife falls back (Win replaced by Shift; Ctrl+Win
+replaced by Ctrl+Alt so it never becomes Ctrl+Shift+key), says so in the settings row, and the rest of the feature keeps
+working. Ctrl+Alt+Arrow is also used by some Intel graphics drivers for screen rotation.
 
-* Ctrl+Alt+Letter is shared by many features and by Window layout (U I J K D F G E T C). Where a tool wanted one of those
-  letters, it uses the same letter with Shift added (Shelf F, Camera K, Color picker C, Copy text T) so the window
-  layout keeps its mnemonic block.
-* Ctrl+Alt+Space (the usual launcher key) is already taken by other apps on many PCs, so the Command bar uses Ctrl+Alt+R.
-* Clipboard history avoids Ctrl+Shift+V, which browsers and terminals use for "paste as plain text".
-* Ctrl+Alt+Arrow combinations are also used by some Intel graphics drivers for screen rotation; turn that off in the
-  graphics control panel or rebind Window layout if the shortcuts do not react.
-* Hotkeys that are already owned by another program are reported in the log and as a tray notification; the rest of
-  the feature still works.
+## Differences from Vorssaint on Windows
+
+* "Menu bar" is the notification area: the tray icon opens the panel, right-click gives the menu, live metrics are drawn
+  as a strip next to the tray. The icon can step aside while metrics are shown (`menuBarHideIconWithMetrics`), unless
+  keep awake is active or the microphone is muted. Keep awake changes the icon (WinKnife mark, coffee, eye, moon, bulb),
+  tint and can print the remaining minutes in the icon.
+* The Dock features become taskbar features (thumbnails, minimize / hide / cycle on click); Spaces and the green
+  maximize button do not exist. Windows Snap stays available next to Window layout.
+* Permissions are Windows ones: *Accessibility* (global hooks, window management; limited when not elevated),
+  *Screen recording*, microphone, camera, notifications. Administrator rights are only needed for the system-wide
+  Cleaner paths and for controlling elevated windows.
+* Trash becomes the Recycle Bin, Finder becomes File Explorer (no restart needed), Homebrew becomes winget, Spotlight
+  settings become Windows Settings pages.
+* Nothing talks to Vorssaint servers: share links are hidden, feedback opens a GitHub issue, the agent price list is
+  bundled, lyrics lookup is opt-in.
+* Per-app output routing and extra brightness are unavailable on the current Windows builds.
 
 ## Build, run, publish
 
@@ -103,46 +92,44 @@ dotnet run --project src/WinKnife.App
 dotnet publish src/WinKnife.App/WinKnife.App.csproj -c Release -r win-x64 --self-contained true -o dist/WinKnife
 ```
 
-The publish output (`dist\WinKnife\WinKnife.exe`) is a self-contained folder; feature discovery loads the
-`WinKnife.Features.*.dll` assemblies from the folder of the exe, so keep the folder together (NAudio ships next to
-them). `-p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true` also works and still discovers every
-feature, but the result is not smaller and it unpacks native libraries to a temporary folder at start-up, which makes
-Smart App Control more likely to object, so the folder layout is the recommended distribution.
+The publish output (`dist\WinKnife\WinKnife.exe`, about 175 MB unpacked, 70 MB zipped) is a self-contained folder: feature
+discovery loads the `WinKnife.Features.*.dll` assemblies next to the exe, and NAudio, ZXing.Net and the SQLite natives
+ship beside them, so keep the folder together. The first start after a fresh copy can take ~10 s (Windows scans the new
+DLLs); later starts take about a second.
 
-`ARCHITECTURE.md` describes the solution layout and the contracts the feature projects code against.
+Developer flags (a second launch hands them to the running copy): `--open-settings <page#anchor>`,
+`--open-panel [tab]`, `--open-menu`, `--search <text>`, `--action <feature> <action>`, `--dev-install <id>`,
+`--dev-uninstall <id>`, `--close-panel`, `--dump-info <file>` (features, actions, panel utilities, shortcut defaults,
+duplicate checks). With `WINKNIFE_DEV=1` the island also exposes one action per page.
+
+`ARCHITECTURE_V2.md` and `specs/CONTRACTS.md` describe the solution layout and the contracts feature projects code
+against; `specs/R3_NOTES.md` is the integration checklist this release worked through.
 
 ## Smart App Control and unsigned builds
 
-WinKnife builds are **not code-signed**. On Windows 11 with **Smart App Control** (SAC) in *Enforce* mode, unsigned
-and unknown binaries (the exe and the feature DLLs it loads) can be blocked, which shows up as a failed start, a
-"blocked" message, or a feature assembly that cannot be loaded. Your options, your choice:
+WinKnife builds are **not code-signed**. On Windows 11 with **Smart App Control** (SAC) in *Enforce* mode, unsigned and
+unknown binaries (the exe and the feature DLLs it loads) can be blocked, which shows up as a failed start, a "blocked"
+message or a feature assembly that cannot be loaded. Your options, your choice:
 
-1. Sign the executables and DLLs with a code-signing certificate that Windows trusts (SAC allows signed code from
-   trusted publishers).
-2. Turn Smart App Control off (Windows Security, App and browser control, Smart App Control settings). Note that
-   Windows does not allow turning it back on without resetting the PC.
-3. Run on a machine without SAC (or in Evaluation mode), or build locally on that machine, which has worked in the
-   tests done so far.
+1. Sign the executables and DLLs with a code-signing certificate that Windows trusts.
+2. Turn Smart App Control off (Windows Security, App and browser control). Windows does not allow turning it back on
+   without resetting the PC.
+3. Run on a machine without SAC (or in Evaluation mode), or build locally on that machine.
 
 WinKnife never tries to bypass SAC or SmartScreen.
 
-## Known limitations and skipped Mac-only features
+## Known limitations
 
-* Skipped because Windows already covers them or they do not exist on Windows: trackpad middle click, rename shortcut,
-  cut and paste of files, quit-on-close for apps, taskbar preview tweaks, disk image installer, fan control,
-  extra brightness, music blocker, Bluetooth on sleep, Island notifications.
-* Window layout has no drag-to-edge snapping; Windows Snap (drag to an edge, Win+Arrow, Snap layouts) already does it.
-* Side buttons already work as back/forward in most apps; the feature exists to remap them.
-* Not implemented in this release: screen recording, lyrics, AI agents, watch and companion integrations.
-* Features that hook input (smooth scrolling, focus follows mouse, super key, text snippets, close protection) work
-  through global low-level hooks; they cannot see or change input in elevated (administrator) windows unless WinKnife
-  itself runs elevated.
-* Smooth scrolling is limited by what the target app accepts (apps ignoring small wheel deltas scroll in jumps).
-* GPU monitor depends on the Windows GPU engine performance counters; some drivers do not provide them.
-* External monitor brightness needs DDC/CI support and enabled in the monitor menu.
-* App updates need `winget`; Media compress handles video and GIF only when `ffmpeg` is on the PATH.
-* The self-contained publish is large (about 177 MB unpacked, 70 MB zipped) because it carries the .NET and WPF runtime.
-* Unsigned builds, see the Smart App Control section above.
+* Not yet done (tracked in `specs/R3_NOTES.md`): the shared app picker / app list lives in three projects (Input,
+  Windows, Files) instead of Core; recorder extras (pointer track, click ring, auto-zoom, text lanes, audio time-stretch,
+  per-window loopback, capture border); an elevated "run cleaner as administrator" relaunch helper.
+* Features that hook input (smooth scrolling, focus follows mouse, super key, snippets, protection, the switcher) cannot
+  see or change input in elevated windows unless WinKnife runs elevated.
+* GPU monitor needs the Windows GPU engine counters; external brightness needs DDC/CI; Packages and App updates need
+  `winget`.
+* With a very large AI-agent history (several GB of Claude Code logs) the Agents extension alone keeps ~200 MB resident;
+  turn it off in the Dynamic Island settings if that matters. Idle cost with everything installed is below 3 % of one
+  core.
 
 ## License
 
