@@ -167,6 +167,9 @@ public sealed record AgentLimits(AgentProvider Provider, List<LimitWindow> Windo
     public List<LimitShare>? Breakdown { get; init; }
 
     public DateTime? BreakdownAsOf { get; init; }
+
+    /// <summary>Claude app readings: whether its newest sample had a 5-hour figure; null for other sources.</summary>
+    public bool? SessionReported { get; init; }
 }
 
 /// <summary>One product's share of the week's use (Claude Code, Chats, Cowork...).</summary>
@@ -462,6 +465,7 @@ public static class AgentKeys
     public const string OpenCode = "notchAgentsOpenCode";
     public const string Copilot = "notchAgentsCopilot";
     public const string ClaudeProfile = "notchAgentsClaudeProfile";
+    public const string IncludeClaudeCode = "notchAgentsIncludeClaudeCode";
     public const string CodexProfiles = "notchAgentsCodexProfiles";
     public const string CardOrder = "notchAgentsCardOrder";
     public const string HiddenCards = "notchAgentsHiddenCards";

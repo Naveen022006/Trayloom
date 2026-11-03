@@ -10,6 +10,10 @@
     <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
   </ItemGroup>
   <ItemGroup>
+    <!-- the console harness under tests/ exercises the Claude app limits and the transcript filter -->
+    <InternalsVisibleTo Include="Trayloom.Agents.Harness" />
+  </ItemGroup>
+  <ItemGroup>
     <EmbeddedResource Include="Resources\agent-prices.json" LogicalName="Trayloom.Agents.agent-prices.json" />
   </ItemGroup>
 </Project>

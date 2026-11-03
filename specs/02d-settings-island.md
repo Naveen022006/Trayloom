@@ -575,7 +575,8 @@ Shown as the options of the **AI Agents** section on the Content tab (card body,
 |---|---|---|---|---|
 | `notchAgentsEnabled` | Bool | **false** | | Section shown (migration: existing configured profiles got true once via `notchAgentsOptInMigrated`). |
 | `notchAgentsClaude` / `Codex` / `OpenCode` / `Copilot` | Bool | true | at least one stays on | Which logs are read. |
-| `notchAgentsClaudeProfile` | String path | "" | "" = default account, else an absolute Claude config dir | Selected Claude profile. |
+| `notchAgentsIncludeClaudeCode` | Bool | **false** | | "Include Claude Code in terminals and editors" (shown when Claude is on). Off: "Claude" means the Claude desktop app only (its plan usage and weekly limit, and the work done in its Code tab and Cowork); Claude Code transcripts, sessions, the live limits check and the Claude account group (10.3) are left out. On: today's behaviour. Changing it re-reads the logs. |
+| `notchAgentsClaudeProfile` | String path | "" | "" = default account, else an absolute Claude config dir | Selected Claude profile (used only while `notchAgentsIncludeClaudeCode` is on). |
 | `notchAgentsCodexProfiles` | String (JSON) | "" | up to 8 profiles | Added Codex homes (10.4). |
 | `notchAgentsCardOrder` / `HiddenCards` | String CSV | "" / "" | card ids limits,spend,live,trend,models,projects,activity,resets | Cards order/visibility. |
 | `notchAgentsPeriod` | String | "today" | today, week, month | Period for period cards (set from the island). |

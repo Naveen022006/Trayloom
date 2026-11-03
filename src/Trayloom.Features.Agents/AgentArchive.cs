@@ -21,6 +21,9 @@ internal static class AgentUsageArchive
 
         public List<AgentProvider> Providers { get; set; } = [];
 
+        /// <summary>Which Claude lines were counted: <c>app</c> (the desktop app's only) or <c>all</c>. Older archives hold "" and are read again.</summary>
+        public string ClaudeScope { get; set; } = "";
+
         public AgentUsageStore.Saved Store { get; set; } = new();
 
         public List<AgentLogCursor.SavedCursor> Cursors { get; set; } = [];

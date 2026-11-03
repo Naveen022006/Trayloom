@@ -35,9 +35,22 @@ internal sealed class ClaudeReader : IAgentHarnessReader
 {
     private static readonly List<LogEntry> None = [];
 
+    /// <summary>
+    /// True while only the Claude desktop app's lines count. The service sets it on its worker thread before it reads, which is the
+    /// only thread that parses.
+    /// </summary>
+    internal static bool AppOnly { get; set; }
+
     public List<LogEntry> Parse(ReadOnlyMemory<byte> memory, AgentLogState state, DateTime now)
     {
         var line = memory.Span;
+        // The desktop app's embedded Claude Code stamps every line with a top-level entrypoint, and one session can mix surfaces, so the
+        // filter is per line. The same text inside a message is escaped (\"entrypoint\"), so only the real field matches.
+        if (AppOnly && !AgentLogParser.Contains(line, "\"entrypoint\":\"claude-desktop\""u8))
+        {
+            return None;
+        }
+
         if (AgentLogParser.Contains(line, "\"type\":\"assistant\""u8))
         {
             return Assistant(memory, state, now);

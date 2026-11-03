@@ -103,7 +103,7 @@ internal sealed class AgentsSettingsView
         card.Add(UiKit.Text(AgentStrings.SettingsDescription, 12.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true));
 
         // Which logs exist is checked when the page opens, not on every draw.
-        var found = AgentLogRoot.All(ClaudeAccountProfile.Selected(_app)).Where(r => r.Exists).Select(r => r.Provider).ToHashSet();
+        var found = AgentLogRoot.All(_settings.ClaudeProfile()).Where(r => r.Exists).Select(r => r.Provider).ToHashSet();
         var enabled = AgentProviders.All.Where(p => _app.Get(p.SettingKey(), true)).ToList();
         foreach (var provider in AgentProviders.All)
         {
@@ -114,7 +114,13 @@ internal sealed class AgentsSettingsView
         var codex = _app.Get(AgentKeys.Codex, true);
         if (claude)
         {
-            card.Add(ClaudeAccountGroup());
+            card.Add(Switch("", Loc.T("Include Claude Code in terminals and editors"), AgentKeys.IncludeClaudeCode, false,
+                Loc.T("Off: Claude means the Claude app: its plan usage and weekly limit, and the work done in its Code tab. On: Claude Code in a terminal or editor counts too, and Claude Code checks your account’s limits."), rebuild: true));
+            // Claude Code accounts only matter once Claude Code counts.
+            if (_settings.IncludesClaudeCode())
+            {
+                card.Add(ClaudeAccountGroup());
+            }
         }
 
         if (codex)
@@ -201,7 +207,11 @@ internal sealed class AgentsSettingsView
             card.AddDivider();
             card.Add(Subheading(AgentStrings.ClaudeLimitsTitle));
             card.Add(new ClaudeLimitsStatus(_runtime, _app, _settings));
-            if (ClaudeAccountProfile.Selected(_app).IsDefault)
+            if (!_settings.IncludesClaudeCode())
+            {
+                card.AddCaption(Loc.T("Trayloom reads the plan usage the Claude app saves on this PC. It never signs in, sends nothing, and does not run Claude Code."));
+            }
+            else if (_settings.ClaudeProfile().IsDefault)
             {
                 card.AddCaption(AgentStrings.ClaudeLimitsPrivacy);
             }
@@ -753,7 +763,7 @@ internal sealed class ClaudeLimitsStatus : Border
         _runtime = runtime;
         _app = app;
         _settings = settings;
-        _appInstalled = ClaudeAccountProfile.Selected(app).IsDefault && ClaudeAppUsage.AppInstalled();
+        _appInstalled = _settings.ClaudeProfile().IsDefault && ClaudeAppUsage.AppInstalled();
         // The file is looked at when the page opens, off the UI thread.
         Task.Run(ClaudeAppUsage.LastCheck).ContinueWith(t =>
         {
@@ -802,7 +812,7 @@ internal sealed class ClaudeLimitsStatus : Border
         var checkedAt = account ?? status.ClaudeAppChecked ?? _fileCheck;
         var accountFresh = account is { } a && now - a < ClaudeAppUsage.Freshness;
         var failure = account is not null && accountFresh ? null : status.ClaudeAccountFailure is { } f ? AgentStrings.ClaudeCode(f) : null;
-        var defaultProfile = ClaudeAccountProfile.Selected(_app).IsDefault;
+        var defaultProfile = _settings.ClaudeProfile().IsDefault;
 
         var row = new Grid();
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -867,7 +877,7 @@ internal sealed class ClaudeLimitsStatus : Border
         else if (!_appInstalled && checkedAt is null)
         {
             Icon(Glyphs.Info, ThemeKeys.TextSecondary);
-            Texts(AgentStrings.ClaudeLimitsNoApp, failure);
+            Texts(_settings.IncludesClaudeCode() ? AgentStrings.ClaudeLimitsNoApp : Loc.T("Plan limits come from the Claude app, which is not on this PC."), failure);
             ButtonAt(AgentStrings.GetClaude, () => UiKit.OpenUrl(AgentStrings.GetClaudeUrl));
         }
         else

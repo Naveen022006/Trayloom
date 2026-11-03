@@ -33,7 +33,9 @@ internal sealed class AgentAttentionSettings : StackPanel
         _result = UiKit.Text("", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
 
         var toggle = new SettingsRow("", Loc.T("Tell me when an agent needs me"),
-            Loc.T("Shows “Claude needs your permission - project: tool” on the island, and an amber “Waiting for you” state in the Now card and the closed island. Applies to Claude Code (terminal and Claude app) and Codex."),
+            app.Get(AgentKeys.IncludeClaudeCode, false)
+                ? Loc.T("Shows “Claude needs your permission - project: tool” on the island, and an amber “Waiting for you” state in the Now card and the closed island. Applies to Claude Code (terminal and Claude app) and Codex.")
+                : Loc.T("Shows “Claude needs your permission - project: tool” on the island, and an amber “Waiting for you” state in the Now card and the closed island. Applies to the Claude app’s Code tab and Codex."),
             new MacSwitch(app.Get(AgentKeys.Attention, true), SwitchSize.Regular, on => app.Set(AgentKeys.Attention, on)));
         Children.Add(toggle);
 

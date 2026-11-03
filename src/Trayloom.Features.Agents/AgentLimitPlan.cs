@@ -60,7 +60,9 @@ internal static class AgentLimitPlan
                 continue;
             }
 
-            if (provider == AgentProvider.Claude || snapshot.Limits.GetValueOrDefault(provider)?.Windows.Any(w => w.Kind == LimitKind.Session) == true)
+            var reading = snapshot.Limits.GetValueOrDefault(provider);
+            // The Claude app says when the account has no 5-hour limit right now; then the menu has nothing to offer for it.
+            if (provider == AgentProvider.Claude ? reading is not { SessionReported: false } || reading.Windows.Any(w => w.Kind == LimitKind.Session) : reading?.Windows.Any(w => w.Kind == LimitKind.Session) == true)
             {
                 return true;
             }

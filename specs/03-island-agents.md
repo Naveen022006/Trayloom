@@ -96,6 +96,8 @@ Priority (`AgentUsageService.readClaudeApp`):
 3. (Windows addition) `cachedUsageUtilization` in `.claude.json`.
 4. Nothing: the card shows an estimate from local activity (5-hour block, A6.5) or a hint.
 
+App-only rule (switch `notchAgentsIncludeClaudeCode`, **off by default**): "Claude" means the Claude desktop app. Sources 1 and 3 are not used and `claude` is never launched; the limits are the desktop history alone, read for the app's own account (no organization filter). Transcript lines count only when they carry the top-level field `"entrypoint":"claude-desktop"` (checked per line; the same text inside a message is escaped and never matches), and the archive remembers which scope it holds (`ClaudeScope`: `app` / `all`) so changing the switch re-reads the logs. The 5-hour row follows the app's newest sample (it appears only while that sample has a 5-hour figure), the source line reads "From the Claude app", and sessions come from `entrypoint == claude-desktop` only. Turned on, everything below applies unchanged.
+
 Rule: "one source while the account answers": if the account reading is younger than `freshness = 30 min` it wins outright; otherwise the
 newest `observedAt` of {desktop, account} wins. (Prevents flip-flop that would re-fire alerts.) For a non-default Claude profile (A8) the
 desktop history is ignored entirely - only that profile's own CLI reading counts.

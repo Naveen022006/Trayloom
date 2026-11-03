@@ -130,7 +130,10 @@ internal static class AgentCardViews
                 account.Failure is { } e ? CodexAccountMessage(e) : null, () => c.Runtime.Accounts.Refresh(id, true));
         }
 
-        return new LimitsSource(snapshot.Limits.GetValueOrDefault(provider), plan, provider == AgentProvider.Claude ? ClaudeName(c.Runtime.Service.Status, true) : null, false, false, null, null);
+        var accountName = provider != AgentProvider.Claude ? null
+            : c.Runtime.Settings.IncludesClaudeCode() ? ClaudeName(c.Runtime.Service.Status, true)
+            : ClaudeAppName(c.Runtime.Service.Status);
+        return new LimitsSource(snapshot.Limits.GetValueOrDefault(provider), plan, accountName, false, false, null, null);
     }
 
     public static FrameworkElement Limits(AgentCardContext c, AgentTile tile)
@@ -158,7 +161,13 @@ internal static class AgentCardViews
         if (plan is not null)
         {
             var chip = AU.Chip(plan, provider.Tint());
-            AU.Tip(chip, AgentLimitPlan.Describe(provider, owner.Plan));
+            var describe = AgentLimitPlan.Describe(provider, owner.Plan);
+            if (limits?.SessionReported == false && AgentLimitPlan.ExpectsSession(provider, owner.Plan))
+            {
+                describe += " " + Loc.T("The Claude app reports no 5-hour limit for this account right now.");
+            }
+
+            AU.Tip(chip, describe);
             accessory.Children.Add(chip);
         }
 
@@ -234,8 +243,10 @@ internal static class AgentCardViews
             {
                 // Where the numbers come from and how old they are: every reading says so, and an old one is not dressed up as fresh.
                 var (source, old) = LimitPresenter.SourceLine(limits, now);
-                var line = AU.Text(source + (old ? " · may be out of date" : ""), 9, null, old ? AgentColors.Of(Orange) : AgentColors.Tertiary, TextTrimming.CharacterEllipsis);
-                AU.Tip(line, Loc.T("Open the AI Agents settings, \"Where these numbers come from\", to compare every source."));
+                var line = AU.Text(source + (old ? " · " + Loc.T("may be out of date") : ""), 9, null, old ? AgentColors.Of(Orange) : AgentColors.Tertiary, TextTrimming.CharacterEllipsis);
+                AU.Tip(line, limits.Origin == LimitOrigins.ClaudeDesktop
+                    ? Loc.T("The Claude app saves your plan usage about every 15 minutes while it runs with its icon in the notification area. The reset time is worked out from when the weekly figure last dropped.")
+                    : Loc.T("Open the AI Agents settings, \"Where these numbers come from\", to compare every source."));
                 Add(body, line, 5);
                 if (LimitPresenter.Breakdown(limits) is { } breakdown)
                 {
@@ -282,6 +293,10 @@ internal static class AgentCardViews
         CodexAccountError.Outdated => AgentStrings.CodexUpdate,
         _ => AgentStrings.CodexFailed,
     };
+
+    /// <summary>With Claude Code left out, "Claude" is the Claude app: the line says so, with the email the plan belongs to when it is known.</summary>
+    public static string ClaudeAppName(AgentServiceStatus status) =>
+        Loc.T("Claude app") + (status.ClaudeAccountIdentity?.Email is { } email ? " · " + email : "");
 
     /// <summary>The Claude account's name: the profile's name and, when known, its email; the default account shows just the email.</summary>
     public static string ClaudeName(AgentServiceStatus status, bool cardOnly = false)

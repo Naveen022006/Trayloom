@@ -214,7 +214,12 @@ internal static class ClaudeAppUsage
             result.Add(new LimitWindow("claude." + window.Key, window.Kind, window.Minutes, window.Scope, used, resets, session?.Estimate) { Active = used > 0 });
         }
 
-        return result.Count == 0 ? null : new AgentLimits(AgentProvider.Claude, result, latest.Date, LimitSource.ClaudeApp) { Origin = LimitOrigins.ClaudeDesktop };
+        return result.Count == 0 ? null : new AgentLimits(AgentProvider.Claude, result, latest.Date, LimitSource.ClaudeApp)
+        {
+            Origin = LimitOrigins.ClaudeDesktop,
+            // The newest sample is what says whether the account has a 5-hour limit right now; an older one that had it does not.
+            SessionReported = latest.Used.ContainsKey("fh"),
+        };
     }
 
     /// <summary>Where Claude Code's own first request places the session the newest reading saw.</summary>

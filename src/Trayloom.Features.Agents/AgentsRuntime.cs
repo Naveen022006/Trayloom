@@ -156,6 +156,8 @@ public sealed class AgentsRuntime : IDisposable
         var providers = Settings.Providers();
         Sessions.ClaudeEnabled = providers.Contains(AgentProvider.Claude);
         Sessions.CodexEnabled = providers.Contains(AgentProvider.Codex);
+        // Attention and hook events only reach the sessions the monitor builds, so leaving Claude Code out here leaves it out of those too.
+        Sessions.AppOnly = !Settings.IncludesClaudeCode();
         if (Settings.IsEnabled())
         {
             Sessions.Start();

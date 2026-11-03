@@ -55,6 +55,7 @@ public sealed class AgentSettings
         app.Register(AgentKeys.OpenCode, true);
         app.Register(AgentKeys.Copilot, true);
         app.Register(AgentKeys.ClaudeProfile, "");
+        app.Register(AgentKeys.IncludeClaudeCode, false);
         app.Register(AgentKeys.CodexProfiles, "");
         app.Register(AgentKeys.CardOrder, "");
         app.Register(AgentKeys.HiddenCards, "");
@@ -79,6 +80,12 @@ public sealed class AgentSettings
     public bool SectionShows() =>
         _runtime.IsAvailable(AgentKeys.FeatureId) && _app.Get(AgentKeys.Enabled, false)
         && !_app.Get(AgentKeys.HiddenModules, "").Split(',', StringSplitOptions.RemoveEmptyEntries).Contains(AgentKeys.ModuleId);
+
+    /// <summary>Whether Claude Code in a terminal or editor counts as "Claude". Off: Claude means the Claude desktop app only.</summary>
+    public bool IncludesClaudeCode() => _app.Get(AgentKeys.IncludeClaudeCode, false);
+
+    /// <summary>The Claude account Trayloom reads. App-only mode never follows a Claude Code profile: it has no profile.</summary>
+    public ClaudeAccountProfile ClaudeProfile() => IncludesClaudeCode() ? ClaudeAccountProfile.Selected(_app) : new ClaudeAccountProfile();
 
     public List<AgentProvider> Providers() => AgentProviders.All.Where(p => _app.Get(p.SettingKey(), true)).ToList();
 

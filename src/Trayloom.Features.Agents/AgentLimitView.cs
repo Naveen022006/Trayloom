@@ -58,7 +58,8 @@ internal static class LimitPresenter
             rows.Insert(ordered.Count(w => w.Kind == LimitKind.Session), Missing(provider, AgentStrings.WeeklyLimit));
         }
 
-        if (AgentLimitPlan.ExpectsSession(provider, plan) && !ordered.Any(w => w.Kind == LimitKind.Session))
+        // The Claude app says whether the account has a 5-hour limit right now; when its newest sample had none, there is nothing to wait for.
+        if (AgentLimitPlan.ExpectsSession(provider, plan) && limits.SessionReported != false && !ordered.Any(w => w.Kind == LimitKind.Session))
         {
             rows.Insert(0, Missing(provider, AgentStrings.SessionLimit));
         }
@@ -159,7 +160,10 @@ internal static class LimitPresenter
     public static (string Text, bool Old) SourceLine(AgentLimits limits, DateTime now)
     {
         var age = now - limits.ObservedAt;
-        var text = "From " + LimitOrigins.Name(limits.Origin ?? (limits.Source == LimitSource.SessionLog ? LimitOrigins.CodexLog : null)) + " · " + AgentFormat.Relative(limits.ObservedAt > now ? now : limits.ObservedAt, now, false);
+        var when = AgentFormat.Relative(limits.ObservedAt > now ? now : limits.ObservedAt, now, false);
+        var text = limits.Origin == LimitOrigins.ClaudeDesktop
+            ? Loc.F("From the Claude app · {0}", when)
+            : "From " + LimitOrigins.Name(limits.Origin ?? (limits.Source == LimitSource.SessionLog ? LimitOrigins.CodexLog : null)) + " · " + when;
         return (text, age > TimeSpan.FromMinutes(30));
     }
 

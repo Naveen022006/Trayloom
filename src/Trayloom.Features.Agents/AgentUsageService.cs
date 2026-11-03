@@ -72,6 +72,8 @@ public sealed class AgentUsageService : IDisposable
     private ClaudeAccountProfile _claudeProfile = new();
     private ClaudeFailure? _claudeFailure;
     private bool _claudeChecking;
+    // Claude means the Claude desktop app only (the default); the switch in Settings adds Claude Code in terminals and editors.
+    private bool _claudeAppOnly = true;
 
     // ---- reader state (worker thread)
     private int _readerSession = -1;
@@ -150,15 +152,18 @@ public sealed class AgentUsageService : IDisposable
         }
 
         var wanted = _settings.Providers();
-        var profile = ClaudeAccountProfile.Selected(_settings.App);
+        var profile = _settings.ClaudeProfile();
+        var appOnly = !_settings.IncludesClaudeCode();
         var showingPage = _pageVisible;
         // An agent turned off is no longer read at all, and one turned on is read from its start: both take a fresh reading.
-        if (_running && (!wanted.SequenceEqual(_providers) || !profile.Equals(_claudeProfile)))
+        // Counting Claude Code or not changes which log lines count, so that is a fresh reading too.
+        if (_running && (!wanted.SequenceEqual(_providers) || !profile.Equals(_claudeProfile) || appOnly != _claudeAppOnly))
         {
             StopCore(false, false);
         }
 
         _claudeProfile = profile;
+        _claudeAppOnly = appOnly;
         _pageVisible = showingPage;
         if (!_running)
         {
@@ -351,6 +356,23 @@ public sealed class AgentUsageService : IDisposable
             return;
         }
 
+        if (_claudeAppOnly)
+        {
+            // Nothing to ask: the app's own file is read again and the card follows.
+            if (_readerSession >= 0)
+            {
+                ReadClaudePlan();
+                ReadClaudeApp(DateTime.UtcNow);
+                CheckLimits();
+                if (_loaded)
+                {
+                    Publish();
+                }
+            }
+
+            return;
+        }
+
         _claudeAttempted = DateTime.MinValue;
         RefreshClaudeLimits(DateTime.UtcNow, true);
     });
@@ -372,13 +394,15 @@ public sealed class AgentUsageService : IDisposable
         _store = new AgentUsageStore();
         _cursors.Clear();
         _loaded = false;
+        // Set before any line is read: the reader runs on this thread only.
+        ClaudeReader.AppOnly = _claudeAppOnly;
         // Prices first, so the first read is already priced.
         LoadPrices();
         var horizon = DateTime.UtcNow - Horizon;
         var roots = AgentLogRoot.All(profile).Where(r => providers.Contains(r.Provider)).ToList();
         var files = AgentLogReader.Discover(roots, horizon);
         // Resumes where the last launch stopped, among the logs there now.
-        if (AgentUsageArchive.Load() is { } saved && saved.Providers.ToHashSet().SetEquals(providers))
+        if (AgentUsageArchive.Load() is { } saved && saved.Providers.ToHashSet().SetEquals(providers) && saved.ClaudeScope == ClaudeScope())
         {
             var found = files.Select(f => f.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var (store, cursors) = AgentUsageArchive.Resume(saved, found, horizon);
@@ -440,6 +464,9 @@ public sealed class AgentUsageService : IDisposable
         SaveProgress();
     }
 
+    /// <summary>The scope word saved with the progress: which Claude lines the counters hold.</summary>
+    private string ClaudeScope() => _claudeAppOnly ? "app" : "all";
+
     private void SaveProgress()
     {
         if (_readerSession < 0 || !_loaded)
@@ -462,7 +489,7 @@ public sealed class AgentUsageService : IDisposable
             SafeHandle(c, h => saved.Add(c.Save(h)));
         }
 
-        var contents = new AgentUsageArchive.Contents { Providers = _enabled.ToList(), Store = _store.Save(), Cursors = saved };
+        var contents = new AgentUsageArchive.Contents { Providers = _enabled.ToList(), ClaudeScope = ClaudeScope(), Store = _store.Save(), Cursors = saved };
         if (AgentUsageArchive.Save(contents))
         {
             _savedMark = mark;
@@ -1236,6 +1263,14 @@ public sealed class AgentUsageService : IDisposable
         _claudeCachedLimits = reading.CachedLimits;
         _claudeCachedRaw = reading.CachedRaw;
         _claudeCachedFetched = reading.UsageFetched;
+        if (_claudeAppOnly)
+        {
+            // The plan and the name still come from the profile; its saved copy of Claude Code's limits does not count.
+            _claudeCachedLimits = null;
+            _claudeCachedRaw = [];
+            _claudeCachedFetched = null;
+        }
+
         if (reading.Identity is not { } identity)
         {
             _claudePlan = null;
@@ -1263,6 +1298,26 @@ public sealed class AgentUsageService : IDisposable
             return;
         }
 
+        // Claude means the desktop app: no Claude Code reading is looked at, whatever an earlier mode left behind.
+        if (_claudeAppOnly)
+        {
+            LoadClaudeAppHistory();
+            var appStart = ClaudeAppUsage.SessionStart(_store.Records, _claudeAppSamples, null);
+            // No organization: the app's history is the app's own account.
+            var appReading = ClaudeAppUsage.Limits(_claudeAppSamples, now, appStart, null);
+            _claudeSources = [DescribeDesktopSource(appReading, appReading, null)];
+            if (appReading is not null)
+            {
+                _store.SetLimits(appReading);
+            }
+            else
+            {
+                _store.ClearLimits(AgentProvider.Claude);
+            }
+
+            return;
+        }
+
         var account = ClaudeServer.Current(_claudeAccountLimits, now);
         var cached = ClaudeServer.Current(_claudeCachedLimits, now);
         // Desktop history identifies an organization, not an individual account. A chosen profile uses only its own CLI reading.
@@ -1283,22 +1338,7 @@ public sealed class AgentUsageService : IDisposable
             return;
         }
 
-        var path = ClaudeAppUsage.HistoryPath();
-        DateTime? modified = null;
-        try
-        {
-            modified = path is not null && File.Exists(path) ? new FileInfo(path).LastWriteTimeUtc : null;
-        }
-        catch (IOException)
-        {
-        }
-
-        if (modified != _claudeAppModified)
-        {
-            _claudeAppModified = modified;
-            _claudeAppSamples = modified is null ? [] : ClaudeAppUsage.ReadFile(path) ?? [];
-        }
-
+        LoadClaudeAppHistory();
         // Claude Code's own first request can place the session's start.
         var start = ClaudeAppUsage.SessionStart(_store.Records, _claudeAppSamples, _claudeOrganization);
         var desktop = ClaudeAppUsage.Limits(_claudeAppSamples, now, start, _claudeOrganization);
@@ -1314,6 +1354,26 @@ public sealed class AgentUsageService : IDisposable
         else
         {
             _store.ClearLimits(AgentProvider.Claude);
+        }
+    }
+
+    /// <summary>Reads the Claude app's saved plan usage again when its file changed.</summary>
+    private void LoadClaudeAppHistory()
+    {
+        var path = ClaudeAppUsage.HistoryPath();
+        DateTime? modified = null;
+        try
+        {
+            modified = path is not null && File.Exists(path) ? new FileInfo(path).LastWriteTimeUtc : null;
+        }
+        catch (IOException)
+        {
+        }
+
+        if (modified != _claudeAppModified)
+        {
+            _claudeAppModified = modified;
+            _claudeAppSamples = modified is null ? [] : ClaudeAppUsage.ReadFile(path) ?? [];
         }
     }
 
@@ -1337,17 +1397,23 @@ public sealed class AgentUsageService : IDisposable
                 Status = cached is null ? (_claudeCachedFetched is null ? Loc.T("No saved copy in this profile") : Loc.T("Saved copy has no window that is still running")) : Why(cached),
             },
         };
+        list.Add(DescribeDesktopSource(desktop, chosen, _claudeOrganization));
+        return list;
+    }
+
+    /// <summary>The Claude app's saved history as a limit source, with what it says now.</summary>
+    private LimitSourceInfo DescribeDesktopSource(AgentLimits? desktop, AgentLimits? chosen, string? organization)
+    {
         var path = ClaudeAppUsage.HistoryPath();
-        var sample = _claudeAppSamples.LastOrDefault(s => _claudeOrganization is null || s.Organization is null || s.Organization == _claudeOrganization);
-        list.Add(new LimitSourceInfo
+        var sample = _claudeAppSamples.LastOrDefault(s => organization is null || s.Organization is null || s.Organization == organization);
+        return new LimitSourceInfo
         {
             Origin = LimitOrigins.ClaudeDesktop, Provider = AgentProvider.Claude, Name = "Claude desktop app history", Where = path ?? "plan-usage-history.json (Claude app not found)",
             ObservedAt = sample?.Date,
             Raw = sample is null ? [] : [string.Join(", ", sample.Used.Select(kv => kv.Key + " " + kv.Value.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%")) + " (percentages only: the app does not save reset times)"],
             InUse = desktop is not null && ReferenceEquals(desktop, chosen),
-            Status = path is null ? Loc.T("Claude app not found on this PC") : desktop is null ? Loc.T("Latest sample is too old or has no running window") : Why(desktop),
-        });
-        return list;
+            Status = path is null ? Loc.T("Claude app not found on this PC") : desktop is null ? Loc.T("Latest sample is too old or has no running window") : ReferenceEquals(desktop, chosen) ? "In use: the newest reading" : "Not used: an older reading than the one in use",
+        };
     }
 
     /// <summary>Every minute only while the page shows; failures back off, and looking at the page does not bypass that.</summary>
@@ -1438,6 +1504,12 @@ public sealed class AgentUsageService : IDisposable
     /// <summary>Never while the feature is off, asleep, offline or already checking, nor while nothing shows or alerts on the limits.</summary>
     private bool ClaudeLimitsDue(DateTime now, bool pageShows)
     {
+        // The live check runs Claude Code, which is not the desktop app.
+        if (_claudeAppOnly)
+        {
+            return false;
+        }
+
         if (!_running || _paused || !_online || !_providers.Contains(AgentProvider.Claude) || _claudeRequest is not null
             || !_settings.LimitsInUse(_pageVisible || pageShows))
         {

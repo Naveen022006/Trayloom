@@ -158,6 +158,9 @@ public sealed class AgentSessionMonitor : IDisposable
 
     public bool CodexEnabled { get; set; } = true;
 
+    /// <summary>Claude sessions are only those of the Claude desktop app (its Code tab and Cowork); Claude Code in a terminal or editor is left out.</summary>
+    public bool AppOnly { get; set; }
+
     /// <summary>Raised (on the timer thread) when the list changed in a way a display shows.</summary>
     public event Action? Changed;
 
@@ -368,6 +371,11 @@ public sealed class AgentSessionMonitor : IDisposable
         foreach (var record in records.GroupBy(r => r.Id).Select(g => g.OrderByDescending(r => r.UpdatedAt ?? DateTime.MinValue).First()))
         {
             known.Add(record.Id);
+            if (AppOnly && record.Entrypoint != "claude-desktop")
+            {
+                continue;
+            }
+
             if (BuildClaude(record, now, all, hooks) is { } session)
             {
                 yield return session;
@@ -412,10 +420,15 @@ public sealed class AgentSessionMonitor : IDisposable
                 }
 
                 var tail = Tail(file, false);
+                if (AppOnly && tail.Entrypoint != "claude-desktop")
+                {
+                    continue;
+                }
+
                 yield return new AgentSession
                 {
                     Key = "claude:" + id, Provider = AgentProvider.Claude, Id = id, Project = tail.Project ?? ProjectOf(Path.GetFileName(Path.GetDirectoryName(file)) ?? ""),
-                    Origin = "Claude Code", State = AgentSessionState.Working, Activity = Activity(tail, null), Since = tail.TurnStart ?? written, LastActivity = written,
+                    Origin = tail.Entrypoint == "claude-desktop" ? "Claude app" : "Claude Code", State = AgentSessionState.Working, Activity = Activity(tail, null), Since = tail.TurnStart ?? written, LastActivity = written,
                 };
             }
         }
@@ -683,6 +696,9 @@ public sealed class AgentSessionMonitor : IDisposable
         public bool Ended { get; set; }
 
         public string? Project { get; set; }
+
+        /// <summary>Where the session runs, as the newest line says (<c>claude-desktop</c>, <c>cli</c>, ...).</summary>
+        public string? Entrypoint { get; set; }
     }
 
     /// <summary>Analyses the end of a transcript, once per change of the file.</summary>
@@ -771,6 +787,11 @@ public sealed class AgentSessionMonitor : IDisposable
             {
                 using var doc = JsonDocument.Parse(buffer.AsMemory(offset, length));
                 var root = doc.RootElement;
+                if (root.Str("entrypoint") is { Length: > 0 } entrypoint)
+                {
+                    info.Entrypoint = entrypoint;
+                }
+
                 if (!sidechain && root.Prop("isSidechain").Bool() == true)
                 {
                     continue;
