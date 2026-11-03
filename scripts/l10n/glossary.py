@@ -19,7 +19,7 @@ def S(pattern, repl, flags=0):
 # ---------------------------------------------------------------------------------------------------------
 def _generic(rid, text, loc):
     if rid == "APP":
-        return text.replace("Vorssaint", "WinKnife")
+        return text.replace("Vorssaint", "Trayloom")
     if rid == "OS":
         return text.replace("macOS", "Windows")
     if rid == "BREW":
@@ -180,7 +180,7 @@ for _l, _s in _PAD.items():
 
 
 def apply(loc, text, used):
-    """Transform a Vorssaint translation into its WinKnife counterpart. Returns None when not reliable."""
+    """Transform a Vorssaint translation into its Trayloom counterpart. Returns None when not reliable."""
     for rid, repl in used:
         g = _generic(rid, text, loc)
         if g is not None:

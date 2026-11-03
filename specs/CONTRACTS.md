@@ -1,12 +1,12 @@
-# WinKnife v2 - Core contracts (API reference for feature agents)
+# Trayloom v2 - Core contracts (API reference for feature agents)
 
 Written by the shell agent (R1). This file is the exact public API you build against. Trust the source over this
-file when they disagree (`src/WinKnife.Core`), and report the mismatch. Rules that did not change from
+file when they disagree (`src/Trayloom.Core`), and report the mismatch. Rules that did not change from
 `PHASE2_RULES.md`: edit only your own project, build only your project with `-p:BuildProjectReferences=false`, GPL header
 in every file, never the Vorssaint name/logo, `Stop()` must fully undo side effects.
 
-Everything here lives in `WinKnife.Core` (namespace `WinKnife.Core`, UI in `WinKnife.Core.Ui`). Feature projects
-reference only Core. Contributions are discovered by reflection in assemblies named `WinKnife.Features.*`
+Everything here lives in `Trayloom.Core` (namespace `Trayloom.Core`, UI in `Trayloom.Core.Ui`). Feature projects
+reference only Core. Contributions are discovered by reflection in assemblies named `Trayloom.Features.*`
 (parameterless public constructor, non-abstract class, implements one or more provider interfaces).
 
 ---------------------------------------------------------------------------------------------------------------------
@@ -302,7 +302,7 @@ itself decides how to render when `notch` is uninstalled (extensions need it).
 
 ---------------------------------------------------------------------------------------------------------------------
 
-## 6. Visual system - `WinKnife.Core.Ui`
+## 6. Visual system - `Trayloom.Core.Ui`
 
 Never hard-code colours; use theme keys with `SetResourceReference` / `UiKit.Themed` so light/dark and the app's Appearance override work.
 `ThemeKeys`: `PanelBase, CardFill, CardBorder, ControlFill, TileFill, Track, Divider, RowHover, TextPrimary, TextSecondary, TextTertiary, TabIdle,
@@ -323,7 +323,7 @@ Fonts: `UiKit.TextFont` (Segoe UI Variable Text), `UiKit.IconFont` (Segoe Fluent
 | `PanelCard`, `PanelRowGroup.Add(row)`, `PanelActionRow`, `PanelToggleRow`, `PanelButtons.Mini`, `SectionTitleRow` | tray panel |
 | `UsageBar(value 0..1, fillKey)`, `Sparkline(lineKey, height).SetValues(values, ceiling)` | graphs |
 | `HotkeyRecorder` | shortcut field (width 108-150; themed; `Hotkey` / `HotkeyChanged`) |
-| `BrandMark.Create(width)` / `BrandMark.Render(...)` | the WinKnife mark |
+| `BrandMark.Create(width)` / `BrandMark.Render(...)` | the Trayloom mark |
 | `SettingsViewBuilder` (v1 builder) still works; each `Add*` is now one `SettingsCard` with a `SettingsRow` | legacy settings views |
 
 The old single-row card was renamed `LegacySettingsCard` (3 usages updated). Typography (DIP): row title 13, caption 11.5, panel row title 12.5,
@@ -352,8 +352,8 @@ panel caption 10.5, section title 10.5 semibold uppercase.
 
 ## 9. Misc facts
 
-* Settings file: `%APPDATA%\WinKnife\settings.json` (`WINKNIFE_DATA` overrides the folder). Flat keys live in scope `_app`; v1 scopes are unchanged.
+* Settings file: `%APPDATA%\Trayloom\settings.json` (`TRAYLOOM_DATA` overrides the folder). Flat keys live in scope `_app`; v1 scopes are unchanged.
 * First run (`hasOnboarded` false, no step): Essentials bundle only, then onboarding. Existing v1 installs are migrated once (`settingsVersion` = 2):
   the old `installed` list becomes `featureAvailable.*`, `hasOnboarded` = true.
-* Dev flags for screenshots: `WinKnife.exe --open-settings <page#anchor>`, `--open-panel [tab]`, `--quit`, `--relaunch <pid>`.
+* Dev flags for screenshots: `Trayloom.exe --open-settings <page#anchor>`, `--open-panel [tab]`, `--quit`, `--relaunch <pid>`.
 * Tray Quit / restart always stops every feature first (`FeatureRegistry.StopAll`).

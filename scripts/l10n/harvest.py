@@ -12,7 +12,7 @@ import json, re, sys, os, collections
 
 SRC = r"E:\REA TEST 1\vorssaint-mac\Sources\Vorssaint"
 OUT = os.path.dirname(os.path.abspath(__file__))
-LANGS = {  # swift member -> locale tag used by WinKnife (Vorssaint raw value)
+LANGS = {  # swift member -> locale tag used by Trayloom (Vorssaint raw value)
     "enUS": "en-US", "ptBR": "pt-BR", "tr": "tr", "ru": "ru", "es": "es", "sk": "sk", "de": "de",
     "fr": "fr", "it": "it", "ja": "ja", "ko": "ko", "uk": "uk", "zhHans": "zh-Hans", "zhTW": "zh-TW", "zhHK": "zh-HK",
 }

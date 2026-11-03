@@ -1,13 +1,13 @@
-"""Match WinKnife literals to Vorssaint English entries, allowing platform-noun rules.
+"""Match Trayloom literals to Vorssaint English entries, allowing platform-noun rules.
 
-Rules transform the Vorssaint English into WinKnife English. Each rule has an id used later to transform
+Rules transform the Vorssaint English into Trayloom English. Each rule has an id used later to transform
 the translations per language (glossary.py).
 """
 import json, re, itertools, collections
 
 # (rule id, regex, replacement) applied on the English source. 'BAR' has several target spellings.
 RULES = [
-    ("APP", r"Vorssaint", "WinKnife"),
+    ("APP", r"Vorssaint", "Trayloom"),
     ("OS", r"macOS", "Windows"),
     ("MAC", r"\bMac(?=s?\b|’s|'s)", "PC"),
     ("BREW", r"Homebrew", "winget"),

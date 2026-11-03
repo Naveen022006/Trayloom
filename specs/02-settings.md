@@ -3,7 +3,7 @@
 Source of truth: `vorssaint-mac/Sources/Vorssaint` (`UI/Settings/*`, `Core/FeatureCatalog.swift`,
 `Core/FeaturePresets.swift`, `Core/FeatureHubStrings.swift`, `App/FeatureRuntime.swift`,
 `App/AppDelegate.swift`, `UI/Onboarding/*`). Reference images: `docs/assets/readme/features-hub.png`,
-`permissions.png`. English strings are verbatim; "Vorssaint" is written **WinKnife**.
+`permissions.png`. English strings are verbatim; "Vorssaint" is written **Trayloom**.
 
 This file is the **index + core**. The per-page detail is split into sibling files, each following
 SPEC_RULES (Layout / Strings / Settings / Behaviour / Windows mapping / Gap):
@@ -25,7 +25,7 @@ behaviour, and the macOS-only adaptation list.
 ## 1. Settings window chrome
 
 ### 1.1 Layout
-- Native window titled **"WinKnife Settings"** (`settingsTitle`). Style: titled, closable, minimizable,
+- Native window titled **"Trayloom Settings"** (`settingsTitle`). Style: titled, closable, minimizable,
   resizable. Not restorable, does not hide on deactivate, `isReleasedWhenClosed=false` (the window object
   is kept; closing only hides it; the last page stays selected). The tray panel is **not** closed when Settings
   opens (it stays beside it as a live preview).
@@ -98,14 +98,14 @@ the first layout turn. Reduce-motion: jump without animation.
 - Windows: WPF/WinUI `Border` CornerRadius 16, theme brush `CardBackgroundFillColorDefaultBrush`-like at 35% alpha.
 
 ### 1.6 Windows mapping (chrome)
-- Window: WinUI 3 / WPF window with Mica backdrop, caption title "WinKnife Settings", NavigationView-like left pane
+- Window: WinUI 3 / WPF window with Mica backdrop, caption title "Trayloom Settings", NavigationView-like left pane
   (use a custom list; a stock `NavigationView` can't do collapsible headers + search-result groups). Persist size/pos.
 - Search: `AutoSuggestBox`-style inline search replacing the list (not a popup).
 - History: own back/forward stack; XButton1/XButton2 via window message `WM_XBUTTONUP` / `WM_APPCOMMAND` (APPCOMMAND_BROWSER_BACKWARD/FORWARD).
 - Highlight pulse: animated brush on the section container.
 
-### 1.7 Gap vs WinKnife
-`FeaturesWindow.xaml` is a 1000x660 two-pane window titled "WinKnife - Features": left 340 px grouped list + search ("Search features"),
+### 1.7 Gap vs Trayloom
+`FeaturesWindow.xaml` is a 1000x660 two-pane window titled "Trayloom - Features": left 340 px grouped list + search ("Search features"),
 right pane with feature name/description/Install button and the feature's own `CreateSettingsView()`. There is **no** sidebar of
 settings pages, no category sections, no page-level search index/keywords, no router/history/back-forward, no section highlight, no
 General/Features(hub with tabs)/Energy/Monitor/etc. pages, no persisted window size, no settings card design system beyond `SettingsCard.cs`.
@@ -149,7 +149,7 @@ Final order (English titles; icon = SF Symbol -> suggested Segoe Fluent glyph, `
 - Keep awake `moon.zzz.fill`, Displays `display.2`, Extra brightness `sun.max.fill`, Bluetooth on sleep `wave.3.right.circle`
   (feature rows of the Energy page; no overview row; Energy page = one tool at a time)
 
-**Windows and Dock** (rename **"Windows and taskbar"** on Windows - WinKnife already uses `WindowsTaskbar`)
+**Windows and Dock** (rename **"Windows and taskbar"** on Windows - Trayloom already uses `WindowsTaskbar`)
 - Window switcher `rectangle.on.rectangle`, Dock Preview `dock.rectangle`, Dock clicks `dock.arrow.down.rectangle`,
   Keep Spaces in a fixed order `rectangle.split.3x1`, Window layout `rectangle.3.group` (page row),
   Maximize windows `arrow.up.left.and.arrow.down.right`, Quit on close `xmark.rectangle`
@@ -300,10 +300,10 @@ Per-feature descriptions are in the catalog table (sec. 4). On Windows replace "
 - Hardware-gated feature (fan control): row greyed + tooltip reason; install refused everywhere (hub, install all, preset, onboarding). Existing installs are never revoked.
 - Page keeps no scroll jump when the restart card appears (scroll anchor correction) - implement by compensating offset when content above the viewport changes height.
 
-### 3.8 Gap vs WinKnife
+### 3.8 Gap vs Trayloom
 `FeaturesWindow` lists features with a simple Install button; no tab control, no Permissions page, no tally/progress bar, no Install all / Uninstall all, no bundles, no restart card, no
 energy/permission metadata, no never-used card, no per-group collapsing/counters, no Dynamic Island "What appears" sub-group, no search-reveal, no confirm dialogs. `FeatureGroup.WindowsTaskbar` etc. exist; the
-registry's `InstalledByDefault` is **false** except 1 feature (should follow sec. 4). WinKnife registry has ids but is missing: install semantics (enable-on-first-install, saved choices kept, island companions),
+registry's `InstalledByDefault` is **false** except 1 feature (should follow sec. 4). Trayloom registry has ids but is missing: install semantics (enable-on-first-install, saved choices kept, island companions),
 restart-to-unload tracking, hardware gate.
 
 ---
@@ -336,7 +336,7 @@ AC app audio (audio capture), Mic, Cam, Cal calendar, AM app management. Def: Y 
 | focusFollowsMouse | Focus follows mouse | Focuses the window under the pointer. | cursorarrow.and.square.on.square.dashed | M | A | N | focusFollowsMouseEnabled |
 | smoothScroll | Smooth scrolling | Smooth, animated mouse scrolling | cursorarrow.motionlines | M | A | Y | smoothScrollEnabled |
 | linearScroll | Linear scrolling | Every notch of the mouse wheel scrolls the same distance, no matter how fast it spins. The trackpad is not affected. | arrow.up.and.down.text.horizontal | M | A | N | linearScrollEnabled |
-| mouseAcceleration | Disable mouse acceleration | Removes pointer acceleration for connected mice. Your previous setting returns when this is turned off or WinKnife quits. | cursorarrow.rays | I | - | Y | mouseAccelerationDisabled |
+| mouseAcceleration | Disable mouse acceleration | Removes pointer acceleration for connected mice. Your previous setting returns when this is turned off or Trayloom quits. | cursorarrow.rays | I | - | Y | mouseAccelerationDisabled |
 | mouseNavigation | Side buttons | Side mouse buttons go back and forward | arrow.left.arrow.right | M | A | Y | mouseNavigationEnabled |
 | mouseButtonShortcuts | Mouse button shortcuts | Extra buttons and side-wheel directions press a key combination you choose. | button.programmable | M | A | Y | mouseButtonShortcutsEnabled / mouseSpacesGestureEnabled |
 | middleClick | Trackpad middle click | Three finger click acts as a middle click | hand.tap | M | A | Y | middleClickEnabled |
@@ -439,7 +439,7 @@ First install of `notch` also installs the extensions except Companion and AI Ag
 - `initialEnableKeys` on first install (only if none of the feature's enable keys were ever saved): first key of `enabledKeys` (windowLayout: shortcuts; audioPriority: both; notchLiveEqualizer: none).
 
 ### Windows mapping & gap
-WinKnife `IFeature` ids already exist for ~55 of these (see `src/**`), with different ids in places: `app-switcher` (= switcher), `volume-mixer`, `output-switcher`, `displays` (= brightness), `clean-url` (= urlCleaner), `side-buttons` (= mouseNavigation), `island-*` (= notch*), `window-layout`,`keep-awake`, `monitor-*` ... Not present (no feature class): dock-preview/dock-click, window-maximizer, auto-quit, spaces-order, scroll-zoom, middle-click (trackpad), finder cut/paste/rename, disk-image-installer, music-block, extra-brightness, bluetooth-sleep, quit-apps, homebrew, notch-mascot, notch-watch, notch-agents, notch-notifications(listener), notch-lyrics/queue/live-equalizer, notch-accessories, fan-control. Metadata missing everywhere: hub title/desc exactness, SF/glyph, energy profile, permission list, installedByDefault per this table, enable keys, beta/experimental flags, hardware gate. Add these as fields on `IFeature` (`Symbol`, `Energy`, `Permissions`, `IsBeta`, `HardwareUnsupportedReason`, `EnabledKeys`, `InitialEnableKeys`).
+Trayloom `IFeature` ids already exist for ~55 of these (see `src/**`), with different ids in places: `app-switcher` (= switcher), `volume-mixer`, `output-switcher`, `displays` (= brightness), `clean-url` (= urlCleaner), `side-buttons` (= mouseNavigation), `island-*` (= notch*), `window-layout`,`keep-awake`, `monitor-*` ... Not present (no feature class): dock-preview/dock-click, window-maximizer, auto-quit, spaces-order, scroll-zoom, middle-click (trackpad), finder cut/paste/rename, disk-image-installer, music-block, extra-brightness, bluetooth-sleep, quit-apps, homebrew, notch-mascot, notch-watch, notch-agents, notch-notifications(listener), notch-lyrics/queue/live-equalizer, notch-accessories, fan-control. Metadata missing everywhere: hub title/desc exactness, SF/glyph, energy profile, permission list, installedByDefault per this table, enable keys, beta/experimental flags, hardware gate. Add these as fields on `IFeature` (`Symbol`, `Energy`, `Permissions`, `IsBeta`, `HardwareUnsupportedReason`, `EnabledKeys`, `InitialEnableKeys`).
 
 ---
 
@@ -458,7 +458,7 @@ WinKnife `IFeature` ids already exist for ~55 of these (see `src/**`), with diff
 - Unsupported hardware: `hardwareUnsupportedReason` (only fanControl -> "No fans found."-style string `fanControl.noFans`); `installBlockedReason = isAvailable ? nil : hardwareUnsupportedReason`.
 
 ### 5.2 Windows mapping
-`FeatureRegistry.SetInstalled` already has start/stop; add: first-install enable-key logic (consult the *persisted* settings file, not defaults, to know if a key was ever saved), `installableCount`, `needsRestartToUnload` (+ restart helper: spawn `cmd /c` or a small `WinKnife.exe --relaunch <pid>` that waits for the PID then starts the exe; guard 20 s), `HardwareUnsupportedReason`, bulk install/uninstall, preset apply, revision event for UI.
+`FeatureRegistry.SetInstalled` already has start/stop; add: first-install enable-key logic (consult the *persisted* settings file, not defaults, to know if a key was ever saved), `installableCount`, `needsRestartToUnload` (+ restart helper: spawn `cmd /c` or a small `Trayloom.exe --relaunch <pid>` that waits for the PID then starts the exe; guard 20 s), `HardwareUnsupportedReason`, bulk install/uninstall, preset apply, revision event for UI.
 
 ### 5.3 Presets (`FeaturePreset`)
 - Essentials: mixer, keepAwake, monitorCPU, monitorGPU, monitorMemory, monitorNetwork, monitorDisk, monitorPower; enable keys none.
@@ -525,7 +525,7 @@ Plus two Windows-only rows worth adding at the end: **"Run at startup"** (status
 Used-by lines keep working unchanged (feature->permission mapping above, with Windows-specific subsets: e.g. switcher uses Accessibility + Screen Recording (thumbnails); mixer uses App audio).
 
 ### 6.4 Gap
-WinKnife has no Permissions page or capability model. Add `Permissions` service (capability probes above), `PermissionsPortalSections` control, and per-feature `Permissions` metadata.
+Trayloom has no Permissions page or capability model. Add `Permissions` service (capability probes above), `PermissionsPortalSections` control, and per-feature `Permissions` metadata.
 
 ---
 
@@ -534,7 +534,7 @@ WinKnife has no Permissions page or capability model. Add `Permissions` service 
 Window: fixed **540 x 600**, non-resizable; content in a scroll view above a footer (Divider + nav bar). Shown once at first launch (`hasOnboarded == false`; skipped for one launch if the previous start never finished) and from About > "Review introduction". Resume point `onboardingStep` (int); `hasOnboarded` is set when the user finishes. Menu-bar permission guide overlay is suppressed during onboarding.
 
 **Steps (4):** welcome -> purpose -> permissions -> done.
-Footer: leading **Back** (disabled on step 0); centre **page dots** (7 px capsules, current one 18 px wide accent, others primary 15%, spring animation); trailing large prominent default button **"Continue"** (last step: **"Open WinKnife"**, which resets step to 0 and finishes).
+Footer: leading **Back** (disabled on step 0); centre **page dots** (7 px capsules, current one 18 px wide accent, others primary 15%, spring animation); trailing large prominent default button **"Continue"** (last step: **"Open Trayloom"**, which resets step to 0 and finishes).
 
 1. **Welcome** - 220 px hero with the brand gradient (`spaceGradient`), logo (130 wide), app name 26 bold white, subtitle 12 white 85%: **"A discreet menu bar utility that makes everyday macOS more practical."** (Windows: "...everyday Windows more practical."). Below (padding 24): language `Picker` (menu style, label "Language", all 15 languages in their own names), then three feature rows (30x30 gradient tile radius 8 with white 13pt glyph; title 13 semibold; text 11.5 secondary):
    - `bolt.fill` **"Energy under control"** - "Keep the Mac awake for as long as you want, even with the lid closed."
@@ -542,10 +542,10 @@ Footer: leading **Back** (disabled on step 0); centre **page dots** (7 px capsul
    - `rectangle.on.rectangle` **"Mouse and windows, your way"** - "Reversed mouse scrolling and a window switcher with thumbnails."
 2. **Purpose** - header icon `sparkles.rectangle.stack`, title **"What brought you here?"**, subtitle **"Choose a ready setup or select exactly what you want to use."**; three **bundle cards** (padding h14 v10, radius 10, selected: accent 12% fill + 45% accent stroke + `checkmark.circle.fill`; unselected primary 5%) for the presets; the default selection is **Essentials** with its feature set pre-selected on a fresh run; then a row **"FEATURES"** (11 bold secondary, tracking 1) + "**N of M features installed**" (caption tertiary) and, per group (group caption headings incl. "Dynamic Island"), one **feature card per feature** (HStack: 32x32 tile - selected: gradient+white glyph, unselected: secondary 16% + secondary glyph; title 12.5 semibold; description caption 2 lines; trailing `checkmark.circle.fill`/`circle` 16pt). Selecting a card clears the preset; picking `notch` also selects its initial extension group, deselecting it deselects all extensions; hardware-unsupported cards disabled 40% + tooltip. Footer note: **"You can add or remove features later in Settings."**. Pressing Continue **applies the selection** via `replaceAvailable(with:enabling: preset.enableKeys)`.
 3. **Permissions** - header icon `key.horizontal.fill`, title **"Permissions"**, subtitle = permissionsIntro. Card **"Permissions for your choices"** (headline) listing only Accessibility and/or Screen Recording needed by the selected features (`onboardingPermissions`): each = a `PermissionRow` (icon `checkmark.circle.fill` green / `exclamationmark.circle.fill` orange, name, status text "Granted"/"Not granted", buttons **"Grant access"** and **"Open System Settings…"** when missing) + explainer + "Used by …" (sorted with localized compare). If none: green-check label **"You do not need to grant any permission to finish setup."**. Second card: disclosure **"Other permissions"** with caption **"Optional. Grant these now or later, when a feature needs them."** that expands to the full portal rows of the remaining permissions. Footer caption: **"macOS may ask to reopen the app after granting."**
-4. **Done** - 300 px hero gradient, logo 150, **"All set!"** (26 bold), **"WinKnife is already looking after your Mac."**; below: icon `menubar.arrow.up.rectangle` 26pt + hint **"Look for the black hole in the menu bar, at the top right of the screen."** (Windows: "Look for the WinKnife icon in the system tray (click the ^ if it's hidden).").
+4. **Done** - 300 px hero gradient, logo 150, **"All set!"** (26 bold), **"Trayloom is already looking after your Mac."**; below: icon `menubar.arrow.up.rectangle` 26pt + hint **"Look for the black hole in the menu bar, at the top right of the screen."** (Windows: "Look for the Trayloom icon in the system tray (click the ^ if it's hidden).").
 Other onboarding-family windows (What's New, update highlights, support intro) are specified in `02e`.
 
-**Windows mapping:** a 540x600 WPF/WinUI window with Mica; permission step becomes "Capabilities" with the Windows rows from 6.3 (only Administrator access / Microphone etc. relevant ones); remove the restart note (or: "Some features need WinKnife to run as administrator"). **Gap:** WinKnife has no onboarding; `App.xaml.cs` sets `firstRun = !File.Exists(SettingsFile)` only.
+**Windows mapping:** a 540x600 WPF/WinUI window with Mica; permission step becomes "Capabilities" with the Windows rows from 6.3 (only Administrator access / Microphone etc. relevant ones); remove the restart note (or: "Some features need Trayloom to run as administrator"). **Gap:** Trayloom has no onboarding; `App.xaml.cs` sets `firstRun = !File.Exists(SettingsFile)` only.
 
 ---
 
@@ -564,26 +564,26 @@ Other onboarding-family windows (What's New, update highlights, support intro) a
 10. Next run-loop turn (so the tray icon is visible first): if `!hasOnboarded` -> onboarding; else queue Brightness-update prompt and What's New for `lastUpdateIntroVersion`, store `featuresOnboardingVersion` + `lastUpdateIntroVersion`, recover tray icon after update, present update intros.
 
 ### 8.2 Tray / status item context menu (right click)
-In order, each only when applicable: **Enable keep awake / Disable keep awake** (Keep awake installed); **Activate for…** submenu (only when keep awake is off): **15 minutes, 30 minutes, 1 hour, 2 hours, 4 hours, 8 hours, Indefinitely**; **Cleaning Mode** (installed); separator (if any of the above); **Settings…** (Ctrl+, / ⌘,); **About WinKnife**; **Uninstall an app…** (Uninstaller installed); **Open shelf** (Shelf installed AND `shelfEnabled`); **Check for updates…**; separator; **Quit WinKnife** (⌘Q -> Alt+F4 / Ctrl+Q).
-Main menu (App/Edit/Go/Window) has no Windows counterpart (skip) except enabling Ctrl+C/V/X/A/Z in text boxes and Ctrl+, to open Settings inside WinKnife windows, Esc to close dialogs.
+In order, each only when applicable: **Enable keep awake / Disable keep awake** (Keep awake installed); **Activate for…** submenu (only when keep awake is off): **15 minutes, 30 minutes, 1 hour, 2 hours, 4 hours, 8 hours, Indefinitely**; **Cleaning Mode** (installed); separator (if any of the above); **Settings…** (Ctrl+, / ⌘,); **About Trayloom**; **Uninstall an app…** (Uninstaller installed); **Open shelf** (Shelf installed AND `shelfEnabled`); **Check for updates…**; separator; **Quit Trayloom** (⌘Q -> Alt+F4 / Ctrl+Q).
+Main menu (App/Edit/Go/Window) has no Windows counterpart (skip) except enabling Ctrl+C/V/X/A/Z in text boxes and Ctrl+, to open Settings inside Trayloom windows, Esc to close dialogs.
 About = standard about panel with the description credit (`aboutDescription`).
 
 ### 8.3 Reopen (second launch / double-click while running)
-`applicationShouldHandleReopen`: ignore reopen requests not initiated by a person (Siri/Shortcuts); if a What's New/support intro window exists, focus it; if any window is visible do nothing; otherwise **recover**: if the tray icon is missing/off-screen and not hidden by choice, recreate it; next turn, pop the panel if the icon is on screen else open Settings - the user must **always** be able to get back in. Windows: single-instance mutex (`Local\WinKnife.SingleInstance`, already present) -> second instance signals the first (named event / `WM_COPYDATA`) to run this recovery; recreate the tray icon on `TaskbarCreated` message.
+`applicationShouldHandleReopen`: ignore reopen requests not initiated by a person (Siri/Shortcuts); if a What's New/support intro window exists, focus it; if any window is visible do nothing; otherwise **recover**: if the tray icon is missing/off-screen and not hidden by choice, recreate it; next turn, pop the panel if the icon is on screen else open Settings - the user must **always** be able to get back in. Windows: single-instance mutex (`Local\Trayloom.SingleInstance`, already present) -> second instance signals the first (named event / `WM_COPYDATA`) to run this recovery; recreate the tray icon on `TaskbarCreated` message.
 
 ### 8.4 Termination
 On quit (`applicationWillTerminate`): stop/suspend every service so nothing global stays changed - island, URL cleaner, focus-follows-mouse, maximizer, window layout, debounce services, text snippets, Super key mapping, switcher hotkeys, mouse-button shortcuts, middle click, scroll, smooth scroll, mouse acceleration (restore previous), navigation, Dock preview, sound output switcher, precise volume roller, app volume mixer, fan control, preferred microphone override, scratchpad flush, **restore any OS shortcut taken over**, clipboard history flush (async persistence must land before the process dies), keep awake deactivated, brightness displays restored, extra brightness stopped, network monitoring stopped; restore any borrowed input source (terminate-later while restoring). Windows: `Application.Exit` -> `registry.StopAll()` (already) + restore mouse acceleration (`SPI_SETMOUSE`), sticky/filter keys, execution state, display brightness/gamma, disabled keys remap (Scancode Map registry if Super key uses it - prefer hook-only).
 
 ### 8.5 Other global behaviours
 - **Appearance** (`appAppearance`: system/light/dark; applied app-wide) and **language** (15 languages; English default; live switch re-renders all pages and the menu).
-- **Launch at login** (General page): registered with the OS; startup repair; pending/approval state shown. Windows: `HKCU\...\Run` or `StartupTask`; WinKnife has `AutoStart.cs`.
+- **Launch at login** (General page): registered with the OS; startup repair; pending/approval state shown. Windows: `HKCU\...\Run` or `StartupTask`; Trayloom has `AutoStart.cs`.
 - **Global keep-awake shortcut** (`hotkeyEnabled`, default true).
 - **Settings window size** persisted (`settingsWindowWidth/Height`).
 - Settings **backup/restore** (`Core/BackupStrings.swift`, `SettingsBackupSupport.swift`) lives in Advanced (see 02a).
 - **Secure input** warning rows (typing features blocked while a password field holds secure input) are macOS-only: omit on Windows, but show an equivalent note when the foreground window is elevated (hooks ignored).
 
 ### 8.6 Gap
-`App.xaml.cs`: single-instance mutex, tray, theme manager, auto start, registry start - present. Missing: startup-watch crash guard, second-instance recovery of the tray icon / settings, relaunch helper, first-run Essentials set, onboarding/what's-new flow, full tray context menu (WinKnife's tray only has "Start with Windows" + basics), right-click keep-awake toggle option, update checks, appearance/language, permission observers, orderly termination restores.
+`App.xaml.cs`: single-instance mutex, tray, theme manager, auto start, registry start - present. Missing: startup-watch crash guard, second-instance recovery of the tray icon / settings, relaunch helper, first-run Essentials set, onboarding/what's-new flow, full tray context menu (Trayloom's tray only has "Start with Windows" + basics), right-click keep-awake toggle option, update checks, appearance/language, permission observers, orderly termination restores.
 
 ---
 
@@ -592,7 +592,7 @@ On quit (`applicationWillTerminate`): stop/suspend every service so nothing glob
 | Feature | macOS concept | Windows adaptation / verdict |
 |---|---|---|
 | switcher | Cmd+Tab replacement w/ thumbnails | Alt+Tab replacement: LL keyboard hook swallowing Alt+Tab, DWM thumbnails; works (Win key interplay). Keep. |
-| dockPreview / dockClick | Dock hover previews / click behaviours | **Taskbar preview / click**: UIA on `Shell_TrayWnd` buttons + DWM thumbnails; rename titles on Windows: "Taskbar Preview", "Taskbar clicks" (WinKnife already uses `WindowsTaskbar` group). |
+| dockPreview / dockClick | Dock hover previews / click behaviours | **Taskbar preview / click**: UIA on `Shell_TrayWnd` buttons + DWM thumbnails; rename titles on Windows: "Taskbar Preview", "Taskbar clicks" (Trayloom already uses `WindowsTaskbar` group). |
 | windowMaximizer | Green button maximizes instead of full-screen | No full-screen green button. **Unsupported -> hide**, or reinterpret as "Maximize button maximizes to a borderless/work-area fit" - recommended: hide (hardware-gate "Not applicable on Windows"). |
 | windowLayout | Edge snap, shortcuts, drag gestures | Fully supported (move/resize via `SetWindowPos`; edge snap via hook; coordinate with built-in Snap Layouts - optionally disable them). Stage Manager card: omit. |
 | autoQuit | Quit apps when last window closes | Supported via `SetWinEventHook(EVENT_OBJECT_DESTROY)` + process window count; send `WM_CLOSE`; keep exceptions list; skip tray-resident apps by default. |

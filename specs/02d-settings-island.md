@@ -2,7 +2,7 @@
 
 Source of truth: `vorssaint-mac/Sources/Vorssaint/UI/Settings/{NotchSettings, NotchSettingsTabRow, NotchLayoutEditor, NotchContentEditor, NotchEditorItem, NotchAgentsSettings, ClaudeAccountSettings, CodexAccountsSettings, NotchMascotSettings, NotchCalendarSelection}.swift`, model types in `Services/Notch/*` and `Services/AgentUsage/*`, strings in `Core/Notch*Strings.swift`, `Core/ClaudeAccountStrings.swift`, `Core/CodexAccountStrings.swift`, defaults in `Core/Defaults.swift`.
 The runtime island UI (closed pill, pages, banners) is specified elsewhere; this file specifies only the SETTINGS pages and their editors, plus every setting the pages write.
-"Vorssaint" is written "WinKnife" everywhere. macOS-only wording is given verbatim and flagged `[mac-only]` with the Windows wording to use.
+"Vorssaint" is written "Trayloom" everywhere. macOS-only wording is given verbatim and flagged `[mac-only]` with the Windows wording to use.
 
 ---------------------------------------------------------------------------------------------------
 
@@ -101,8 +101,8 @@ The runtime island UI (closed pill, pages, banners) is specified elsewhere; this
 ### 1.4 Windows mapping
 Settings host = WPF page inside the existing Settings window under the Dynamic Island group. Master switch = `ToggleSwitch` style; tab row = a custom segmented `ListBox`/`TabControl` with an overflow `ComboBox` fallback when the width (measure) is smaller than the segmented width + button; the open button calls `IslandWindow.Expand()`.
 
-### 1.5 Gap vs WinKnife
-WinKnife has a single feature `island` whose generic settings view (SettingsViewBuilder) shows 6 flat options, no master switch inside the page (install/uninstall toggles the whole feature), no tabs, no open button, and separate features `island-timer`, `island-calendar`, `island-downloads`, `island-gestures` with their own flat settings pages. Everything in this file is missing and requires new custom controls (tile choice, toggle card, checkbox list, popover, preview canvas, segmented tab row).
+### 1.5 Gap vs Trayloom
+Trayloom has a single feature `island` whose generic settings view (SettingsViewBuilder) shows 6 flat options, no master switch inside the page (install/uninstall toggles the whole feature), no tabs, no open button, and separate features `island-timer`, `island-calendar`, `island-downloads`, `island-gestures` with their own flat settings pages. Everything in this file is missing and requires new custom controls (tile choice, toggle card, checkbox list, popover, preview canvas, segmented tab row).
 
 ---------------------------------------------------------------------------------------------------
 
@@ -145,13 +145,13 @@ WinKnife has a single feature `island` whose generic settings view (SettingsView
 
 ### 2.4 Windows mapping
 * Windows has NO camera housing, so `hasNotchedDisplay` is always false: **card 6 "Notch fit" and its 3 keys are never shown** (keep keys registered at 0 for backup compat). `hasDisplayWithoutNotch` is always true: cards 3 and 4 are always shown (keep the verbatim title "Displays without a notch"; optional deviation: title it "Shape" - not recommended for parity). The unreached-message/"Show on all displays" block never appears (every display is notchless) except when `display=builtIn` with the lid closed - keep the logic with Windows' own `reachesDisplay` (see 4.5 of display options).
-* Silhouette "Capsule" = window with all corners rounded (radius = height/2), floating `topGap + capsuleFitDrop` px below the top edge of the monitor work/bounds area; "Notch" = flush with the top edge, flat top, rounded bottom shoulders (the current WinKnife `BottomRadius` shape).
-* "Distance from top" replaces/merges the existing WinKnife `topGap` (0..24) -> `notchCapsuleFitDrop` 0..20.
+* Silhouette "Capsule" = window with all corners rounded (radius = height/2), floating `topGap + capsuleFitDrop` px below the top edge of the monitor work/bounds area; "Notch" = flush with the top edge, flat top, rounded bottom shoulders (the current Trayloom `BottomRadius` shape).
+* "Distance from top" replaces/merges the existing Trayloom `topGap` (0..24) -> `notchCapsuleFitDrop` 0..20.
 * Translucent background: apply Acrylic via `SetWindowCompositionAttribute(ACCENT_ENABLE_ACRYLICBLURBEHIND)` or Windows 11 `DWMWA_SYSTEMBACKDROP_TYPE = DWMSBT_TRANSIENTWINDOW` on the layered island window; with "Transparency effects" off in Windows (`HKCU\...\Themes\Personalize\EnableTransparency=0`) behave like Reduce Transparency = solid black. Liquid Glass has no Windows equivalent: `liquidGlassIsOn` is always false.
 * Size values are DIPs (WPF) - same numbers; the window is laid out at real size and scaled in previews exactly like the layout editor (see 7).
 * Island outline = `Border` stroke 2 DIP white 65%.
 
-### 2.5 Gap vs WinKnife
+### 2.5 Gap vs Trayloom
 Has: `topGap` slider (0-24, key `topGap`), fixed 480x292 expanded size (`ExpandedWidth/Height`), fixed 116x34 idle pill. Lacks: Size presets/custom/dimension sliders, translucent background, silhouette choice + capsule fit, outline, the whole layout editor with quick-access buttons.
 
 ---------------------------------------------------------------------------------------------------
@@ -267,10 +267,10 @@ Options per module (all inside one SettingsCard; `switchRow(symbol,title,caption
 | `notchControlOrder` | comma-separated order of control items (levels and music are excluded from the shortcut grid but kept valid). Default "". |
 
 ### 3.5 Windows mapping (Content tab)
-Two- or three-column Grid with a `ListBox` for sections (drag/drop via `DragDrop.DoDragDrop` or a pointer-capture reorder, see 8), a `ScrollViewer` for the detail and a preview host that instantiates the REAL section controls (`IslandSection.Create`) inside a scaled `Viewbox` with `IsHitTestVisible=false`. Tile glyphs = Segoe Fluent Icons. Module availability maps to WinKnife features (mixer=`volume-mixer`, clipboard=`clipboard-history`, files=`shelf`, tools=quick panel, calendar=`island-calendar`, timer=`island-timer`, downloads=`island-downloads`, ...). Options that depend on macOS-only subsystems: Accessibility rows (drop), screen-recording permission (drop), "macOS 14.4" caption (reword). See section 13 for each API.
+Two- or three-column Grid with a `ListBox` for sections (drag/drop via `DragDrop.DoDragDrop` or a pointer-capture reorder, see 8), a `ScrollViewer` for the detail and a preview host that instantiates the REAL section controls (`IslandSection.Create`) inside a scaled `Viewbox` with `IsHitTestVisible=false`. Tile glyphs = Segoe Fluent Icons. Module availability maps to Trayloom features (mixer=`volume-mixer`, clipboard=`clipboard-history`, files=`shelf`, tools=quick panel, calendar=`island-calendar`, timer=`island-timer`, downloads=`island-downloads`, ...). Options that depend on macOS-only subsystems: Accessibility rows (drop), screen-recording permission (drop), "macOS 14.4" caption (reword). See section 13 for each API.
 
-### 3.6 Gap vs WinKnife
-WinKnife registers music (always), timer, calendar, downloads as sections of the expanded panel via `IslandHub.RegisterSection` with fixed `Order`; there is no user ordering, no hide/show, no preview, no per-section options page (only flat feature settings). Missing sections: Controls, Mixer, Clipboard, Captures, Files, System, Tools, Notifications, Camera, Scratchpad, AI Agents, Watch.
+### 3.6 Gap vs Trayloom
+Trayloom registers music (always), timer, calendar, downloads as sections of the expanded panel via `IslandHub.RegisterSection` with fixed `Order`; there is no user ordering, no hide/show, no preview, no per-section options page (only flat feature settings). Missing sections: Controls, Mixer, Clipboard, Captures, Files, System, Tools, Notifications, Camera, Scratchpad, AI Agents, Watch.
 
 ---------------------------------------------------------------------------------------------------
 
@@ -336,8 +336,8 @@ WinKnife registers music (always), timer, calendar, downloads as sections of the
 * Indicator events: volume = `IAudioEndpointVolume` callbacks (`OnNotify`) for default render endpoint; microphone mute = capture endpoint mute notify; brightness = WMI `WmiMonitorBrightnessEvent` / DDC; keyboard light = not exposed by Windows for most devices -> card hidden unless a keyboard-backlight API is available (`Windows.Devices.Lights.Lamp` with `LampArray` / Dynamic Lighting); battery = `SystemEvents.PowerModeChanged` + `PowerSettingRegisterNotification(GUID_BATTERY_PERCENTAGE_REMAINING)`; accessories = Bluetooth/HID battery (`DeviceInformation` Bluetooth LE GATT Battery service 0x180F, or PnP property `{104EA319-6EE2-4701-BD47-8DDBF425BBE5} 2` for classic BT); clipboard = `AddClipboardFormatListener`; captures = the future screenshot feature; new track = SMTC `MediaPropertiesChanged`; input source = `WM_INPUTLANGCHANGE`/`GetKeyboardLayout(GetWindowThreadProcessId(GetForegroundWindow()))` poll (250 ms) or `InputLanguageChanged`.
 * Lock Screen card: Windows cannot draw above the lock screen (secure desktop owned by LogonUI; no supported overlay). **Hide "Show on the Lock Screen"**; "Lock and unlock sounds" is feasible (`WTSRegisterSessionNotification` -> `WM_WTSSESSION_CHANGE` WTS_SESSION_LOCK/UNLOCK, play `%SystemRoot%\Media\Windows Unlock.wav`/a bundled lock tick). If kept, show a one-row card titled **Lock Screen** with only the sounds row, caption "Play a sound when your PC locks and unlocks." (deviation: "macOS padlock sound" wording replaced).
 
-### 4.6 Gap vs WinKnife
-Nothing of this tab exists. WinKnife's collapsed pill shows now-playing (or a timer/other `CompactInfo`) with a single `compactTitle` toggle; no resting choice, no indicators/notices system beyond `IslandHub.ShowAlert`, no battery tinting.
+### 4.6 Gap vs Trayloom
+Nothing of this tab exists. Trayloom's collapsed pill shows now-playing (or a timer/other `CompactInfo`) with a single `compactTitle` toggle; no resting choice, no indicators/notices system beyond `IslandHub.ShowAlert`, no battery tinting.
 
 ---------------------------------------------------------------------------------------------------
 
@@ -367,7 +367,7 @@ Nothing of this tab exists. WinKnife's collapsed pill shows now-playing (or a ti
    Semantics: automatic = built-in notched display, else any notched display, else main; builtIn = built-in panel only (island hidden while the lid is closed, main display if the machine has no built-in panel); main = main display; pointer = closed island follows the pointer's display; all = closed island on every display (pointer display is the responsive one).
 
 **Card "Where things open"** (`editor.destinations`) - every row is a `SettingsChoiceRow` with segmented **Dynamic Island** | **Separate window** (true = Dynamic Island):
-* `bubble.middle.top` **Open app panel** -> `notchAppPanel` (default **false** = separate window); caption "Choose where clicking the WinKnife menu bar icon opens the app panel, on any display." `[mac-only wording]` Windows: "...clicking the WinKnife tray icon...".
+* `bubble.middle.top` **Open app panel** -> `notchAppPanel` (default **false** = separate window); caption "Choose where clicking the Trayloom menu bar icon opens the app panel, on any display." `[mac-only wording]` Windows: "...clicking the Trayloom tray icon...".
 * Switch `menubar.rectangle` **Hide the menu bar icon** -> `notchHidesMenuBarIcon` (false); caption "Settings and the app panel open from Dynamic Island. The icon returns when the island is off or hidden in full screen, or when an update is ready or the microphone is muted." Windows: **Hide the tray icon** (documented deviation) with the same caption wording using "tray icon".
 * **Tools** (symbol of the Quick panel, `wand.and.rays`) -> `notchQuickPanel` (true), disabled if quickLauncher missing.
 * **Clipboard** (`doc.on.clipboard`) -> `notchClipboardWindow` (true), disabled if clipboardHistory missing.
@@ -404,12 +404,12 @@ Nothing of this tab exists. WinKnife's collapsed pill shows now-playing (or a ti
 * Hidden until hover: set window opacity 0 / `WS_EX_TRANSPARENT` click-through and hover strip of 1-2 px at the top edge (a 0-alpha layered hit-test band) so the pointer can still wake it.
 * Global shortcut: `RegisterHotKey`; Windows default **Ctrl+Alt+Shift+I** is suggested (Win-key combos are reserved) - check the port's hotkey convention; if registration fails show orange caption (Windows wording above).
 * Haptics: `PointerDevice`/`Windows.Devices.Haptics.SimpleHapticsController` is only available on devices with a haptic pen/touchpad; **show the row only when a haptics controller exists** (keep key default true).
-* Full screen detection: reuse `IslandNative.IsFullscreenForeground` (already used for WinKnife `hideInFullscreen`).
+* Full screen detection: reuse `IslandNative.IsFullscreenForeground` (already used for Trayloom `hideInFullscreen`).
 * Display options: Automatic = internal panel if present and active (`DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INTERNAL`/`DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DISPLAYPORT_EMBEDDED`, `EnumDisplayMonitors` + `GetDisplayConfigBufferSizes/QueryDisplayConfig`), else primary monitor; Built-in = internal panel only (hidden when lid closed = internal path inactive); Main = primary (`MONITORINFOF_PRIMARY`); Follow pointer = `MonitorFromPoint(GetCursorPos)` re-evaluated on a 150 ms poll while closed; All = one closed pill window per monitor, the pointer's monitor responsive (extra windows are visual mirrors).
 * Where things open: "Open app panel" = the existing `QuickPanelWindow` flyout anchored under the tray icon vs the island page; "Hide the tray icon" = `NotifyIcon.Visible=false` with the same re-show rules (update ready, mic muted, island off/hidden in full screen).
 * Privacy: `SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)` (Windows 10 2004+) when `notchShowInCaptures` is off.
 
-### 5.4 Gap vs WinKnife
+### 5.4 Gap vs Trayloom
 Has: `trigger` (hover|click, default hover), `monitor` (primary|cursor, default primary), `collapseDelay` (200/450/900/2000 ms choices, default 450), `hideInFullscreen` (default **true**), global actions (toggle, play/pause, next, previous) without default hotkeys, a separate gestures feature (`invert`, `tracks`). Differences: Vorssaint defaults are click-to-open, hideInFullscreen false, close delay 0.18 s slider, 4 opening modes, 5 display modes, per-destination routing, reopening choice, hidden-until-hover, privacy.
 
 ---------------------------------------------------------------------------------------------------
@@ -464,9 +464,9 @@ Reaction gate (runtime): at least 2.5 s between reactions, the same reaction not
 Moods (runtime): idle, happy, wink, love, sleepy, determined, surprised, searching, thinking, confused, alert (Keep awake). Eyes: open, closed, happy, heart, sleepy, wide, squint, determined.
 
 ### 6.3 Windows mapping
-Draw the mascot with WPF vector `Path`/`Ellipse` + `Storyboard`s (no bitmap needed). Pointer-follow eyes use `Mouse.GetPosition`. "Mac unlocked" -> `WTS_SESSION_UNLOCK`. Command Bar in the island needs a Command Bar feature (not in WinKnife yet): until then show the card with the feature switch disabled (SettingsFeatureSwitchRow behaviour). The stage mock menu bar -> draw a Windows 11 taskbar-top slice (just rectangles) or keep the menu bar placeholder for parity.
+Draw the mascot with WPF vector `Path`/`Ellipse` + `Storyboard`s (no bitmap needed). Pointer-follow eyes use `Mouse.GetPosition`. "Mac unlocked" -> `WTS_SESSION_UNLOCK`. Command Bar in the island needs a Command Bar feature (not in Trayloom yet): until then show the card with the feature switch disabled (SettingsFeatureSwitchRow behaviour). The stage mock menu bar -> draw a Windows 11 taskbar-top slice (just rectangles) or keep the menu bar placeholder for parity.
 
-### 6.4 Gap vs WinKnife
+### 6.4 Gap vs Trayloom
 Entire Companion feature absent (no feature, no tab, no settings).
 
 ---------------------------------------------------------------------------------------------------
@@ -511,8 +511,8 @@ Windows storage: store the same JSON as a string in the feature settings store; 
 * Search normalisation = `string.Normalize(FormD)` strip combining marks + `ToLowerInvariant`.
 * Runtime quick-access bubbles in the real island = separate layered click-through windows or part of the island window's transparent margin (the other agent specifies the runtime).
 
-### 7.6 Gap vs WinKnife
-No quick-access button system at all. WinKnife's expanded panel has a header with section tabs (`IslandSection` list) and no side/bottom bubbles; no editor.
+### 7.6 Gap vs Trayloom
+No quick-access button system at all. Trayloom's expanded panel has a header with section tabs (`IslandSection` list) and no side/bottom bubbles; no editor.
 
 ---------------------------------------------------------------------------------------------------
 
@@ -538,7 +538,7 @@ Windows: implement with a small attached behavior (`ReorderBehavior`) using `Dra
 * Countdown rules: start countdown shows within `lead` minutes before a timed event begins; time-left shows during the final hour (60 min) of an event in progress and only once begun; the island week view reads today..+7 days (month grid reads 42 days, extended to cover the 7-day window for the current month).
 * Windows mapping: `AppointmentManager.RequestStoreAsync(AppointmentStoreAccessType.AllCalendarsReadOnly)` -> `store.FindAppointmentCalendarsAsync(FindAppointmentCalendarsOptions.IncludeHidden)` gives `AppointmentCalendar { LocalId, DisplayName, DisplayColor, UserDataAccountId }`; group by account: `UserDataAccountManager.RequestStoreAsync(UserDataAccountStoreAccessType.AllAccountsReadOnly)` -> `GetAccountAsync(UserDataAccountId).UserDisplayName` (fallback "Other"/"Local"); exclusions stored by `LocalId`; events via `FindAppointmentsAsync(rangeStart, span, new FindAppointmentsOptions{ CalendarIds=[allowed...] })` (do not pass an empty list); countdown key = `LocalId` (+ `@<ticks of OriginalStartTime>` for recurring). Refresh: no EKEventStoreChanged equivalent -> subscribe to `AppointmentStore.StoreChanged` (Windows 10 1703+ on `AppointmentStoreChangeTracker`) or poll every 60 s while the settings page/island is visible.
 * Permission block on Windows: the Windows Calendar privacy gate is per-user "Let desktop apps access your calendar" under Settings > Privacy & security > Calendar (`ms-settings:privacy-calendar`). Button **Allow Calendar Access** triggers `RequestStoreAsync` (disabled while the request is running; on failure show "Could not request calendar access. Please try again."); **Open System Settings** -> `Launcher.LaunchUriAsync("ms-settings:privacy-calendar")` with the label "Open Windows Settings" (documented deviation); when denied show "Allow calendar access in System Settings to see your appointments." -> "Allow calendar access in Windows Settings to see your appointments.".
-* Existing WinKnife: `island-calendar` feature already reads appointments with `AppointmentStoreAccessType.AllCalendarsReadOnly` (next 60 days) and offers only `weekStart` (auto/monday/sunday) and `showEvents`; it has no calendar selection, countdown, time-left, week-number setting (it computes week numbers internally), or permission UI.
+* Existing Trayloom: `island-calendar` feature already reads appointments with `AppointmentStoreAccessType.AllCalendarsReadOnly` (next 60 days) and offers only `weekStart` (auto/monday/sunday) and `showEvents`; it has no calendar selection, countdown, time-left, week-number setting (it computes week numbers internally), or permission UI.
 
 ---------------------------------------------------------------------------------------------------
 
@@ -551,7 +551,7 @@ Shown as the options of the **AI Agents** section on the Content tab (card body,
 2. **Provider rows** x4 (HStack spacing 12): 26x26 tile (radius 7, provider tint 14%) with the provider mark (13pt) - VStack(spacing 2): name (**Claude**, **Codex**, **OpenCode**, **GitHub Copilot**) + caption "Found on this Mac" / "Not found on this Mac" (found = its log folder exists; computed when the page opens, not per draw) - switch. Keys `notchAgentsClaude`, `notchAgentsCodex`, `notchAgentsOpenCode`, `notchAgentsCopilot` (all default true). The last enabled provider's switch is disabled (one agent stays on; turning the whole section off stops all).
    Provider tints: Claude (0.85,0.47,0.34) #D97857, Codex (0.49,0.60,1.0) #7D99FF, OpenCode (0.06,0.73,0.51) #10BA82, GitHub Copilot (0.30,0.78,0.68) #4DC7AD. Symbols: Claude `sparkle`, Codex `chevron.left.forwardslash.chevron.right`, OpenCode `terminal`, Copilot `infinity` (each also has a custom mark).
 3. If Claude on: **Claude account** block (10.3). If Codex on: **Codex accounts** block (10.4).
-4. Divider; **Cards** (.subheadline medium); adaptive grid (min 104, spacing 8) of 8 draggable toggle cards (3.3 style, no reasons): **Limits** (gauge.with.dots.needle.33percent), **Spending** (dollarsign.circle), **Now** (waveform.path.ecg), **Trend** (chart.bar.xaxis), **Models** (cpu), **Projects** (folder), **Activity** (square.grid.3x3.fill), **Resets** (arrow.counterclockwise.circle) in `notchAgentsCardOrder` (default order = that list); hidden CSV `notchAgentsHiddenCards` (default "", i.e. all shown). Charts (Trend, Activity) take the full island width; Spending/Trend/Models/Projects follow the island's period chooser (`notchAgentsPeriod`: today|week|month; labels "Today", "7 days", "30 days"; default today). Caption: "Drag to reorder. Charts take the full width of the island." If Codex on and the Resets card shown: caption "A reset renews the Codex session and weekly limits at once. Codex checks your resets with its own sign-in, which WinKnife never reads."
+4. Divider; **Cards** (.subheadline medium); adaptive grid (min 104, spacing 8) of 8 draggable toggle cards (3.3 style, no reasons): **Limits** (gauge.with.dots.needle.33percent), **Spending** (dollarsign.circle), **Now** (waveform.path.ecg), **Trend** (chart.bar.xaxis), **Models** (cpu), **Projects** (folder), **Activity** (square.grid.3x3.fill), **Resets** (arrow.counterclockwise.circle) in `notchAgentsCardOrder` (default order = that list); hidden CSV `notchAgentsHiddenCards` (default "", i.e. all shown). Charts (Trend, Activity) take the full island width; Spending/Trend/Models/Projects follow the island's period chooser (`notchAgentsPeriod`: today|week|month; labels "Today", "7 days", "30 days"; default today). Caption: "Drag to reorder. Charts take the full width of the island." If Codex on and the Resets card shown: caption "A reset renews the Codex session and weekly limits at once. Codex checks your resets with its own sign-in, which Trayloom never reads."
 5. Choice row (`gauge...33percent`) **Show limits as** segmented **Left** | **Used** -> `notchAgentsLimitDisplay` ("remaining" default | "used"). Menu row (`rectangle.topthird.inset.filled`) **Limit to show** options **Most used** (default), **Session**, **Week** -> `notchAgentsLimitFocus` (mostUsed|session|weekly); "the resting island shows this allowance whatever the live reading, and the live reading uses it when it shows a limit".
 6. Divider; **While an agent works** (.subheadline medium); switch `waveform.path.ecg` **Show it in the closed Dynamic Island** -> `notchAgentsLiveActivity` (true). If on: menu row (inset 38, `camera.metering.center.weighted`) **Beside the camera** options **Time** (elapsed, default), **Tokens written** (tokens), **API value** (cost; capitalised first letter of "API value"), **Limit** (limit) -> `notchAgentsReadout`; then a **strip sample** (inset 38): 180x24 black attached shape (radius 9): left provider glyph 11pt (provider tint), 64px camera gap, right the reading (12pt medium monospaced digits, provider tint): elapsed "12:34", tokens "20K", cost "$4.56", limit "68%" (left) / "32%" (used) for the sample session (example when idle: started 754 s ago, 20 000 output tokens, $4.56, session 32% used; live data replaces it while a turn runs). Provider shown = the working one, else the first enabled in order Claude, Codex, OpenCode, Copilot.
 7. Divider; **Alerts** (.subheadline medium):
@@ -566,7 +566,7 @@ Shown as the options of the **AI Agents** section on the Content tab (card body,
    * else if the Claude app wrote a reading < 30 min ago: green check + "Read from the Claude app, updated <when>" (+ failure line).
    * else if the Claude app is not installed and nothing checked: info icon + "Plan limits come from Claude Code or from the Claude app, which is not on this Mac. Until then, the 5-hour session is estimated from Claude Code activity." + button **Get the Claude app** (opens https://claude.ai/download).
    * else (installed but stale): orange icon + (if known) "The Claude app last checked them <when>." + "Claude checks your limits only while its icon is in the menu bar. Turn the icon on in the Claude app settings, and your limits appear here within minutes." + button **Open Claude**.
-   * A small spinner while a Claude account check is running. Under it, if the default profile is selected: caption "Claude Code checks your account’s limits, including use on other machines, with its own sign-in, which WinKnife never reads. No prompt is sent. When it cannot check, the percentages the Claude app saves on this Mac are used."
+   * A small spinner while a Claude account check is running. Under it, if the default profile is selected: caption "Claude Code checks your account’s limits, including use on other machines, with its own sign-in, which Trayloom never reads. No prompt is sent. When it cannot check, the percentages the Claude app saves on this Mac are used."
    * Failure texts: missing "Claude Code was not found on this Mac."; signed out "Sign in to Claude Code so it can check your account’s limits."; outdated "Update Claude Code so it can check your account’s limits."; unreachable "Claude Code could not check your account’s limits. It tries again later."
 9. Any change of the keys in the page's `onChange` list (card order/hidden, provider switches, live activity, readout, limit display/focus) calls `NotchService.syncWithPreferences()` (page height and closed-island width follow).
 
@@ -615,7 +615,7 @@ macOS: Claude `~/.claude/projects` and `~/.config/claude/projects` (or `<profile
 ### 10.6 Windows mapping
 See 13.7. UI: identical layout. The folder pickers use `FolderBrowserDialog`/`IFileOpenDialog (FOS_PICKFOLDERS)` starting in `%USERPROFILE%`. "Open Claude" = launch the Claude desktop app if found (App Paths / Start menu AUMID / `%LOCALAPPDATA%\AnthropicClaude\claude.exe`), "Get the Claude app" -> https://claude.ai/download. Rename "this Mac" -> "this PC" in the strings.
 
-### 10.7 Gap vs WinKnife
+### 10.7 Gap vs Trayloom
 No agents feature at all.
 
 ---------------------------------------------------------------------------------------------------
@@ -649,7 +649,7 @@ No agents feature at all.
 | `enableFeature` format | `Enable “%@” in Features.` ; `enableSetting`: `Enable “%@” in its settings.` ; `showPage`: `Show “%@” on the Content tab.` |
 | Misc | "OK" (alert button), "Claude account" (alert title), "Choose a Codex folder" (alert title), "Claude Code · " prefix on the status line |
 
-### 11.2 Complete English tables (verbatim, "Vorssaint" -> "WinKnife")
+### 11.2 Complete English tables (verbatim, "Vorssaint" -> "Trayloom")
 Format `field: "value"`; field names are the Swift struct members (keep them as resource keys). `%@`, `%d`, `%.2f`, `%1$@ %2$@` are format specifiers.
 
 ### NotchStrings.swift (`static let enUS`)
@@ -792,7 +792,7 @@ enableFeatureFormat: "Enable “%@” in Features.",
 enableSettingFormat: "Enable “%@” in its settings.",
 showPageFormat: "Show “%@” on the Content tab.",
 keyboardLightUnavailable: "Keyboard backlight control is unavailable on this Mac.",
-appPanelHint: "Choose where clicking the WinKnife menu bar icon opens the app panel, on any display.",
+appPanelHint: "Choose where clicking the Trayloom menu bar icon opens the app panel, on any display.",
 hideMenuBarIcon: "Hide the menu bar icon",
 hideMenuBarIconHint: "Settings and the app panel open from Dynamic Island. The icon returns when the island is off or hidden in full screen, or when an update is ready or the microphone is muted.",
 sections: "Sections",
@@ -927,7 +927,7 @@ claudeLimitsCurrentFormat: "Read from the Claude app, updated %@",
 claudeLimitsStaleFormat: "The Claude app last checked them %@.",
 claudeLimitsMenuBar: "Claude checks your limits only while its icon is in the menu bar. Turn the icon on in the Claude app settings, and your limits appear here within minutes.",
 claudeLimitsNoApp: "Plan limits come from Claude Code or from the Claude app, which is not on this Mac. Until then, the 5-hour session is estimated from Claude Code activity.",
-claudeLimitsPrivacy: "Claude Code checks your account’s limits, including use on other machines, with its own sign-in, which WinKnife never reads. No prompt is sent. When it cannot check, the percentages the Claude app saves on this Mac are used.",
+claudeLimitsPrivacy: "Claude Code checks your account’s limits, including use on other machines, with its own sign-in, which Trayloom never reads. No prompt is sent. When it cannot check, the percentages the Claude app saves on this Mac are used.",
 claudeCodeMissing: "Claude Code was not found on this Mac.",
 claudeCodeSignedOut: "Sign in to Claude Code so it can check your account’s limits.",
 claudeCodeOutdated: "Update Claude Code so it can check your account’s limits.",
@@ -953,7 +953,7 @@ resetsNeedCodex: "Needs the Codex app or CLI",
 resetsSignIn: "Sign in to Codex with a plan to see resets",
 resetsUpdate: "Update Codex to use resets here",
 resetsCheckFailed: "Couldn’t check resets",
-resetsHelp: "A reset renews the Codex session and weekly limits at once. Codex checks your resets with its own sign-in, which WinKnife never reads."
+resetsHelp: "A reset renews the Codex session and weekly limits at once. Codex checks your resets with its own sign-in, which Trayloom never reads."
 ```
 
 ### NotchCalendarStrings.swift (`static let enUS`)
@@ -1400,7 +1400,7 @@ Legend: S=String, B=Bool, D=Double, I=Int, A=String array, X=blob. "reg" = regis
 `brightnessControlEnabled` B false; `clipboardHistoryEnabled` B false; `screenshotDefaultAction` S "" (none/save/saveAndCopy/copy/edit); `liquidGlassEnabled` B false.
 
 ### 12.9 First-run / migration markers (all unregistered, never backed up)
-`notchDefaultProfileInitialized`, `notchInitialExtensionsInstalled`, `notchAgentsOptInMigrated`, `notchMascotBetaInstalled`. A profile already configured under the previous island keeps its old implicit values (size spacious, appPanel true, keyboardLight/notifications/camera/accessories/agents/lyrics/equalizer/queue/downloads off, openOnHover true, clipboard/capture/trackChange off) - **irrelevant for a fresh WinKnife install**, which gets the registered defaults above.
+`notchDefaultProfileInitialized`, `notchInitialExtensionsInstalled`, `notchAgentsOptInMigrated`, `notchMascotBetaInstalled`. A profile already configured under the previous island keeps its old implicit values (size spacious, appPanel true, keyboardLight/notifications/camera/accessories/agents/lyrics/equalizer/queue/downloads off, openOnHover true, clipboard/capture/trackChange off) - **irrelevant for a fresh Trayloom install**, which gets the registered defaults above.
 
 ---------------------------------------------------------------------------------------------------
 
@@ -1408,7 +1408,7 @@ Legend: S=String, B=Bool, D=Double, I=Int, A=String array, X=blob. "reg" = regis
 
 ### 13.1 Host window and rendering
 Island = one top-most WPF/Win32 layered window per target monitor: `WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST`, `AllowsTransparency=true` (or `WS_EX_LAYERED` + per-pixel alpha), shape from `Geometry` (capsule or notch silhouette), rounded corners by clipping geometry (DWM `DWMWA_WINDOW_CORNER_PREFERENCE` only applies to rectangular non-layered windows; for a custom silhouette use clip + the shadow-less look of the original). Black fill; translucent mode = Acrylic backdrop. Settings previews instantiate the same controls scaled (no second implementation).
-Placement: `monitor.Bounds.Top + notchCapsuleFitDrop (+ WinKnife topGap legacy)`; centred on `Bounds`; DPI-aware (per-monitor v2) - all sizes in DIPs.
+Placement: `monitor.Bounds.Top + notchCapsuleFitDrop (+ Trayloom topGap legacy)`; centred on `Bounds`; DPI-aware (per-monitor v2) - all sizes in DIPs.
 
 ### 13.2 What cannot exist on Windows (and the replacement)
 | macOS thing | Why impossible | Windows replacement |
@@ -1424,7 +1424,7 @@ Placement: `monitor.Bounds.Top + notchCapsuleFitDrop (+ WinKnife topGap legacy)`
 | "Mac unlocked" | wording | "PC unlocked" |
 
 ### 13.3 Display options
-See 5.3. API: `EnumDisplayMonitors`, `GetMonitorInfo`, `QueryDisplayConfig` (internal-panel detection), `WM_DISPLAYCHANGE`/`SystemEvents.DisplaySettingsChanged` (already hooked in WinKnife), lid state via `GUID_LIDSWITCH_STATE_CHANGE` + `RegisterPowerSettingNotification`.
+See 5.3. API: `EnumDisplayMonitors`, `GetMonitorInfo`, `QueryDisplayConfig` (internal-panel detection), `WM_DISPLAYCHANGE`/`SystemEvents.DisplaySettingsChanged` (already hooked in Trayloom), lid state via `GUID_LIDSWITCH_STATE_CHANGE` + `RegisterPowerSettingNotification`.
 
 ### 13.4 Music (SMTC)
 Playback source = `GlobalSystemMediaTransportControlsSessionManager` (already in `MediaService`). "Automatically include videos and other apps" = whether sessions from browsers/video apps (`SourceAppUserModelId` not in the music-apps list) may become the current session; off -> only music apps. "Open when nothing is playing" = list of installed music apps: known list (Spotify, Apple Music for Windows (`AppleInc.AppleMusicWin_*!App`), iTunes, Amazon Music, YouTube Music desktop, Windows Media Player (`Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic`), foobar2000, MusicBee, AIMP, VLC) detected through Start-menu apps (`shell:AppsFolder` / registry `App Paths`) plus every `SourceAppUserModelId` ever seen on SMTC (persisted); value stored = AUMID or exe path; "" = Automatic (last played, then Spotify, then Apple Music). Lyrics online (lrclib.net / MusicBrainz) and queue (SMTC exposes no queue: show "This player does not share its upcoming songs." except for players with an API) are runtime. Live bars: `AudioMeterInformation.MasterPeakValue` of the player's audio session (`AudioSessionManager2` -> process id of the SMTC source) or WASAPI loopback FFT. Browser covers: Firefox profile `%APPDATA%\Mozilla\Firefox\Profiles\<profile>\sessionstore-backups\recovery.jsonlz4` (mozlz4) - SMTC usually already supplies the thumbnail, so this is low priority (keep switch, default off).
@@ -1433,7 +1433,7 @@ Playback source = `GlobalSystemMediaTransportControlsSessionManager` (already in
 Calendar: `ms-settings:privacy-calendar`. Camera (mirror): `ms-settings:privacy-webcam`; status from `DeviceAccessInformation.CreateFromDeviceClass(DeviceClass.VideoCapture).CurrentStatus` (Allowed => show green "Granted"; else buttons "Grant access" (try `MediaCapture.InitializeAsync` to trigger the prompt) and "Open Windows Settings"). Notifications listener: `ms-settings:privacy-notifications`.
 
 ### 13.6 Notifications section
-`Windows.UI.Notifications.Management.UserNotificationListener.Current.RequestAccessAsync()`; `GetNotificationsAsync(NotificationKinds.Toast)`; `NotificationChanged` event. **Requires package identity** (MSIX or a sparse package with the `userNotificationListener` capability) - an unpackaged WPF exe gets `UnauthorizedAccess`/not supported. Plan: register a sparse MSIX identity for WinKnife, or show "Waiting for the system notification service" state with a note. "Hide the system banner": after capturing a toast, `RemoveNotification(id)` clears it from Action Center; suppressing the banner itself is best-effort (cloak the `ShellExperienceHost` "New notification" toast window via UI Automation/`DwmSetWindowAttribute(DWMWA_CLOAK)`); mark the option beta and keep the caption verbatim. Replace the Accessibility PermissionRow with an access row ("Granted" / "Grant access" / "Open Windows Settings"). Notifications privacy caption stays: "Show new visible banners only. Messages stay in memory and are cleared when you lock this Mac or turn this off." (-> "this PC").
+`Windows.UI.Notifications.Management.UserNotificationListener.Current.RequestAccessAsync()`; `GetNotificationsAsync(NotificationKinds.Toast)`; `NotificationChanged` event. **Requires package identity** (MSIX or a sparse package with the `userNotificationListener` capability) - an unpackaged WPF exe gets `UnauthorizedAccess`/not supported. Plan: register a sparse MSIX identity for Trayloom, or show "Waiting for the system notification service" state with a note. "Hide the system banner": after capturing a toast, `RemoveNotification(id)` clears it from Action Center; suppressing the banner itself is best-effort (cloak the `ShellExperienceHost` "New notification" toast window via UI Automation/`DwmSetWindowAttribute(DWMWA_CLOAK)`); mark the option beta and keep the caption verbatim. Replace the Accessibility PermissionRow with an access row ("Granted" / "Grant access" / "Open Windows Settings"). Notifications privacy caption stays: "Show new visible banners only. Messages stay in memory and are cleared when you lock this Mac or turn this off." (-> "this PC").
 
 ### 13.7 AI agents on Windows
 Log roots (per user profile `%USERPROFILE%`): Claude Code `%USERPROFILE%\.claude\projects` and `%USERPROFILE%\.config\claude\projects`, or `<profile>\projects` (also honor `CLAUDE_CONFIG_DIR`); account metadata `%USERPROFILE%\.claude.json` (default) or `<profile>\.claude.json`; Codex `%USERPROFILE%\.codex\sessions`, `\.codex\archived_sessions` (honor `CODEX_HOME`), auth in `auth.json`; OpenCode `%USERPROFILE%\.local\share\opencode` (database file inside; also check `%APPDATA%\opencode`/`%LOCALAPPDATA%\opencode`); GitHub Copilot CLI `%USERPROFILE%\.copilot\session-state\<id>\events.jsonl`. Claude desktop plan history `%APPDATA%\Claude\plan-usage-history.json`; app detection via `%LOCALAPPDATA%\AnthropicClaude\claude.exe`, `%LOCALAPPDATA%\Programs\Claude\Claude.exe` or the MSIX package (`Get-AppxPackage *Claude*`); "Open Claude" launches it; limits come primarily from Claude Code's own server (spawn `claude` with the profile as `CLAUDE_CONFIG_DIR`). Watch logs with `FileSystemWatcher` (`NotifyFilters.LastWrite | Size`, recursive) plus a 5 s coalescing timer; read with `FileShare.ReadWrite`.
@@ -1443,17 +1443,17 @@ Codex check: run the Codex CLI (`codex.exe` or the npm shim `codex.cmd` found on
 Tray/AUMID: none needed.
 
 ### 13.8 Calendar
-See section 9 (WinRT Appointments). Week numbers use `CultureInfo.Calendar.GetWeekOfYear(date, rule, firstDayOfWeek)` where firstDayOfWeek = the locale's (`DateTimeFormatInfo.FirstDayOfWeek`) or WinKnife's existing `weekStart` setting (auto/monday/sunday), rows starting on that day so every day of a row shares one number.
+See section 9 (WinRT Appointments). Week numbers use `CultureInfo.Calendar.GetWeekOfYear(date, rule, firstDayOfWeek)` where firstDayOfWeek = the locale's (`DateTimeFormatInfo.FirstDayOfWeek`) or Trayloom's existing `weekStart` setting (auto/monday/sunday), rows starting on that day so every day of a row shares one number.
 
 ### 13.9 Storage
-Use the existing `IFeatureSettings` store with the **same key names** as the Mac (backup/restore compatible). Island features should share ONE settings namespace "island" (today WinKnife has per-feature namespaces `island`, `island-timer`, `island-calendar`, `island-downloads`, `island-gestures`): migrate old keys: `trigger` -> `notchOpenOnHover` (hover=true), `monitor` -> `notchDisplay` (primary->main, cursor->pointer), `collapseDelay` ms -> `notchCloseDelay` seconds, `topGap` -> `notchCapsuleFitDrop` (clamp 0...20), `hideInFullscreen` -> `notchHideInFullscreen`, timer `focusMinutes/shortBreakMinutes/longBreakMinutes/sessionsBeforeLong/playSound` -> `notchPomodoroFocusMinutes/...ShortBreakMinutes/...LongBreakMinutes/...LongBreakInterval/notchTimerSoundEnabled`, gestures `tracks`, calendar `weekStart`/`showEvents`.
+Use the existing `IFeatureSettings` store with the **same key names** as the Mac (backup/restore compatible). Island features should share ONE settings namespace "island" (today Trayloom has per-feature namespaces `island`, `island-timer`, `island-calendar`, `island-downloads`, `island-gestures`): migrate old keys: `trigger` -> `notchOpenOnHover` (hover=true), `monitor` -> `notchDisplay` (primary->main, cursor->pointer), `collapseDelay` ms -> `notchCloseDelay` seconds, `topGap` -> `notchCapsuleFitDrop` (clamp 0...20), `hideInFullscreen` -> `notchHideInFullscreen`, timer `focusMinutes/shortBreakMinutes/longBreakMinutes/sessionsBeforeLong/playSound` -> `notchPomodoroFocusMinutes/...ShortBreakMinutes/...LongBreakMinutes/...LongBreakInterval/notchTimerSoundEnabled`, gestures `tracks`, calendar `weekStart`/`showEvents`.
 
 ---------------------------------------------------------------------------------------------------
 
-## 14. Gap vs WinKnife (summary)
+## 14. Gap vs Trayloom (summary)
 
-Existing code: `WinKnife.Features.Island/{IslandFeature, IslandWindow, IslandHub, IslandTheme, IslandNative, MediaService, MusicSection, TimerFeature, CalendarFeature, DownloadsFeature, GesturesFeature}.cs`, generic settings builder `WinKnife.Core/Ui/SettingsCard.cs` (Toggle, Choice, Slider, IntSlider, Hotkey, Text, Note).
-| Area | WinKnife today | Needed |
+Existing code: `Trayloom.Features.Island/{IslandFeature, IslandWindow, IslandHub, IslandTheme, IslandNative, MediaService, MusicSection, TimerFeature, CalendarFeature, DownloadsFeature, GesturesFeature}.cs`, generic settings builder `Trayloom.Core/Ui/SettingsCard.cs` (Toggle, Choice, Slider, IntSlider, Hotkey, Text, Note).
+| Area | Trayloom today | Needed |
 |---|---|---|
 | Page shell | Per-feature flat settings; island is installed/uninstalled in Features hub | One "Dynamic Island" page with master switch, open button, 5-tab segmented row, Companion tab gating |
 | Controls | Only switches/choices/sliders | Tile `choice`, toggle card with corner status button, checkbox section list with tinted tiles, adaptive reorderable grids, popover chooser, preview canvas, segmented/menu fallback picker, signed fit sliders, strip sample |

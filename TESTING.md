@@ -33,6 +33,6 @@ Tip: turn the feature on in **Settings > Features** first. If something grabs a 
 | Shelf | Drag a file out of Explorer while shaking the mouse (or press Ctrl+Alt+Win+D) and drop it on the shelf. | The file is held; dragging it out of the shelf drops it in another folder. |
 | Mute microphone | Press Ctrl+Alt+Win+M twice. | The tray icon shows muted, then back. Uninstalling the feature while muted unmutes. |
 | Cleaning Mode | Start it (only with the keyboard and mouse free to lock) and wait for the timer. | Keyboard and mouse are locked; they work again when the timer ends. |
-| Install offer | Run the downloaded `WinKnife.exe` from the zip folder. | The "Install WinKnife" window appears. Install copies to your account, adds a Start menu shortcut and starts the installed copy. |
+| Install offer | Run the downloaded `Trayloom.exe` from the zip folder. | The "Install Trayloom" window appears. Install copies to your account, adds a Start menu shortcut and starts the installed copy. |
 
 After testing, open Settings > Features, check which input features are still installed, and uninstall any you do not want.

@@ -1,9 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <OutputType>Library</OutputType>
-    <RootNamespace>WinKnife.Features.Tools</RootNamespace>
-  </PropertyGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\WinKnife.Core\WinKnife.Core.csproj" />
-  </ItemGroup>
-</Project>

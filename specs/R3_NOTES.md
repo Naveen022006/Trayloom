@@ -18,7 +18,7 @@
 - Controls tab `panelControlOrder` not honoured by Input's section.
 
 - Agents ↔ Island (check Island agent's hosting): show `agents.notice` strip at priority 1 for 5 s; use `agents.resting` as idle content when `notchIdleContent == "agents"`; Island must call Agents' CreateView/CreateStrip so its `IIslandContext.Invalidate()` is captured; Island/Content tab must write `notchAgentsEnabled` + `notchHiddenModules`; `island#agents` anchor must resolve; island has no leading "band" slot (agents' period menu sits inside its page); mascot "celebrates" hook not wired (no mascot API).
-- Agents price download disabled (no WinKnife-hosted price list) — fine, bundled list used.
+- Agents price download disabled (no Trayloom-hosted price list) — fine, bundled list used.
 
 - Panel visibility keys: App reads `panelUtilityShow.<id>`; Vorssaint keys are `panelUtility<Name>` (Files writes both, Windows writes only the Vorssaint one). Make the App honour the Vorssaint keys.
 - `IShelfService.Add(IEnumerable<string>)` needed (Screenshot "add to shelf", Island Files page keeps its own shelf.json).

@@ -1,9 +1,9 @@
-# REA parity audit: WinKnife vs Vorssaint 3.4.3
+# REA parity audit: Trayloom vs Vorssaint 3.4.3
 
-Auditor: REA (`rea-agents` 6.7.0) plus static scripts. Date of run: 2026-11-03. No WinKnife source was edited, WinKnife and Vorssaint binaries were never executed.
+Auditor: REA (`rea-agents` 6.7.0) plus static scripts. Date of run: 2026-11-03. No Trayloom source was edited, Trayloom and Vorssaint binaries were never executed.
 
 Subject A: the official Vorssaint release `Vorssaint-3.4.3.dmg` (sha256 `d1d59435f949539968adcbc9aa2545a6b90610b753bf843d8113c85615a20396`, 27.8 MB, from https://github.com/vorssaint/vorssaint-utils/releases/latest = v3.4.3).
-Subject B: `E:\REA TEST 1\winknife\dist\WinKnife\` (11 first-party assemblies: `WinKnife.dll`, `WinKnife.Core.dll`, 9 x `WinKnife.Features.*.dll`).
+Subject B: `E:\REA TEST 1\trayloom\dist\Trayloom\` (11 first-party assemblies: `Trayloom.dll`, `Trayloom.Core.dll`, 9 x `Trayloom.Features.*.dll`).
 Reference source: `E:\REA TEST 1\vorssaint-mac` (Swift, 702 files).
 
 All raw evidence lives under `C:\Users\ADMIN\AppData\Local\Temp\claude\E--REA-TEST-1\7b91bf88-d61e-42ce-a3bd-2a6a3cdaf08c\scratchpad\rea\` (call it `$REA`): see section 9.
@@ -14,17 +14,17 @@ All raw evidence lives under `C:\Users\ADMIN\AppData\Local\Temp\claude\E--REA-TE
 
 | Measure | Result |
 |---|---|
-| Feature catalog (Vorssaint `AppFeature`, read from the Mach-O) | **79 / 79** present as WinKnife catalog ids; 65 supported, 8 adapted, **6 marked unavailable** (all with a Windows reason) |
-| Settings keys (Vorssaint `DefaultsKey`, 868 in binary and source) found in WinKnife | **748 / 868 = 86.2%** (644 as IL string literals, 58 composed at runtime, 41 `windowLayoutShortcut.<id>` renames, 5 shortcut-role renames) |
+| Feature catalog (Vorssaint `AppFeature`, read from the Mach-O) | **79 / 79** present as Trayloom catalog ids; 65 supported, 8 adapted, **6 marked unavailable** (all with a Windows reason) |
+| Settings keys (Vorssaint `DefaultsKey`, 868 in binary and source) found in Trayloom | **748 / 868 = 86.2%** (644 as IL string literals, 58 composed at runtime, 41 `windowLayoutShortcut.<id>` renames, 5 shortcut-role renames) |
 | ... of the 120 remaining | 64 not possible on Windows or dev/migration markers, 9 stored under another key or file, 27 real gap (WhatsApp organizer), 20 partial or needing live verification |
 | Coverage of *applicable* keys (excluding the 64 N/A) | **94.2%** |
-| Registered defaults (775 in Vorssaint) | 657 have a WinKnife key; **494** could be compared mechanically: **490 identical (99.2%)**, 4 differ (all intentional, section 3) |
+| Registered defaults (775 in Vorssaint) | 657 have a Trayloom key; **494** could be compared mechanically: **490 identical (99.2%)**, 4 differ (all intentional, section 3) |
 | Global shortcut roles | **32 / 34** (missing: the two keyboard-backlight roles, no Windows equivalent). Window-layout actions **41 / 41** |
 | Settings pages | **35 / 35** reachable (3 renamed, 1 folded into an anchor) |
-| English UI strings (2,656 localized English literals extracted from the Swift `enUS` blocks; 1,476 of the 1,478 literals over 15 bytes were independently confirmed in the Mach-O `__cstring`) | **67.6%** exact match in WinKnife literals, **72.4%** after Mac->Windows vocabulary mapping, **77.6%** with fuzzy match. This is a *lower bound*: printf-style strings (`Quit %@?`) are built by interpolation in C# and cannot match as literals; 197 of the 596 misses name Mac-only things |
-| Translations | **1 / 15 languages.** WinKnife has a language picker with 14 extra names but zero translated UI text (only 8 non-Latin literals exist: the picker labels). Vorssaint embeds 13,217 CJK/Cyrillic strings |
-| Network | WinKnife has **no Vorssaint endpoint** (no `vorssaint.com`, `screenshots.vorssaint.com`, no vorssaint GitHub URL in any compiled string) |
-| Release vs cloned source | Source == 3.4.3 release for features, keys and strings. Only drift: `agent-prices.json` (source `updated 2026-10-30`, release `2026-10-09`; WinKnife bundles 2026-10-30). No newer-than-source feature found |
+| English UI strings (2,656 localized English literals extracted from the Swift `enUS` blocks; 1,476 of the 1,478 literals over 15 bytes were independently confirmed in the Mach-O `__cstring`) | **67.6%** exact match in Trayloom literals, **72.4%** after Mac->Windows vocabulary mapping, **77.6%** with fuzzy match. This is a *lower bound*: printf-style strings (`Quit %@?`) are built by interpolation in C# and cannot match as literals; 197 of the 596 misses name Mac-only things |
+| Translations | **1 / 15 languages.** Trayloom has a language picker with 14 extra names but zero translated UI text (only 8 non-Latin literals exist: the picker labels). Vorssaint embeds 13,217 CJK/Cyrillic strings |
+| Network | Trayloom has **no Vorssaint endpoint** (no `vorssaint.com`, `screenshots.vorssaint.com`, no vorssaint GitHub URL in any compiled string) |
+| Release vs cloned source | Source == 3.4.3 release for features, keys and strings. Only drift: `agent-prices.json` (source `updated 2026-10-30`, release `2026-10-09`; Trayloom bundles 2026-10-30). No newer-than-source feature found |
 
 ---
 
@@ -36,7 +36,7 @@ Install: `npm install --global rea-agents --prefix <scratch>\npm\prefix` (offici
 
 | REA command | Works without a native provider on this Windows host? | Evidence |
 |---|---|---|
-| `inspect-managed-artifact`, `inspect-managed-members`, `inspect-managed-native-boundaries`, `inspect-pe-resources` | **Yes, fully.** Types, methods, fields, call edges, member refs, `ldstr` literals (state `complete`; the "partial" flag is only the benign UTF-16 terminal-flag note) and P/Invoke tables for all 11 WinKnife assemblies | `out\w\*.artifact.json`, `*.members.json`, `*.nativeboundaries.json`, `WinKnife.exe.peresources.json` |
+| `inspect-managed-artifact`, `inspect-managed-members`, `inspect-managed-native-boundaries`, `inspect-pe-resources` | **Yes, fully.** Types, methods, fields, call edges, member refs, `ldstr` literals (state `complete`; the "partial" flag is only the benign UTF-16 terminal-flag note) and P/Invoke tables for all 11 Trayloom assemblies | `out\w\*.artifact.json`, `*.members.json`, `*.nativeboundaries.json`, `Trayloom.exe.peresources.json` |
 | `inspect-artifact` (dmg, .app directory, Mach-O, dylib, helper) | Yes, but shallow: identity, sha256, format (`dmg`, `directory`, `mach-o`), container graph. No symbols/strings; the only next probe it suggests is `open_binary` (needs a provider) | `out\inspect-artifact-*.json` |
 | `extract-artifact` on a `.dmg` | **No**: "Artifact format has no extraction reader: dmg". I extracted the HFS+ volume with my own read-only UDIF/HFS+ reader (`tools\udif.py`, `tools\hfsx.py`), 44 files, nothing executed |
 | `inspect-binary-layout` | **No**: ELF-only (pwntools profile, Linux x64) | `out\layout.json` |
@@ -66,7 +66,7 @@ Binary-derived inventories:
 
 ### Endpoints contacted by Vorssaint (string evidence in `__cstring`)
 
-| Endpoint | Purpose | WinKnife |
+| Endpoint | Purpose | Trayloom |
 |---|---|---|
 | `github.com/vorssaint/vorssaint-utils/releases/download/v...`, `api.github.com/repos/`, Sparkle appcast namespace | self-update | not present (no self-updater, see gap G7) |
 | `raw.githubusercontent.com/vorssaint/vorssaint-utils/main/Resources/agent-prices.json` | agent price list refresh | **absent on purpose**: `AgentPriceList.Remote = ""`, bundled list only |
@@ -76,22 +76,22 @@ Binary-derived inventories:
 | `speed.cloudflare.com` | network speed test | present (same host) |
 | `formulae.brew.sh/api/cask.json`, `/api/analytics/`, `raw.githubusercontent.com/Homebrew/install` | Homebrew catalog | N/A (winget used) |
 | `claude.ai/download`, `code.claude.com/docs/...` | links in AI Agents | present |
-| `discord.gg/...`, `x.com/vorssaint`, `buymeacoffee.com/vorssaint`, `vorssaint.com`, `github.com/vorssaint/vorssaint-utils` | about/support links | replaced by `github.com/winknife/winknife` |
+| `discord.gg/...`, `x.com/vorssaint`, `buymeacoffee.com/vorssaint`, `vorssaint.com`, `github.com/vorssaint/vorssaint-utils` | about/support links | replaced by `github.com/Naveen022006/Trayloom` |
 
 ---
 
-## 3. WinKnife inventory (REA .NET analysis)
+## 3. Trayloom inventory (REA .NET analysis)
 
 Totals across the 11 assemblies (`$REA\out\w\summary.json`): **3,596 types, 23,091 methods, 11,955 `ldstr` literals (8,956 unique)**, 484 P/Invoke imports (user32 272, kernel32 86, gdi32 23, shell32 21, dwmapi 19, combase 13, dxva2 9, powrprof 7, pdh 6, shcore 5, setupapi 5, iphlpapi 3, msi 3, d3d11 2). Per assembly: Core 202 types / 1,053 literals; Agents 329 / 937; Capture 354 / 861; Files 275 / 668; Input 200 / 656; Island 406 / 1,285; Maintenance 388 / 1,542; System 419 / 1,240; Tools 611 / 2,392; Windows 255 / 599; App 157 / 722.
 
-* Feature ids: all 79 kebab ids present as literals in `WinKnife.Core` (`FeatureCatalog` static constructor). 60 ids have an explicit `IFeature.Id`; the other 19 are the 6 unavailable features and 11 Island extensions and 2 scroll features that are hosted by a parent feature class. (The README says "73 installable entries"; the shipped catalog has **79**. README is stale.)
-* Network in WinKnife (REA member refs + literal URLs): `HttpClient` is used only by `LyricsService` (lrclib.net), `CalendarService` (user-supplied ICS URL), `SpeedTest` (Cloudflare), `AppUpdatesService`/`FeedLoader` (GitHub `releases/latest/download/latest.yml` of apps the *user* has installed), `RadialFavicon` (host of a user-added web item), `AgentPriceList.Download` (dead code: `Remote` is empty). Literal URLs found: `claude.ai/download`, `code.claude.com/docs/en/authentication`, `github.com/winknife(/winknife)`, `lrclib.net/api/get`, `speed.cloudflare.com`. **Nothing contacts Vorssaint servers.**
-* Settings defaults: 699 registered defaults extracted from WinKnife source (REA IL confirms the key literals).
+* Feature ids: all 79 kebab ids present as literals in `Trayloom.Core` (`FeatureCatalog` static constructor). 60 ids have an explicit `IFeature.Id`; the other 19 are the 6 unavailable features and 11 Island extensions and 2 scroll features that are hosted by a parent feature class. (The README says "73 installable entries"; the shipped catalog has **79**. README is stale.)
+* Network in Trayloom (REA member refs + literal URLs): `HttpClient` is used only by `LyricsService` (lrclib.net), `CalendarService` (user-supplied ICS URL), `SpeedTest` (Cloudflare), `AppUpdatesService`/`FeedLoader` (GitHub `releases/latest/download/latest.yml` of apps the *user* has installed), `RadialFavicon` (host of a user-added web item), `AgentPriceList.Download` (dead code: `Remote` is empty). Literal URLs found: `claude.ai/download`, `code.claude.com/docs/en/authentication`, `github.com/Naveen022006/Trayloom`, `lrclib.net/api/get`, `speed.cloudflare.com`. **Nothing contacts Vorssaint servers.**
+* Settings defaults: 699 registered defaults extracted from Trayloom source (REA IL confirms the key literals).
 * Shortcut roles: see section 5. Settings pages: section 6.
 
 ### Default-value differences (4 of 494 comparable keys; all intentional)
 
-| Key | Vorssaint | WinKnife | Verdict |
+| Key | Vorssaint | Trayloom | Verdict |
 |---|---|---|---|
 | `recorderSharingEnabled` | true | false | intentional (no share server) |
 | `screenshotSharingEnabled` | true | false | intentional |
@@ -104,7 +104,7 @@ Totals across the 11 assemblies (`$REA\out\w\summary.json`): **3,596 types, 23,0
 
 "Present" means the catalog entry, the feature class and its settings keys exist. REA is static, so runtime behaviour of hook-based features is **not** verified (the project's own notes list live verification of Alt+Tab takeover, taskbar thumbnails, radial ring, selection overlays, recorder, camera and cleaning mode as still pending).
 
-| # | Vorssaint AppFeature (binary + source) | WinKnife catalog id | Status in WinKnife | Notes |
+| # | Vorssaint AppFeature (binary + source) | Trayloom catalog id | Status in Trayloom | Notes |
 |---|---|---|---|---|
 | 1 | `switcher` | `switcher` | Present |  |
 | 2 | `dockPreview` | `dock-preview` | Present (adapted) | Dock thumbnails -> taskbar hover previews (UI Automation); needs live check |
@@ -195,7 +195,7 @@ Unavailable features worth a second look: `disk-image-installer` (a Windows anal
 
 ## 5. Hotkeys
 
-Vorssaint `GlobalShortcutRole` (34) against WinKnife `ShortcutRoles.CreateStatic` (+41 window layout roles):
+Vorssaint `GlobalShortcutRole` (34) against Trayloom `ShortcutRoles.CreateStatic` (+41 window layout roles):
 
 | Result | Roles |
 |---|---|
@@ -206,11 +206,11 @@ Window layout: all 41 `WindowLayoutAction` cases exist (`windowLayoutShortcut.<i
 
 ## 6. Settings screens
 
-Vorssaint `SettingsPage` (35) -> WinKnife `SettingsPages`: general, features, energy, monitor, mouse, switcher, dock(Taskbar), keyDebounce(debounce), superKey, cutPaste, autoQuit(quit-on-close), quitProtection, cleaner, uninstaller, urlCleaner(clean-url), homebrew(packages), appUpdates, media, clipboard, windowLayout, shelf, quickTools, textSnippets, screenshot(screen-capture), radialMenu, commandBar, killProcess, portManager, notch(island), shortcuts, advanced, about, releaseNotes(whats-new), support = all present; `notchMascot` is the `island#companion` anchor. WinKnife has no extra page.
+Vorssaint `SettingsPage` (35) -> Trayloom `SettingsPages`: general, features, energy, monitor, mouse, switcher, dock(Taskbar), keyDebounce(debounce), superKey, cutPaste, autoQuit(quit-on-close), quitProtection, cleaner, uninstaller, urlCleaner(clean-url), homebrew(packages), appUpdates, media, clipboard, windowLayout, shelf, quickTools, textSnippets, screenshot(screen-capture), radialMenu, commandBar, killProcess, portManager, notch(island), shortcuts, advanced, about, releaseNotes(whats-new), support = all present; `notchMascot` is the `island#companion` anchor. Trayloom has no extra page.
 
-Vorssaint surfaces with a WinKnife counterpart (by type/source inspection): menu panel (tray panel with Monitor/Mixer/Brightness/Utilities/Controls/Toggles/Wallpaper tabs), Settings window + search directory, onboarding, Features hub + presets (Essentials/Windows/Battery), Dynamic Island (Music, Calendar, Timer, Clipboard, Files/shelf, Downloads, Mixer, System, Scratchpad, Controls, Quick access, Camera mirror, Lyrics, Queue, Notifications, Agents, Watch, Companion, lock-screen alert), Command Bar, Quick launcher, Radial menu, Switcher overlay, Dock preview, Screenshot overlay/editor/pins, Recorder + editor, Color picker, OCR, Camera preview, Scratchpad, Cleaner, Uninstaller, Media tools, Homebrew -> winget, App updates, Kill Process, Port Manager, Keep Awake automation, Displays, Fan control section (not possible), Permission guide.
+Vorssaint surfaces with a Trayloom counterpart (by type/source inspection): menu panel (tray panel with Monitor/Mixer/Brightness/Utilities/Controls/Toggles/Wallpaper tabs), Settings window + search directory, onboarding, Features hub + presets (Essentials/Windows/Battery), Dynamic Island (Music, Calendar, Timer, Clipboard, Files/shelf, Downloads, Mixer, System, Scratchpad, Controls, Quick access, Camera mirror, Lyrics, Queue, Notifications, Agents, Watch, Companion, lock-screen alert), Command Bar, Quick launcher, Radial menu, Switcher overlay, Dock preview, Screenshot overlay/editor/pins, Recorder + editor, Color picker, OCR, Camera preview, Scratchpad, Cleaner, Uninstaller, Media tools, Homebrew -> winget, App updates, Kill Process, Port Manager, Keep Awake automation, Displays, Fan control section (not possible), Permission guide.
 
-Vorssaint services (`Services/*`, 100+ files) with no Windows meaning: FanControl, SpacesOrder, DiskImageInstaller, MiddleClick, WindowMaximizer, SpotlightNames, SudoersSupport, SystemShortcutTakeover, WindowServer*, EnhancedUserInterfaceSuspension, DockTileResolver. All other service groups map to a WinKnife project (Input, Windows, Files, System, Capture, Maintenance, Tools, Island, Agents).
+Vorssaint services (`Services/*`, 100+ files) with no Windows meaning: FanControl, SpacesOrder, DiskImageInstaller, MiddleClick, WindowMaximizer, SpotlightNames, SudoersSupport, SystemShortcutTakeover, WindowServer*, EnhancedUserInterfaceSuspension, DockTileResolver. All other service groups map to a Trayloom project (Input, Windows, Files, System, Capture, Maintenance, Tools, Island, Agents).
 
 ---
 
@@ -218,23 +218,23 @@ Vorssaint services (`Services/*`, 100+ files) with no Windows meaning: FanContro
 
 | Bucket | Count | Meaning |
 |---|---|---|
-| Present as IL literal | 644 | same key, found in a `ldstr` of a WinKnife assembly |
+| Present as IL literal | 644 | same key, found in a `ldstr` of a Trayloom assembly |
 | Present, composed at runtime | 58 | e.g. `"quitProtectionQuit" + "Mode"`; defaults confirmed in `InputSettings.cs` (Mode hold, 800 ms, 600 ms, shift, scope all) |
 | Present, renamed | 46 | 41 `windowLayoutShortcut.<id>` + 5 role shortcuts |
 | Stored under another key or file | 9 | clipboardHistoryEntries (own store), shelfItems (shelf.json), displaysSwitchedOff(+Fingerprints), micMute* saved state, notchDownloadsFolderBookmark (path), recorderSystemAudioTapVerified, restoredScreenCaptureShortcutsMigrated |
 | Not possible on Windows | 41 | fan control 6, keyboard backlight 4, disk-image installer 3, Spaces/maximize/Stage Manager/middle-click/windowless Finder 9, display/brightness internals 8, shortcut take-over and key-remap internals 5, per-app audio routing 6 |
 | Dev or migration markers | 23 | simulateBetaUI, simulateUpdate, screenshotSharingDeveloperEndpoint, *Migrated, whatsNew*, updateShowcase*, panelNavigationEnabled (legacy), screenshotOpenEditorDirectly (legacy migration), notchMusicActivity and notchHideInCaptures (unused in source) |
 | **Gap: WhatsApp downloads** | 27 | whole feature missing (section 8, G2) |
-| Partial / verify | 20 | menuBar per-metric toggles (8: WinKnife keeps visibility in `menuBarMetricOrder`), Island options `notchCameraFitWidth/Height`, `notchCoversMenus`, `notchHideMenuBarGap`, `notchQuickAccessSide/Second/Third` (7), panel toggles `panelUtility{ColorPicker,QuickLauncher,ScreenOCR,ScreenRecorder}`, `panelControlCutPaste` (5) |
+| Partial / verify | 20 | menuBar per-metric toggles (8: Trayloom keeps visibility in `menuBarMetricOrder`), Island options `notchCameraFitWidth/Height`, `notchCoversMenus`, `notchHideMenuBarGap`, `notchQuickAccessSide/Second/Third` (7), panel toggles `panelUtility{ColorPicker,QuickLauncher,ScreenOCR,ScreenRecorder}`, `panelControlCutPaste` (5) |
 
-Dynamic-key caveat: WinKnife builds many keys at runtime, so literal matching is a lower bound; the 58 composed keys were found by prefix+suffix matching and spot-checked against `InputSettings.cs`.
+Dynamic-key caveat: Trayloom builds many keys at runtime, so literal matching is a lower bound; the 58 composed keys were found by prefix+suffix matching and spot-checked against `InputSettings.cs`.
 
 ## 8. Prioritized gap list
 
 ### P1: user-visible features missing
 
-* **G1. UI localization.** Vorssaint ships 15 languages (en-US, pt-BR, tr, ru, es, sk, de, fr, it, ja, ko, uk, zh-Hans, zh-TW, zh-HK; 13,217 non-Latin strings in the binary plus the Latin ones). WinKnife's General page lists all 15 names but the whole UI is English; the picker only stores `appLanguage`. Either translate (the Swift `Strings+*.swift` files are GPL and structured per feature) or hide the picker.
-* **G2. WhatsApp downloads cleanup + organizer** (Cleaner page, Vorssaint 3.4.x): scheduled cleanup of confirmed WhatsApp downloads (categories image/video/audio, retention days, notify, exclusions, include existing), and an organizer that moves downloads to a chosen folder (delay, file-type categories, flat/by-type layout, duplicate action with exact-duplicate hashing, undo transaction). 27 settings keys, ~57 UI strings. Absent from WinKnife (only `PermissionService` mentions WhatsApp). Feasible on Windows (WhatsApp Desktop download folders).
+* **G1. UI localization.** Vorssaint ships 15 languages (en-US, pt-BR, tr, ru, es, sk, de, fr, it, ja, ko, uk, zh-Hans, zh-TW, zh-HK; 13,217 non-Latin strings in the binary plus the Latin ones). Trayloom's General page lists all 15 names but the whole UI is English; the picker only stores `appLanguage`. Either translate (the Swift `Strings+*.swift` files are GPL and structured per feature) or hide the picker.
+* **G2. WhatsApp downloads cleanup + organizer** (Cleaner page, Vorssaint 3.4.x): scheduled cleanup of confirmed WhatsApp downloads (categories image/video/audio, retention days, notify, exclusions, include existing), and an organizer that moves downloads to a chosen folder (delay, file-type categories, flat/by-type layout, duplicate action with exact-duplicate hashing, undo transaction). 27 settings keys, ~57 UI strings. Absent from Trayloom (only `PermissionService` mentions WhatsApp). Feasible on Windows (WhatsApp Desktop download folders).
 * **G3. Screen recorder editor extras**: pointer track, click ring, auto-zoom and zoom lane, backdrop/blur, text lanes, presets, audio time-stretch, per-window loopback, capture border, cursor capture. Already listed in README "known limitations"; REA confirms 45 `RecorderStrings` literals unmatched. Core recording and trimming exist.
 
 ### P2: partial behaviour
@@ -243,14 +243,14 @@ Dynamic-key caveat: WinKnife builds many keys at runtime, so literal matching is
 * **G5. Per-app output routing and per-app volume persistence** (`appOutputDevices`, `appVolumes`, `mixerUniversalOutputDevice`, `mixerCallAppVolumeEnabled`): documented as unavailable on this Windows build; the mixer exists, per-app routing does not.
 * **G6. Island options** missing: camera fit width/height, quick-access side/second/third, "show over menus", menu-bar gap. Layout-only; `notchQuickAccessLayout` exists.
 * **G7. Disk image installer** has no Windows analogue yet (installer cleanup after running a downloaded setup).
-* **G8. Menu-bar metric toggles**: Battery time/temperature, CPU/GPU temperature, connected devices, disk usage/activity, fan speed are separate toggles in Vorssaint; WinKnife keeps them inside `menuBarMetricOrder`. Verify in the UI that each metric can be shown/hidden individually.
-* **G9. Music metadata sources**: Vorssaint also verifies title/artist/album and finds covers through MusicBrainz and iTunes, and reads Firefox sessions for YouTube thumbnails; WinKnife only queries lrclib.
+* **G8. Menu-bar metric toggles**: Battery time/temperature, CPU/GPU temperature, connected devices, disk usage/activity, fan speed are separate toggles in Vorssaint; Trayloom keeps them inside `menuBarMetricOrder`. Verify in the UI that each metric can be shown/hidden individually.
+* **G9. Music metadata sources**: Vorssaint also verifies title/artist/album and finds covers through MusicBrainz and iTunes, and reads Firefox sessions for YouTube thumbnails; Trayloom only queries lrclib.
 * **G10. Eight "Adapted" features** (taskbar preview/clicks, Pinch Zoom, cut and paste, F2 rename, music-block, winget Packages, island notifications) are statically present; behaviour needs the pending live verification listed in `R3_NOTES.md`.
 * **G11. Format-string UI text**: 399 non-Mac strings did not match as literals (many are interpolated). Spot checks show Command Bar rows ("Turn on %@", "Restart %@", "Force quit %@?", "Uninstall %@...", "Words: %d, characters: %d"), island hover/haptics options ("Expand fully on hover", "Haptic feedback"), permission-guide wording, and App Store rows. Re-check each in the running app.
 
 ### P3: cosmetic or minor
 
-* **G12. CLI flags**: Vorssaint `--export-settings FILE` / `--import-settings FILE` (UI export/import exists in WinKnife Advanced; the flags do not).
+* **G12. CLI flags**: Vorssaint `--export-settings FILE` / `--import-settings FILE` (UI export/import exists in Trayloom Advanced; the flags do not).
 * **G13. Agent price list is bundled only** (updated 2026-10-30, same as the source); it will go stale without the remote refresh (intentional privacy choice, `Remote = ""`).
 * **G14. README stale**: says 73 catalog entries (actual 79).
 * **G15. Not possible on Windows (informational)**: fan control, keyboard backlight, Spaces order, maximize button, three-finger middle click, extra HDR brightness, HDR/DDC internals, macOS shortcut take-over, Stage Manager, App Store updates.
@@ -274,16 +274,16 @@ Dynamic-key caveat: WinKnife builds many keys at runtime, so literal matching is
 | `rea inspect-binary-layout`, `inspect-plist`, `inspect-macho`, `demangle-swift`, `analyze` | refused (ELF only / macOS only / no provider): `out\layout.json`, `out\infoplist.json` |
 | `rea inspect-managed-artifact` x 11 | `$REA\out\w\<assembly>.artifact.json` |
 | `rea inspect-managed-members` x 11 (types, methods, call edges, `ldstr`) | `$REA\out\w\<assembly>.members.json`; literals: `out\w\literals_all.json`; summary `out\w\summary.json` |
-| `rea inspect-managed-native-boundaries` x 11, `inspect-pe-resources WinKnife.exe` | `$REA\out\w\*.nativeboundaries.json`, `WinKnife.exe.peresources.json` |
+| `rea inspect-managed-native-boundaries` x 11, `inspect-pe-resources Trayloom.exe` | `$REA\out\w\*.nativeboundaries.json`, `Trayloom.exe.peresources.json` |
 | Mach-O dump (own parser, REA could not): sections, 209,383 symbols, cstrings, reflection strings, entitlements | `$REA\out\v\*` (`symbols.txt`, `cstring.txt`, `swift_reflstr.txt`, `inv_binary.json`, `appfeature_binary.txt`) |
 | Comparisons | `$REA\out\key_coverage.csv`, `keys_buckets.json`, `keys_diff.txt`, `strcov.json`, `strcov_missing.txt`, `feature_map.json`; scripts in `$REA\tools\` |
 | Extracted app bundle (untrusted, never executed) | `$REA\extracted\volume\Vorssaint.app`, `$REA\extracted\manifest.txt`; download in `$REA\vorssaint\Vorssaint-3.4.3.dmg` |
 
-Not done: `WinKnife.exe --dump-info` (a second launch hands dev flags to the user's running copy through the single-instance mutex, so it was skipped in favour of static analysis); running any Vorssaint code; installing Ghidra/Hopper.
+Not done: `Trayloom.exe --dump-info` (a second launch hands dev flags to the user's running copy through the single-instance mutex, so it was skipped in favour of static analysis); running any Vorssaint code; installing Ghidra/Hopper.
 
 ## 10. Method limits (read before trusting a percentage)
 
 * Swift string literals up to 15 bytes are immediates in code, not in `__cstring`; English-string extraction therefore comes from the Swift source `enUS` blocks (validated against the binary: 1,476/1,478 long literals present), not from the binary alone. About 145 additional English strings in the binary (catalog descriptions) are not in the 2,656-string set.
 * Key presence is by string literal / runtime composition, not by proof that each key is read; a present key can still be wired to a no-op, and an absent key can be served by a different storage name (bucketed above).
 * Defaults comparison covers only keys whose default resolves to a literal on both sides (494 of 775).
-* WinKnife settings that live in per-feature scoped stores are not visible as flat keys.
+* Trayloom settings that live in per-feature scoped stores are not visible as flat keys.

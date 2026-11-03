@@ -1,23 +1,28 @@
-# WinKnife
+# Trayloom
 
-WinKnife is a Windows 10/11 tray utility (.NET 9, WPF) that bundles many small system tweaks and tools into one
+Formerly WinKnife.
+
+Trayloom is a Windows 10/11 tray utility (.NET 9, WPF) that bundles many small system tweaks and tools into one
 "install what you need" app. It is a Windows replica of the macOS utility [Vorssaint](https://vorssaint.com): the same
 tray panel, Settings window, Features hub, Dynamic Island, Command Bar and feature catalog (79 entries, of which
 73 are installable on Windows and 6 are marked unavailable because Windows has no equivalent), rebuilt for Windows. Features are installed or uninstalled one by one from the **Features hub**; whatever is
 uninstalled disappears from the whole app and loads nothing.
 
-WinKnife is licensed under the same terms as Vorssaint, **GPL-3.0-or-later** (see `LICENSE`). It is an independent
+Trayloom is licensed under the same terms as Vorssaint, **GPL-3.0-or-later** (see `LICENSE`). It is an independent
 project and is **not affiliated with or endorsed by Vorssaint**; the Vorssaint name, logo and icon are not used.
 
 * Languages: 15 (System default, English and the 13 other Vorssaint languages), switched live in Settings > General > Language;
   see `specs/L10N_TODO.md` for coverage. The first-run guide, the install / uninstall windows and the Settings pages General, About and Advanced are translated into all 15 languages; some captions of the feature pages are still English.
-* Settings: `%APPDATA%\WinKnife\settings.json` (override the folder with the `WINKNIFE_DATA` environment variable).
-* Log: `<settings folder>\logs\winknife.log`.
+* Settings: `%APPDATA%\Trayloom\settings.json` (override the folder with the `TRAYLOOM_DATA` environment variable).
+* Log: `<settings folder>\logs\trayloom.log`.
+* Upgrading from the previous name: the first start closes a still-running old copy, moves the old settings folder and local data
+  to the Trayloom names and re-registers Start with Windows (on/off state kept); installing Trayloom also removes the old Start menu
+  shortcut and Apps & features entry. The old program folder is left in place for you to delete.
 * First run: onboarding, then only the **Essentials** bundle (Volume mixer, System monitor, Keep awake) is installed.
   Everything else is one click away in the Features hub (Install all, bundles, or one by one).
-* Every feature undoes its side effects when uninstalled or when WinKnife quits (mouse acceleration, hooks, hotkeys,
+* Every feature undoes its side effects when uninstalled or when Trayloom quits (mouse acceleration, hooks, hotkeys,
   wake locks, windows). Uninstalling *Mute microphone* while muted unmutes the microphone.
-* `WinKnife.exe --quit` asks the running instance to shut down gracefully; a second launch (the Start menu shortcut) brings
+* `Trayloom.exe --quit` asks the running instance to shut down gracefully; a second launch (the Start menu shortcut) brings
   Settings forward on the page you used last.
 
 ## What is in it
@@ -47,54 +52,54 @@ Everything is read **locally**; nothing is sent anywhere and no account password
 * **Spending** is the *API-equivalent value* of your tokens from the local logs (models, projects, trend). It is what the usage
   would cost at API prices, **not what you pay** on a subscription.
 * **Permission alerts**: when a Claude Code session asks for a permission, the island pops out to say which session needs you (you still answer in Claude Code). This uses
-  a small hook in Claude's `settings.json` that only reports the event and never changes what Claude decides; WinKnife adds it
+  a small hook in Claude's `settings.json` that only reports the event and never changes what Claude decides; Trayloom adds it
   only when you install it from the AI Agents settings (after a backup) and removes it when you remove it there.
 * With a very large history (several GB of logs) the first scan can take a moment and the feature keeps a few hundred MB.
 
 ## Install and first start
 
-WinKnife is a tray app: after it starts you will find its icon **next to the clock** (Windows often hides new tray icons
-behind the **^** arrow). There is no installer program; the installer is `WinKnife.exe` itself.
+Trayloom is a tray app: after it starts you will find its icon **next to the clock** (Windows often hides new tray icons
+behind the **^** arrow). There is no installer program; the installer is `Trayloom.exe` itself.
 
-1. Unzip `WinKnife-win-x64.zip` anywhere (or use `dist\WinKnife`) and double-click `WinKnife.exe`
-   (or `WinKnife-Setup.cmd`, which starts the same thing).
-2. WinKnife offers **Install WinKnife** (or **Update WinKnife** when an older copy is installed):
-   * **Install** copies the app to `%LOCALAPPDATA%\Programs\WinKnife` for your account only (no administrator password),
+1. Unzip `Trayloom-win-x64.zip` anywhere (or use `dist\Trayloom`) and double-click `Trayloom.exe`
+   (or `Trayloom-Setup.cmd`, which starts the same thing).
+2. Trayloom offers **Install Trayloom** (or **Update Trayloom** when an older copy is installed):
+   * **Install** copies the app to `%LOCALAPPDATA%\Programs\Trayloom` for your account only (no administrator password),
      adds a Start menu shortcut, an optional Desktop shortcut and an optional "start when I sign in" entry, and registers
-     an entry in **Settings > Apps > Installed apps** whose Uninstall runs `WinKnife.exe --uninstall`. It then starts the
+     an entry in **Settings > Apps > Installed apps** whose Uninstall runs `Trayloom.exe --uninstall`. It then starts the
      installed copy and you can delete the download.
-   * **Just run it** runs from where it is (tick "Don't ask again" to stop the offer). **Install WinKnife...** stays in the
+   * **Just run it** runs from where it is (tick "Don't ask again" to stop the offer). **Install Trayloom...** stays in the
      tray menu and in Settings > General > Getting started.
-3. On a fresh profile a short introduction opens: what WinKnife is, a bundle (**Essentials** is preselected, or
+3. On a fresh profile a short introduction opens: what Trayloom is, a bundle (**Essentials** is preselected, or
    Windows / Battery and quiet, or pick features one by one), Launch at login, and a picture of where the tray icon is.
-   A toast says "WinKnife is running" once.
+   A toast says "Trayloom is running" once.
 4. Windows does not let apps pin their own icon. To keep it visible: Settings > Personalization > Taskbar > **Other system
-   tray icons** > switch WinKnife on (the introduction and Settings > General have a button that opens that page,
+   tray icons** > switch Trayloom on (the introduction and Settings > General have a button that opens that page,
    `ms-settings:taskbar`), or drag the icon out of the **^** overflow next to the clock.
 5. Start it again from the Start menu while it runs: Settings opens on the page you used last, so you can always get back in.
-6. Uninstall: Settings > Apps > Installed apps > WinKnife > Uninstall (or `WinKnife.exe --uninstall`). It quits WinKnife,
+6. Uninstall: Settings > Apps > Installed apps > Trayloom > Uninstall (or `Trayloom.exe --uninstall`). It quits Trayloom,
    removes the files, shortcuts, the Apps & features entry and the start-at-sign-in entry, and asks whether to delete your
    settings too.
 
 If something does not start, right-click the tray icon > **Report a problem...** opens the folder with the log. A start
-that takes longer than 2 s shows a "Starting WinKnife..." toast (the first start after copying new DLLs can take ~10 s).
-If Windows **Smart App Control** blocks a file, WinKnife shows one dialog that explains it in plain words and lists the
+that takes longer than 2 s shows a "Starting Trayloom..." toast (the first start after copying new DLLs can take ~10 s).
+If Windows **Smart App Control** blocks a file, Trayloom shows one dialog that explains it in plain words and lists the
 options (below); it only reads that setting, it never changes it.
 
-`scripts\package.ps1` publishes the self-contained build, adds `WinKnife-Setup.cmd` and writes `dist\WinKnife-win-x64.zip`.
+`scripts\package.ps1` publishes the self-contained build, adds `Trayloom-Setup.cmd` and writes `dist\Trayloom-win-x64.zip`.
 (A self-extracting `Setup.exe` built with Windows IExpress was tried and is silently blocked on a Smart App Control PC, so
-`WinKnife-Setup.cmd` is the Setup equivalent.)
+`Trayloom-Setup.cmd` is the Setup equivalent.)
 
-Testing the install flow without touching your real Start menu or registry: set `WINKNIFE_INSTALL_ROOT`,
-`WINKNIFE_STARTMENU_DIR`, `WINKNIFE_DESKTOP_DIR`, `WINKNIFE_UNINSTALL_KEY` (an HKCU sub key) and `WINKNIFE_RUN_KEY`
-(an HKCU sub key) to scratch locations, plus `WINKNIFE_DATA` for the settings. `WINKNIFE_NO_INSTALL_PROMPT=1` hides the
+Testing the install flow without touching your real Start menu or registry: set `TRAYLOOM_INSTALL_ROOT`,
+`TRAYLOOM_STARTMENU_DIR`, `TRAYLOOM_DESKTOP_DIR`, `TRAYLOOM_UNINSTALL_KEY` (an HKCU sub key) and `TRAYLOOM_RUN_KEY`
+(an HKCU sub key) to scratch locations, plus `TRAYLOOM_DATA` for the settings. `TRAYLOOM_NO_INSTALL_PROMPT=1` hides the
 install offer; builds run from `bin\Debug` / `bin\Release` never show it.
 
 ## Hotkeys
 
 macOS ⌘ becomes **Win** in multi-modifier global shortcuts (⌃⌥⌘ = Ctrl+Alt+Win, ⌃⌘ = Ctrl+Win); ⌃ is Ctrl, ⌥ is Alt.
 Shortcuts that act inside the front app use Windows conventions. All of them are editable in *Keyboard shortcuts*;
-every default is unique (checked by `WinKnife.exe --dump-info <file>`). A shortcut only registers while its feature is
+every default is unique (checked by `Trayloom.exe --dump-info <file>`). A shortcut only registers while its feature is
 installed **and** its own switch is on, so a fresh install grabs nothing except the ones listed as "always".
 
 | Role | Default | Notes |
@@ -118,7 +123,7 @@ installed **and** its own switch is on, so a fresh install grabs nothing except 
 | Screen recording, Copy text from screen, Color picker | Ctrl+Alt+Win+5, +T, +C | |
 | Dynamic Island | Ctrl+Alt+Win+I | |
 
-If Windows reserves a combination or another program owns it, WinKnife falls back (Win replaced by Shift; Ctrl+Win
+If Windows reserves a combination or another program owns it, Trayloom falls back (Win replaced by Shift; Ctrl+Win
 replaced by Ctrl+Alt so it never becomes Ctrl+Shift+key), says so in the settings row, and the rest of the feature keeps
 working. Ctrl+Alt+Arrow is also used by some Intel graphics drivers for screen rotation.
 
@@ -126,7 +131,7 @@ working. Ctrl+Alt+Arrow is also used by some Intel graphics drivers for screen r
 
 * "Menu bar" is the notification area: the tray icon opens the panel, right-click gives the menu, live metrics are drawn
   as a strip next to the tray. The icon can step aside while metrics are shown (`menuBarHideIconWithMetrics`), unless
-  keep awake is active or the microphone is muted. Keep awake changes the icon (WinKnife mark, coffee, eye, moon, bulb),
+  keep awake is active or the microphone is muted. Keep awake changes the icon (Trayloom mark, coffee, eye, moon, bulb),
   tint and can print the remaining minutes in the icon.
 * The Dock features become taskbar features (thumbnails, minimize / hide / cycle on click); Spaces and the green
   maximize button do not exist. Windows Snap stays available next to Window layout.
@@ -137,7 +142,7 @@ working. Ctrl+Alt+Arrow is also used by some Intel graphics drivers for screen r
   settings become Windows Settings pages.
 * Nothing talks to Vorssaint servers: share links are hidden, feedback opens a GitHub issue, the agent price list is
   bundled, lyrics lookup is opt-in.
-* Per-app output routing uses an undocumented Windows interface. The first use on each Windows build runs a self-test (WinKnife
+* Per-app output routing uses an undocumented Windows interface. The first use on each Windows build runs a self-test (Trayloom
   routes its own silent stream to the default output and reads it back); if that does not round-trip, the route picker is hidden for
   that build and the reason is logged. Extra brightness is unavailable.
 
@@ -146,14 +151,14 @@ working. Ctrl+Alt+Arrow is also used by some Intel graphics drivers for screen r
 Requires the .NET 9 SDK on Windows 10 (19041) or newer.
 
 ```
-dotnet build WinKnife.sln -c Debug
-dotnet run --project src/WinKnife.App
+dotnet build Trayloom.sln -c Debug
+dotnet run --project src/Trayloom.App
 
-dotnet publish src/WinKnife.App/WinKnife.App.csproj -c Release -r win-x64 --self-contained true -o dist/WinKnife
+dotnet publish src/Trayloom.App/Trayloom.App.csproj -c Release -r win-x64 --self-contained true -o dist/Trayloom
 ```
 
-The publish output (`dist\WinKnife\WinKnife.exe`, about 175 MB unpacked, 70 MB zipped) is a self-contained folder: feature
-discovery loads the `WinKnife.Features.*.dll` assemblies next to the exe, and NAudio, ZXing.Net and the SQLite natives
+The publish output (`dist\Trayloom\Trayloom.exe`, about 175 MB unpacked, 70 MB zipped) is a self-contained folder: feature
+discovery loads the `Trayloom.Features.*.dll` assemblies next to the exe, and NAudio, ZXing.Net and the SQLite natives
 ship beside them, so keep the folder together. The first start after a fresh copy can take ~10 s (Windows scans the new
 DLLs); later starts take about a second.
 
@@ -162,14 +167,14 @@ Developer flags (a second launch hands them to the running copy): `--open-settin
 `--dev-uninstall <id>`, `--close-panel`, `--dump-info <file>` (features, actions, panel utilities, shortcut defaults,
 duplicate checks), `--open-onboarding [step]`, `--open-install`, `--show-toast`, `--simulate-problem sac|crash`,
 `--dev-key escape` (raises a key event inside the app), `--slow-start <ms>`, `--shot <png> [window title]` (saves a
-picture of one of WinKnife's own windows), `--install`, `--uninstall [--quiet]`, `--no-onboarding`. With `WINKNIFE_DEV=1` the island also exposes one action per page.
+picture of one of Trayloom's own windows), `--install`, `--uninstall [--quiet]`, `--no-onboarding`. With `TRAYLOOM_DEV=1` the island also exposes one action per page.
 
 `ARCHITECTURE_V2.md` and `specs/CONTRACTS.md` describe the solution layout and the contracts feature projects code
 against; `specs/R3_NOTES.md` is the integration checklist this release worked through.
 
 ## Smart App Control and unsigned builds
 
-WinKnife builds are **not code-signed**. On Windows 11 with **Smart App Control** (SAC) in *Enforce* mode, unsigned and
+Trayloom builds are **not code-signed**. On Windows 11 with **Smart App Control** (SAC) in *Enforce* mode, unsigned and
 unknown binaries (the exe and the feature DLLs it loads) can be blocked, which shows up as a failed start, a "blocked"
 message or a feature assembly that cannot be loaded. Your options, your choice:
 
@@ -178,7 +183,7 @@ message or a feature assembly that cannot be loaded. Your options, your choice:
    without resetting the PC.
 3. Run on a machine without SAC (or in Evaluation mode), or build locally on that machine.
 
-WinKnife never tries to bypass SAC or SmartScreen.
+Trayloom never tries to bypass SAC or SmartScreen.
 
 ## Known limitations
 
@@ -189,7 +194,7 @@ WinKnife never tries to bypass SAC or SmartScreen.
 * `TESTING.md` lists what needs a real person to verify (Alt+Tab takeover, taskbar previews, edge snapping, real clicks in
   recordings, the permission alert, and so on).
 * Features that hook input (smooth scrolling, focus follows mouse, super key, snippets, protection, the switcher) cannot
-  see or change input in elevated windows unless WinKnife runs elevated.
+  see or change input in elevated windows unless Trayloom runs elevated.
 * GPU monitor needs the Windows GPU engine counters; external brightness needs DDC/CI; Packages and App updates need
   `winget`.
 * With a very large AI-agent history (several GB of Claude Code logs) the Agents extension alone keeps ~200 MB resident;
@@ -198,5 +203,5 @@ WinKnife never tries to bypass SAC or SmartScreen.
 
 ## License
 
-GPL-3.0-or-later, see `LICENSE`. Vorssaint is a trademark of its owners; WinKnife only follows its public source code
+GPL-3.0-or-later, see `LICENSE`. Vorssaint is a trademark of its owners; Trayloom only follows its public source code
 under the GPL and has no relationship with the project.

@@ -1,0 +1,8 @@
+<Application x:Class="Trayloom.App.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             ShutdownMode="OnExplicitShutdown">
+    <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+    <!-- Trayloom — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils) -->
+    <Application.Resources />
+</Application>

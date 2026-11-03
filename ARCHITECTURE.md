@@ -1,13 +1,13 @@
-# WinKnife — architecture spec
+# Trayloom — architecture spec
 
-WinKnife is a Windows port of Vorssaint (https://vorssaint.com, GPL-3.0-or-later,
+Trayloom is a Windows port of Vorssaint (https://vorssaint.com, GPL-3.0-or-later,
 source cloned at `E:\REA TEST 1\vorssaint-mac`). The Vorssaint name, logo and
 icon must NOT be used (see `vorssaint-mac/TRADEMARKS.md`). This port is licensed
 GPL-3.0-or-later; every source file starts with:
 
 ```csharp
 // SPDX-License-Identifier: GPL-3.0-or-later
-// WinKnife — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
+// Trayloom — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
 ```
 
 Behaviour reference: the Swift sources under
@@ -23,28 +23,28 @@ equivalents. Do not translate macOS-only concepts literally.
 - Allowed NuGet packages: `NAudio` (Core Audio / per-app volume),
   `CommunityToolkit.Mvvm` (optional). Ask before adding others.
 - P/Invoke for Win32 (user32, kernel32, dwmapi, shell32, iphlpapi, dxva2).
-  Put shared interop in `WinKnife.Core/Native`, feature-specific interop
+  Put shared interop in `Trayloom.Core/Native`, feature-specific interop
   inside the feature project.
 
 ## Solution layout
 
 ```
-winknife/
-  WinKnife.sln
+trayloom/
+  Trayloom.sln
   Directory.Build.props          shared TFM / WPF / nullable settings
-  src/WinKnife.Core/             contracts, settings, hooks, hotkeys, interop, shared UI
-  src/WinKnife.App/              WPF exe: tray, Features hub, quick panel, command bar host
-  src/WinKnife.Features.Input/   Mouse and keyboard
-  src/WinKnife.Features.Windows/ Windows + Clipboard and files
-  src/WinKnife.Features.System/  Sound, Energy and display, System monitor
-  src/WinKnife.Features.Tools/   Tools
-  src/WinKnife.Features.Island/  Dynamic Island
+  src/Trayloom.Core/             contracts, settings, hooks, hotkeys, interop, shared UI
+  src/Trayloom.App/              WPF exe: tray, Features hub, quick panel, command bar host
+  src/Trayloom.Features.Input/   Mouse and keyboard
+  src/Trayloom.Features.Windows/ Windows + Clipboard and files
+  src/Trayloom.Features.System/  Sound, Energy and display, System monitor
+  src/Trayloom.Features.Tools/   Tools
+  src/Trayloom.Features.Island/  Dynamic Island
 ```
 
-`WinKnife.App` references every feature project. Feature projects reference
-only `WinKnife.Core`. Feature projects never reference each other.
+`Trayloom.App` references every feature project. Feature projects reference
+only `Trayloom.Core`. Feature projects never reference each other.
 
-## Core contracts (WinKnife.Core)
+## Core contracts (Trayloom.Core)
 
 ```csharp
 public enum FeatureGroup { WindowsTaskbar, MouseKeyboard, ClipboardFiles, Sound, EnergyDisplay, Tools, Island, Monitor }
@@ -72,7 +72,7 @@ public interface IFeatureContext
     INotifier Notifier { get; }        // tray balloon / toast
     Dispatcher Ui { get; }
     ILog Log { get; }
-    string DataDirectory { get; }      // %APPDATA%\WinKnife\<feature-id>\ (created on demand)
+    string DataDirectory { get; }      // %APPDATA%\Trayloom\<feature-id>\ (created on demand)
     IActionCatalog Actions { get; }    // all FeatureActions of currently installed features
 }
 
@@ -85,7 +85,7 @@ public interface IActionCatalog
 
 - `IFeatureSettings`: `T Get<T>(string key, T fallback)`, `void Set<T>(string key, T value)`,
   `event Action<string>? Changed`. Backed by one JSON file
-  `%APPDATA%\WinKnife\settings.json` (debounced atomic save).
+  `%APPDATA%\Trayloom\settings.json` (debounced atomic save).
 - `IInputHooks`: one shared WH_KEYBOARD_LL + WH_MOUSE_LL pair on a dedicated
   thread with its own message loop. Subscribers:
   `IDisposable SubscribeKeyboard(Func<KeyboardHookEvent, bool> handler, int priority = 0)`
@@ -94,21 +94,21 @@ public interface IActionCatalog
   xbutton, timestamp, `IsInjected`, modifier state. Handlers run ON THE HOOK THREAD:
   they must return in well under 1 ms and marshal UI work to the dispatcher.
   `InputSender` helper wraps SendInput and tags injected input with
-  `WinKnifeExtraInfo` (dwExtraInfo marker) so features can ignore their own output.
+  `TrayloomExtraInfo` (dwExtraInfo marker) so features can ignore their own output.
   Hooks are installed lazily (only while at least one subscriber exists).
 - `IHotkeyService`: `IDisposable Register(Hotkey hotkey, Action callback)` using
   RegisterHotKey on a hidden message window. `Hotkey` record (modifiers + key),
   parse/format like `Ctrl+Alt+K`. Includes a reusable WPF `HotkeyRecorder` control.
 - `FeatureRegistry`: discovers all non-abstract `IFeature` types with a
-  parameterless ctor in loaded `WinKnife.Features.*` assemblies; tracks installed
+  parameterless ctor in loaded `Trayloom.Features.*` assemblies; tracks installed
   set in settings (`installed` list); starts/stops features on install/uninstall;
   exceptions in one feature are logged and never crash the app.
-- `ILog`: file log at `%APPDATA%\WinKnife\logs\winknife.log` (rolling, small).
+- `ILog`: file log at `%APPDATA%\Trayloom\logs\trayloom.log` (rolling, small).
 - Shared UI in Core: theme resources (light/dark following Windows app theme),
   `OverlayWindow` base (borderless, topmost, no-activate, toolwindow, per-monitor DPI aware),
   `SettingsCard` helpers.
 
-## App (WinKnife.App)
+## App (Trayloom.App)
 
 - Single instance (named mutex); per-monitor-v2 DPI manifest; `asInvoker`.
 - Tray icon (NotifyIcon) with menu: Quick panel, Features…, Settings, Start with Windows, Quit.
@@ -121,15 +121,15 @@ public interface IActionCatalog
 
 ## Building
 
-- Phase 1 builds everything: `dotnet build winknife\WinKnife.sln`.
+- Phase 1 builds everything: `dotnet build trayloom\Trayloom.sln`.
 - Phase 2 agents run in parallel: build ONLY your own project and never the
-  solution or App: `dotnet build src\WinKnife.Features.X\WinKnife.Features.X.csproj -p:BuildProjectReferences=false`.
+  solution or App: `dotnet build src\Trayloom.Features.X\Trayloom.Features.X.csproj -p:BuildProjectReferences=false`.
 - Phase 2 agents must not edit Core, App, the .sln or other feature projects.
   If something is missing from Core, implement a local helper in your project and
   mention it in your report.
 - Zero warnings-as-errors policy is not required, but builds must succeed.
 
-## Feature mapping (Vorssaint → WinKnife)
+## Feature mapping (Vorssaint → Trayloom)
 
 Skip/adapt macOS-only items as noted. `Id` in brackets.
 

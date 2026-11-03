@@ -7,8 +7,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
-    <Version>0.1.1</Version>
-    <Authors>WinKnife contributors</Authors>
+    <Version>0.2.0</Version>
+    <Authors>Trayloom contributors</Authors>
     <Copyright>GPL-3.0-or-later</Copyright>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <!-- WPF0001: the Fluent ThemeMode API is experimental in .NET 9. CS1591: missing XML docs are not an error. -->

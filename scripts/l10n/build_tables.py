@@ -1,6 +1,6 @@
-"""Build per-locale string tables keyed by the exact English text WinKnife uses.
+"""Build per-locale string tables keyed by the exact English text Trayloom uses.
 
-Inputs : sites.json (literals of the WinKnife source), harvest_raw.json (Vorssaint tables)
+Inputs : sites.json (literals of the Trayloom source), harvest_raw.json (Vorssaint tables)
 Outputs: out/Strings.<locale>.json, out/matched.json, out/dropped.json
 """
 import json, collections, re, os, sys
@@ -41,7 +41,7 @@ def scan_platform_words(loc, key, tr):
     """Translations of texts that did not name a Mac thing in English may still do so (e.g. "the Mac lid"). Substitute or drop."""
     used = []
     if "Vorssaint" in tr:
-        used.append(("APP", "WinKnife"))
+        used.append(("APP", "Trayloom"))
     if "macOS" in tr:
         used.append(("OS", "Windows"))
     if re.search(r"\bMacs?\b", tr):
@@ -96,7 +96,7 @@ def main():
             if not placeholders(tr) <= kph:
                 dropped[k].append(loc + ":ph")
                 continue
-            # when the WinKnife English has no placeholders but the translation does -> drop
+            # when the Trayloom English has no placeholders but the translation does -> drop
             tr3 = scan_platform_words(loc, k, tr)
             if tr3 is None:
                 dropped[k].append(loc + ":scan")
