@@ -48,6 +48,7 @@ internal static class K
     public const string Volume = "notchVolume";
     public const string InputSource = "notchInputSource";
     public const string Microphone = "notchMicrophone";
+    public const string MicInUse = "notchMicInUse";
     public const string Brightness = "notchBrightness";
     public const string Battery = "notchBattery";
     public const string Clipboard = "notchClipboard";
@@ -173,6 +174,7 @@ internal static class K
             [Volume] = true,
             [InputSource] = true,
             [Microphone] = true,
+            [MicInUse] = true,
             [Brightness] = true,
             [Battery] = true,
             [Clipboard] = true,

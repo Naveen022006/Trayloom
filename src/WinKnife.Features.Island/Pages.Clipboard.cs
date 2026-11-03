@@ -77,6 +77,10 @@ internal sealed class ClipboardPage : IslandPage
 
     public override void Hidden() => Core.Clipboard.Changed -= OnChanged;
 
+    public override bool HasLayers => true;
+
+    public override bool CanStepBack => _searchOpen;
+
     public override bool StepBack()
     {
         if (_searchOpen)

@@ -111,8 +111,7 @@ internal sealed class ExplorePage : IslandPage
 
     private void BuildLeading()
     {
-        var back = D.IconButton(G.ChevronLeft, Strings.Back, () => Window.ToggleExplore(), size: 28, glyphSize: 11);
-        _leading.Children.Add(back);
+        // the island's own Back button (top row) leaves Explore; the search sits at the start of the page's side
         _search.Width = 120;
         _search.TextChanged += (_, _) => Rebuild();
         _search.GotKeyboardFocus += (_, _) => _searchBox!.BorderBrush = D.White(0.34);
@@ -129,7 +128,7 @@ internal sealed class ExplorePage : IslandPage
         row.Children.Add(D.I(G.Search, 11, D.White(0.55)));
         row.Children[0].SetValue(FrameworkElement.MarginProperty, new Thickness(8, 0, 4, 0));
         row.Children.Add(holder);
-        _searchBox = new Border { Height = 28, CornerRadius = new CornerRadius(9), Background = D.White(0.07), BorderThickness = new Thickness(1), BorderBrush = Brushes.Transparent, Child = row, Margin = new Thickness(8, 0, 0, 0) };
+        _searchBox = new Border { Height = 28, CornerRadius = new CornerRadius(9), Background = D.White(0.07), BorderThickness = new Thickness(1), BorderBrush = Brushes.Transparent, Child = row };
         _leading.Children.Add(_searchBox);
         Window.Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
         {

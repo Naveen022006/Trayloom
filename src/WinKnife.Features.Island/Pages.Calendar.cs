@@ -64,6 +64,10 @@ internal sealed class CalendarPage : IslandPage
 
     public override void Hidden() => Core.Calendar.Changed -= OnData;
 
+    public override bool HasLayers => true;
+
+    public override bool CanStepBack => _monthShort;
+
     public override bool StepBack()
     {
         if (_monthShort)

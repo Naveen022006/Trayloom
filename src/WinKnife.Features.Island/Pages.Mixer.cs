@@ -210,6 +210,10 @@ internal sealed class MixerPage : IslandPage
 
     public override void Hidden() => _poll.Stop();
 
+    public override bool HasLayers => true;
+
+    public override bool CanStepBack => _options;
+
     public override bool StepBack()
     {
         if (!_options)
@@ -449,7 +453,7 @@ internal sealed class MixerPage : IslandPage
         var def = outputs.FirstOrDefault(o => o.IsDefault);
         var menu = PageUi.BandMenu(def?.Name ?? Strings.OutputUnavailable, null, () => outputs.Select(o => { var id = o.Id; return new IslandMenu.Item(o.Name, () => { Core.Audio.SetDefaultOutput(id); Build(); }, o.IsDefault); }), () => HasWindow ? Window.HoldOpen() : null, def?.Name ?? Core.Audio.LastError, 160);
         _leading.Children.Add(menu);
-        _trailing.Children.Add(D.IconButton(_options ? G.Close : G.Controls, _options ? Loc.T("Close") : Loc.T("Options"), () => { _options = !_options; Build(); }, _options));
+        _trailing.Children.Add(D.IconButton(G.Controls, Loc.T("Options"),() => { _options = !_options; Build(); }, _options));
     }
 
     private FrameworkElement Options()

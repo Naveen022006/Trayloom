@@ -166,6 +166,7 @@ internal enum Activity
     Watch,
     Downloads,
     Agents,
+    Microphone,
     Calendar,
     Music,
     KeepAwake,
@@ -180,6 +181,7 @@ internal static class NoticeEvents
     public static readonly NoticeEvent Brightness = new("brightness", K.Brightness, 3, 1.6, "controls");
     public static readonly NoticeEvent KeyboardLight = new("keyboardLight", K.KeyboardLight, 3, 1.6, "controls");
     public static readonly NoticeEvent Microphone = new("microphone", K.Microphone, 3, 1.6, "mixer");
+    public static readonly NoticeEvent MicInUse = new("micInUse", K.MicInUse, 3, 2.6, "controls");
     public static readonly NoticeEvent InputSource = new("inputSource", K.InputSource, 3, 1.6, "controls");
     public static readonly NoticeEvent Capture = new("capture", K.Capture, 2, 12, "controls");
     public static readonly NoticeEvent Timer = new("timer", K.TimerEnabled, 2, 6, "timer");

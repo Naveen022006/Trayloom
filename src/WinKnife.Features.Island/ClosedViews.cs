@@ -172,6 +172,11 @@ internal static class ClosedViews
     public static ClosedView NoticeView(IslandCore core, IslandWindow win, Notice n)
     {
         var body = win.StripHeight;
+        if (n.Event == NoticeEvents.MicInUse)
+        {
+            return MicNotice(win, n);
+        }
+
         if (n.Element is { } custom)
         {
             custom.VerticalAlignment = VerticalAlignment.Center;
@@ -248,7 +253,7 @@ internal static class ClosedViews
 
     // ---------------------------------------------------------------- music strip
 
-    public static ClosedView MusicStrip(IslandCore core, IslandWindow win) => new(new MusicStripView(core, win), 260, 109);
+    public static ClosedView MusicStrip(IslandCore core, IslandWindow win) => Dotted(core, win, new(new MusicStripView(core, win), 260, 109));
 
     private sealed class MusicStripView : LiveStrip
     {
@@ -361,7 +366,7 @@ internal static class ClosedViews
 
     // ---------------------------------------------------------------- timer strip
 
-    public static ClosedView TimerStrip(IslandCore core, IslandWindow win) => new(new TimerStripView(core, win), 220, 109);
+    public static ClosedView TimerStrip(IslandCore core, IslandWindow win) => Dotted(core, win, new(new TimerStripView(core, win), 220, 109));
 
     private sealed class TimerStripView : LiveStrip
     {
@@ -415,7 +420,7 @@ internal static class ClosedViews
 
     // ---------------------------------------------------------------- downloads strip
 
-    public static ClosedView DownloadStrip(IslandCore core, IslandWindow win) => new(new DownloadStripView(core, win), 280, 109);
+    public static ClosedView DownloadStrip(IslandCore core, IslandWindow win) => Dotted(core, win, new(new DownloadStripView(core, win), 280, 109));
 
     private sealed class DownloadStripView : LiveStrip
     {
@@ -477,7 +482,7 @@ internal static class ClosedViews
 
     // ---------------------------------------------------------------- watch strip
 
-    public static ClosedView WatchStrip(IslandCore core, IslandWindow win) => new(new WatchStripView(core, win), 220, 109);
+    public static ClosedView WatchStrip(IslandCore core, IslandWindow win) => Dotted(core, win, new(new WatchStripView(core, win), 220, 109));
 
     private sealed class WatchStripView : LiveStrip
     {
@@ -538,7 +543,7 @@ internal static class ClosedViews
 
     // ---------------------------------------------------------------- calendar strip
 
-    public static ClosedView CalendarStrip(IslandCore core, IslandWindow win) => new(new CalendarStripView(core, win), 300, 109);
+    public static ClosedView CalendarStrip(IslandCore core, IslandWindow win) => Dotted(core, win, new(new CalendarStripView(core, win), 300, 109));
 
     private sealed class CalendarStripView : LiveStrip
     {
@@ -634,13 +639,18 @@ internal static class ClosedViews
         row.Children.Add(icon);
         row.Children.Add(reading);
         D.Tip(row, Loc.T("Keep awake"));
-        return new ClosedView(row, 220, 109);
+        return Dotted(core, win, new ClosedView(row, 220, 109));
     }
 
     // ---------------------------------------------------------------- external agents strip
 
     public static ClosedView? ExternalStrip(IslandCore core, IslandWindow win, string id)
     {
+        if (id == IslandCore.ActMicrophone)
+        {
+            return MicStrip(core, win);
+        }
+
         var el = core.TakeStrip(id);
         if (el is null)
         {
@@ -651,7 +661,169 @@ internal static class ClosedViews
         el.Margin = new Thickness(Math.Max(6, (win.StripHeight - 14) / 2), 0, 12, 0);
         var host = new Grid { Height = win.StripHeight };
         host.Children.Add(el);
-        return new ClosedView(host, 220, 109);
+        return Dotted(core, win, new ClosedView(host, 220, 109));
+    }
+
+    // ---------------------------------------------------------------- microphone in use
+
+    /// <summary>
+    /// While an app uses the microphone and another activity is the one on show, a small pulsing orange dot sits at the strip's edge
+    /// (the privacy indicator is never hidden, whatever the island shows).
+    /// </summary>
+    private static ClosedView Dotted(IslandCore core, IslandWindow win, ClosedView view)
+    {
+        if (!core.MicInUse)
+        {
+            return view;
+        }
+
+        var host = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Height = win.StripHeight };
+        view.Element.VerticalAlignment = VerticalAlignment.Center;
+        host.Children.Add(view.Element);
+        var dot = new MicPulse(6, null) { Margin = new Thickness(-4, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center };
+        D.Tip(dot, MicTip(core));
+        host.Children.Add(dot);
+        return view with { Element = host, MaxWidth = view.MaxWidth + 16 };
+    }
+
+    private static string MicTip(IslandCore core) =>
+        Loc.T("Microphone in use") + " · " + string.Join(", ", core.MicUse.Users.Select(u => u.Name));
+
+    private static FrameworkElement? AppIcon(ImageSource? icon, double size) =>
+        icon is null ? null : new Image { Source = icon, Width = size, Height = size, Stretch = Stretch.Uniform, VerticalAlignment = VerticalAlignment.Center, SnapsToDevicePixels = true };
+
+    /// <summary>The closed-island activity: orange pulsing microphone, the app (icon and name), "+N" when several apps listen.</summary>
+    public static ClosedView MicStrip(IslandCore core, IslandWindow win)
+    {
+        var body = win.StripHeight;
+        var users = core.MicUse.Users;
+        var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Height = body };
+        var glyph = Math.Min(16, Math.Max(10, body - 12));
+        var pulse = new MicPulse(glyph, G.Mic) { Margin = new Thickness(Math.Max(6, (body - glyph - 8) / 2), 0, 4, 0), VerticalAlignment = VerticalAlignment.Center };
+        row.Children.Add(pulse);
+        var iconSize = Math.Min(16, Math.Max(12, body - 10));
+        if (users.Count > 0)
+        {
+            var first = users[0];
+            if (AppIcon(first.Icon, iconSize) is { } icon)
+            {
+                icon.Margin = new Thickness(4, 0, 0, 0);
+                row.Children.Add(icon);
+            }
+
+            var name = D.T(first.Name, 11, FontWeights.SemiBold, D.Text, false, TextTrimming.CharacterEllipsis);
+            name.MaxWidth = users.Count > 1 ? 72 : 96;
+            name.VerticalAlignment = VerticalAlignment.Center;
+            name.Margin = new Thickness(first.Icon is null ? 4 : 6, 0, users.Count > 1 ? 0 : 12, 0);
+            row.Children.Add(name);
+            if (users.Count > 1)
+            {
+                var more = D.Digits($"+{users.Count - 1}", 11, FontWeights.SemiBold, D.Orange);
+                more.VerticalAlignment = VerticalAlignment.Center;
+                more.Margin = new Thickness(5, 0, 12, 0);
+                row.Children.Add(more);
+            }
+        }
+        else
+        {
+            pulse.Margin = new Thickness(pulse.Margin.Left, 0, 12, 0);
+        }
+
+        D.Tip(row, MicTip(core));
+        return new ClosedView(row, 220, 109);
+    }
+
+    /// <summary>"Claude is using the microphone": orange microphone, the app's icon, the sentence.</summary>
+    private static ClosedView MicNotice(IslandWindow win, Notice n)
+    {
+        var body = win.StripHeight;
+        var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Height = body };
+        var mark = D.I(G.Mic, 14, D.Orange);
+        mark.Margin = new Thickness(Math.Max(6, (body - 14) / 2), 0, 6, 0);
+        mark.VerticalAlignment = VerticalAlignment.Center;
+        row.Children.Add(mark);
+        var iconSize = Math.Min(16, Math.Max(12, body - 10));
+        if (AppIcon(n.Image, iconSize) is { } icon)
+        {
+            icon.Margin = new Thickness(2, 0, 6, 0);
+            row.Children.Add(icon);
+        }
+
+        var title = D.Digits(n.Title, 11, FontWeights.SemiBold);
+        title.TextTrimming = TextTrimming.CharacterEllipsis;
+        title.MaxWidth = 230;
+        title.VerticalAlignment = VerticalAlignment.Center;
+        title.Margin = new Thickness(n.Image is null ? 4 : 0, 0, 12, 0);
+        row.Children.Add(title);
+        return new ClosedView(row, 340, 109);
+    }
+}
+
+/// <summary>
+/// The microphone mark: a glyph (or a plain dot) in the iOS microphone orange with a soft sonar pulse behind it, on the shared
+/// 30 Hz decorative clock; still with Reduce Motion. Sizes are island layout units, so the island zoom scales it.
+/// </summary>
+internal sealed class MicPulse : Grid
+{
+    public const double Period = 1.8;
+
+    private readonly Border _halo;
+    private readonly ScaleTransform _scale = new(1, 1);
+    private readonly FrameworkElement _core;
+    private bool _subscribed;
+
+    public MicPulse(double size, string? glyph)
+    {
+        var box = size + (glyph is null ? 6 : 8);
+        Width = box;
+        Height = box;
+        _halo = new Border { Width = box, Height = box, CornerRadius = new CornerRadius(box / 2), Background = D.Frozen(Color.FromArgb(96, 0xFF, 0x9F, 0x0A)), RenderTransform = _scale, RenderTransformOrigin = new Point(0.5, 0.5), Opacity = 0, IsHitTestVisible = false };
+        Children.Add(_halo);
+        if (glyph is null)
+        {
+            _core = new Border { Width = size, Height = size, CornerRadius = new CornerRadius(size / 2), Background = D.Orange, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        }
+        else
+        {
+            _core = D.I(glyph, size, D.Orange);
+            _core.HorizontalAlignment = HorizontalAlignment.Center;
+        }
+
+        Children.Add(_core);
+        Loaded += (_, _) => Attach();
+        Unloaded += (_, _) => Detach();
+    }
+
+    private void Attach()
+    {
+        if (_subscribed || D.ReduceMotion)
+        {
+            return;
+        }
+
+        _subscribed = true;
+        DecorativeClock.Subscribe(Tick);
+        Tick();
+    }
+
+    private void Detach()
+    {
+        if (_subscribed)
+        {
+            _subscribed = false;
+            DecorativeClock.Unsubscribe(Tick);
+        }
+    }
+
+    private void Tick()
+    {
+        var p = DecorativeClock.Now % Period / Period;
+        var ease = 1 - Math.Pow(1 - p, 2);
+        var s = 0.75 + (0.65 * ease);
+        _scale.ScaleX = s;
+        _scale.ScaleY = s;
+        _halo.Opacity = 0.8 * Math.Pow(1 - p, 1.4);
+        _core.Opacity = 0.86 + (0.14 * ((1 - Math.Cos(2 * Math.PI * p)) / 2));
     }
 }
 

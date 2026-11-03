@@ -333,6 +333,8 @@ internal static class SettingsTabs
         cards.Add(Card(G.Music, Loc.T("New track"), K.TrackChange, trackOk, trackOk ? null : Loc.T("Show “Now Playing” on the Content tab.")));
         cards.Add(Card(G.Keyboard, Loc.T("Input source"), K.InputSource, true, null));
         ind.Add(SUi.CardGrid(cards, 116, 700));
+        ind.AddDivider();
+        ind.Add(SUi.SwitchRow(app, K.MicInUse, "", Loc.T("Show when an app uses the microphone"), Loc.T("While an app records from the microphone, the island shows a pulsing orange microphone with the app’s name, as the indicator on iPhone and Mac does.")));
         if (app.Get<bool>(K.Accessories))
         {
             ind.AddCaption(Loc.T("Show connected accessories and warn once when their battery falls to 20%."));

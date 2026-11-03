@@ -350,6 +350,7 @@ internal sealed partial class IslandWindow
         IslandCore.ActCalendar => "calendar",
         IslandCore.ActMusic => "music",
         IslandCore.ActKeepAwake => "controls",
+        IslandCore.ActMicrophone => "controls",
         _ => act,
     };
 
@@ -418,8 +419,8 @@ internal sealed partial class IslandWindow
         {
             var mod = ModuleForActivity(a);
             var def = _core.AllModules().FirstOrDefault(m => m.Id == mod);
-            var title = a == IslandCore.ActKeepAwake ? Loc.T("Keep awake") : (def?.Title ?? a);
-            var glyph = a == IslandCore.ActKeepAwake ? G.Cup : (def?.Glyph ?? G.Dot);
+            var title = a == IslandCore.ActKeepAwake ? Loc.T("Keep awake") : (a == IslandCore.ActMicrophone ? Loc.T("Microphone") : (def?.Title ?? a));
+            var glyph = a == IslandCore.ActKeepAwake ? G.Cup : (a == IslandCore.ActMicrophone ? G.Mic : (def?.Glyph ?? G.Dot));
             var selected = a == current;
             var chip = new HoverButton(() => { _core.PickedActivity = a; RefreshClosed(); }) { Height = 32, CornerRadius = new CornerRadius(8), Padding = new Thickness(10, 0, 10, 0), Margin = new Thickness(3), Fill = selected ? Brushes.White : D.White(0.12) };
             var content = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
@@ -545,6 +546,7 @@ internal sealed partial class IslandWindow
 
         destination ??= ReopenDestination();
         var wasOpen = Expanded;
+        var origin = HistoryOrigin();
         _core.Notices.Clear();
         _picker = false;
         _placeholder = false;
@@ -561,14 +563,21 @@ internal sealed partial class IslandWindow
         else
         {
             _exploring = false;
-            if (_core.Modules().Any(m => m.Id == destination) || _core.External(destination) is not null)
+            var target = _core.Modules().Any(m => m.Id == destination) || _core.External(destination) is not null
+                ? destination
+                : _core.Modules().FirstOrDefault()?.Id ?? "controls";
+            if (wasOpen && target != _module)
             {
-                _module = destination;
+                // asked from outside while the island is open (a shortcut, a quick button): a step Back can undo
+                PushHistory(origin);
             }
-            else
-            {
-                _module = _core.Modules().FirstOrDefault()?.Id ?? "controls";
-            }
+
+            _module = target;
+        }
+
+        if (!wasOpen)
+        {
+            _history.Clear();
         }
 
         _openedFresh = true;
@@ -622,6 +631,8 @@ internal sealed partial class IslandWindow
         _leaveAt = null;
         _suppressHover = IsPointerInside();
         _lastChange = DateTime.UtcNow;
+        _history.Clear();
+        _backSlot = null;
         if (wasOpen)
         {
             _page?.Hidden();
@@ -695,9 +706,283 @@ internal sealed partial class IslandWindow
             return;
         }
 
+        if (id != _module)
+        {
+            PushHistory(HistoryOrigin());
+        }
+
         _exploring = false;
         _module = id;
         BuildOpen(rebuildPage: true);
+    }
+
+    // ---------------------------------------------------------------- navigation (Back / Close marks in the top row)
+
+    private const int HistoryCap = 10;
+    private const string ExploreLocation = "explore";
+    private readonly List<string> _history = [];
+    private FrameworkElement? _backSlot;
+    private bool _backReserved;
+    private bool _backVisible;
+    private bool _navStatic;
+
+    /// <summary>The pages visited from inside the open island, oldest first (module ids or "explore"); cleared when the island closes.</summary>
+    internal IReadOnlyList<string> NavigationHistory => _history;
+
+    /// <summary>Whether the Back button is showing right now.</summary>
+    internal bool BackVisible => _backVisible;
+
+    /// <summary>The page the island goes back to at the end: the home page.</summary>
+    internal string HomeLocation()
+    {
+        var modules = _core.Modules();
+        if (_core.App.Get<bool>(K.ReturnHome))
+        {
+            var home = _core.App.Get<string>(K.HomeModule);
+            if (home == ExploreLocation)
+            {
+                return ExploreLocation;
+            }
+
+            if (modules.Any(m => m.Id == home))
+            {
+                return home;
+            }
+        }
+
+        return modules.Any(m => m.Id == "controls") ? "controls" : modules.FirstOrDefault()?.Id ?? "controls";
+    }
+
+    /// <summary>Where the person is now, for the history: Explore only when Explore is the home page (otherwise it is an overlay on the module).</summary>
+    private string HistoryOrigin() => _exploring && HomeLocation() == ExploreLocation ? ExploreLocation : _module;
+
+    private void PushHistory(string location)
+    {
+        if (location.Length == 0 || (_history.Count > 0 && _history[^1] == location))
+        {
+            return;
+        }
+
+        _history.Add(location);
+        if (_history.Count > HistoryCap)
+        {
+            _history.RemoveAt(0);
+        }
+    }
+
+    private bool LocationExists(string location) =>
+        location == ExploreLocation || _core.Modules().Any(m => m.Id == location) || _core.External(location) is not null;
+
+    /// <summary>The closest earlier page that still exists, or null (pages removed from the island meanwhile are skipped).</summary>
+    private string? PreviousLocation()
+    {
+        for (var i = _history.Count - 1; i >= 0; i--)
+        {
+            if (LocationExists(_history[i]))
+            {
+                return _history[i];
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Whether Back has somewhere to go: an inner layer, Explore, an earlier page, or the home page.</summary>
+    internal bool CanGoBack()
+    {
+        if (_mode != IslandMode.Open)
+        {
+            return false;
+        }
+
+        return _page is { CanStepBack: true } || StaticCanGoBack();
+    }
+
+    /// <summary>The part of Back that does not depend on the page's inner layers: Explore, an earlier page, or the home page.</summary>
+    private bool StaticCanGoBack()
+    {
+        var home = HomeLocation();
+        if (_exploring)
+        {
+            return home != ExploreLocation || PreviousLocation() is not null;
+        }
+
+        return PreviousLocation() is not null || _module != home;
+    }
+
+    /// <summary>
+    /// The Back button and Backspace: close the page's inner layer, else leave Explore, else the previous page, else the home page.
+    /// Unlike Esc, it never closes the island.
+    /// </summary>
+    internal void GoBack()
+    {
+        if (_mode != IslandMode.Open)
+        {
+            return;
+        }
+
+        if (!CanGoBack())
+        {
+            return;
+        }
+
+        if (_page is { } p && p.StepBack())
+        {
+            RefreshNav();
+            return;
+        }
+
+        if (_exploring && HomeLocation() != ExploreLocation)
+        {
+            _exploring = false;
+            BuildOpen(rebuildPage: true);
+            return;
+        }
+
+        string? target = null;
+        while (_history.Count > 0)
+        {
+            var last = _history[^1];
+            _history.RemoveAt(_history.Count - 1);
+            if (LocationExists(last) && (last != _module || _exploring))
+            {
+                target = last;
+                break;
+            }
+        }
+
+        if (target is null)
+        {
+            var home = HomeLocation();
+            if (home == _module && !_exploring)
+            {
+                return;
+            }
+
+            target = home;
+        }
+
+        NavigateTo(target);
+    }
+
+    /// <summary>Shows a page without recording it in the history (Back and the home fallback).</summary>
+    private void NavigateTo(string location)
+    {
+        if (location == ExploreLocation)
+        {
+            _exploring = true;
+        }
+        else
+        {
+            _exploring = false;
+            _module = location;
+        }
+
+        BuildOpen(rebuildPage: true);
+    }
+
+    /// <summary>Keeps the Back button in step with the page (an inner layer opening or closing) without rebuilding the row.</summary>
+    internal void RefreshNav()
+    {
+        if (_backSlot is null || _mode != IslandMode.Open)
+        {
+            return;
+        }
+
+        // every 40 ms while open: only the page's own state is read, the rest was settled when the row was built
+        var show = _page is { CanStepBack: true } || _navStatic;
+        if (show == _backVisible)
+        {
+            return;
+        }
+
+        if (show && !_backReserved)
+        {
+            // a page that never announced layers opened one: rebuild the row once so the button has its place
+            BuildOpen(rebuildPage: false);
+            return;
+        }
+
+        SetBackVisible(show, animate: true);
+    }
+
+    private void SetBackVisible(bool show, bool animate)
+    {
+        _backVisible = show;
+        if (_backSlot is not { } slot)
+        {
+            return;
+        }
+
+        slot.IsHitTestVisible = show;
+        slot.BeginAnimation(OpacityProperty, null);
+        if (!animate || D.ReduceMotion)
+        {
+            slot.Opacity = show ? 1 : 0;
+            return;
+        }
+
+        slot.BeginAnimation(OpacityProperty, new DoubleAnimation(show ? 1 : 0, TimeSpan.FromMilliseconds(140)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
+    }
+
+    private HoverButton NavButton(string glyph, string title, Action onClick, double size, double glyphSize)
+    {
+        var b = new HoverButton(onClick)
+        {
+            Width = size,
+            Height = size,
+            CornerRadius = new CornerRadius(size / 2),
+            Fill = D.White(0.10),
+            HoverFill = D.White(0.18),
+            Lifts = false,
+        };
+        var icon = D.I(glyph, glyphSize, D.White(0.78));
+        b.Child = icon;
+        b.Icon = icon;
+        b.IdleForeground = D.White(0.78);
+        b.SelectedForeground = D.Text;
+        D.Tip(b, title);
+        return b;
+    }
+
+    /// <summary>The Back button in a slot that keeps its room (fully transparent and inert while there is nowhere to go back to).</summary>
+    private FrameworkElement BuildBackSlot(double size, double glyphSize)
+    {
+        var slot = new Grid { Width = size, Height = size, VerticalAlignment = VerticalAlignment.Center };
+        slot.Children.Add(NavButton(G.ChevronLeft, Strings.Back, GoBack, size, glyphSize));
+        _backSlot = slot;
+        _backReserved = true;
+        _navStatic = StaticCanGoBack();
+        SetBackVisible(CanGoBack(), animate: false);
+        return slot;
+    }
+
+    /// <summary>Whether the row keeps room for the Back button: there is somewhere to go back to now, or the page can open a layer later.</summary>
+    private bool WantsBackSlot(IslandPage page) => page.HasLayers || CanGoBack();
+
+    private HoverButton BuildCloseButton(double size, double glyphSize) => NavButton(G.Close, Loc.T("Close"), () => Collapse(), size, glyphSize);
+
+    /// <summary>The marks for a page without a top row: two slim buttons in the top corners, clear of the page's first row.</summary>
+    private FrameworkElement BuildCornerMarks(IslandPage page, double topInset)
+    {
+        const double size = 22;
+        var top = topInset > 0 ? 10.0 : 6.0;
+        var overlay = new Grid { VerticalAlignment = VerticalAlignment.Top, Height = top + size };
+        if (WantsBackSlot(page))
+        {
+            var slot = BuildBackSlot(size, 9);
+            slot.HorizontalAlignment = HorizontalAlignment.Left;
+            slot.VerticalAlignment = VerticalAlignment.Top;
+            slot.Margin = new Thickness(8, top, 0, 0);
+            overlay.Children.Add(slot);
+        }
+
+        var close = BuildCloseButton(size, 9);
+        close.HorizontalAlignment = HorizontalAlignment.Right;
+        close.VerticalAlignment = VerticalAlignment.Top;
+        close.Margin = new Thickness(0, top, 8, 0);
+        overlay.Children.Add(close);
+        return overlay;
     }
 
     public IDisposable HoldOpen()
@@ -798,10 +1083,11 @@ internal sealed partial class IslandWindow
         var host = new Grid { Margin = new Thickness(28, pageTop, 28, 16), ClipToBounds = true };
         host.Children.Add(Detach.From(page.View)!);
         root.Children.Add(host);
-        if (hasRow)
-        {
-            root.Children.Add(BuildBand(page, topInset, w));
-        }
+        // Back and Close are part of the row from the first frame (built here, before the spring starts), never added afterwards
+        _backSlot = null;
+        _backReserved = false;
+        _backVisible = false;
+        root.Children.Add(hasRow ? BuildBand(page, topInset, w) : BuildCornerMarks(page, topInset));
 
         SwapOpenRoot(root, rebuildPage);
         _openHost.Width = w;
@@ -827,60 +1113,70 @@ internal sealed partial class IslandWindow
 
     private FrameworkElement BuildBand(IslandPage page, double topInset, double w)
     {
+        // back | page row (leading, trailing or one filling element) | pin, close
         var band = new Grid { Height = HeaderRow, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(28, topInset + 6, 28, 0) };
+        band.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        band.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        band.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        if (WantsBackSlot(page))
+        {
+            var slot = BuildBackSlot(28, 12);
+            slot.Margin = new Thickness(0, 0, 8, 0);
+            band.Children.Add(slot);
+        }
+
+        var middle = new Grid();
+        Grid.SetColumn(middle, 1);
+        band.Children.Add(middle);
         if (page.BandFill is { } fill)
         {
-            band.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            band.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             fill.VerticalAlignment = VerticalAlignment.Center;
-            band.Children.Add(Detach.From(fill)!);
-            if (_pinned)
+            middle.Children.Add(Detach.From(fill)!);
+        }
+        else
+        {
+            var leading = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
+            var trailing = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+            var hasExploreButton = _layout.Buttons.Any(b => b.ActionId == "explore");
+            if (_exploring)
             {
-                var pin2 = D.IconButton(G.PinFilled, Strings.Unpin, () => { _pinned = false; BuildOpen(rebuildPage: false); }, selected: true, size: 28, glyphSize: 12);
-                pin2.Margin = new Thickness(10, 0, 0, 0);
-                Grid.SetColumn(pin2, 1);
-                band.Children.Add(pin2);
+                // the Explore page builds its search in Leading; the Back button above leaves Explore
+            }
+            else if (!hasExploreButton)
+            {
+                leading.Children.Add(D.IconButton(G.Explore, Strings.Explore, ToggleExplore, size: 28, glyphSize: 12));
             }
 
-            return band;
-        }
-
-        var leading = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
-        var trailing = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
-        var hasExploreButton = _layout.Buttons.Any(b => b.ActionId == "explore");
-        if (_exploring)
-        {
-            // the Explore page builds its own back button + search in Leading
-        }
-        else if (!hasExploreButton)
-        {
-            leading.Children.Add(D.IconButton(G.Explore, Strings.Explore, ToggleExplore, size: 28, glyphSize: 12));
-        }
-
-        if (page.Leading is { } l)
-        {
-            if (leading.Children.Count > 0)
+            if (page.Leading is { } l)
             {
-                l.Margin = new Thickness(8, 0, 0, 0);
+                if (leading.Children.Count > 0)
+                {
+                    l.Margin = new Thickness(8, 0, 0, 0);
+                }
+
+                leading.Children.Add(Detach.From(l)!);
             }
 
-            leading.Children.Add(Detach.From(l)!);
+            if (page.Trailing is { } t)
+            {
+                trailing.Children.Add(Detach.From(t)!);
+            }
+
+            middle.Children.Add(leading);
+            middle.Children.Add(trailing);
         }
 
-        if (page.Trailing is { } t)
-        {
-            trailing.Children.Add(Detach.From(t)!);
-        }
-
+        var edge = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
+        Grid.SetColumn(edge, 2);
         if (_pinned)
         {
             var pin = D.IconButton(G.PinFilled, Strings.Unpin, () => { _pinned = false; BuildOpen(rebuildPage: false); }, selected: true, size: 28, glyphSize: 12);
-            pin.Margin = new Thickness(6, 0, 0, 0);
-            trailing.Children.Add(pin);
+            pin.Margin = new Thickness(0, 0, 6, 0);
+            edge.Children.Add(pin);
         }
 
-        band.Children.Add(leading);
-        band.Children.Add(trailing);
+        edge.Children.Add(BuildCloseButton(28, 12));
+        band.Children.Add(edge);
         return band;
     }
 

@@ -16,9 +16,13 @@ namespace WinKnife.Features.Agents;
 /// The "AI Agents" page of the expanded island (spec 03 A7.1): cards the person picked, paired across the width, scrolling when they do
 /// not fit. Always dark (the island is black).
 /// </summary>
-public sealed class AgentsPageView : Grid
+public sealed class AgentsPageView : Grid, IIslandTopRowHost
 {
     private readonly AgentsRuntime _runtime;
+    private readonly Border _topRow = new();
+    private FrameworkElement? _bar;
+    private Grid? _root;
+    private bool _topRowClaimed;
     private readonly bool _preview;
     private readonly DispatcherTimer _refresh = new() { Interval = TimeSpan.FromSeconds(15) };
     private Border _scrollIndicator = NewIndicator();
@@ -40,6 +44,23 @@ public sealed class AgentsPageView : Grid
         _refresh.Tick += (_, _) => Rebuild();
         Background = Brushes.Transparent;
         Rebuild();
+    }
+
+    /// <summary>The island's top row takes the period menu (it sits beside the back button, not under an empty band).</summary>
+    public FrameworkElement ClaimTopRow()
+    {
+        if (!_topRowClaimed)
+        {
+            _topRowClaimed = true;
+            if (_bar is not null && _root is not null)
+            {
+                _root.Children.Remove(_bar);
+                _bar.Margin = new Thickness(0);
+                _topRow.Child = _bar;
+            }
+        }
+
+        return _topRow;
     }
 
     private void Attach()
@@ -102,6 +123,9 @@ public sealed class AgentsPageView : Grid
         var keepOffset = _scroll?.VerticalOffset ?? 0;
         Children.Clear();
         _scroll = null;
+        _bar = null;
+        _root = null;
+        _topRow.Child = null;
         _scrollIndicator = NewIndicator();
 
         // Only agents that left something on this PC, or whose accounts were added, get cards.
@@ -167,12 +191,22 @@ public sealed class AgentsPageView : Grid
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-        // The period drives several cards, so it sits in the island's top row while any of them shows.
+        // The period drives several cards, so it sits in the island's top row while any of them shows (in the page itself when the
+        // island did not claim the row, as in the Settings preview).
+        _root = root;
         if (tiles.Any(t => t.Card.FollowsPeriod()))
         {
             var bar = PeriodMenu(period);
-            bar.Margin = new Thickness(0, 0, 0, 8);
-            root.Children.Add(bar);
+            _bar = bar;
+            if (_topRowClaimed)
+            {
+                _topRow.Child = bar;
+            }
+            else
+            {
+                bar.Margin = new Thickness(0, 0, 0, 8);
+                root.Children.Add(bar);
+            }
         }
 
         var scroll = new WinKnife.Core.Ui.SmoothScrollViewer

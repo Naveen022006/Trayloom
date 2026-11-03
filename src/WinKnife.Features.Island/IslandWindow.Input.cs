@@ -278,6 +278,12 @@ internal sealed partial class IslandWindow
         var cursor = Screens.CursorPosition();
         UpdateFullscreen();
         FollowPointerDisplay(cursor, now);
+        if (_mode == IslandMode.Open)
+        {
+            // an inner layer of the page opened or closed: the Back mark follows
+            RefreshNav();
+        }
+
         var inside = IsPointerInside();
         if (_mode == IslandMode.Closed && !_rendering && _envH > EnvelopeBaseHeight + 0.5 && now - _lastChange > TimeSpan.FromSeconds(20))
         {
@@ -784,6 +790,18 @@ internal sealed partial class IslandWindow
         {
             StepBack();
             e.Handled = true;
+            return;
+        }
+
+        if (key == Key.Back && !ctrl && !alt && !shift && Keyboard.FocusedElement is not (System.Windows.Controls.Primitives.TextBoxBase or PasswordBox))
+        {
+            // Backspace is Back, unless a text box owns the key
+            if (CanGoBack())
+            {
+                GoBack();
+                e.Handled = true;
+            }
+
             return;
         }
 

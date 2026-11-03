@@ -245,6 +245,10 @@ internal sealed class MusicPage : IslandPage
         _poll.Stop();
     }
 
+    public override bool HasLayers => true;
+
+    public override bool CanStepBack => _extra != MusicExtra.None;
+
     public override bool StepBack()
     {
         if (_extra == MusicExtra.Library && _library?.StepBack() == true)

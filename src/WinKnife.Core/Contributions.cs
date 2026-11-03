@@ -447,6 +447,19 @@ public interface IIslandSection : IContributionProvider
     FrameworkElement CreateView(IIslandContext context);
 }
 
+/// <summary>
+/// Optional: implemented by the view of an <see cref="IIslandSection"/> that keeps a control (for example a period menu) in the
+/// island's top row, beside the back button, instead of at the top of the page.
+/// </summary>
+public interface IIslandTopRowHost
+{
+    /// <summary>
+    /// The island calls this once before it measures the page: from now on the control lives in the returned element, which the
+    /// island places in the top row (it is empty, and takes no room, while the page has nothing for the row).
+    /// </summary>
+    FrameworkElement ClaimTopRow();
+}
+
 /// <summary>A compact item of the island strip (collapsed / live-activity state), e.g. the timer countdown or an agent badge.</summary>
 public interface IIslandStrip : IContributionProvider
 {

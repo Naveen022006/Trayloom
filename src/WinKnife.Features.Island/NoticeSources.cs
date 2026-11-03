@@ -46,6 +46,7 @@ internal sealed class NoticeSources : IDisposable
         _layout = IslandNative.ForegroundLayout();
         _core.Audio.VolumeChanged += OnVolume;
         _core.Audio.MicChanged += OnMic;
+        _core.MicUse.Started += OnMicInUse;
         _core.Playback.TrackChanged += OnTrack;
         _core.Timer.Finished += OnTimerFinished;
         _core.Session.Unlocked += OnUnlock;
@@ -126,6 +127,29 @@ internal sealed class NoticeSources : IDisposable
 
         _core.ShowNotice(new Notice { Event = NoticeEvents.Microphone, Glyph = m ? G.MicOff : G.Mic, Title = m ? Loc.T("Mic Mute on") : Loc.T("Mic Mute off"), Detail = "", Tint = m ? Color.FromRgb(0xFF, 0x45, 0x3A) : null, Reaction = m ? "hush" : "perk" });
         _core.Mascot.React(m ? "hush" : "perk");
+    }
+
+    private readonly Dictionary<string, DateTime> _micAnnounced = [];
+
+    /// <summary>An app began capturing from the microphone: "Claude is using the microphone" (nothing when it stops; the strip just goes).</summary>
+    private void OnMicInUse(MicUser user)
+    {
+        // an app that opens and closes the microphone in a loop is announced once in a while, not every time
+        if (_micAnnounced.TryGetValue(user.Key, out var last) && DateTime.UtcNow - last < TimeSpan.FromSeconds(30))
+        {
+            return;
+        }
+
+        _micAnnounced[user.Key] = DateTime.UtcNow;
+        _core.ShowNotice(new Notice
+        {
+            Event = NoticeEvents.MicInUse,
+            Glyph = G.Mic,
+            Title = Loc.F("{0} is using the microphone", user.Name),
+            Detail = user.Key,
+            Tint = Color.FromRgb(0xFF, 0x9F, 0x0A),
+            Image = user.Icon,
+        });
     }
 
     private void OnTrack(Playback p)
@@ -287,6 +311,7 @@ internal sealed class NoticeSources : IDisposable
         _brightness = null;
         _core.Audio.VolumeChanged -= OnVolume;
         _core.Audio.MicChanged -= OnMic;
+        _core.MicUse.Started -= OnMicInUse;
         _core.Playback.TrackChanged -= OnTrack;
         _core.Timer.Finished -= OnTimerFinished;
         _core.Session.Unlocked -= OnUnlock;

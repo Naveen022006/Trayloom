@@ -338,6 +338,9 @@ internal sealed class HoverButton : Border
     /// <summary>Whether the hover wash lifts the button (scale 1.022).</summary>
     public bool Lifts { get; set; } = true;
 
+    /// <summary>The fill while the pointer is over the button (null = the usual hover wash).</summary>
+    public Brush? HoverFill { get; set; }
+
     public bool Selected
     {
         get => _selected;
@@ -406,7 +409,7 @@ internal sealed class HoverButton : Border
 
     private void Refresh()
     {
-        Brush? fill = _selected ? D.SurfaceSelected : (_hover && IsEnabled ? D.Hover : _fill);
+        Brush? fill = _selected ? D.SurfaceSelected : (_hover && IsEnabled ? (HoverFill ?? D.Hover) : _fill);
         if (_selected && _hover)
         {
             fill = D.White(0.16);

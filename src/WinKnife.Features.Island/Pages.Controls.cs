@@ -220,6 +220,17 @@ internal sealed class ControlsPage : IslandPage
 
     public override FrameworkElement View => _view;
 
+    private bool ShowsMicRow => !IsPreview && Core.MicInUse;
+
+    /// <summary>An app started or stopped using the microphone while the page is open: rebuild so the row comes or goes.</summary>
+    private void OnMicUse() => _view.Dispatcher.BeginInvoke(() =>
+    {
+        if (HasWindow && !IsPreview)
+        {
+            Window.ReopenPage();
+        }
+    });
+
     public override FrameworkElement? BandFill => _levels.Count == 0 ? null : BuildLevels();
 
     private bool Visible(ControlDef c)
@@ -279,7 +290,8 @@ internal sealed class ControlsPage : IslandPage
     public override double Height(double width, double budget)
     {
         _width = width;
-        if (_levels.Count == 0 && !_showMusic && _tiles.Count == 0)
+        var mic = ShowsMicRow ? MicUseRow.Height + 10 : 0;
+        if (_levels.Count == 0 && !_showMusic && _tiles.Count == 0 && mic == 0)
         {
             return Math.Min(budget, 140);
         }
@@ -289,7 +301,7 @@ internal sealed class ControlsPage : IslandPage
         var rows = _tiles.Count == 0 ? 0 : Math.Max(1, (int)Math.Ceiling(_tiles.Count / (double)Math.Max(1, (int)Math.Floor((width + 8) / (76 + 8)))));
         double card = _showMusic ? 80 : 0;
         double railRows = rows;
-        double Total() => (levelRow > 0 ? levelRow + spacing : 0) + (card > 0 ? card + spacing : 0) + (railRows > 0 ? (railRows * 74) + ((railRows - 1) * 8) : 0) - (card == 0 && railRows == 0 && levelRow > 0 ? spacing : 0);
+        double Total() => mic + (levelRow > 0 ? levelRow + spacing : 0) + (card > 0 ? card + spacing : 0) + (railRows > 0 ? (railRows * 74) + ((railRows - 1) * 8) : 0) - (card == 0 && railRows == 0 && levelRow > 0 ? spacing : 0);
         var total = Total();
         if (total > budget && card > 68)
         {
@@ -313,6 +325,14 @@ internal sealed class ControlsPage : IslandPage
     {
         _view.Children.Clear();
         var stack = new StackPanel();
+        if (ShowsMicRow)
+        {
+            // "Microphone in use · Claude": the privacy row sits above everything and opens Windows' microphone privacy page
+            var micRow = MicUseRow.Create(Core);
+            micRow.Margin = new Thickness(0, 0, 0, 10);
+            stack.Children.Add(micRow);
+        }
+
         if (_showMusic)
         {
             var card = new MusicCard(Core, HasWindow ? Window : null, _cardHeight, IsPreview) { Margin = new Thickness(0, 0, 0, 0) };
@@ -408,6 +428,7 @@ internal sealed class ControlsPage : IslandPage
         Core.Timer.Ticked += Refresh;
         Core.Timer.Changed += Refresh;
         Core.Audio.MicChanged += Refresh;
+        Core.MicUseChanged += OnMicUse;
         if (Core.KeepAwake is { } ka)
         {
             ka.Changed += OnAwake;
@@ -420,6 +441,7 @@ internal sealed class ControlsPage : IslandPage
         Core.Timer.Ticked -= Refresh;
         Core.Timer.Changed -= Refresh;
         Core.Audio.MicChanged -= Refresh;
+        Core.MicUseChanged -= OnMicUse;
         if (Core.KeepAwake is { } ka)
         {
             ka.Changed -= OnAwake;

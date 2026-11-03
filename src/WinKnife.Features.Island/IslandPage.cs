@@ -57,6 +57,12 @@ internal abstract class IslandPage
     /// <summary>Esc: close an inner layer; true when something was closed.</summary>
     public virtual bool StepBack() => false;
 
+    /// <summary>An inner layer is open right now, so <see cref="StepBack"/> would close it (drives the island's back button).</summary>
+    public virtual bool CanStepBack => false;
+
+    /// <summary>The page can open inner layers: the island keeps room for the back button in the top row from the first frame.</summary>
+    public virtual bool HasLayers => false;
+
     /// <summary>The page has a vertically scrolling list (gestures leave the wheel to it).</summary>
     public virtual bool ScrollsContent => false;
 
@@ -93,6 +99,9 @@ internal sealed class ExternalPage : IslandPage
 
     public override bool ScrollsContent => true;
 
+    /// <summary>A section view may keep a control in the top row (AI Agents: the period menu), claimed once before the page is measured.</summary>
+    public override FrameworkElement? Leading => HasWindow && !IsPreview && View is IIslandTopRowHost host ? host.ClaimTopRow() : null;
+
     private FrameworkElement Create()
     {
         try
@@ -110,6 +119,8 @@ internal sealed class ExternalPage : IslandPage
     {
         try
         {
+            // the row is claimed first, so the page is measured without the control that moves up
+            _ = Leading;
             View.Measure(new Size(width, double.PositiveInfinity));
             return Math.Min(budget, Math.Max(80, View.DesiredSize.Height));
         }

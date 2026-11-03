@@ -112,6 +112,7 @@ internal sealed class IslandCore : IDisposable
         Mascot = new MascotService(this);
         Lyrics = new LyricsService(this);
         AppleMusic = new AppleMusicService(this);
+        MicUse = new MicUseService(Ui, ctx.Log);
         Sources = new NoticeSources(this);
         Current = this;
     }
@@ -156,6 +157,12 @@ internal sealed class IslandCore : IDisposable
 
     public NoticeSources Sources { get; }
 
+    /// <summary>Apps capturing from the microphone (runs while "Show when an app uses the microphone" is on).</summary>
+    public MicUseService MicUse { get; }
+
+    /// <summary>The indicator is on and at least one app is capturing.</summary>
+    public bool MicInUse => MicUse.Active && App.Get<bool>(K.MicInUse);
+
     public IslandWindow? Window { get; set; }
 
     public event Action? ExternalInvalidated;
@@ -182,6 +189,8 @@ internal sealed class IslandCore : IDisposable
         Mascot.Start();
         Session.Start();
         Sources.Start();
+        MicUse.Changed += OnMicUse;
+        SyncMicUse();
         Ctx.Runtime.Changed += OnRuntime;
         Ctx.Island.Changed += OnRuntime;
         App.Changed += OnSetting;
@@ -228,6 +237,11 @@ internal sealed class IslandCore : IDisposable
                     Notifications.Sync();
                 }
 
+                if (key is K.MicInUse)
+                {
+                    SyncMicUse();
+                }
+
                 if (key is K.Accessories)
                 {
                     Accessories.Sync();
@@ -255,6 +269,36 @@ internal sealed class IslandCore : IDisposable
             });
         }
     }
+
+    /// <summary>Starts or stops the microphone watch with its setting and redraws the closed island.</summary>
+    private void SyncMicUse()
+    {
+        if (App.Get<bool>(K.MicInUse))
+        {
+            MicUse.Start();
+        }
+        else
+        {
+            MicUse.Stop();
+        }
+
+        OnMicUse();
+    }
+
+    private void OnMicUse()
+    {
+        if (!_disposed)
+        {
+            Window?.RefreshClosed();
+            if (Window is { Expanded: true })
+            {
+                MicUseChanged?.Invoke();
+            }
+        }
+    }
+
+    /// <summary>The set of apps using the microphone changed while the island is open (pages that show it rebuild).</summary>
+    public event Action? MicUseChanged;
 
     private void SyncLevels()
     {
@@ -330,6 +374,7 @@ internal sealed class IslandCore : IDisposable
     public const string ActWatch = "watch";
     public const string ActDownloads = "downloads";
     public const string ActAgents = "agents";
+    public const string ActMicrophone = "microphone";
     public const string ActCalendar = "calendar";
     public const string ActMusic = "music";
     public const string ActKeepAwake = "keepAwake";
@@ -365,6 +410,13 @@ internal sealed class IslandCore : IDisposable
         if (Ctx.Runtime.IsAvailable("notch-agents") && App.Get<bool>(K.AgentsEnabled) && App.Get<bool>(K.AgentsLiveActivity) && ExternalStrip("agents") is not null)
         {
             list.Add(ActAgents);
+        }
+
+        // A privacy indicator outranks what is merely nice to see (calendar countdown, music, keep awake) and ranks just below the
+        // activities the person started and watches (timer, watch, downloads, agents); those get an orange dot while it is live.
+        if (MicInUse)
+        {
+            list.Add(ActMicrophone);
         }
 
         if (Ctx.Runtime.IsAvailable("notch-calendar") && App.Get<bool>(K.CalendarEnabled) && Calendar.CountdownTarget(DateTime.Now) is not null)
@@ -611,6 +663,8 @@ internal sealed class IslandCore : IDisposable
         Watch.Dispose();
         Accessories.Dispose();
         Mascot.Dispose();
+        MicUse.Changed -= OnMicUse;
+        MicUse.Dispose();
         Sources.Dispose();
         foreach (var d in _disposables)
         {

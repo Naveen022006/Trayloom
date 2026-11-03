@@ -278,7 +278,9 @@ internal sealed class TimerPage : IslandPage
 
             _leading.Children.Add(modes);
             var start = new HoverButton(() => { Core.Timer.Start(_mode); }) { Height = 28, CornerRadius = new CornerRadius(14), Padding = new Thickness(10, 0, 10, 0), Fill = OrangeFill };
-            start.Child = D.T(Loc.T("Start"), 12, FontWeights.SemiBold, D.Orange);
+            var startLabel = D.T(Loc.T("Start"), 12, FontWeights.SemiBold, D.Orange);
+            startLabel.VerticalAlignment = VerticalAlignment.Center;
+            start.Child = startLabel;
             D.Tip(start, _mode == TimerMode.Pomodoro ? Loc.T("Start each phase when you are ready. The cycle ends after the last focus session.") : Loc.T("Start"));
             _trailing.Children.Add(start);
         }
