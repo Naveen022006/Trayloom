@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Win32;
 using Trayloom.Core;
+using Trayloom.Core.Native;
 
 namespace Trayloom.App;
 
@@ -104,6 +105,9 @@ internal static class InstallManager
         var source = CurrentDirectory;
         var destination = InstallRoot;
         log.Info($"Installing from {source} to {destination}");
+
+        // a window guardian is a Trayloom.exe of its own and would keep the installed executable locked
+        WindowGuardianClient.StopAndWait(10_000);
         Directory.CreateDirectory(destination);
         var files = Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories)
             .Where(f => !f.EndsWith(".pdb", StringComparison.OrdinalIgnoreCase) && !Path.GetFileName(f).Equals("devcmd.txt", StringComparison.OrdinalIgnoreCase))
@@ -242,6 +246,7 @@ internal static class InstallManager
     public static List<string> Uninstall(UninstallOptions options, ILog log)
     {
         log.Info("Uninstalling Trayloom");
+        WindowGuardianClient.StopAndWait(10_000);
         TryDelete(StartMenuShortcut);
         TryDelete(DesktopShortcut);
         try

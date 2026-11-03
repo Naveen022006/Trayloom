@@ -176,6 +176,9 @@ internal sealed class CameraPage : IslandPage
     private double _h = 264;
     private bool _busy;
 
+    // Counts the times the page went away: a start that began before (and is still waiting for the camera list or the device) ends by itself
+    private int _generation;
+
     public CameraPage(IslandCore core, IslandWindow? window)
         : base(core, window)
     {
@@ -197,7 +200,12 @@ internal sealed class CameraPage : IslandPage
         return budget;
     }
 
-    public override void Hidden() => _ = StopAsync();
+    public override void Hidden()
+    {
+        // a start still under way has nothing to stop yet: it notices this on its own after each wait and lets the camera go
+        Interlocked.Increment(ref _generation);
+        Guarded.FireAndLog(() => StopAsync(), Core.Ctx.Log, "Camera stop");
+    }
 
     private void Build()
     {
@@ -210,7 +218,7 @@ internal sealed class CameraPage : IslandPage
             row.Children.Add(new Border { Width = 56, Height = 56, CornerRadius = new CornerRadius(18), Background = D.White(0.05), Child = D.I(G.Video, 30, D.White(0.6)) });
             var col = new StackPanel { Margin = new Thickness(16, 0, 0, 0), MaxWidth = 280, VerticalAlignment = VerticalAlignment.Center };
             col.Children.Add(D.T(_failed ? Loc.T("The camera could not start. Try opening it again.") : Loc.T("Open a live mirror here. The camera stops when you leave this view."), 12, null, _failed ? D.Orange : D.Secondary, true));
-            var open = D.PillButton(Loc.T("Open camera"), () => _ = StartAsync(), true);
+            var open = D.PillButton(Loc.T("Open camera"), () => Guarded.FireAndLog(StartAsync, Core.Ctx.Log, "Camera start"), true);
             open.Margin = new Thickness(0, 8, 0, 0);
             open.HorizontalAlignment = HorizontalAlignment.Left;
             col.Children.Add(open);
@@ -232,16 +240,40 @@ internal sealed class CameraPage : IslandPage
         var h = Math.Min(_h, _w * 3 / 4);
         _ = wide;
         var holder = new Border { Width = w, Height = h, CornerRadius = new CornerRadius(14), ClipToBounds = true, Background = Brushes.Black, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-        holder.Child = _image;
+        // the preview image is one cached element: a rebuilt page (reopened, camera switched, relaid out) takes it from the old holder
+        holder.Child = Detach.From(_image);
         _view.Children.Add(holder);
         if (_cameras.Count > 1)
         {
             var current = _cameras.FirstOrDefault(c => c.Id == _cameraId).Name ?? Loc.T("Camera");
-            _leading.Children.Add(PageUi.BandMenu(current, null, () => _cameras.Select(c => { var id = c.Id; return new IslandMenu.Item(c.Name, () => { _cameraId = id; _ = RestartAsync(); }, id == _cameraId); }), () => HasWindow ? Window.HoldOpen() : null, current));
+            _leading.Children.Add(PageUi.BandMenu(current, null, () => _cameras.Select(c => { var id = c.Id; return new IslandMenu.Item(c.Name, () => { _cameraId = id; Guarded.FireAndLog(RestartAsync, Core.Ctx.Log, "Camera restart"); }, id == _cameraId); }), () => HasWindow ? Window.HoldOpen() : null, current));
         }
 
-        var stop = D.PillButton(Loc.T("Stop camera"), () => _ = StopAsync(), true);
+        var stop = D.PillButton(Loc.T("Stop camera"), () => Guarded.FireAndLog(() => StopAsync(), Core.Ctx.Log, "Camera stop"), true);
         _trailing.Children.Add(stop);
+    }
+
+    /// <summary>Builds the page for the state it is in; a page that cannot be built is logged and never takes the caller down.</summary>
+    private bool TryBuild()
+    {
+        try
+        {
+            if (_view.Dispatcher.CheckAccess())
+            {
+                Build();
+            }
+            else
+            {
+                _view.Dispatcher.Invoke(Build);
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Core.Ctx.Log.Error("Camera page", ex);
+            return false;
+        }
     }
 
     private async Task RestartAsync()
@@ -261,7 +293,37 @@ internal sealed class CameraPage : IslandPage
         _failed = false;
         try
         {
+            await OpenAsync(Volatile.Read(ref _generation));
+            if (_running && !TryBuild())
+            {
+                // the camera must never stream without a preview (and a Stop button) to show for it
+                _failed = true;
+                await StopAsync(false);
+            }
+
+            if (!_running)
+            {
+                TryBuild();
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task OpenAsync(int generation)
+    {
+        // the page went away since the start began: whatever is open is let go again (the camera never streams for a page nobody sees)
+        bool Stale() => generation != Volatile.Read(ref _generation);
+        try
+        {
             var devices = await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture);
+            if (Stale())
+            {
+                return;
+            }
+
             _cameras = [.. devices.Select(d => (d.Id, d.Name))];
             _cameraId ??= _cameras.FirstOrDefault().Id;
             _capture = new MediaCapture();
@@ -272,6 +334,12 @@ internal sealed class CameraPage : IslandPage
                 SharingMode = MediaCaptureSharingMode.SharedReadOnly,
                 MemoryPreference = MediaCaptureMemoryPreference.Cpu,
             });
+            if (Stale())
+            {
+                await StopAsync(false);
+                return;
+            }
+
             var source = _capture.FrameSources.Values.FirstOrDefault(s => s.Info.SourceKind == MediaFrameSourceKind.Color);
             if (source is null)
             {
@@ -279,20 +347,37 @@ internal sealed class CameraPage : IslandPage
             }
 
             _reader = await _capture.CreateFrameReaderAsync(source, Windows.Media.MediaProperties.MediaEncodingSubtypes.Bgra8);
+            if (Stale())
+            {
+                await StopAsync(false);
+                return;
+            }
+
             _reader.AcquisitionMode = MediaFrameReaderAcquisitionMode.Realtime;
             _reader.FrameArrived += OnFrame;
             await _reader.StartAsync();
+            if (Stale())
+            {
+                await StopAsync(false);
+                return;
+            }
+
             _running = true;
         }
-        catch
+        catch (Exception ex)
         {
+            if (Stale())
+            {
+                // the page's Hidden() disposed the camera under this start: not a failure to report
+                await StopAsync(false);
+                return;
+            }
+
+            Core.Ctx.Log.Warn("Camera page: the camera could not start: " + ex.Message);
             _failed = true;
             _running = false;
             await StopAsync(false);
         }
-
-        _busy = false;
-        _view.Dispatcher.Invoke(Build);
     }
 
     private void OnFrame(MediaFrameReader sender, MediaFrameArrivedEventArgs args)
@@ -368,7 +453,7 @@ internal sealed class CameraPage : IslandPage
         _bitmap = null;
         if (rebuild)
         {
-            _view.Dispatcher.Invoke(Build);
+            TryBuild();
         }
     }
 }

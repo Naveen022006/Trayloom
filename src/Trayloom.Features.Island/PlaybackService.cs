@@ -380,7 +380,7 @@ internal sealed class PlaybackService : IDisposable
             {
                 src = new PlayerSource { Aumid = id, Name = PrettyName(id), IsMusicApp = IsMusic(id), Order = _order++ };
                 _sources[id] = src;
-                _ = LoadIconAsync(src);
+                Guarded.FireAndLog(() => LoadIconAsync(src), _log, "Player icon");
             }
 
             s.MediaPropertiesChanged += (_, _) => _ui.BeginInvoke(() => RefreshEntry(s));

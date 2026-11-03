@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Windows;
 using System.Windows.Threading;
 using Trayloom.Core;
+using Trayloom.Core.Native;
 using Trayloom.Core.Ui;
 
 namespace Trayloom.App;
@@ -153,6 +154,26 @@ public partial class App : Application
         _host = new CoreHost(Dispatcher);
         var log = _host.Log;
         log.Info($"Trayloom {AppInfo.Version} starting");
+
+        // A previous run that was killed or crashed may have left Apple Music's window hidden, transparent or off-screen: give it back
+        // (before the features start, so nothing of this run can overwrite the record first). Off the UI thread: cross-process calls.
+        if (WindowGuardianState.TakeStale() is { } stale)
+        {
+            log.Warn($"A previous run left {stale.Windows.Count} foreign window record(s); giving the windows back");
+            Task.Run(() =>
+            {
+                try
+                {
+                    var left = WindowRescue.RescueAll(stale, new PrefixedLog(log, "guardian"), heuristics: true);
+                    WindowGuardianState.ReleaseStale(stale, left);
+                }
+                catch (Exception ex)
+                {
+                    log.Error("Giving the windows back failed", ex);
+                }
+            });
+        }
+
         var appearance = _host.App.Get<string>(AppKeys.AppAppearance) switch
         {
             "light" => AppAppearance.Light,
@@ -391,12 +412,14 @@ public partial class App : Application
 
             if (got)
             {
+                // the guardian (a Trayloom.exe of its own) would keep the executable locked
+                WindowGuardianClient.StopAndWait(10_000);
                 mutex.ReleaseMutex();
             }
             else
             {
                 log.Warn("The running Trayloom did not quit in time; closing it");
-                foreach (var process in Process.GetProcessesByName("Trayloom").Where(p => p.Id != Environment.ProcessId))
+                foreach (var process in Process.GetProcessesByName("Trayloom").Where(p => p.Id != Environment.ProcessId && !WindowGuardianClient.IsGuardian(p.Id)))
                 {
                     process.Kill();
                 }

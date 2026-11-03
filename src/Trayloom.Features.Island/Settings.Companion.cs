@@ -259,14 +259,14 @@ internal sealed class CompanionPage : StackPanel
             _actor.SetMood("sleepy");
         }
 
-        strip.Child = _view;
+        strip.Child = Detach.From(_view);
         g.Children.Add(strip);
         _momentPill.SetResourceReference(Border.BackgroundProperty, ThemeKeys.CardFill);
         _momentName.FontSize = 11;
         _momentName.FontWeight = FontWeights.SemiBold;
         _momentName.SetResourceReference(TextBlock.ForegroundProperty, ThemeKeys.TextPrimary);
         _momentPill.Child = _momentName;
-        g.Children.Add(_momentPill);
+        g.Children.Add(Detach.From(_momentPill));
         _stage.Child = g;
         _stage.Cursor = Cursors.Hand;
         _stage.MouseLeftButtonUp += (_, _) =>

@@ -790,6 +790,36 @@ internal static class IslandMenu
     }
 }
 
+/// <summary>Fire-and-forget that cannot end in an unobserved exception: whatever the work throws is logged.</summary>
+internal static class Guarded
+{
+    /// <summary>
+    /// Starts <paramref name="work"/> and returns at its first await. <paramref name="what"/> names it in the log; an exception is logged,
+    /// never rethrown (an <c>async void</c> would take the process down), and a cancellation is not an error.
+    /// </summary>
+    internal static async void FireAndLog(Func<Task> work, Trayloom.Core.ILog log, string what)
+    {
+        try
+        {
+            await work();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                log.Error(what + " failed", ex);
+            }
+            catch
+            {
+                // a logger that fails has nothing left to report to
+            }
+        }
+    }
+}
+
 internal static class Detach
 {
     /// <summary>Takes an element out of its current parent so it can be placed in a rebuilt layer.</summary>

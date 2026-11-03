@@ -7,11 +7,17 @@
     <NoWarn>$(NoWarn);WFO0003</NoWarn>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\trayloom.ico</ApplicationIcon>
+    <StartupObject>Trayloom.App.Program</StartupObject>
     <!-- A tray app: workstation, non-concurrent GC keeps the idle footprint and thread count down. -->
     <ServerGarbageCollector>false</ServerGarbageCollector>
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
     <TieredPGO>false</TieredPGO>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- App.xaml is a Page, not the ApplicationDefinition: Program.cs is the entry point (the generated Main would load WPF for every start). -->
+    <ApplicationDefinition Remove="App.xaml" />
+    <Page Include="App.xaml" />
+  </ItemGroup>
   <ItemGroup>
     <Resource Include="Assets\trayloom.ico" />
   </ItemGroup>

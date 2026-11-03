@@ -32,6 +32,13 @@ internal sealed class LibraryUi
 /// <summary>A short line under the panel header: a failure (orange) or a confirmation.</summary>
 internal sealed record LibraryNote(string Text, bool Error);
 
+/// <summary>Where a transport press came from: a button of the island, or a keyboard shortcut (which has no page to show progress on).</summary>
+internal enum TransportOrigin
+{
+    Island,
+    Shortcut,
+}
+
 /// <summary>
 /// The Apple Music library for the island: the song / playlist snapshot (reloaded when the file changes), the requests to play,
 /// queue or shuffle things (served by <see cref="AppleMusicDriver"/> off the UI thread) and the state the panel shows.
@@ -53,11 +60,27 @@ internal sealed class AppleMusicService : IDisposable
     private CancellationTokenSource? _resume;
     private TaskCompletionSource? _expedite;
 
+    // "Play" with nothing loaded: choosing and starting something sensible counts as busy from the press on
+    private bool _choosing;
+    private DateTime _requestAt = DateTime.MinValue;
+    private bool _noticeShown;
+    private DateTime _noticeAt = DateTime.MinValue;
+
+    // the song Apple Music played last: the position is kept in memory and stored (settings.json) on a change of song, a pause, at most once a minute while playing, and when the service ends (see KeepLastPlayed)
+    private string _lastKey = "";
+    private bool _lastPlaying;
+    private DateTime _lastWritten = DateTime.MinValue;
+    private DateTime _lastSampled = DateTime.MinValue;
+    private LastPlayed? _lastPlayed;
+    private string _lastRaw = "";
+    private bool _lastDirty;
+
     public AppleMusicService(IslandCore core)
     {
         _core = core;
         Keeper = new AppleMusicKeeper(core, () => _lastCommand);
         Keeper.ClosedWhilePlaying += OnClosedWhilePlaying;
+        core.Playback.Changed += OnPlaybackChanged;
         core.Playback.AppleMusicSeek = Seek;
         _driver = new Lazy<AppleMusicDriver>(() => new AppleMusicDriver(line => _core.Ctx.Log.Info("AppleMusic " + line), Keeper));
         _noteTimer = new DispatcherTimer(DispatcherPriority.Normal, core.Ui);
@@ -87,7 +110,16 @@ internal sealed class AppleMusicService : IDisposable
     public AmAction? BusyAction { get; private set; }
 
     /// <summary>Apple Music is being started or driven for a request of the island, or is being started again after it was closed.</summary>
-    public bool Busy => BusyAction is not null || Resuming;
+    public bool Busy => BusyAction is not null || Resuming || _choosing;
+
+    /// <summary>How many pages that show Apple Music's progress (the Music page, the Controls card) are on screen.</summary>
+    public int Viewers { get; private set; }
+
+    /// <summary>A page that shows the progress of Apple Music requests came on screen.</summary>
+    public void ViewerShown() => Viewers++;
+
+    /// <summary>A page that shows the progress of Apple Music requests went away.</summary>
+    public void ViewerHidden() => Viewers = Math.Max(0, Viewers - 1);
 
     public IReadOnlyList<AmQueueItem>? Queue { get; private set; }
 
@@ -241,7 +273,7 @@ internal sealed class AppleMusicService : IDisposable
             CancelResume();
         }
 
-        _ = RunAsync(new AmCommand
+        Guarded.FireAndLog(() => RunAsync(new AmCommand
         {
             Action = action,
             Track = track,
@@ -249,7 +281,7 @@ internal sealed class AppleMusicService : IDisposable
             Page = page,
             DbId = db.DbId,
             PlaylistAutomationId = context is null ? "" : db.PlaylistAutomationId(context.Pid),
-        }, track.Pid);
+        }, track.Pid), _core.Ctx.Log, "Apple Music " + action);
     }
 
     public void PlayPlaylist(AmPlaylist playlist, bool shuffle)
@@ -260,29 +292,40 @@ internal sealed class AppleMusicService : IDisposable
         }
 
         CancelResume();
-        _ = RunAsync(new AmCommand
+        Guarded.FireAndLog(() => RunAsync(new AmCommand
         {
             Action = shuffle ? AmAction.ShufflePlaylist : AmAction.PlayPlaylist,
             Playlist = playlist,
             DbId = db.DbId,
             PlaylistAutomationId = db.PlaylistAutomationId(playlist.Pid),
-        }, playlist.Pid);
+        }, playlist.Pid), _core.Ctx.Log, "Apple Music playlist");
     }
 
     /// <summary>
     /// Play/pause, next or previous for Apple Music when Windows has no media session for it (the app is closed or idle):
-    /// it is started hidden if needed and its own button is pressed, so its window never shows.
+    /// it is started hidden if needed and its own button is pressed, so its window never shows. With nothing loaded in Apple Music (it
+    /// would only fail) the island plays something sensible instead: the last played song, Favourite Songs shuffled, or a library song.
     /// </summary>
-    public void Transport(AmAction action)
+    public void Transport(AmAction action, TransportOrigin origin = TransportOrigin.Island)
     {
-        if (!Available)
+        if (_disposed)
         {
             return;
         }
 
-        if (action == AmAction.PlayPause)
+        if (!Available)
         {
-            if (Resuming)
+            if (origin == TransportOrigin.Shortcut)
+            {
+                Toast(LibStrings.NotStarted);
+            }
+
+            return;
+        }
+
+        if (Busy)
+        {
+            if (Resuming && action == AmAction.PlayPause)
             {
                 // the press joins the resume that is already under way (one job, no second start): it just stops waiting for the library agent
                 _core.Ctx.Log.Info("AppleMusic: play pressed while resuming; the resume goes ahead now");
@@ -290,12 +333,18 @@ internal sealed class AppleMusicService : IDisposable
                 return;
             }
 
+            OnRepeatedPress(action, origin);
+            return;
+        }
+
+        if (action == AmAction.PlayPause)
+        {
             // Apple Music was closed while it played: "play" continues that song instead of failing for lack of anything loaded
             // (whether or not Apple Music runs again by now: a restarted one has nothing loaded either)
             if (_snapshot is { } closed && DateTime.UtcNow - closed.At < TimeSpan.FromMinutes(30)
                 && _core.Playback.AppleMusicNow() is var now && now is not { IsPlaying: true } && (now is null || string.IsNullOrEmpty(now.Title)))
             {
-                _ = ResumeAfterQuit(closed, false);
+                Guarded.FireAndLog(() => ResumeAfterQuit(closed, false), _core.Ctx.Log, "Apple Music resume");
                 return;
             }
         }
@@ -305,8 +354,266 @@ internal sealed class AppleMusicService : IDisposable
             CancelResume();
         }
 
-        _ = RunAsync(new AmCommand { Action = action }, 0);
+        // Windows has a session for Apple Music only while it has something loaded: without one the buttons would fail
+        var loaded = _core.Playback.AppleMusicNow() is { } current && !string.IsNullOrEmpty(current.Title);
+        Guarded.FireAndLog(() => TransportAsync(action, origin, loaded), _core.Ctx.Log, "Apple Music " + action);
     }
+
+    /// <summary>A press while a request still runs: it is not started again (that would cancel its own cold start), but the person is told.</summary>
+    private void OnRepeatedPress(AmAction action, TransportOrigin origin)
+    {
+        var elapsed = (DateTime.UtcNow - _requestAt).TotalSeconds;
+        _core.Ctx.Log.Info($"AppleMusic {action}: already running for {elapsed:0.0} s; the repeated press is ignored");
+        var toast = origin == TransportOrigin.Shortcut || Viewers == 0;
+        if (elapsed > 3)
+        {
+            SetNote(new LibraryNote(LibStrings.StillStarting, false));
+            Changed?.Invoke();
+            if (toast && (DateTime.UtcNow - _noticeAt).TotalSeconds > 3)
+            {
+                Toast(LibStrings.StillStarting);
+            }
+        }
+        else if (toast && !_noticeShown)
+        {
+            Toast(LibStrings.StartingApple);
+        }
+    }
+
+    /// <summary>A short notice on the closed island (a shortcut, or no page of the island shows the progress): what Apple Music is doing or why it did not.</summary>
+    private void Toast(string title)
+    {
+        _noticeShown = true;
+        _noticeAt = DateTime.UtcNow;
+        _core.ShowNotice(new Notice { Event = NoticeEvents.AppleMusic, Glyph = G.Music, Title = title });
+    }
+
+    private void BeginRequest()
+    {
+        _requestAt = DateTime.UtcNow;
+        _noticeShown = false;
+    }
+
+    /// <summary>
+    /// The transport press as one job: Apple Music's own button when it has something loaded, else (or when the button turns out to be dead)
+    /// something sensible is played. <see cref="Busy"/> stays true from the press to the end, so the person sees a spinner at once.
+    /// </summary>
+    private async Task TransportAsync(AmAction action, TransportOrigin origin, bool loaded)
+    {
+        var toast = origin == TransportOrigin.Shortcut || Viewers == 0;
+        BeginRequest();
+        _choosing = true;
+        SetNote(null);
+        Changed?.Invoke();
+        try
+        {
+            if (loaded)
+            {
+                var before = _seq;
+                var result = await RunAsync(new AmCommand { Action = action }, 0, toast, NothingToPress);
+                if (result.Ok || _disposed || _seq != before + 1 || !NothingToPress(result))
+                {
+                    return;
+                }
+
+                _core.Ctx.Log.Info($"AppleMusic {action}: nothing is loaded in Apple Music ({result.Failure}); playing something instead");
+            }
+
+            await PlaySomethingAsync(action, toast);
+        }
+        finally
+        {
+            _choosing = false;
+            if (!_disposed)
+            {
+                Changed?.Invoke();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Apple Music's own button could not be used because nothing is loaded. A button that was merely not found (NoMenu: UI Automation
+    /// hiccup, another player is the current media session) says nothing about that while Apple Music is playing: a press meant as Pause must
+    /// not start the last played song over it.
+    /// </summary>
+    private bool NothingToPress(AmResult result) =>
+        result.Failure is AmFailure.NothingLoaded || (result.Failure is AmFailure.NoMenu && _core.Playback.AppleMusicNow()?.IsPlaying != true);
+
+    /// <summary>
+    /// Play, Next or Previous with nothing loaded in Apple Music: starts the last played song (from where it was left, when that was recently),
+    /// else Favourite Songs shuffled, else a library song; when Apple Music cannot find or start the first, the next is tried once.
+    /// </summary>
+    private async Task PlaySomethingAsync(AmAction action, bool toast)
+    {
+        if (toast && !_noticeShown)
+        {
+            Toast(LibStrings.StartingApple);
+        }
+
+        EnsureLoaded();
+        var wait = Stopwatch.StartNew();
+        while (Db is null && State is LibraryState.Idle or LibraryState.Loading && wait.ElapsedMilliseconds < 3000 && !_disposed)
+        {
+            await Task.Delay(50);
+        }
+
+        if (_disposed)
+        {
+            return;
+        }
+
+        var db = Db;
+        var plan = db is null ? new IdlePlan([]) : AmIdle.Choose(db.Songs, db.Recent, db.Playlists, ReadLastPlayed(), DateTime.UtcNow, Random.Shared);
+        if (db is null || plan.First is null)
+        {
+            _core.Ctx.Log.Warn($"AppleMusic {action}: nothing to play (library {State})");
+            SetNote(new LibraryNote(LibStrings.NothingToResume, true));
+            Changed?.Invoke();
+            if (toast)
+            {
+                Toast(LibStrings.NothingToResume);
+            }
+
+            MusicPage.OpenLibrary(_core);
+            return;
+        }
+
+        // at most two attempts: the first is the best choice, the second the fallback when Apple Music cannot find or start it
+        var steps = plan.Steps.Take(2).ToList();
+        for (var i = 0; i < steps.Count; i++)
+        {
+            var step = steps[i];
+            var last = i == steps.Count - 1;
+            var command = step.Kind == IdleStepKind.ShufflePlaylist
+                ? new AmCommand
+                {
+                    Action = AmAction.ShufflePlaylist,
+                    Playlist = step.Playlist,
+                    DbId = db.DbId,
+                    PlaylistAutomationId = db.PlaylistAutomationId(step.Playlist!.Pid),
+                }
+                : new AmCommand
+                {
+                    Action = AmAction.Play,
+                    Track = step.Track,
+                    Playlist = step.Playlist,
+                    Page = step.Page,
+                    DbId = db.DbId,
+                    PlaylistAutomationId = step.Playlist is null ? "" : db.PlaylistAutomationId(step.Playlist.Pid),
+                    ResumeAt = step.ResumeAt,
+                };
+            _core.Ctx.Log.Info($"AppleMusic {action} with nothing loaded: {step.Why} ({step.Track?.Title ?? step.Playlist?.Name}{(step.ResumeAt is { } at ? $" from {at:0} s" : "")})");
+            var before = _seq;
+            var result = await RunAsync(command, step.Track?.Pid ?? step.Playlist!.Pid, toast, r => !last && r.Failure is AmFailure.NotFound or AmFailure.NotConfirmed);
+            if (result.Ok || _disposed || _seq != before + 1 || result.Failure is not (AmFailure.NotFound or AmFailure.NotConfirmed))
+            {
+                return;
+            }
+        }
+    }
+
+    /// <summary>The last played song as stored (parsed once per stored value).</summary>
+    private LastPlayed? ReadLastPlayed()
+    {
+        var json = _core.App.Get<string>(K.AppleMusicLastPlayed) ?? "";
+        if (json != _lastRaw)
+        {
+            _lastRaw = json;
+            _lastPlayed = LastPlayed.Parse(json);
+        }
+
+        return _lastPlayed;
+    }
+
+    /// <summary>Keeps the song Apple Music plays as the one an idle Play continues with: when it changes, when it pauses, and every 20 s while it plays.</summary>
+    private void OnPlaybackChanged()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_core.Playback.AppleMusicNow() is not { } now || string.IsNullOrWhiteSpace(now.Title))
+            {
+                return;
+            }
+
+            var key = $"{now.Title}|{now.Artist}|{now.Album}";
+            var changed = key != _lastKey;
+            var paused = _lastPlaying && !now.IsPlaying;
+            var due = now.IsPlaying && (DateTime.UtcNow - _lastSampled).TotalSeconds >= 20;
+            _lastPlaying = now.IsPlaying;
+            if (!changed && !paused && !due)
+            {
+                return;
+            }
+
+            _lastKey = key;
+            var title = WatchService.Normalise(now.Title);
+            var same = ReadLastPlayed() is { } stored && WatchService.Normalise(stored.Title) == title && WatchService.Normalise(stored.Artist) == WatchService.Normalise(now.Artist);
+            if (same && !now.IsPlaying && now.Position < 1)
+            {
+                // Apple Music coming up with the song loaded but at its start must not wipe the position that was left
+                return;
+            }
+
+            // the song's Pid (and the playlist it came from) is known from the island's own last request, when that was this song
+            ulong trackPid = 0, playlistPid = 0;
+            if (_lastCommand is { } command)
+            {
+                if (command.Track is { } track && WatchService.Normalise(track.Title) == title)
+                {
+                    trackPid = track.Pid;
+                    playlistPid = command.Playlist?.Pid ?? 0;
+                }
+                else if (command.Playlist is { } playlist && playlist.Tracks.FirstOrDefault(t => WatchService.Normalise(t.Title) == title) is { } inList)
+                {
+                    trackPid = inList.Pid;
+                    playlistPid = playlist.Pid;
+                }
+            }
+
+            KeepLastPlayed(new LastPlayed(now.Title, now.Artist, now.Album, now.Position, now.Duration, trackPid, playlistPid, DateTime.UtcNow), changed || paused);
+        }
+        catch (Exception ex)
+        {
+            _core.Ctx.Log.Warn("Apple Music last played could not be kept: " + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// The newest position is kept in memory (what an idle Play reads); the setting is written when <paramref name="store"/> (a new song, a
+    /// pause) or a minute after the last write, not on every sample: each write rewrites settings.json and tells the whole app that a setting changed.
+    /// </summary>
+    private void KeepLastPlayed(LastPlayed value, bool store)
+    {
+        _lastSampled = DateTime.UtcNow;
+        _lastPlayed = value;
+        _lastDirty = true;
+        if (store || (DateTime.UtcNow - _lastWritten).TotalSeconds >= 60)
+        {
+            StoreLastPlayed();
+        }
+    }
+
+    /// <summary>Writes the newest last played song to the setting, when it is not there yet.</summary>
+    private void StoreLastPlayed()
+    {
+        if (!_lastDirty || _lastPlayed is not { } value)
+        {
+            return;
+        }
+
+        _lastDirty = false;
+        _lastWritten = DateTime.UtcNow;
+        _lastRaw = value.ToJson();
+        _core.App.Set(K.AppleMusicLastPlayed, _lastRaw);
+    }
+
+    /// <summary>The song is known for sure (it was closed in the middle of it): stored at once.</summary>
+    private void WriteLastPlayed(LastPlayed value) => KeepLastPlayed(value, true);
 
     /// <summary>The person asked for something else while Apple Music was being started again: the resume is dropped.</summary>
     private void CancelResume()
@@ -328,29 +635,45 @@ internal sealed class AppleMusicService : IDisposable
             return false;
         }
 
-        _ = Task.Run(async () =>
+        Guarded.FireAndLog(() => Task.Run(async () =>
         {
             var result = await Driver.RunAsync(new AmCommand { Action = AmAction.Seek, SeekTo = seconds });
             if (!result.Ok && result.Failure != AmFailure.Cancelled)
             {
                 _core.Ctx.Log.Warn($"Apple Music seek failed: {result.Failure} {result.Detail}");
             }
-        });
+        }), _core.Ctx.Log, "Apple Music seek");
         return true;
     }
 
-    private async Task RunAsync(AmCommand command, ulong pid)
+    /// <summary>
+    /// Runs one request and returns how it ended. <paramref name="toast"/>: a failure is also shown as a notice on the closed island.
+    /// <paramref name="defer"/>: tells a failure the caller deals with itself (it tries something else), which is then not shown.
+    /// </summary>
+    private async Task<AmResult> RunAsync(AmCommand command, ulong pid, bool toast = false, Func<AmResult, bool>? defer = null)
     {
         if (_disposed)
         {
-            return;
+            return AmResult.Fail(AmFailure.Cancelled, "disposed");
         }
 
         // pressing again what is already starting must not cancel its own (cold) start
         if (BusyAction == command.Action && BusyPid is { } running && running == pid)
         {
-            _core.Ctx.Log.Info($"AppleMusic {command.Action}: already running; the repeated request is ignored");
-            return;
+            var elapsed = (DateTime.UtcNow - _requestAt).TotalSeconds;
+            _core.Ctx.Log.Info($"AppleMusic {command.Action}: already running for {elapsed:0.0} s; the repeated request is ignored");
+            if (elapsed > 3)
+            {
+                SetNote(new LibraryNote(LibStrings.StillStarting, false));
+                Changed?.Invoke();
+            }
+
+            return AmResult.Fail(AmFailure.Cancelled, "repeated");
+        }
+
+        if (!Busy)
+        {
+            BeginRequest();
         }
 
         if (command.Action is AmAction.Play or AmAction.PlayPlaylist or AmAction.ShufflePlaylist)
@@ -383,7 +706,7 @@ internal sealed class AppleMusicService : IDisposable
 
         if (_disposed)
         {
-            return;
+            return result;
         }
 
         // a failure is always on record, also when a newer request has taken over the island's state in the meantime
@@ -403,7 +726,7 @@ internal sealed class AppleMusicService : IDisposable
         if (seq != _seq)
         {
             Changed?.Invoke();
-            return;
+            return result;
         }
 
         if (result.Ok)
@@ -420,18 +743,25 @@ internal sealed class AppleMusicService : IDisposable
                 _ => null,
             });
         }
-        else if (result.Failure != AmFailure.Cancelled)
+        else if (result.Failure != AmFailure.Cancelled && defer?.Invoke(result) != true)
         {
-            SetNote(new LibraryNote(Message(command.Action, result.Failure), true));
+            var message = Message(command.Action, result.Failure);
+            SetNote(new LibraryNote(message, true));
+            if (toast)
+            {
+                Toast(message);
+            }
         }
 
         Changed?.Invoke();
+        return result;
     }
 
     private static string Message(AmAction action, AmFailure failure) => failure switch
     {
         AmFailure.Unavailable => LibStrings.NotStarted,
         AmFailure.NotFound => LibStrings.NotFound,
+        AmFailure.NothingLoaded => LibStrings.NothingToResume,
         AmFailure.NoMenu when action is AmAction.PlayPause or AmAction.SkipForward or AmAction.SkipBack => LibStrings.NothingToResume,
         AmFailure.NoMenu => LibStrings.NoResponse,
         AmFailure.NotConfirmed => action is AmAction.PlayPlaylist or AmAction.ShufflePlaylist ? LibStrings.PlaylistNotStarted : LibStrings.SongNotStarted,
@@ -460,9 +790,12 @@ internal sealed class AppleMusicService : IDisposable
 
         _core.Ctx.Log.Info($"Apple Music was closed while playing '{snapshot.Title}' at {snapshot.Position:0} s");
         _snapshot = snapshot;
+
+        // the position at the moment it closed is the most exact one there is
+        WriteLastPlayed(new LastPlayed(snapshot.Title, snapshot.Artist, snapshot.Album, snapshot.Position, snapshot.Duration, snapshot.Track?.Pid ?? 0, snapshot.Playlist?.Pid ?? 0, snapshot.At));
         if (Keeper.ResumeEnabled)
         {
-            _ = ResumeAfterQuit(snapshot, true);
+            Guarded.FireAndLog(() => ResumeAfterQuit(snapshot, true), _core.Ctx.Log, "Apple Music resume");
         }
     }
 
@@ -500,24 +833,7 @@ internal sealed class AppleMusicService : IDisposable
             return 1 + (album ? 1 : 0) + (artist ? 1 : 0) + (s.Track is { } last && last.Pid == t.Pid ? 2 : 0);
         }
 
-        if (Db is not { } db)
-        {
-            return s.Track is { } known && Score(known) > 0 ? known : null;
-        }
-
-        AmTrack? best = null;
-        var bestScore = 0;
-        foreach (var t in db.Songs)
-        {
-            var score = Score(t);
-            if (score > bestScore)
-            {
-                best = t;
-                bestScore = score;
-            }
-        }
-
-        return best;
+        return Db is { } db ? AmIdle.FindTrack(db.Songs, s) : (s.Track is { } known && Score(known) > 0 ? known : null);
     }
 
     /// <summary>
@@ -532,6 +848,7 @@ internal sealed class AppleMusicService : IDisposable
         var cts = _resume = new CancellationTokenSource();
         var expedite = _expedite = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         Resuming = true;
+        BeginRequest();
         Changed?.Invoke();
         if (announce)
         {
@@ -691,9 +1008,20 @@ internal sealed class AppleMusicService : IDisposable
     public void Dispose()
     {
         _disposed = true;
+        try
+        {
+            // the position kept in memory since the last write
+            StoreLastPlayed();
+        }
+        catch
+        {
+            // the settings store is going away with the feature
+        }
+
         _resume?.Cancel();
         _noteTimer.Stop();
         _core.Playback.AppleMusicSeek = null;
+        _core.Playback.Changed -= OnPlaybackChanged;
         Keeper.ClosedWhilePlaying -= OnClosedWhilePlaying;
         if (_driver.IsValueCreated)
         {

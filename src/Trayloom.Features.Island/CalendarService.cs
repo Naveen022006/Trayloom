@@ -73,7 +73,7 @@ internal sealed class CalendarService : IDisposable
         _ui = ui;
         _log = log;
         _timer = new DispatcherTimer(DispatcherPriority.Background, ui);
-        _timer.Tick += (_, _) => _ = RefreshAsync();
+        _timer.Tick += (_, _) => Refresh();
         Microsoft.Win32.SystemEvents.TimeChanged += OnClock;
     }
 
@@ -98,11 +98,14 @@ internal sealed class CalendarService : IDisposable
         {
             _rangeStart = from;
             _rangeEnd = to;
-            _ = RefreshAsync();
+            Refresh();
         }
     }
 
-    private void OnClock(object? sender, EventArgs e) => _ui.BeginInvoke(() => _ = RefreshAsync());
+    /// <summary>Reads the calendars again in the background; a failure is logged, never unobserved.</summary>
+    public void Refresh() => Guarded.FireAndLog(RefreshAsync, _log, "Calendar refresh");
+
+    private void OnClock(object? sender, EventArgs e) => _ui.BeginInvoke(Refresh);
 
     public async Task<bool> RequestAccessAsync()
     {
@@ -122,7 +125,7 @@ internal sealed class CalendarService : IDisposable
             Access = _store is null ? CalendarAccess.Denied : CalendarAccess.Allowed;
             if (_store is not null)
             {
-                _store.StoreChanged += (_, _) => _ui.BeginInvoke(() => _ = RefreshAsync());
+                _store.StoreChanged += (_, _) => _ui.BeginInvoke(Refresh);
             }
         }
         catch (Exception ex)

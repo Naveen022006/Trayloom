@@ -59,7 +59,7 @@ public sealed class IslandFeature : IFeature
             var preferred = PlaybackService.ResolvePreferredPlayer(core.App.Get<string>(K.PreferredPlayer), core.Playback);
             if (preferred is not null || MusicUi.HiddenApple(core, preferred))
             {
-                MusicUi.IdleAction(core, preferred, action)();
+                MusicUi.IdleAction(core, preferred, action, TransportOrigin.Shortcut)();
                 return;
             }
         }
@@ -147,6 +147,12 @@ public sealed class IslandFeature : IFeature
         {
             _window.Shutdown();
             _window = null;
+        }
+
+        if (!on)
+        {
+            // Nobody is left to bring a hidden Apple Music window back when the island is off: give it back now
+            _core.AppleMusic.Keeper.ReleaseForExit();
         }
     }
 

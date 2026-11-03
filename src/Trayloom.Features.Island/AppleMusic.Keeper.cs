@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using Trayloom.Core;
+using Trayloom.Core.Native;
 
 namespace Trayloom.Features.Island;
 
@@ -48,6 +49,9 @@ internal sealed class AppleMusicKeeper : IDisposable
     private volatile nint _keptHwnd;
     private volatile uint _keptPid;
     private volatile bool _ending;
+    private volatile nint _pendingRelease;
+    private readonly ConcurrentDictionary<nint, ReleaseJob> _releases = new();
+    private DispatcherTimer? _pollTimer;
     private bool _noticed;
     private bool _disposed;
 
@@ -57,7 +61,7 @@ internal sealed class AppleMusicKeeper : IDisposable
         _lastCommand = lastCommand;
         _ui = core.Ui;
         Instance = this;
-        _onCrash = (_, _) => ReleaseForExit();
+        _onCrash = (_, _) => ReleaseForExit(true);
         AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
         AppDomain.CurrentDomain.UnhandledException += _onCrash;
         SystemEvents.SessionEnding += OnSessionEnding;
@@ -101,6 +105,15 @@ internal sealed class AppleMusicKeeper : IDisposable
     public nint KeptHwnd => _keptHwnd;
 
     public uint KeptPid => _keptPid;
+
+    /// <summary>
+    /// A window whose release could not be verified within a minute (Apple Music did not take the show): it is still recorded for the window
+    /// guardian, and the island offers "Show Apple Music" for it (0 = none).
+    /// </summary>
+    public nint PendingRelease => _pendingRelease;
+
+    /// <summary>A main window of Apple Music that nobody can see although it is not minimised (hidden, transparent or parked): 0 = none.</summary>
+    public nint StuckWindow() => AmNative.StuckMainWindow();
 
     /// <summary>Greater than 0 while the driver works on Apple Music (its own show / hide / minimise events are none of the keeper's business).</summary>
     public int DriverDepth => Volatile.Read(ref _driverDepth);
@@ -159,7 +172,8 @@ internal sealed class AppleMusicKeeper : IDisposable
     /// </summary>
     public bool UserOwned => _userOwned;
 
-    public bool Enabled => _core.App.Get<bool>(K.AppleMusicKeepHidden);
+    /// <summary>Keeping Apple Music out of sight is on, and the island that does the keeping is on (nobody is there to bring the window back otherwise).</summary>
+    public bool Enabled => _core.App.Get<bool>(K.AppleMusicKeepHidden) && _core.App.Get<bool>(K.Enabled);
 
     public bool ResumeEnabled => Enabled && _core.App.Get<bool>(K.AppleMusicResumeOnQuit);
 
@@ -182,6 +196,9 @@ internal sealed class AppleMusicKeeper : IDisposable
     {
         Interlocked.Exchange(ref _driverEnd, Environment.TickCount64);
         Interlocked.Decrement(ref _driverDepth);
+
+        // the Music page leaves out its Show button while the driver is at work (DriverActive lasts a little longer than the job): it looks again after that
+        _ = Task.Delay(ForegroundGuard.GraceMs + 450).ContinueWith(_ => Raise(), TaskScheduler.Default);
     }
 
     private void Say(string message) => _core.Ctx.Log.Info("AppleMusic keeper: " + message);
@@ -205,11 +222,6 @@ internal sealed class AppleMusicKeeper : IDisposable
             kept = _keptHwnd;
             _keptHwnd = 0;
             _keptPid = 0;
-        }
-
-        if (kept != 0)
-        {
-            Persist("");
         }
 
         // also without a kept window: a window the driver has made transparent for its job (the first job after a start) is the person's now
@@ -259,40 +271,29 @@ internal sealed class AppleMusicKeeper : IDisposable
             {
                 if (!AmNative.IsWindow(h))
                 {
+                    WindowGuardianState.UntrackWindow(h);
                     continue;
                 }
 
-                var theirs = AmNative.IsWindowVisible(h) && !AmNative.IsIconic(h) && !AmNative.IsGhost(h) && AmNative.GetWindowRect(h, out var r) && AmNative.OnAnyScreen(r);
-                if (!theirs)
+                if (h == _keptHwnd)
                 {
-                    Reveal(h);
+                    // kept again meanwhile (the island plays again): not the person's any more
+                    continue;
+                }
+
+                var theirs = AmNative.IsWindowVisible(h) && !AmNative.IsIconic(h) && !AmNative.IsGhost(h) && AmNative.GetWindowRect(h, out var r) && AmNative.Comfortable(h, r);
+                if (theirs)
+                {
+                    // on screen and the person's: nothing is owed any more
+                    WindowGuardianState.UntrackWindow(h);
+                }
+                else
+                {
+                    // forced: the window is the person's whatever the driver is doing (its job gives way, see HiddenWindow.Restore)
+                    BeginRelease(h, AmNative.SwRestore, false, false, "the person opened Apple Music", true);
                 }
             }
         }, TaskScheduler.Default);
-    }
-
-    /// <summary>
-    /// Makes the window the person's again: moved back from where the driver parked it, its own style back (it is not transparent any more),
-    /// shown when hidden or minimised. Bounded; retried in the background when Apple Music does not answer. Not for the UI thread.
-    /// </summary>
-    private void Reveal(nint hwnd)
-    {
-        Func<bool> reveal = () =>
-        {
-            AmNative.Unpark(hwnd);
-            AmNative.RestoreStyleNow(hwnd);
-            if (!AmNative.IsWindowVisible(hwnd) || AmNative.IsIconic(hwnd))
-            {
-                FixRect(hwnd);
-                AmNative.ShowWindow(hwnd, AmNative.SwRestore);
-            }
-
-            return true;
-        };
-        if (!AmNative.Bounded(hwnd, reveal, 800, "showing the window", Say))
-        {
-            AmNative.RetryRestore(hwnd, reveal, "showing the window", Say);
-        }
     }
 
     /// <summary>A process of Apple Music has just lost its main window or is being waited for to end (it is quitting, not starting).</summary>
@@ -331,8 +332,11 @@ internal sealed class AppleMusicKeeper : IDisposable
 
     // ---------------------------------------------------------------- keeping
 
-    /// <summary>Hides the window (when visible), remembers it and persists it for crash recovery.</summary>
-    public void Adopt(nint hwnd, uint pid)
+    /// <summary>
+    /// Hides the window (when visible), remembers it and persists it for crash recovery. Refused (the window is given back, minimised) when
+    /// keeping is off by now, e.g. the island was switched off while a job was under way, unless <paramref name="explicitly"/> (the person's Hide).
+    /// </summary>
+    public void Adopt(nint hwnd, uint pid, bool explicitly = false)
     {
         if (hwnd == 0 || !AmNative.IsWindow(hwnd))
         {
@@ -347,6 +351,23 @@ internal sealed class AppleMusicKeeper : IDisposable
             return;
         }
 
+        if (!explicitly && !Enabled)
+        {
+            // keeping was turned off (or the island switched off) while the driver was at work: nobody would bring this window back
+            Say($"not kept 0x{hwnd:X}: keeping Apple Music out of sight is off; it goes back to the taskbar");
+            BeginRelease(hwnd, AmNative.SwShowMinNoActive, false, false, "keeping is off");
+            return;
+        }
+
+        if (_releases.TryGetValue(hwnd, out var asked) && asked.Activate)
+        {
+            // the person pressed "Show Apple Music" (or opened it) while the driver was at work: the release goes on once the job is over
+            Say($"not kept 0x{hwnd:X}: the person asked for the window");
+            return;
+        }
+
+        // any other release of this window that is still under way would undo the keep: it ends here
+        CancelRelease(hwnd);
         lock (_gate)
         {
             _keptHwnd = hwnd;
@@ -354,12 +375,17 @@ internal sealed class AppleMusicKeeper : IDisposable
             _mains[hwnd] = pid;
         }
 
+        // recorded on disk before the window is hidden: whatever happens to Trayloom from here on, the guardian brings it back
+        var home = AmNative.SafeHome(hwnd);
+        AmNative.TrackKept(hwnd, pid, home);
+        WindowGuardianState.Untrack(hwnd, WindowGuardianState.Releasing);
+        Say($"keeping 0x{hwnd:X}: {AmNative.RectText(hwnd)}; comes back to [{home.Left},{home.Top},{home.Right},{home.Bottom}]");
         if (AmNative.IsWindowVisible(hwnd))
         {
             AmNative.ShowWindowAsync(hwnd, AmNative.SwHide);
         }
 
-        Persist($"{pid}:{(long)hwnd}");
+        StartPoll();
         if (_userOwned)
         {
             // opened by the person while this was under way (MarkUserOwned has not seen this window as kept)
@@ -372,7 +398,6 @@ internal sealed class AppleMusicKeeper : IDisposable
                 }
             }
 
-            Persist("");
             RevealLater(hwnd, 0);
         }
 
@@ -402,13 +427,13 @@ internal sealed class AppleMusicKeeper : IDisposable
             var h = AmNative.MainWindow((uint)p.Id);
             if (h != 0 && AmNative.IsWindowVisible(h) && !AmNative.IsGhost(h))
             {
-                Adopt(h, (uint)p.Id);
+                Adopt(h, (uint)p.Id, true);
                 return;
             }
         }
     }
 
-    /// <summary>Brings the kept window back (and stops keeping it).</summary>
+    /// <summary>Brings the kept window back (and stops keeping it); with nothing kept, the window a failed release left or any hidden or transparent one.</summary>
     public void Show(bool activate)
     {
         nint hwnd;
@@ -419,21 +444,33 @@ internal sealed class AppleMusicKeeper : IDisposable
             _keptPid = 0;
         }
 
-        Persist("");
+        if (hwnd == 0)
+        {
+            hwnd = _pendingRelease;
+        }
+
+        if (hwnd == 0 && !DriverActive)
+        {
+            // not while the driver works: its window is transparent or parked on purpose, and showing it would break the job
+            hwnd = AmNative.StuckMainWindow();
+        }
+
         Interlocked.Exchange(ref _shownAt, Environment.TickCount64);
         if (hwnd != 0 && AmNative.IsWindow(hwnd))
         {
-            Bring(hwnd, AmNative.SwRestore, activate);
+            BeginRelease(hwnd, AmNative.SwRestore, activate, false, "Show Apple Music");
         }
 
         Raise();
     }
 
     /// <summary>
-    /// Trayloom is leaving (or the setting was turned off): the window goes back to the taskbar, minimised, and Apple Music keeps playing.
-    /// Safe to call from any thread, also from the process-exit handlers.
+    /// Trayloom is leaving (or the setting was turned off, or the island was switched off): the window goes back to the taskbar, minimised, and
+    /// Apple Music keeps playing. Safe to call from any thread, also from the process-exit handlers. <paramref name="leaving"/>: the first
+    /// attempt is made here (bounded) and ignores a running driver job; what that does not settle goes on in the background, and what is still
+    /// open at exit stays recorded for the window guardian.
     /// </summary>
-    public void ReleaseForExit()
+    public void ReleaseForExit(bool leaving = false)
     {
         nint hwnd;
         lock (_gate)
@@ -443,12 +480,18 @@ internal sealed class AppleMusicKeeper : IDisposable
             _keptPid = 0;
         }
 
+        if (hwnd == 0)
+        {
+            hwnd = _pendingRelease;
+        }
+
         try
         {
-            Persist("");
             if (hwnd != 0 && AmNative.IsWindow(hwnd))
             {
-                Bring(hwnd, AmNative.SwShowMinNoActive, false);
+                // leaving: now, on this thread, whatever the driver is doing; otherwise on a pool thread, after the driver's job (a job
+                // in flight is not taken apart under its feet, and its end Adopts nothing any more since keeping is off)
+                BeginRelease(hwnd, AmNative.SwShowMinNoActive, false, leaving, leaving ? "Trayloom is leaving" : "the keep was turned off", leaving);
             }
         }
         catch
@@ -459,55 +502,285 @@ internal sealed class AppleMusicKeeper : IDisposable
         Raise();
     }
 
-    /// <summary>Puts the window back on screen (<paramref name="command"/>): the restore position is corrected first, in one bounded step so a stuck Apple Music cannot stall the caller.</summary>
-    private void Bring(nint hwnd, int command, bool activate)
-    {
-        Func<bool> show = () =>
-        {
-            if (AmNative.IsGhost(hwnd))
-            {
-                // a window left transparent and parked by the driver comes back as it was, not invisible
-                AmNative.Unpark(hwnd);
-                AmNative.RestoreStyleNow(hwnd);
-            }
+    // ---------------------------------------------------------------- releasing
 
-            FixRect(hwnd);
-            AmNative.ShowWindow(hwnd, command);
-            return true;
-        };
-        if (!AmNative.Bounded(hwnd, show, 800, "show window", Say))
+    /// <summary>What a release in progress wants (it may be changed by a later request for the same window).</summary>
+    private sealed class ReleaseJob(int command, bool activate, bool force)
+    {
+        public volatile int Command = command;
+        public volatile bool Activate = activate;
+
+        /// <summary>Trayloom is leaving: the release does not wait for a driver job.</summary>
+        public volatile bool Force = force;
+
+        /// <summary>The window was taken over again (kept, or by a start of Apple Music): the release must not touch it any more.</summary>
+        public volatile bool Cancelled;
+    }
+
+    /// <summary>
+    /// Ends a release in progress for the window: it was kept again (or taken for a start), and a release that went on would show it. The
+    /// "releasing" record is the caller's to replace.
+    /// </summary>
+    public void CancelRelease(nint hwnd)
+    {
+        if (_releases.TryRemove(hwnd, out var job))
         {
-            AmNative.RetryRestore(hwnd, show, "show window", Say);
+            job.Cancelled = true;
         }
 
-        if (activate)
+        if (_pendingRelease == hwnd)
         {
-            ForegroundGuard.Focus(hwnd);
+            _pendingRelease = 0;
         }
     }
 
-    /// <summary>Never leave a window whose restore position is off-screen: it would come back invisible.</summary>
-    private static void FixRect(nint hwnd)
+    private void RemoveJob(nint hwnd, ReleaseJob job) => ((ICollection<KeyValuePair<nint, ReleaseJob>>)_releases).Remove(new KeyValuePair<nint, ReleaseJob>(hwnd, job));
+
+    /// <summary>The release has been overtaken: cancelled, or the window is kept again.</summary>
+    private bool Superseded(nint hwnd, ReleaseJob job) => job.Cancelled || _keptHwnd == hwnd;
+
+    /// <summary>A driver job works on the window (it is invisible by design); a release waits for it unless Trayloom is leaving.</summary>
+    private bool WaitForDriver(ReleaseJob job) => !job.Force && DriverDepth > 0;
+
+    /// <summary>
+    /// Gives a window back and does not stop until that is verified (visible, opaque, on screen) or a minute has passed. The record for the
+    /// window guardian changes to "releasing" first and is removed only after the verification; a release that fails leaves
+    /// <see cref="PendingRelease"/> set and the record in place. <paramref name="sync"/>: the first attempt is made on this thread (bounded).
+    /// A release does not touch the window while a driver job works on it (unless <paramref name="force"/>: Trayloom is leaving) and ends
+    /// quietly when the window is kept again meanwhile (<see cref="CancelRelease"/>).
+    /// </summary>
+    private void BeginRelease(nint hwnd, int command, bool activate, bool sync, string why, bool force = false)
     {
-        var wp = new AmNative.WindowPlacement { Length = System.Runtime.InteropServices.Marshal.SizeOf<AmNative.WindowPlacement>() };
-        if (!AmNative.GetWindowPlacement(hwnd, ref wp) || AmNative.OnAnyScreen(wp.Normal))
+        var job = new ReleaseJob(command, activate, force);
+        if (!_releases.TryAdd(hwnd, job))
+        {
+            if (_releases.TryGetValue(hwnd, out var running))
+            {
+                running.Command = command;
+                running.Activate = running.Activate || activate;
+                running.Force = running.Force || force;
+                if (sync && TryRelease(hwnd, running))
+                {
+                    FinishRelease(hwnd, running, "verified");
+                }
+            }
+
+            return;
+        }
+
+        var pid = AmNative.ProcessOf(hwnd);
+        var home = AmNative.SafeHome(hwnd);
+        WindowGuardianState.Track(hwnd, pid, AmNative.AppleMusicProcess, AmNative.MainWindowClass, WindowGuardianState.Releasing, null, [home.Left, home.Top, home.Right, home.Bottom]);
+        if (_keptHwnd != hwnd)
+        {
+            WindowGuardianState.Untrack(hwnd, WindowGuardianState.Kept);
+        }
+
+        Say($"releasing 0x{hwnd:X} ({why}): before {AmNative.RectText(hwnd)}");
+        if (sync && TryRelease(hwnd, job))
+        {
+            FinishRelease(hwnd, job, "verified");
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await ReleaseLoop(hwnd, job, sync);
+            }
+            catch (Exception ex)
+            {
+                RemoveJob(hwnd, job);
+                _core.Ctx.Log.Error("AppleMusic keeper: release failed", ex);
+            }
+        });
+    }
+
+    private async Task ReleaseLoop(nint hwnd, ReleaseJob job, bool firstDone)
+    {
+        var until = Environment.TickCount64 + 60000;
+        var waitedForDriver = 0;
+        var delay = 250;
+        if (firstDone)
+        {
+            await Task.Delay(delay).ConfigureAwait(false);
+        }
+
+        while (true)
+        {
+            if (Superseded(hwnd, job))
+            {
+                RemoveJob(hwnd, job);
+                Say($"release of 0x{hwnd:X} ended: the window is kept again or taken for a start");
+                return;
+            }
+
+            if (!AmNative.IsWindow(hwnd))
+            {
+                FinishRelease(hwnd, job, "window is gone");
+                return;
+            }
+
+            if (WaitForDriver(job) && waitedForDriver < 300000)
+            {
+                // the driver's job gives the window back itself; the minute starts to run once it is over (bounded: a job that never ends)
+                waitedForDriver += delay;
+                until += delay;
+                await Task.Delay(delay).ConfigureAwait(false);
+                continue;
+            }
+
+            if (TryRelease(hwnd, job))
+            {
+                FinishRelease(hwnd, job, "verified");
+                return;
+            }
+
+            if (Environment.TickCount64 > until)
+            {
+                RemoveJob(hwnd, job);
+                _pendingRelease = hwnd;
+                Say($"release of 0x{hwnd:X} gave up after 60 s: {AmNative.RectText(hwnd)}; it stays recorded for the window guardian");
+                Raise();
+                return;
+            }
+
+            await Task.Delay(delay).ConfigureAwait(false);
+            delay = Math.Min(delay * 2, 2000);
+        }
+    }
+
+    /// <summary>One bounded attempt: its own style back, off the parking spot, a place on screen, shown. True only when the window is then verified.</summary>
+    private bool TryRelease(nint hwnd, ReleaseJob job)
+    {
+        if (Superseded(hwnd, job) || WaitForDriver(job))
+        {
+            return false;
+        }
+
+        var command = job.Command;
+        Func<bool> show = () =>
+        {
+            // checked again on the thread that makes the calls: the keeper or the driver may have taken the window back meanwhile
+            if (Superseded(hwnd, job) || WaitForDriver(job))
+            {
+                return false;
+            }
+
+            AmNative.Unpark(hwnd);
+            if (AmNative.IsGhost(hwnd) || AmNative.HasStyleRecord(hwnd))
+            {
+                AmNative.RestoreStyleNow(hwnd);
+            }
+
+            AmNative.FixPlacement(hwnd);
+            var visible = AmNative.IsWindowVisible(hwnd);
+            var iconic = AmNative.IsIconic(hwnd);
+            if (command == AmNative.SwRestore ? !visible || iconic : !(visible && iconic))
+            {
+                AmNative.ShowWindow(hwnd, command);
+            }
+
+            return true;
+        };
+        AmNative.Bounded(hwnd, show, 800, "showing the window", Say);
+        return Verified(hwnd);
+    }
+
+    private static bool Verified(nint hwnd) =>
+        AmNative.IsWindow(hwnd) && AmNative.IsWindowVisible(hwnd) && !AmNative.IsGhost(hwnd) && (AmNative.IsIconic(hwnd) || (AmNative.GetWindowRect(hwnd, out var r) && AmNative.Comfortable(hwnd, r)));
+
+    private void FinishRelease(nint hwnd, ReleaseJob job, string how)
+    {
+        var gone = !AmNative.IsWindow(hwnd);
+        if (!gone && Superseded(hwnd, job))
+        {
+            // the window was taken back while the last attempt ran: its records are the new owner's now
+            RemoveJob(hwnd, job);
+            Say($"release of 0x{hwnd:X} ended: the window is kept again or taken for a start");
+            return;
+        }
+
+        if (gone)
+        {
+            WindowGuardianState.UntrackWindow(hwnd);
+        }
+        else
+        {
+            // only what the release itself recorded: a newer record of another kind (kept, parked, ghost) belongs to whoever took the window back
+            WindowGuardianState.Untrack(hwnd, WindowGuardianState.Releasing);
+            if (_keptHwnd != hwnd)
+            {
+                WindowGuardianState.Untrack(hwnd, WindowGuardianState.Kept);
+            }
+        }
+
+        RemoveJob(hwnd, job);
+        if (_pendingRelease == hwnd)
+        {
+            _pendingRelease = 0;
+        }
+
+        Say($"released 0x{hwnd:X} ({how}): {AmNative.RectText(hwnd)}");
+        if (job.Activate && AmNative.IsWindow(hwnd))
+        {
+            ForegroundGuard.Focus(hwnd);
+        }
+
+        Raise();
+    }
+
+    // ---------------------------------------------------------------- the person's launches
+
+    private void StartPoll()
+    {
+        if (_pollTimer is not null || _disposed)
         {
             return;
         }
 
-        var w = AmNative.GetSystemMetrics(0);
-        var h = AmNative.GetSystemMetrics(1);
-        var left = Math.Max(0, (w - 1200) / 2);
-        var top = Math.Max(0, (h - 800) / 2);
-        wp.Normal = new AmNative.Rect { Left = left, Top = top, Right = left + 1200, Bottom = top + 800 };
-        wp.Flags = 0;
-        if (!AmNative.IsWindowVisible(hwnd))
+        // The window events miss a launch whose second process ends before it creates a window: while a window is kept, new Apple Music
+        // processes are also looked for once a second.
+        _pollTimer = new DispatcherTimer(DispatcherPriority.Background, _ui) { Interval = TimeSpan.FromSeconds(1) };
+        _pollTimer.Tick += (_, _) =>
         {
-            // a hidden window stays hidden while its restore position is corrected
-            wp.ShowCmd = AmNative.SwHide;
-        }
+            if (_disposed || _keptHwnd == 0)
+            {
+                _pollTimer?.Stop();
+                _pollTimer = null;
+                return;
+            }
 
-        AmNative.SetWindowPlacement(hwnd, ref wp);
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    var found = new List<uint>();
+                    foreach (var process in Process.GetProcessesByName("AppleMusic"))
+                    {
+                        found.Add((uint)process.Id);
+                        process.Dispose();
+                    }
+
+                    _ui.BeginInvoke(() =>
+                    {
+                        foreach (var pid in found)
+                        {
+                            if (!_disposed && _keptHwnd != 0 && pid != _keptPid && !Launching && !IsOwnLaunch(pid) && _seenPids.TryAdd(pid, 0))
+                            {
+                                OnLaunched(pid);
+                            }
+                        }
+                    });
+                }
+                catch
+                {
+                    // the next tick looks again
+                }
+            });
+        };
+        _pollTimer.Start();
     }
 
     private void Persist(string value)
@@ -518,7 +791,7 @@ internal sealed class AppleMusicKeeper : IDisposable
         }
         catch
         {
-            // the key only serves crash recovery
+            // the key is a leftover of older versions; the guardian state replaced it
         }
     }
 
@@ -547,7 +820,10 @@ internal sealed class AppleMusicKeeper : IDisposable
 
     // ---------------------------------------------------------------- lifetime
 
-    /// <summary>A window hidden by a previous run that did not get to release it (crash): keep it again, or put it back in the taskbar.</summary>
+    /// <summary>
+    /// Older versions recorded the hidden window in a setting (written with a delay, so a kill lost it); the window guardian state replaced it. A
+    /// leftover value is cleared, and a window it still names that is hidden is given back (never kept again).
+    /// </summary>
     private void Recover()
     {
         string text;
@@ -565,43 +841,27 @@ internal sealed class AppleMusicKeeper : IDisposable
             return;
         }
 
+        Persist("");
         var parts = text.Split(':');
         if (parts.Length != 2 || !uint.TryParse(parts[0], out var pid) || !long.TryParse(parts[1], out var value))
         {
-            Persist("");
             return;
         }
 
         var hwnd = (nint)value;
-        if (!AmNative.IsWindow(hwnd) || AmNative.ProcessOf(hwnd) != pid || !AmNative.IsAppleMusic(pid) || AmNative.IsWindowVisible(hwnd))
+        if (AmNative.IsWindow(hwnd) && AmNative.ProcessOf(hwnd) == pid && AmNative.IsAppleMusic(pid) && !AmNative.IsWindowVisible(hwnd))
         {
-            Persist("");
-            return;
-        }
-
-        if (Enabled)
-        {
-            Adopt(hwnd, pid);
-        }
-        else
-        {
-            lock (_gate)
-            {
-                _keptHwnd = hwnd;
-                _keptPid = pid;
-            }
-
-            ReleaseForExit();
+            BeginRelease(hwnd, AmNative.SwShowMinNoActive, false, false, "left hidden by an earlier version");
         }
     }
 
-    private void OnProcessExit(object? sender, EventArgs e) => ReleaseForExit();
+    private void OnProcessExit(object? sender, EventArgs e) => ReleaseForExit(true);
 
     private void OnSessionEnding(object? sender, SessionEndingEventArgs e) => _ending = true;
 
     private void OnSetting(string key)
     {
-        if (key is not (K.AppleMusicKeepHidden or K.AppleMusicResumeOnQuit))
+        if (key is not (K.AppleMusicKeepHidden or K.AppleMusicResumeOnQuit or K.Enabled))
         {
             return;
         }
@@ -662,9 +922,10 @@ internal sealed class AppleMusicKeeper : IDisposable
         SystemEvents.SessionEnding -= OnSessionEnding;
         _core.App.Changed -= OnSetting;
         _launchTimer?.Stop();
+        _pollTimer?.Stop();
         _hook?.Dispose();
         _hook = null;
-        ReleaseForExit();
+        ReleaseForExit(true);
         if (ReferenceEquals(Instance, this))
         {
             Instance = null;
@@ -857,7 +1118,7 @@ internal sealed class AppleMusicKeeper : IDisposable
                 if (!_disposed && !Launching && AmNative.IsWindow(kept) && !AmNative.IsWindowVisible(kept))
                 {
                     JustShownNow();
-                    _ = Task.Run(() => Bring(kept, AmNative.SwRestore, true));
+                    BeginRelease(kept, AmNative.SwRestore, true, false, "Apple Music was launched by the person", true);
                 }
             };
             _launchTimer.Start();
@@ -912,7 +1173,7 @@ internal sealed class AppleMusicKeeper : IDisposable
                     _keptPid = 0;
                 }
 
-                Persist("");
+                WindowGuardianState.UntrackWindow(hwnd);
                 Raise();
             }
 

@@ -90,6 +90,9 @@ internal static class K
 
     /// <summary>"pid:hwnd" of the Apple Music window the keeper has hidden (crash recovery); empty when none.</summary>
     public const string AppleMusicKeptWindow = "notchAppleMusicKeptWindow";
+
+    /// <summary>JSON of the song Apple Music played last (<see cref="LastPlayed"/>); what an idle Play continues with. Empty = none yet.</summary>
+    public const string AppleMusicLastPlayed = "notchAppleMusicLastPlayed";
     public const string ShowPlayingMusic = "notchShowPlayingMusic";
     public const string IncludeOtherPlayers = "notchIncludeOtherPlayers";
     public const string MusicShowVolume = "notchMusicShowVolume";
@@ -217,6 +220,7 @@ internal static class K
             [AppleMusicKeepHidden] = true,
             [AppleMusicResumeOnQuit] = true,
             [AppleMusicKeptWindow] = "",
+            [AppleMusicLastPlayed] = "",
             [ShowPlayingMusic] = true,
             [IncludeOtherPlayers] = true,
             [MusicShowVolume] = false,

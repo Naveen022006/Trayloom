@@ -17,8 +17,8 @@ internal static class MusicUi
         core.AppleMusic.Available && (preferred is null || preferred.Contains("AppleMusic", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>What an idle transport button does: Apple Music's own button without showing its window, or open the preferred player.</summary>
-    public static Action IdleAction(IslandCore core, string? preferred, AmAction action) =>
-        HiddenApple(core, preferred) ? () => core.AppleMusic.Transport(action) : () => PlaybackService.OpenPlayer(preferred);
+    public static Action IdleAction(IslandCore core, string? preferred, AmAction action, TransportOrigin origin = TransportOrigin.Island) =>
+        HiddenApple(core, preferred) ? () => core.AppleMusic.Transport(action, origin) : () => PlaybackService.OpenPlayer(preferred);
 
     /// <summary>The idle subtitle / tooltip: "Play Apple Music" when it is driven in the background, else "Open &lt;player&gt;".</summary>
     public static string IdleLabel(IslandCore core, string? preferred) =>
@@ -251,7 +251,21 @@ internal sealed class MusicPage : IslandPage
         }
 
         var keeper = Core.AppleMusic.Keeper;
-        return keeper.KeptHwnd != 0 ? 1 : keeper.HasVisibleWindow() ? 2 : 0;
+
+        // "Show" also for a window a release could not bring back, and for a hidden, transparent or parked one that nothing keeps (a
+        // crash of an earlier run, or Apple Music started that way): the person must always have a way to get the window back
+        if (keeper.KeptHwnd != 0 || keeper.PendingRelease != 0)
+        {
+            return 1;
+        }
+
+        if (keeper.HasVisibleWindow())
+        {
+            return 2;
+        }
+
+        // not while the driver works: its window is transparent or parked on purpose (a Show then would break the job)
+        return !keeper.DriverActive && keeper.StuckWindow() != 0 ? 1 : 0;
     }
 
     private void OnKeeper() => _view.Dispatcher.BeginInvoke(() =>
@@ -285,6 +299,12 @@ internal sealed class MusicPage : IslandPage
         Core.AppleMusic.Changed += OnAppleMusic;
         _poll.Start();
         Core.Levels.ForgetSilence();
+        if (!_viewing && !IsPreview)
+        {
+            _viewing = true;
+            s_live = this;
+            Core.AppleMusic.ViewerShown();
+        }
     }
 
     public override void Hidden()
@@ -294,6 +314,49 @@ internal sealed class MusicPage : IslandPage
         Core.AppleMusic.Keeper.Changed -= OnKeeper;
         Core.AppleMusic.Changed -= OnAppleMusic;
         _poll.Stop();
+        if (_viewing)
+        {
+            _viewing = false;
+            if (ReferenceEquals(s_live, this))
+            {
+                s_live = null;
+            }
+
+            Core.AppleMusic.ViewerHidden();
+        }
+    }
+
+    // the Music page that is on screen (the library is opened on it), and whether this one counts as a viewer of Apple Music's progress
+    private static MusicPage? s_live;
+    private bool _viewing;
+
+    /// <summary>Shows the Apple Music library on the Music page (opens the island on it when it is closed or on another page).</summary>
+    public static void OpenLibrary(IslandCore core)
+    {
+        if (!core.AppleMusic.Available)
+        {
+            return;
+        }
+
+        if (s_live is { } live && live.HasWindow)
+        {
+            if (live._extra != MusicExtra.Library)
+            {
+                live.SetExtra(MusicExtra.Library);
+            }
+
+            return;
+        }
+
+        s_carry = (MusicExtra.Library, DateTime.UtcNow);
+        if (core.Window is { Expanded: true } window)
+        {
+            window.ShowModule("music");
+        }
+        else
+        {
+            core.Open("music");
+        }
     }
 
     public override bool HasLayers => true;
@@ -470,7 +533,7 @@ internal sealed class MusicPage : IslandPage
             {
                 PlaybackService.OpenPlayer(p.Aumid);
             }
-        }) { Width = 56, Height = 56, CornerRadius = new CornerRadius(10.64), Lifts = false, IsEnabled = !idle || preferred is not null || MusicUi.HiddenApple(Core, preferred) };
+        }) { Width = 56, Height = 56, CornerRadius = new CornerRadius(10.64), Lifts = false, IsEnabled = (!idle || preferred is not null || MusicUi.HiddenApple(Core, preferred)) && !(idle && MusicUi.HiddenApple(Core, preferred) && Core.AppleMusic.Busy) };
         var cover = Cover.For(p, 56, false, icon);
         cover.RenderTransformOrigin = new Point(0.5, 0.5);
         cover.RenderTransform = new ScaleTransform(p.IsPlaying || idle ? 1 : 0.94, p.IsPlaying || idle ? 1 : 0.94);

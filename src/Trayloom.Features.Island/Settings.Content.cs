@@ -606,7 +606,7 @@ internal sealed class ContentEditor : Grid
 
                         list.Sort(StringComparer.Ordinal);
                         app.Set(K.CalendarExcluded, list);
-                        _ = svc.RefreshAsync();
+                        svc.Refresh();
                     };
                     row.Children.Add(cb);
                     row.Children.Add(new Ellipse_ { Width = 8, Height = 8, Fill = new SolidColorBrush(cal.Color), Margin = new Thickness(8, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center });

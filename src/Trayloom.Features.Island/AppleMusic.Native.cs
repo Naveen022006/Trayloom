@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Text;
+using Trayloom.Core.Native;
 
 namespace Trayloom.Features.Island;
 
@@ -142,6 +143,9 @@ internal static class AmNative
 
     [DllImport("user32.dll")]
     internal static extern bool IsIconic(nint hwnd);
+
+    [DllImport("user32.dll")]
+    internal static extern bool IsZoomed(nint hwnd);
 
     [DllImport("user32.dll")]
     internal static extern nint GetForegroundWindow();
@@ -307,13 +311,48 @@ internal static class AmNative
         }
 
         var live = (long)GetWindowLongPtr(hwnd, GwlExStyle);
-        return OriginalStyles.GetOrAdd(hwnd, IsGhost(hwnd) ? Deghost(live, ClassOf(hwnd)) : live);
+        var original = IsGhost(hwnd) ? Deghost(live, ClassOf(hwnd)) : live;
+        if (OriginalStyles.TryAdd(hwnd, original))
+        {
+            // on disk before the window is touched: whatever happens to Trayloom from here on, the guardian can give the style back
+            WindowGuardianState.Track(hwnd, ProcessOf(hwnd), AppleMusicProcess, ClassOf(hwnd), WindowGuardianState.Ghost, original);
+            return original;
+        }
+
+        return OriginalStyles.GetOrAdd(hwnd, original);
     }
 
-    /// <summary>Records where the person has the window (ignored when the rectangle is off-screen: that is a parked window's, not theirs).</summary>
+    /// <summary>Windows a driver job (a <c>HiddenWindow</c>) is working on right now, with the number of jobs on each (an abandoned job may overlap its successor).</summary>
+    private static readonly ConcurrentDictionary<nint, int> DriverWindows = new();
+
+    /// <summary>The driver starts working on the window (it is invisible by design until <see cref="DriverReleases"/>).</summary>
+    internal static void DriverTakes(nint hwnd) => DriverWindows.AddOrUpdate(hwnd, 1, (_, n) => n + 1);
+
+    /// <summary>The driver is done with the window.</summary>
+    internal static void DriverReleases(nint hwnd)
+    {
+        while (DriverWindows.TryGetValue(hwnd, out var n))
+        {
+            var done = n <= 1
+                ? ((ICollection<KeyValuePair<nint, int>>)DriverWindows).Remove(new KeyValuePair<nint, int>(hwnd, n))
+                : DriverWindows.TryUpdate(hwnd, n - 1, n);
+            if (done)
+            {
+                return;
+            }
+        }
+    }
+
+    /// <summary>A driver job is working on the window right now.</summary>
+    internal static bool IsDriverWindow(nint hwnd) => DriverWindows.ContainsKey(hwnd);
+
+    /// <summary>The real extended style of the window is on record (it was made transparent and not given back yet).</summary>
+    internal static bool HasStyleRecord(nint hwnd) => OriginalStyles.ContainsKey(hwnd);
+
+    /// <summary>Records where the person had the window (ignored unless it is comfortably visible: anything else is a parked or lost window's place, not theirs).</summary>
     internal static void RememberHome(nint hwnd, Rect home)
     {
-        if (OnAnyScreen(home))
+        if (Comfortable(hwnd, home))
         {
             if (Homes.Count > 64)
             {
@@ -336,14 +375,164 @@ internal static class AmNative
         return ex;
     }
 
-    /// <summary>The primary screen's centre: where a window goes that has no place of its own to go back to.</summary>
-    internal static Rect Centered()
+    /// <summary>The name the guardian records for Apple Music's windows.</summary>
+    internal const string AppleMusicProcess = "AppleMusic";
+
+    internal static RECT ToCore(Rect r) => new() { Left = r.Left, Top = r.Top, Right = r.Right, Bottom = r.Bottom };
+
+    internal static Rect FromCore(RECT r) => new() { Left = r.Left, Top = r.Top, Right = r.Right, Bottom = r.Bottom };
+
+    /// <summary>The window's caption strip is clearly inside some monitor's work area (not hiding under the taskbar, not parked).</summary>
+    internal static bool Comfortable(Rect r) => WindowPlacementMath.IsComfortablyVisible(ToCore(r), WindowPlacementMath.GetMonitors());
+
+    /// <summary>
+    /// As <see cref="Comfortable(Rect)"/> for the rectangle of this window: a maximised window (also a hidden one) is the person's whole
+    /// screen and always comfortable, whatever its frame does to the rectangle at this scaling. Not for a minimised window (its rectangle is
+    /// the parking spot of the taskbar button, or its restore rectangle, which is a normal one).
+    /// </summary>
+    internal static bool Comfortable(nint hwnd, Rect r) => (!IsIconic(hwnd) && IsZoomed(hwnd) && r.Left > -10000) || Comfortable(r);
+
+    /// <summary>The rectangle itself when comfortably visible, else a usable one on the nearest monitor (centred on the primary one when it is parked or invalid).</summary>
+    internal static Rect Sanitized(Rect r) => FromCore(WindowPlacementMath.Sanitize(ToCore(r), WindowPlacementMath.GetMonitors()));
+
+    /// <summary>A WINDOWPLACEMENT rectangle (workspace coordinates) in screen coordinates.</summary>
+    internal static Rect WorkspaceToScreen(Rect r) => FromCore(WindowPlacementMath.WorkspaceToScreen(ToCore(r), WindowPlacementMath.GetMonitors()));
+
+    /// <summary>A screen rectangle as WINDOWPLACEMENT wants it.</summary>
+    internal static Rect ScreenToWorkspace(Rect r) => FromCore(WindowPlacementMath.ScreenToWorkspace(ToCore(r), WindowPlacementMath.GetMonitors()));
+
+    /// <summary>
+    /// Where the window is, in screen coordinates: its own rectangle (valid for a hidden window too), or for a minimised one the restore
+    /// rectangle (workspace coordinates, except for a tool window, whose placement is in screen coordinates).
+    /// </summary>
+    internal static bool CurrentScreenHome(nint hwnd, out Rect home)
     {
-        var w = GetSystemMetrics(0);
-        var h = GetSystemMetrics(1);
-        var left = Math.Max(0, (w - 1200) / 2);
-        var top = Math.Max(0, (h - 800) / 2);
-        return new Rect { Left = left, Top = top, Right = left + 1200, Bottom = top + 800 };
+        home = default;
+        if (!IsIconic(hwnd))
+        {
+            return GetWindowRect(hwnd, out home);
+        }
+
+        var wp = new WindowPlacement { Length = Marshal.SizeOf<WindowPlacement>() };
+        if (!GetWindowPlacement(hwnd, ref wp))
+        {
+            return false;
+        }
+
+        home = ((long)GetWindowLongPtr(hwnd, GwlExStyle) & WsExToolWindow) != 0 ? wp.Normal : WorkspaceToScreen(wp.Normal);
+        return true;
+    }
+
+    /// <summary>A place for the window that the person can see: where it is now when that is comfortable, else where they had it, else a corrected one.</summary>
+    internal static Rect SafeHome(nint hwnd)
+    {
+        CurrentScreenHome(hwnd, out var now);
+        if (Comfortable(hwnd, now))
+        {
+            return now;
+        }
+
+        if (Homes.TryGetValue(hwnd, out var known) && Comfortable(known))
+        {
+            return known;
+        }
+
+        return Sanitized(now);
+    }
+
+    private static int[] HomeArray(Rect r) => [r.Left, r.Top, r.Right, r.Bottom];
+
+    /// <summary>Records the window as hidden by the keeper (before it is hidden), with the place it comes back to.</summary>
+    internal static void TrackKept(nint hwnd, uint pid, Rect home) =>
+        WindowGuardianState.Track(hwnd, pid, AppleMusicProcess, MainWindowClass, WindowGuardianState.Kept, null, HomeArray(home));
+
+    /// <summary>Records the window as parked far off-screen (before it is moved), with the place it comes back to.</summary>
+    internal static void TrackParked(nint hwnd, Rect home) =>
+        WindowGuardianState.Track(hwnd, ProcessOf(hwnd), AppleMusicProcess, MainWindowClass, WindowGuardianState.Parked, null, HomeArray(home));
+
+    /// <summary>The titled main window of an Apple Music process that nobody can see although it is not minimised: hidden, transparent or parked. 0 = none.</summary>
+    internal static nint StuckMainWindow()
+    {
+        // the windows of a start by Trayloom are transparent or parked on purpose until it is over
+        if (AppleMusicKeeper.Instance is { Launching: true })
+        {
+            return 0;
+        }
+
+        foreach (var h in MainWindows())
+        {
+            var title = TitleOf(h);
+            if (title.Length == 0 || title == "WinUI Desktop")
+            {
+                continue;
+            }
+
+            // a window the driver has made invisible for its job at this moment is not stuck: it is given back by the job
+            if (IsDriverWindow(h))
+            {
+                continue;
+            }
+
+            if (!IsWindowVisible(h) || IsGhost(h) || (!IsIconic(h) && GetWindowRect(h, out var r) && r.Left <= -10000))
+            {
+                return h;
+            }
+        }
+
+        return 0;
+    }
+
+    /// <summary>The window's rectangle (and visibility) for a log line.</summary>
+    internal static string RectText(nint hwnd)
+    {
+        if (!IsWindow(hwnd) || !GetWindowRect(hwnd, out var r))
+        {
+            return "[gone]";
+        }
+
+        var text = $"[{r.Left},{r.Top},{r.Right},{r.Bottom}]";
+        if (IsIconic(hwnd))
+        {
+            var wp = new WindowPlacement { Length = Marshal.SizeOf<WindowPlacement>() };
+            if (GetWindowPlacement(hwnd, ref wp))
+            {
+                var n = WorkspaceToScreen(wp.Normal);
+                text += $" restore=[{n.Left},{n.Top},{n.Right},{n.Bottom}]";
+            }
+        }
+
+        return $"{text} visible={(IsWindowVisible(hwnd) ? 1 : 0)} iconic={(IsIconic(hwnd) ? 1 : 0)}";
+    }
+
+    /// <summary>
+    /// Makes sure the window will not come back off-screen: a window that is not minimised is moved (also while hidden), a minimised one gets
+    /// a corrected restore rectangle (the placement is in workspace coordinates). Inside <see cref="Bounded(nint, Func{bool}, int, string, Action{string}?)"/>.
+    /// </summary>
+    internal static void FixPlacement(nint hwnd)
+    {
+        if (!CurrentScreenHome(hwnd, out var now) || Comfortable(hwnd, now))
+        {
+            // nothing to correct; a maximised window is never moved or resized
+            return;
+        }
+
+        var target = Homes.TryGetValue(hwnd, out var known) && Comfortable(known) ? known : Sanitized(now);
+        if (!IsIconic(hwnd))
+        {
+            SetWindowPos(hwnd, 0, target.Left, target.Top, target.Right - target.Left, target.Bottom - target.Top, SwpNoZOrder | SwpNoActivate | SwpNoOwnerZOrder);
+            return;
+        }
+
+        var wp = new WindowPlacement { Length = Marshal.SizeOf<WindowPlacement>() };
+        if (!GetWindowPlacement(hwnd, ref wp))
+        {
+            return;
+        }
+
+        wp.Normal = ((long)GetWindowLongPtr(hwnd, GwlExStyle) & WsExToolWindow) != 0 ? target : ScreenToWorkspace(target);
+        wp.ShowCmd = SwShowMinNoActive;
+        wp.Flags = 4; // WPF_ASYNCWINDOWPLACEMENT
+        SetWindowPlacement(hwnd, ref wp);
     }
 
     /// <summary>
@@ -369,6 +558,10 @@ internal static class AmNative
         }
 
         OriginalStyles.TryRemove(hwnd, out _);
+        if (!IsGhost(hwnd))
+        {
+            WindowGuardianState.Untrack(hwnd, WindowGuardianState.Ghost);
+        }
     }
 
     /// <summary>A window parked far off-screen goes back to where the person had it (or to the screen's centre). Inside <see cref="Bounded(nint, Func{bool}, int, string, Action{string}?)"/>.</summary>
@@ -376,11 +569,17 @@ internal static class AmNative
     {
         if (IsIconic(hwnd) || !GetWindowRect(hwnd, out var r) || r.Left > -10000)
         {
+            // not parked (any more)
+            WindowGuardianState.Untrack(hwnd, WindowGuardianState.Parked);
             return;
         }
 
-        var home = Homes.TryGetValue(hwnd, out var known) && OnAnyScreen(known) ? known : Centered();
+        var home = Homes.TryGetValue(hwnd, out var known) && Comfortable(known) ? known : Sanitized(r);
         SetWindowPos(hwnd, 0, home.Left, home.Top, home.Right - home.Left, home.Bottom - home.Top, SwpNoZOrder | SwpNoActivate | SwpNoOwnerZOrder);
+        if (GetWindowRect(hwnd, out var after) && after.Left > -10000)
+        {
+            WindowGuardianState.Untrack(hwnd, WindowGuardianState.Parked);
+        }
     }
 
     /// <summary>Gives the window its style back, bounded; when Apple Music does not answer the restore is retried in the background.</summary>
@@ -407,6 +606,7 @@ internal static class AmNative
         if (!IsWindow(hwnd))
         {
             OriginalStyles.TryRemove(hwnd, out _);
+            WindowGuardianState.UntrackWindow(hwnd);
             return;
         }
 
@@ -443,11 +643,12 @@ internal static class AmNative
             if (!IsWindow(hwnd))
             {
                 OriginalStyles.TryRemove(hwnd, out _);
+                WindowGuardianState.UntrackWindow(hwnd);
                 done = true;
             }
             else if (Environment.TickCount64 > job.Until)
             {
-                say?.Invoke($"{job.What}: Apple Music did not take it in 10 s; the next request tries again");
+                say?.Invoke($"{job.What}: Apple Music did not take it in 10 s; the next request tries again (the window guardian keeps the record)");
                 done = true;
             }
             else if (Bounded(hwnd, job.Attempt, 1500, job.What, null))
@@ -476,6 +677,7 @@ internal static class AmNative
             if (!IsWindow(h))
             {
                 OriginalStyles.TryRemove(h, out _);
+                WindowGuardianState.UntrackWindow(h);
             }
         }
 
@@ -508,7 +710,7 @@ internal static class AmNative
             }
 
             var window = hwnd;
-            say?.Invoke("healing a window left behind: " + Describe(window) + (ghost ? " (transparent)" : "") + (parked ? " (parked off-screen)" : ""));
+            say?.Invoke("healing a window left behind: " + Describe(window) + (ghost ? " (transparent)" : "") + (parked ? " (parked off-screen)" : "") + " " + RectText(window));
             Func<bool> fix = () =>
             {
                 // still transparent while it is moved and minimised: nothing flashes on screen
@@ -528,6 +730,8 @@ internal static class AmNative
             {
                 RetryRestore(window, fix, "healing the window", say);
             }
+
+            say?.Invoke("healed: " + RectText(window));
         }
     }
 

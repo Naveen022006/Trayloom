@@ -47,6 +47,7 @@ internal static class LibStrings
     public static string ClosedTitle => Loc.T("Apple Music was closed");
     public static string Resuming => Loc.T("Keeping your music playing…");
     public static string StartingApple => Loc.T("Starting Apple Music…");
+    public static string StillStarting => Loc.T("Still starting Apple Music…");
 
     public static string Count(int n) => n == 1 ? Loc.T("1 song") : Loc.F("{0} songs", n);
 }

@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- H2: stand-ins for Apple Music's window and for Trayloom as the window owner (AmDummy.exe). Not part of Trayloom.sln. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>AmDummy</RootNamespace>
+    <AssemblyName>AmDummy</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Trayloom.Core\Trayloom.Core.csproj" />
+  </ItemGroup>
+</Project>

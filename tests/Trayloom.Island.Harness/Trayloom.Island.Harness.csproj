@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Trayloom.Island.Harness</RootNamespace>
+    <!-- a console harness: the WPF the shared props switch on is only there because the Island project needs it -->
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Trayloom.Features.Island\Trayloom.Features.Island.csproj" />
+  </ItemGroup>
+</Project>

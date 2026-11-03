@@ -87,7 +87,7 @@ internal sealed class AccessoryService : IDisposable
         }
 
         _battery = new DispatcherTimer(DispatcherPriority.Background, _core.Ui) { Interval = TimeSpan.FromMinutes(5) };
-        _battery.Tick += (_, _) => _ = ReadBatteries();
+        _battery.Tick += (_, _) => Guarded.FireAndLog(ReadBatteries, _core.Ctx.Log, "Accessory batteries");
         _battery.Start();
         _present = new DispatcherTimer(DispatcherPriority.Background, _core.Ui) { Interval = TimeSpan.FromSeconds(1) };
         _present.Tick += (_, _) => PresentNext();
@@ -152,7 +152,7 @@ internal sealed class AccessoryService : IDisposable
         d.Kind = KindByName(d.Name);
         if (d.Connected && _enumerated)
         {
-            _ = Announce(d);
+            Guarded.FireAndLog(() => Announce(d), _core.Ctx.Log, "Accessory announce");
         }
     }
 
@@ -169,7 +169,7 @@ internal sealed class AccessoryService : IDisposable
             if (now && !d.Connected && !d.Baseline)
             {
                 d.Connected = true;
-                _ = Announce(d);
+                Guarded.FireAndLog(() => Announce(d), _core.Ctx.Log, "Accessory announce");
             }
             else if (!now)
             {
@@ -225,7 +225,7 @@ internal sealed class AccessoryService : IDisposable
             Detail = d.Name,
             Reaction = null,
         });
-        _ = ReadBattery(d);
+        Guarded.FireAndLog(() => ReadBattery(d), _core.Ctx.Log, "Accessory battery");
     }
 
     private void Battery(Dev d, int percent)

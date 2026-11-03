@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- H1: console harness for WindowPlacementMath. Not part of Trayloom.sln; run it with dotnet run on this project. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Trayloom.WindowGuardian.Harness</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Trayloom.Core\Trayloom.Core.csproj" />
+  </ItemGroup>
+</Project>

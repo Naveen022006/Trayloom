@@ -5,6 +5,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Windows.Automation;
 using Windows.Media.Control;
+using Trayloom.Core.Native;
 
 namespace Trayloom.Features.Island;
 
@@ -42,6 +43,9 @@ internal enum AmFailure
 
     /// <summary>Apple Music took the command but GSMTC never showed the song.</summary>
     NotConfirmed,
+
+    /// <summary>Apple Music is up but has nothing loaded: its transport buttons stay disabled and there is no media session.</summary>
+    NothingLoaded,
 
     Cancelled,
     Failed,
@@ -727,6 +731,7 @@ internal sealed class AppleMusicDriver : IDisposable
     {
         var id = TransportId(action);
         var watch = Stopwatch.StartNew();
+        long disabledSince = -1;
         while (watch.ElapsedMilliseconds < 8000)
         {
             ct.ThrowIfCancellationRequested();
@@ -755,17 +760,71 @@ internal sealed class AppleMusicDriver : IDisposable
             {
             }
 
+            if (NothingLoaded(am, watch, ref disabledSince, 2500))
+            {
+                Say($"nothing is loaded in Apple Music: its play button stays disabled and there is no media session ({watch.ElapsedMilliseconds} ms)");
+                return AmResult.Fail(AmFailure.NothingLoaded, id);
+            }
+
             Thread.Sleep(100);
         }
 
         return AmResult.Fail(AmFailure.NoMenu, id);
     }
 
+    /// <summary>
+    /// Apple Music has nothing loaded: its Play/Pause button has been disabled for <paramref name="afterMs"/> in a row and Windows has no
+    /// media session for it (a loaded song, playing or not, has both). <paramref name="since"/> is the caller's -1 until the button is first seen disabled.
+    /// </summary>
+    private static bool NothingLoaded(AmUia am, Stopwatch watch, ref long since, int afterMs)
+    {
+        try
+        {
+            if (am.ById("TransportControl_PlayPauseStop") is { Current.IsEnabled: false } && FindSession() is null)
+            {
+                since = since < 0 ? watch.ElapsedMilliseconds : since;
+                return watch.ElapsedMilliseconds - since >= afterMs;
+            }
+        }
+        catch (ElementNotAvailableException)
+        {
+        }
+
+        since = -1;
+        return false;
+    }
+
     /// <summary>Presses Apple Music's own transport button (used while Windows has no media session for it, e.g. right after a hidden start).</summary>
     private AmResult PressTransport(AmUia am, AmAction action, int wait, CancellationToken ct)
     {
         var id = TransportId(action);
-        var button = am.WaitFor(() => am.ById(id) is { Current.IsEnabled: true } b ? b : null, wait, ct);
+        var watch = Stopwatch.StartNew();
+        long disabledSince = -1;
+        AutomationElement? button = null;
+        while (watch.ElapsedMilliseconds < wait)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                if (am.ById(id) is { Current.IsEnabled: true } enabled)
+                {
+                    button = enabled;
+                    break;
+                }
+            }
+            catch (ElementNotAvailableException)
+            {
+            }
+
+            if (NothingLoaded(am, watch, ref disabledSince, 1500))
+            {
+                Say($"nothing is loaded in Apple Music: its play button stays disabled and there is no media session ({watch.ElapsedMilliseconds} ms)");
+                return AmResult.Fail(AmFailure.NothingLoaded, id);
+            }
+
+            Thread.Sleep(80);
+        }
+
         if (button is null || !am.Invoke(button))
         {
             return AmResult.Fail(AmFailure.NoMenu, id);
@@ -1350,7 +1409,7 @@ internal sealed class AppleMusicDriver : IDisposable
                     Settle(hwnd);
                 }
             });
-            var info = new AmNative.StartupInfo { Cb = System.Runtime.InteropServices.Marshal.SizeOf<AmNative.StartupInfo>(), Flags = 1 | 4, ShowWindow = AmNative.SwShowMinNoActive, X = -32000, Y = -32000 }; // STARTF_USESHOWWINDOW | STARTF_USEPOSITION
+            var info = new AmNative.StartupInfo { Cb = System.Runtime.InteropServices.Marshal.SizeOf<AmNative.StartupInfo>(), Flags = 1, ShowWindow = AmNative.SwShowMinNoActive }; // STARTF_USESHOWWINDOW only: an off-screen start position can end up as the window's remembered place
             var started = AmNative.CreateProcess(null, new System.Text.StringBuilder($"\"{AmDb.AliasPath}\""), 0, 0, false, 0, 0, null, ref info, out var pi);
             if (started)
             {
@@ -1509,6 +1568,15 @@ internal sealed class AppleMusicDriver : IDisposable
             }
 
             var main = AmNative.IsWindow(window) && IsAppWindow(window);
+
+            // always a place the person can see: where the window first showed up, else a corrected one (never the parking spot)
+            var target = home.Right > home.Left ? home : AmNative.Sanitized(home);
+            if (main && !keeper.UserOwned)
+            {
+                // recorded as kept before it is hidden
+                AmNative.TrackKept(window, AmNative.ProcessOf(window), target);
+            }
+
             Func<bool> restore = () =>
             {
                 if (main)
@@ -1520,16 +1588,11 @@ internal sealed class AppleMusicDriver : IDisposable
                         AmNative.ShowWindow(window, AmNative.SwHide);
                     }
 
-                    if (home.Right > home.Left)
-                    {
-                        AmNative.SetWindowPos(window, 0, home.Left, home.Top, home.Right - home.Left, home.Bottom - home.Top, AmNative.SwpNoZOrder | AmNative.SwpNoActivate | AmNative.SwpNoOwnerZOrder);
-                    }
-                    else if (theirs)
-                    {
-                        AmNative.Unpark(window);
-                    }
+                    AmNative.SetWindowPos(window, 0, target.Left, target.Top, target.Right - target.Left, target.Bottom - target.Top, AmNative.SwpNoZOrder | AmNative.SwpNoActivate | AmNative.SwpNoOwnerZOrder);
                 }
 
+                // whatever this start parked (only a titled main window is, but no record outlives the window's settling)
+                WindowGuardianState.Untrack(window, WindowGuardianState.Parked);
                 AmNative.RestoreStyleNow(window);
                 return true;
             };
@@ -1564,6 +1627,9 @@ internal sealed class AppleMusicDriver : IDisposable
                 if (first)
                 {
                     AmNative.CancelRetry(hwnd);
+
+                    // a release of this window that is still under way would show it (and un-ghost it) in the middle of this start
+                    keeper.CancelRelease(hwnd);
                     var ex = AmNative.RememberStyle(hwnd);
                     var ghost = (nint)(ex | AmNative.WsExLayered | AmNative.WsExTransparent);
                     if (cls == WindowClass)
@@ -1575,18 +1641,30 @@ internal sealed class AppleMusicDriver : IDisposable
                     AmNative.SetLayeredWindowAttributes(hwnd, 0, 0, AmNative.LwaAlpha);
                 }
 
-                if (ev == AmNative.EventObjectShow && cls == WindowClass)
+                // only the titled main window is parked and recorded as parked: the untitled "WinUI Desktop" helper window is no window of
+                // the person's, and a record for it would outlive the start (and the guardian must never show it)
+                if (ev == AmNative.EventObjectShow && cls == WindowClass && IsAppWindow(hwnd))
                 {
-                    if (AmNative.GetWindowRect(hwnd, out var r) && AmNative.OnAnyScreen(r))
+                    AmNative.Rect home;
+                    lock (touched)
                     {
-                        lock (touched)
-                        {
-                            rects.TryAdd(hwnd, r);
-                        }
-
-                        AmNative.RememberHome(hwnd, r);
+                        rects.TryGetValue(hwnd, out home);
                     }
 
+                    if (home.Right <= home.Left && AmNative.GetWindowRect(hwnd, out var r) && r.Left > -10000)
+                    {
+                        // where Apple Music showed it (corrected when that is not a place the person can reach)
+                        home = AmNative.Comfortable(hwnd, r) ? r : AmNative.Sanitized(r);
+                        lock (touched)
+                        {
+                            rects.TryAdd(hwnd, home);
+                        }
+
+                        AmNative.RememberHome(hwnd, home);
+                    }
+
+                    // on disk before the window is moved away
+                    AmNative.TrackParked(hwnd, home.Right > home.Left ? home : AmNative.Sanitized(home));
                     AmNative.SetWindowPos(hwnd, 0, -30000, -30000, 2400, 1500, AmNative.SwpNoZOrder | AmNative.SwpNoActivate | AmNative.SwpNoOwnerZOrder | AmNative.SwpAsyncWindowPos);
                 }
 
@@ -1794,6 +1872,9 @@ internal sealed class AppleMusicDriver : IDisposable
 
         private readonly nint _hwnd;
         private readonly AmNative.WindowPlacement _original;
+
+        /// <summary>Where the window comes back to, in SCREEN coordinates (a WINDOWPLACEMENT rectangle is in workspace coordinates and must not be used for SetWindowPos).</summary>
+        private readonly AmNative.Rect _home;
         private readonly bool _wasIconic;
         private readonly Action<string> _say;
         private readonly AppleMusicKeeper? _owner;
@@ -1814,14 +1895,10 @@ internal sealed class AppleMusicDriver : IDisposable
             _wasIconic = _wasHidden || AmNative.IsIconic(hwnd) || !OnAnyScreen(rect);
             _original = new AmNative.WindowPlacement { Length = System.Runtime.InteropServices.Marshal.SizeOf<AmNative.WindowPlacement>() };
             AmNative.GetWindowPlacement(hwnd, ref _original);
-            AmNative.RememberHome(hwnd, _original.Normal);
-            if (!OnAnyScreen(_original.Normal))
-            {
-                // never remember an off-screen restore position (a previous run may have left one)
-                var w = AmNative.GetSystemMetrics(0);
-                var h = AmNative.GetSystemMetrics(1);
-                _original.Normal = new AmNative.Rect { Left = (w - 1200) / 2, Top = (h - 800) / 2, Right = ((w - 1200) / 2) + 1200, Bottom = ((h - 800) / 2) + 800 };
-            }
+
+            // never a position the person cannot reach (a previous run may have left one): where it is, where they had it, or a corrected one
+            _home = AmNative.SafeHome(hwnd);
+            AmNative.RememberHome(hwnd, _home);
 
             if (!_wasIconic)
             {
@@ -1834,6 +1911,7 @@ internal sealed class AppleMusicDriver : IDisposable
             // The window's true style is on record before it is touched (the live style may be a transparent one left behind by a request
             // that was abandoned or whose restore did not get through), and restores still waiting for the window must not run during the job.
             Newest[hwnd] = this;
+            AmNative.DriverTakes(hwnd);
             AmNative.CancelRetry(hwnd);
             var originalEx = AmNative.RememberStyle(hwnd);
             var ghost = (nint)(originalEx | AmNative.WsExLayered | AmNative.WsExTransparent);
@@ -1844,8 +1922,12 @@ internal sealed class AppleMusicDriver : IDisposable
             }
 
             var wp = _original;
+            wp.Normal = (ghost & AmNative.WsExToolWindow) != 0 ? _home : AmNative.ScreenToWorkspace(_home);
             wp.ShowCmd = AmNative.SwShowNoActivate;
             wp.Flags = 0;
+
+            // on disk before the window is moved away
+            AmNative.TrackParked(hwnd, _home);
 
             // one step, in this order: transparent first, then shown, then parked
             Ready = AmNative.Bounded(
@@ -1891,28 +1973,42 @@ internal sealed class AppleMusicDriver : IDisposable
 
         private void Finish()
         {
-            if (Newest.TryGetValue(_hwnd, out var newest) && !ReferenceEquals(newest, this))
-            {
-                // a newer request took the window over while this one (given up on by the watchdog) was stuck: that one puts it back
-                _say("window already taken over by a newer request; it puts it back");
-                return;
-            }
-
             try
             {
-                Restore();
+                if (Newest.TryGetValue(_hwnd, out var newest) && !ReferenceEquals(newest, this))
+                {
+                    // a newer request took the window over while this one (given up on by the watchdog) was stuck: that one puts it back
+                    _say("window already taken over by a newer request; it puts it back");
+                    return;
+                }
+
+                try
+                {
+                    Restore();
+                }
+                finally
+                {
+                    ((ICollection<KeyValuePair<nint, HiddenWindow>>)Newest).Remove(new KeyValuePair<nint, HiddenWindow>(_hwnd, this));
+                }
             }
             finally
             {
-                ((ICollection<KeyValuePair<nint, HiddenWindow>>)Newest).Remove(new KeyValuePair<nint, HiddenWindow>(_hwnd, this));
+                AmNative.DriverReleases(_hwnd);
             }
         }
 
         private void Restore()
         {
-            var rect = _original.Normal;
+            var rect = _home;
+            var before = AmNative.RectText(_hwnd);
             if (_keeper is not null)
             {
+                if (_owner?.UserOwned != true)
+                {
+                    // recorded as kept before it is hidden
+                    AmNative.TrackKept(_hwnd, AmNative.ProcessOf(_hwnd), rect);
+                }
+
                 // Kept out of sight: hidden while still transparent, back at the user's own restore position (so that is where Windows
                 // remembers it), original styles back, then the keeper takes it over (no taskbar button, no Alt+Tab entry).
                 // If the person opened Apple Music meanwhile (also while this attempt is retried) it is theirs: moved back, made opaque and shown.
@@ -1925,6 +2021,7 @@ internal sealed class AppleMusicDriver : IDisposable
                     }
 
                     AmNative.SetWindowPos(_hwnd, 0, rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top, AmNative.SwpNoZOrder | AmNative.SwpNoActivate | AmNative.SwpNoOwnerZOrder);
+                    WindowGuardianState.Untrack(_hwnd, WindowGuardianState.Parked);
                     AmNative.RestoreStyleNow(_hwnd);
                     if (theirs && (!AmNative.IsWindowVisible(_hwnd) || AmNative.IsIconic(_hwnd)))
                     {
@@ -1941,7 +2038,7 @@ internal sealed class AppleMusicDriver : IDisposable
 
                 // refuses (and shows the window) when the person has Apple Music open
                 _keeper.Adopt(_hwnd, AmNative.ProcessOf(_hwnd));
-                _say((_owner?.UserOwned == true ? "window given back to the person who opened Apple Music" : done ? "window hidden and kept" : "window kept (Apple Music did not finish hiding it; retrying)") + "; foreground now " + AmNative.Describe(AmNative.GetForegroundWindow()));
+                _say((_owner?.UserOwned == true ? "window given back to the person who opened Apple Music" : done ? "window hidden and kept" : "window kept (Apple Music did not finish hiding it; retrying)") + $"; rect {before} -> {AmNative.RectText(_hwnd)}; foreground now " + AmNative.Describe(AmNative.GetForegroundWindow()));
                 return;
             }
 
@@ -1959,6 +2056,7 @@ internal sealed class AppleMusicDriver : IDisposable
                 }
 
                 AmNative.SetWindowPos(_hwnd, 0, rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top, AmNative.SwpNoZOrder | AmNative.SwpNoActivate | AmNative.SwpNoOwnerZOrder);
+                WindowGuardianState.Untrack(_hwnd, WindowGuardianState.Parked);
                 if (theirs)
                 {
                     AmNative.RestoreStyleNow(_hwnd);
@@ -1986,7 +2084,7 @@ internal sealed class AppleMusicDriver : IDisposable
                 AmNative.RetryRestore(_hwnd, minimise, "minimising the window", _say);
             }
 
-            _say($"window {(_owner?.UserOwned == true ? "given back to the person who opened Apple Music" : "minimised again" + (foreground ? " (hidden first to pass the activation on)" : ""))}; foreground now {AmNative.Describe(AmNative.GetForegroundWindow())}");
+            _say($"window {(_owner?.UserOwned == true ? "given back to the person who opened Apple Music" : "minimised again" + (foreground ? " (hidden first to pass the activation on)" : ""))}; rect {before} -> {AmNative.RectText(_hwnd)}; foreground now {AmNative.Describe(AmNative.GetForegroundWindow())}");
         }
     }
 }

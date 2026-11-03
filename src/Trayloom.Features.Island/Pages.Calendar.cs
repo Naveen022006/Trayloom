@@ -56,7 +56,7 @@ internal sealed class CalendarPage : IslandPage
         Core.Calendar.Changed += OnData;
         if (Core.Calendar.Access == CalendarAccess.Unknown)
         {
-            _ = Core.Calendar.RequestAccessAsync();
+            Guarded.FireAndLog(Core.Calendar.RequestAccessAsync, Core.Ctx.Log, "Calendar access");
         }
 
         RequestRange();

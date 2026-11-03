@@ -97,7 +97,8 @@ internal sealed class LyricsService
             return;
         }
 
-        _ = LoadAsync(p, _generation);
+        var generation = _generation;
+        Guarded.FireAndLog(() => LoadAsync(p, generation), _core.Ctx.Log, "Lyrics load");
     }
 
     private async Task LoadAsync(Playback p, int gen)

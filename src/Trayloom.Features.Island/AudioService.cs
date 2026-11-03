@@ -681,6 +681,10 @@ internal static class BrightnessService
                     AvailabilityChanged?.Invoke();
                 }
             }
+            catch (Exception ex)
+            {
+                Log?.Invoke("Island brightness probe failed", ex);
+            }
             finally
             {
                 Interlocked.Exchange(ref _probing, 0);
@@ -731,33 +735,46 @@ internal static class BrightnessService
 
         _ = Task.Run(() =>
         {
-            while (true)
+            try
             {
-                double next;
+                while (true)
+                {
+                    double next;
+                    lock (Gate)
+                    {
+                        if (_pending is not { } p)
+                        {
+                            _writing = false;
+                            return;
+                        }
+
+                        next = p;
+                        _pending = null;
+                    }
+
+                    var percent = (byte)Math.Clamp(Math.Round(next * 100), 0, 100);
+                    var started = Stopwatch.GetTimestamp();
+                    if (SetPanel(percent))
+                    {
+                        Remember(percent / 100.0);
+                        Interlocked.Exchange(ref _lastOwnWriteTicks, DateTime.UtcNow.Ticks);
+                        BrightnessWrites.MarkOwn();
+                        if (Interlocked.Exchange(ref _firstWriteLogged, 1) == 0)
+                        {
+                            Log?.Invoke($"Island brightness first write: {percent}% in {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0} ms", null);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // the next write must be able to start again
                 lock (Gate)
                 {
-                    if (_pending is not { } p)
-                    {
-                        _writing = false;
-                        return;
-                    }
-
-                    next = p;
-                    _pending = null;
+                    _writing = false;
                 }
 
-                var percent = (byte)Math.Clamp(Math.Round(next * 100), 0, 100);
-                var started = Stopwatch.GetTimestamp();
-                if (SetPanel(percent))
-                {
-                    Remember(percent / 100.0);
-                    Interlocked.Exchange(ref _lastOwnWriteTicks, DateTime.UtcNow.Ticks);
-                    BrightnessWrites.MarkOwn();
-                    if (Interlocked.Exchange(ref _firstWriteLogged, 1) == 0)
-                    {
-                        Log?.Invoke($"Island brightness first write: {percent}% in {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0} ms", null);
-                    }
-                }
+                Log?.Invoke("Island brightness write failed", ex);
             }
         });
     }

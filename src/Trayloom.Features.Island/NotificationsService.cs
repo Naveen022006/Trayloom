@@ -97,7 +97,7 @@ internal sealed class NotificationsService : IDisposable
             return;
         }
 
-        _ = StartAsync();
+        Guarded.FireAndLog(StartAsync, _core.Ctx.Log, "Notifications start");
     }
 
     private async Task StartAsync()

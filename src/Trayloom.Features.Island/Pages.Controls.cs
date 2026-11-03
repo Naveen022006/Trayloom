@@ -128,11 +128,20 @@ internal sealed class BrightnessLevel : Grid
     /// <summary>Reads the true level off the UI thread; one miss is retried before the slider is given up on.</summary>
     private void Refresh()
     {
-        var v = BrightnessService.Read();
-        if (v is null)
+        double? v = null;
+        try
         {
-            Thread.Sleep(500);
             v = BrightnessService.Read();
+            if (v is null)
+            {
+                Thread.Sleep(500);
+                v = BrightnessService.Read();
+            }
+        }
+        catch (Exception ex)
+        {
+            // runs unobserved on the pool: an unreadable panel is the same as none
+            BrightnessService.Log?.Invoke("Island brightness read failed", ex);
         }
 
         Dispatcher.BeginInvoke(() =>
@@ -171,14 +180,28 @@ internal sealed class MusicCard : Border
         {
             _core.Playback.Changed += Build;
             _core.AppleMusic.Changed += Build;
+            if (!_preview && !_viewing)
+            {
+                _viewing = true;
+                _core.AppleMusic.ViewerShown();
+            }
+
             Build();
         };
         Unloaded += (_, _) =>
         {
             _core.Playback.Changed -= Build;
             _core.AppleMusic.Changed -= Build;
+            if (_viewing)
+            {
+                _viewing = false;
+                _core.AppleMusic.ViewerHidden();
+            }
         };
     }
+
+    // the card shows Apple Music's progress while it is on screen (a preview does not count)
+    private bool _viewing;
 
     private void Build()
     {
@@ -190,7 +213,7 @@ internal sealed class MusicCard : Border
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var cover = new HoverButton(() => { if (idle && (preferred is not null || MusicUi.HiddenApple(_core, preferred))) { MusicUi.IdleAction(_core, preferred, AmAction.PlayPause)(); } else { _win?.ShowModule("music"); } }) { Width = side, Height = side, CornerRadius = new CornerRadius(side * 0.19), Lifts = false };
+        var cover = new HoverButton(() => { if (idle && (preferred is not null || MusicUi.HiddenApple(_core, preferred))) { MusicUi.IdleAction(_core, preferred, AmAction.PlayPause)(); } else { _win?.ShowModule("music"); } }) { Width = side, Height = side, CornerRadius = new CornerRadius(side * 0.19), Lifts = false, IsEnabled = !(idle && MusicUi.HiddenApple(_core, preferred) && _core.AppleMusic.Busy) };
         cover.Child = Cover.For(p, side, false, _core.Playback.Sources.FirstOrDefault(s => s.Aumid == p.Aumid)?.Icon);
         grid.Children.Add(cover);
         var titles = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 8, 0) };

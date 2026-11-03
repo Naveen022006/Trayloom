@@ -274,6 +274,12 @@ public sealed class AutoQuitFeature : IFeature
 
     private bool ShouldQuit(uint pid, Watched watched)
     {
+        // A window another feature of Trayloom has hidden on purpose (Apple Music kept out of sight by the island) is not a closed window.
+        if (WindowGuardianState.IsPidTracked(pid))
+        {
+            return false;
+        }
+
         var app = _context!.App;
         var path = watched.Path ?? AppIdentity.PathOf(pid);
         if (path is null || AutoQuitRules.IsMandatory(path, pid))
