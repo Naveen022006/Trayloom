@@ -692,7 +692,10 @@ internal sealed class AppleQueueView : Grid
         Loaded += (_, _) =>
         {
             _svc.Changed += OnChanged;
-            _svc.RefreshQueue();
+
+            // Reading the queue drives Apple Music through UI Automation: only when there is nothing to show yet or the song has changed
+            // (and the last read is not fresh), never on every rebuild of the page. The refresh button reads it whenever asked.
+            _svc.RefreshQueueIfStale();
             Rebuild();
         };
         Unloaded += (_, _) => _svc.Changed -= OnChanged;

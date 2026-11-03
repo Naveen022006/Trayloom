@@ -231,6 +231,18 @@ internal sealed class AppleMusicDriver : IDisposable
     {
         var previous = AmNative.GetForegroundWindow();
         Say($"{cmd.Action} '{cmd.Track?.Title ?? cmd.Playlist?.Name}'; foreground before: {AmNative.Describe(previous)}");
+
+        // From here until 1.5 s after this job Apple Music is not allowed to keep the foreground (it is started, restored and invoked below).
+        using var guard = ForegroundGuard.Arm(previous, Say);
+        var transport = cmd.Action is AmAction.PlayPause or AmAction.SkipForward or AmAction.SkipBack;
+        if (transport && TransportViaSession(cmd.Action, false, 0, ct) is { } direct)
+        {
+            // Windows' own media session took the command: Apple Music's window and UI Automation are not involved at all
+            guard.Restore();
+            Say($"result: {(direct.Ok ? "ok" : direct.Failure + " " + direct.Detail)} (media session); foreground after: {AmNative.Describe(AmNative.GetForegroundWindow())}");
+            return direct;
+        }
+
         var before = Snapshot();
         var am = AmUia.Find();
         if (am is null && Process.GetProcessesByName("AppleMusic").Length > 0)
@@ -246,13 +258,20 @@ internal sealed class AppleMusicDriver : IDisposable
         }
 
         var launched = am is null;
-        am ??= LaunchHidden(ct);
+        am ??= LaunchHidden(guard, ct);
         if (am is null)
         {
             return AmResult.Fail(AmFailure.Unavailable, "Apple Music did not start");
         }
 
         ct.ThrowIfCancellationRequested();
+        if (launched && transport && TransportViaSession(cmd.Action, true, 3000, ct) is { } afterStart)
+        {
+            guard.Restore();
+            Say($"result: {(afterStart.Ok ? "ok" : afterStart.Failure + " " + afterStart.Detail)} (media session after start); foreground after: {AmNative.Describe(AmNative.GetForegroundWindow())}");
+            return afterStart;
+        }
+
         AmResult result;
         using (new PopupHider(am.Hwnd, am.Pid))
         using (new HiddenWindow(am.Hwnd, Say))
@@ -267,11 +286,11 @@ internal sealed class AppleMusicDriver : IDisposable
 
             // Hand the focus back while the window is still parked (and transparent), then minimise without activating anything.
             // If Windows refuses, the minimise below falls back to SW_MINIMIZE, which activates the next window in z-order.
-            RestoreForeground(previous, am.Pid);
+            guard.Restore();
         }
 
         // If Windows refused earlier, the minimise (SW_MINIMIZE) activated whatever is next in z-order: try again now.
-        RestoreForeground(previous, am.Pid);
+        guard.Restore();
         if (result.Ok && cmd.Action is AmAction.Play or AmAction.PlayPlaylist or AmAction.ShufflePlaylist)
         {
             result = Confirm(cmd, before, ct);
@@ -281,31 +300,83 @@ internal sealed class AppleMusicDriver : IDisposable
         return result;
     }
 
-    private void RestoreForeground(nint previous, uint amPid)
+    // ---------------------------------------------------------------- transport
+
+    /// <summary>
+    /// Play/pause, next or previous through Windows' media session of Apple Music: no window, no UI Automation. After a hidden start
+    /// (<paramref name="afterStart"/>) the session is awaited for up to <paramref name="waitMs"/> and asked to play (it comes up paused).
+    /// Null = there is no session or it refused, so Apple Music's own button has to be pressed.
+    /// </summary>
+    private AmResult? TransportViaSession(AmAction action, bool afterStart, int waitMs, CancellationToken ct)
     {
-        var now = AmNative.GetForegroundWindow();
-        if (previous == 0 || now == previous || !AmNative.IsWindow(previous))
+        var watch = Stopwatch.StartNew();
+        GlobalSystemMediaTransportControlsSession? session;
+        while ((session = FindSession()) is null && watch.ElapsedMilliseconds < waitMs)
         {
-            return;
+            ct.ThrowIfCancellationRequested();
+            Thread.Sleep(100);
         }
 
-        // only take the focus back from Apple Music itself (or from nothing): never from an app the user went to meanwhile
-        if (now != 0 && AmNative.ProcessOf(now) != amPid)
+        if (session is null)
         {
-            Say("foreground moved on to " + AmNative.Describe(now) + "; left alone");
-            return;
+            Say(afterStart ? "no media session after start; pressing the button" : "no media session; pressing the button");
+            return null;
         }
 
-        var ok = AmNative.SetForegroundWindow(previous);
-        Say($"SetForegroundWindow(previous) => {ok}; foreground now {AmNative.Describe(AmNative.GetForegroundWindow())}");
-        if (!ok && AmNative.GetForegroundWindow() != previous)
+        try
         {
-            AmNative.SwitchToThisWindow(previous, true);
-            Say($"SwitchToThisWindow(previous); foreground now {AmNative.Describe(AmNative.GetForegroundWindow())}");
+            var status = session.GetPlaybackInfo().PlaybackStatus;
+            if (afterStart && action == AmAction.PlayPause && status == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing)
+            {
+                return AmResult.Success();
+            }
+
+            var wantPlaying = action == AmAction.PlayPause && (afterStart || status != GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing);
+            var ok = action switch
+            {
+                AmAction.SkipForward => session.TrySkipNextAsync().AsTask().GetAwaiter().GetResult(),
+                AmAction.SkipBack => session.TrySkipPreviousAsync().AsTask().GetAwaiter().GetResult(),
+                _ when afterStart => session.TryPlayAsync().AsTask().GetAwaiter().GetResult(),
+                _ => session.TryTogglePlayPauseAsync().AsTask().GetAwaiter().GetResult(),
+            };
+            Say($"media session {action} (was {status}) => {ok}");
+            if (!ok)
+            {
+                return null;
+            }
+
+            if (action != AmAction.PlayPause)
+            {
+                return AmResult.Success();
+            }
+
+            // confirm that it took effect (a session without a loaded song accepts the command and does nothing)
+            var confirm = Stopwatch.StartNew();
+            while (confirm.ElapsedMilliseconds < 1500)
+            {
+                ct.ThrowIfCancellationRequested();
+                var now = session.GetPlaybackInfo().PlaybackStatus;
+                if ((now == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing) == wantPlaying && now != status)
+                {
+                    return AmResult.Success();
+                }
+
+                Thread.Sleep(60);
+            }
+
+            Say("media session did not change state; pressing the button");
+            return null;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Say("media session failed: " + ex.Message);
+            return null;
         }
     }
-
-    // ---------------------------------------------------------------- transport
 
     /// <summary>Presses Apple Music's own transport button (used while Windows has no media session for it, e.g. right after a hidden start).</summary>
     private AmResult PressTransport(AmUia am, AmAction action, int wait, CancellationToken ct)
@@ -707,14 +778,22 @@ internal sealed class AppleMusicDriver : IDisposable
         }
         finally
         {
-            if (!wasOn)
+            // leave the queue pane the way it was found (checked once more: a toggle that did not take would leave it open on the user's next visit)
+            for (var attempt = 0; attempt < 2; attempt++)
             {
                 try
                 {
+                    if ((toggler.Current.ToggleState == ToggleState.On) == wasOn)
+                    {
+                        break;
+                    }
+
                     toggler.Toggle();
+                    Thread.Sleep(120);
                 }
                 catch (ElementNotAvailableException)
                 {
+                    break;
                 }
             }
         }
@@ -727,12 +806,24 @@ internal sealed class AppleMusicDriver : IDisposable
     // only touched from the worker thread
     private static GlobalSystemMediaTransportControlsSessionManager? _sessions;
 
-    private static Media? Snapshot()
+    private static GlobalSystemMediaTransportControlsSession? FindSession()
     {
         try
         {
             var manager = _sessions ??= GlobalSystemMediaTransportControlsSessionManager.RequestAsync().AsTask().GetAwaiter().GetResult();
-            var session = manager.GetSessions().FirstOrDefault(s => (s.SourceAppUserModelId ?? "").Contains("AppleMusic", StringComparison.OrdinalIgnoreCase));
+            return manager.GetSessions().FirstOrDefault(s => (s.SourceAppUserModelId ?? "").Contains("AppleMusic", StringComparison.OrdinalIgnoreCase));
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static Media? Snapshot()
+    {
+        try
+        {
+            var session = FindSession();
             if (session is null)
             {
                 return null;
@@ -779,7 +870,7 @@ internal sealed class AppleMusicDriver : IDisposable
     // ---------------------------------------------------------------- launching
 
     /// <summary>Starts Apple Music minimised without activation; every window it creates is transparent from the moment it exists.</summary>
-    private AmUia? LaunchHidden(CancellationToken ct)
+    private AmUia? LaunchHidden(ForegroundGuard guard, CancellationToken ct)
     {
         if (!File.Exists(AmDb.AliasPath))
         {
@@ -787,7 +878,6 @@ internal sealed class AppleMusicDriver : IDisposable
         }
 
         Say("Apple Music is not running; starting it hidden");
-        var previous = AmNative.GetForegroundWindow();
         var touched = new Dictionary<nint, long>();
         var watch = Stopwatch.StartNew();
         using var hook = new AmEventHook(AmNative.EventObjectCreate, AmNative.EventObjectShow, 0, (ev, hwnd) =>
@@ -829,7 +919,7 @@ internal sealed class AppleMusicDriver : IDisposable
                 }
             }
         });
-        var info = new AmNative.StartupInfo { Cb = System.Runtime.InteropServices.Marshal.SizeOf<AmNative.StartupInfo>(), Flags = 1, ShowWindow = AmNative.SwShowMinNoActive };
+        var info = new AmNative.StartupInfo { Cb = System.Runtime.InteropServices.Marshal.SizeOf<AmNative.StartupInfo>(), Flags = 1 | 4, ShowWindow = AmNative.SwShowMinNoActive, X = -32000, Y = -32000 }; // STARTF_USESHOWWINDOW | STARTF_USEPOSITION
         var started = AmNative.CreateProcess(null, new System.Text.StringBuilder($"\"{AmDb.AliasPath}\""), 0, 0, false, 0, 0, null, ref info, out var pi);
         if (started)
         {
@@ -884,11 +974,7 @@ internal sealed class AppleMusicDriver : IDisposable
             }
         }
 
-        if (am is not null)
-        {
-            RestoreForeground(previous, am.Pid);
-        }
-
+        guard.Restore();
         return am;
     }
 
@@ -987,14 +1073,7 @@ internal sealed class AppleMusicDriver : IDisposable
             AmNative.SetWindowPos(hwnd, 0, -30000, -30000, 2400, 1500, AmNative.SwpNoZOrder | AmNative.SwpNoActivate | AmNative.SwpNoOwnerZOrder);
         }
 
-        private static bool OnAnyScreen(AmNative.Rect r)
-        {
-            var left = AmNative.GetSystemMetrics(76);
-            var top = AmNative.GetSystemMetrics(77);
-            var width = AmNative.GetSystemMetrics(78);
-            var height = AmNative.GetSystemMetrics(79);
-            return r.Right > left + 40 && r.Left < left + width - 40 && r.Bottom > top + 40 && r.Top < top + height - 40;
-        }
+        private static bool OnAnyScreen(AmNative.Rect r) => AmNative.OnAnyScreen(r);
 
         public void Dispose()
         {

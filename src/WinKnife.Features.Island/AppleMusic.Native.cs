@@ -24,6 +24,10 @@ internal static class AmNative
     internal const long WsExLayered = 0x80000;
     internal const long WsExTransparent = 0x20;
     internal const uint LwaAlpha = 2;
+    internal const long WsExToolWindow = 0x80;
+    internal const long WsExNoActivate = 0x08000000;
+    internal const uint GwOwner = 4;
+    internal const uint EventSystemForeground = 3;
     internal const uint EventObjectCreate = 0x8000;
     internal const uint EventObjectShow = 0x8002;
     internal const uint GaRoot = 2;
@@ -130,6 +134,21 @@ internal static class AmNative
     internal static extern int GetSystemMetrics(int index);
 
     [DllImport("user32.dll")]
+    internal static extern bool AttachThreadInput(uint from, uint to, bool attach);
+
+    [DllImport("user32.dll")]
+    internal static extern bool BringWindowToTop(nint hwnd);
+
+    [DllImport("user32.dll")]
+    internal static extern nint GetWindow(nint hwnd, uint command);
+
+    [DllImport("user32.dll")]
+    internal static extern bool GetLayeredWindowAttributes(nint hwnd, out uint key, out byte alpha, out uint flags);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmGetWindowAttribute(nint hwnd, int attribute, out int value, int size);
+
+    [DllImport("user32.dll")]
     internal static extern void SwitchToThisWindow(nint hwnd, bool altTab);
 
     [DllImport("user32.dll")]
@@ -179,6 +198,86 @@ internal static class AmNative
 
     [DllImport("kernel32.dll")]
     internal static extern bool CloseHandle(nint handle);
+
+    /// <summary>The rectangle (virtual screen) shows at least a little of the desktop.</summary>
+    internal static bool OnAnyScreen(Rect r)
+    {
+        var left = GetSystemMetrics(76);
+        var top = GetSystemMetrics(77);
+        var width = GetSystemMetrics(78);
+        var height = GetSystemMetrics(79);
+        return r.Right > left + 40 && r.Left < left + width - 40 && r.Bottom > top + 40 && r.Top < top + height - 40;
+    }
+
+    /// <summary>The window is on another virtual desktop (or otherwise cloaked by DWM).</summary>
+    internal static bool IsCloaked(nint hwnd) => DwmGetWindowAttribute(hwnd, 14, out var cloaked, 4) == 0 && cloaked != 0;
+
+    /// <summary>The window is fully transparent and click-through (how the driver works on Apple Music's windows), so nobody sees it.</summary>
+    internal static bool IsGhost(nint hwnd)
+    {
+        var ex = (long)GetWindowLongPtr(hwnd, GwlExStyle);
+        if ((ex & WsExLayered) == 0 || (ex & WsExTransparent) == 0)
+        {
+            return false;
+        }
+
+        return GetLayeredWindowAttributes(hwnd, out _, out var alpha, out var flags) && (flags & LwaAlpha) != 0 && alpha == 0;
+    }
+
+    /// <summary>Whether the process is Apple Music (looked up by process name).</summary>
+    internal static bool IsAppleMusic(uint pid)
+    {
+        if (pid == 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            using var p = System.Diagnostics.Process.GetProcessById((int)pid);
+            return p.ProcessName.Equals("AppleMusic", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Apple Music's main windows (not its popups).</summary>
+    internal static List<nint> MainWindows()
+    {
+        var list = new List<nint>();
+        EnumWindows((h, _) =>
+        {
+            if (ClassOf(h) == "WinUIDesktopWin32WindowClass" && IsAppleMusic(ProcessOf(h)))
+            {
+                list.Add(h);
+            }
+
+            return true;
+        }, 0);
+        return list;
+    }
+
+    /// <summary>True when Apple Music has no window the user can see: none at all, or all minimised, hidden, parked off-screen or transparent.</summary>
+    internal static bool MainWindowsHidden()
+    {
+        foreach (var h in MainWindows())
+        {
+            if (!IsWindowVisible(h) || IsIconic(h) || IsGhost(h))
+            {
+                continue;
+            }
+
+            GetWindowRect(h, out var rect);
+            if (OnAnyScreen(rect))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     internal static string ClassOf(nint hwnd)
     {
@@ -293,5 +392,184 @@ internal sealed class AmEventHook : IDisposable
     {
         AmNative.PostThreadMessage(_threadId, AmNative.WmQuit, 0, 0);
         _thread.Join(1000);
+    }
+}
+
+/// <summary>
+/// Keeps Apple Music from taking the activation while WinKnife drives it in the background. A system-wide foreground WinEvent hook
+/// (on its own message-loop thread) watches for any Apple Music window becoming the foreground window; when that happens while no
+/// Apple Music window is visible to the user, the foreground goes back to the window the user was working in and Apple Music's main
+/// window is minimised again without activation. Armed at the start of a job and kept for <see cref="GraceMs"/> after <see cref="Dispose"/>.
+/// No input is ever synthesised.
+/// </summary>
+internal sealed class ForegroundGuard : IDisposable
+{
+    internal const int GraceMs = 1500;
+
+    private readonly Action<string> _say;
+    private readonly bool _enforce;
+    private readonly uint _ownPid = (uint)Environment.ProcessId;
+    private readonly object _gate = new();
+    private nint _target;
+    private int _reclaims;
+    private AmEventHook? _hook;
+
+    private ForegroundGuard(nint previous, Action<string>? say)
+    {
+        _say = say ?? (_ => { });
+
+        // When the user has Apple Music open on screen it is none of our business who has the foreground.
+        _enforce = AmNative.MainWindowsHidden();
+        _target = PickTarget(previous);
+        if (_enforce)
+        {
+            _hook = new AmEventHook(AmNative.EventSystemForeground, AmNative.EventSystemForeground, 0, (_, hwnd) =>
+            {
+                var pid = AmNative.ProcessOf(hwnd);
+                if (pid != _ownPid && AmNative.IsAppleMusic(pid))
+                {
+                    Reclaim("Apple Music took the foreground (" + AmNative.Describe(hwnd) + ")", true);
+                }
+            });
+        }
+    }
+
+    /// <summary>Starts guarding. <paramref name="previous"/> is the foreground window of the moment (it is only used as the target when it is neither WinKnife's nor Apple Music's).</summary>
+    public static ForegroundGuard Arm(nint previous, Action<string>? say = null) => new(previous, say);
+
+    /// <summary>Gives the foreground back now when Apple Music (or nothing) has it.</summary>
+    public void Restore() => Reclaim("restore", false);
+
+    public void Dispose()
+    {
+        var hook = Interlocked.Exchange(ref _hook, null);
+        if (hook is not null)
+        {
+            _ = Task.Delay(GraceMs).ContinueWith(_ => hook.Dispose(), TaskScheduler.Default);
+        }
+    }
+
+    private bool Usable(nint hwnd) =>
+        hwnd != 0 && AmNative.IsWindow(hwnd) && AmNative.IsWindowVisible(hwnd) && !AmNative.IsIconic(hwnd) && !AmNative.IsCloaked(hwnd)
+        && AmNative.ProcessOf(hwnd) is var pid && pid != _ownPid && !AmNative.IsAppleMusic(pid);
+
+    private static readonly string[] ShellClasses = ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "Windows.UI.Core.CoreWindow", "XamlExplorerHostIslandWindow"];
+
+    /// <summary>The window that should have the foreground: <paramref name="previous"/> when it is the user's own, else the top real application window.</summary>
+    private nint PickTarget(nint previous)
+    {
+        if (Usable(previous))
+        {
+            return previous;
+        }
+
+        nint found = 0;
+        AmNative.EnumWindows((h, _) =>
+        {
+            if (!Usable(h) || AmNative.GetWindow(h, AmNative.GwOwner) != 0 || AmNative.TitleOf(h).Length == 0)
+            {
+                return true;
+            }
+
+            var ex = (long)AmNative.GetWindowLongPtr(h, AmNative.GwlExStyle);
+            if ((ex & (AmNative.WsExToolWindow | AmNative.WsExNoActivate)) != 0 || Array.IndexOf(ShellClasses, AmNative.ClassOf(h)) >= 0)
+            {
+                return true;
+            }
+
+            AmNative.GetWindowRect(h, out var r);
+            if (r.Right - r.Left < 50 || r.Bottom - r.Top < 50)
+            {
+                return true;
+            }
+
+            found = h;
+            return false;
+        }, 0);
+        return found;
+    }
+
+    private void Reclaim(string why, bool counted)
+    {
+        if (!_enforce)
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            if (counted && ++_reclaims > 20)
+            {
+                return;
+            }
+
+            var now = AmNative.GetForegroundWindow();
+            var fromAppleMusic = now != 0 && AmNative.IsAppleMusic(AmNative.ProcessOf(now));
+            if (now != 0 && !fromAppleMusic)
+            {
+                return;
+            }
+
+            if (!Usable(_target))
+            {
+                _target = PickTarget(0);
+            }
+
+            if (_target != 0 && now != _target)
+            {
+                var ok = Focus(_target);
+                _say($"{why}; foreground back to {AmNative.Describe(_target)} => {ok}; foreground now {AmNative.Describe(AmNative.GetForegroundWindow())}");
+            }
+
+            foreach (var h in AmNative.MainWindows())
+            {
+                if (AmNative.IsWindowVisible(h) && !AmNative.IsIconic(h) && !AmNative.IsGhost(h))
+                {
+                    AmNative.ShowWindow(h, AmNative.SwShowMinNoActive);
+                    _say("Apple Music main window had been restored; minimised again without activation");
+                }
+            }
+        }
+    }
+
+    private static bool HasForeground(nint target)
+    {
+        var f = AmNative.GetForegroundWindow();
+        return f != 0 && (f == target || AmNative.GetAncestor(f, AmNative.GaRoot) == target);
+    }
+
+    private static bool Focus(nint target)
+    {
+        AmNative.SetForegroundWindow(target);
+        if (HasForeground(target))
+        {
+            return true;
+        }
+
+        // Windows only lets the foreground owner (or a thread sharing its input queue) hand the activation on: join the owner's input queue for a moment.
+        var fg = AmNative.GetForegroundWindow();
+        var fgThread = fg != 0 ? AmNative.GetWindowThreadProcessId(fg, out _) : 0;
+        var me = AmNative.GetCurrentThreadId();
+        var attached = fgThread != 0 && fgThread != me && AmNative.AttachThreadInput(me, fgThread, true);
+        try
+        {
+            AmNative.SetForegroundWindow(target);
+            AmNative.BringWindowToTop(target);
+        }
+        finally
+        {
+            if (attached)
+            {
+                AmNative.AttachThreadInput(me, fgThread, false);
+            }
+        }
+
+        if (HasForeground(target))
+        {
+            return true;
+        }
+
+        AmNative.SwitchToThisWindow(target, true);
+        return HasForeground(target);
     }
 }

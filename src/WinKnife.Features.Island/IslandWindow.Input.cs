@@ -26,6 +26,10 @@ internal sealed partial class IslandWindow
     private bool _suppressHover;
     private bool _dragOver;
     private volatile bool _lmbDown;
+    private volatile int _pressX;
+    private volatile int _pressY;
+    private volatile bool _pressOutside;
+    private volatile ZoneSnap? _idleZone;
     private DateTime _pointerSince = DateTime.MinValue;
     private MonitorArea _pointerArea;
     private DateTime _pointerAreaSince = DateTime.MinValue;
@@ -53,7 +57,7 @@ internal sealed partial class IslandWindow
         _poll.Tick += (_, _) => Poll();
         _poll.Start();
         _mouseSub = _core.Ctx.Hooks.SubscribeMouse(OnMouseHook, 5);
-        _fgProc = (_, _, _, _, _, _, _) => Dispatcher.BeginInvoke(DispatcherPriority.Background, OnForeground);
+        _fgProc = (_, _, hwnd, _, _, _, _) => Dispatcher.BeginInvoke(DispatcherPriority.Background, () => OnForeground(hwnd));
         _fgHook = IslandNative.SetWinEventHook(IslandNative.EventSystemForeground, IslandNative.EventSystemForeground, 0, _fgProc, 0, 0, IslandNative.WinEventOutOfContext | IslandNative.WinEventSkipOwnProcess);
     }
 
@@ -84,6 +88,14 @@ internal sealed partial class IslandWindow
     {
         if (e.Kind == MouseEventKind.LeftDown)
         {
+            // where the press started decides later whether this is a file drag (outside the island and its drop zone) or a plain click
+            var down = IslandRects.Pill;
+            var zone = _idleZone;
+            var onPill = down is not null && e.X >= down.Left && e.X < down.Right && e.Y >= down.Top && e.Y < down.Bottom;
+            var onZone = zone is not null && e.X >= zone.Left && e.X < zone.Right && e.Y >= zone.Top && e.Y < zone.Bottom;
+            _pressX = e.X;
+            _pressY = e.Y;
+            _pressOutside = !onPill && !onZone;
             _lmbDown = true;
         }
         else if (e.Kind == MouseEventKind.LeftUp)
@@ -137,7 +149,7 @@ internal sealed partial class IslandWindow
 
     private static nint NativeMethods_WindowFromPoint(POINT p) => WindowFromPointNative(p);
 
-    private void OnForeground()
+    private void OnForeground(nint hwnd)
     {
         if (!Expanded || _pinned || _holds > 0)
         {
@@ -149,7 +161,81 @@ internal sealed partial class IslandWindow
             return;
         }
 
+        if (IsHiddenAppleMusic(hwnd))
+        {
+            // the Apple Music driver keeps its window parked or minimised and flickers the foreground: that is not the user leaving
+            return;
+        }
+
         Collapse();
+    }
+
+    private const string AppleMusicProcess = "AppleMusic";
+    private const string AppleMusicWindowClass = "WinUIDesktopWin32WindowClass";
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool GetLayeredWindowAttributes(nint hwnd, out uint key, out byte alpha, out uint flags);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "GetSystemMetrics")]
+    private static extern int GetSystemMetricsNative(int index);
+
+    /// <summary>True when <paramref name="hwnd"/> belongs to Apple Music and its main window is minimised, parked off screen or fully transparent.</summary>
+    private static bool IsHiddenAppleMusic(nint hwnd)
+    {
+        try
+        {
+            if (hwnd == 0)
+            {
+                return false;
+            }
+
+            var pid = AmNative.ProcessOf(hwnd);
+            if (pid == 0)
+            {
+                return false;
+            }
+
+            using (var process = System.Diagnostics.Process.GetProcessById((int)pid))
+            {
+                if (!string.Equals(process.ProcessName, AppleMusicProcess, StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+            }
+
+            var mains = AmNative.ClassOf(hwnd) == AppleMusicWindowClass
+                ? new List<nint> { hwnd }
+                : AmNative.TopLevelWindows(pid).Where(h => AmNative.ClassOf(h) == AppleMusicWindowClass).ToList();
+            if (mains.Count == 0)
+            {
+                return false;
+            }
+
+            foreach (var main in mains)
+            {
+                if (!(AmNative.IsIconic(main) || ParkedOrInvisible(main)))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool ParkedOrInvisible(nint main)
+    {
+        if (AmNative.GetWindowRect(main, out var r) && r.Left < -10000)
+        {
+            return true;
+        }
+
+        var ex = (long)AmNative.GetWindowLongPtr(main, AmNative.GwlExStyle);
+        return (ex & AmNative.WsExLayered) != 0 && GetLayeredWindowAttributes(main, out _, out var alpha, out var flags) && (flags & AmNative.LwaAlpha) != 0 && alpha == 0;
     }
 
     // ---------------------------------------------------------------- polling
@@ -193,6 +279,13 @@ internal sealed partial class IslandWindow
         UpdateFullscreen();
         FollowPointerDisplay(cursor, now);
         var inside = IsPointerInside();
+        if (_mode == IslandMode.Closed && !_rendering && _envH > EnvelopeBaseHeight + 0.5 && now - _lastChange > TimeSpan.FromSeconds(20))
+        {
+            // a tall page grew the window; after a long rest closed it goes back to the base height (shrinking shows no blank)
+            _envH = 0;
+            ApplyWindow();
+        }
+
         var rest = new Rect(_area.Bounds.X + ((_area.Bounds.Width - (BareWidth * _scale)) / 2) - 6, _area.Bounds.Y, (BareWidth * _scale) + 12, (BodyHeight + SurfaceTop + 2) * _scale);
 
         // Idle economy: poll fast only while the pointer is near the island (or something is going on); otherwise 150 ms.
@@ -757,6 +850,16 @@ internal sealed partial class IslandWindow
 
     // ---------------------------------------------------------------- file drag (drop placeholder)
 
+    private Rect DropZone(double heightDip) =>
+        new(_area.Bounds.X + ((_area.Bounds.Width - (BareWidth * _scale)) / 2) - (60 * _scale), _area.Bounds.Y, (BareWidth * _scale) + (120 * _scale), heightDip * _scale);
+
+    /// <summary>The resting drop zone as an immutable snapshot for the hook thread (called whenever the geometry is published).</summary>
+    private void PublishIdleZone()
+    {
+        var z = DropZone(12);
+        _idleZone = new ZoneSnap(z.Left, z.Top, z.Right, z.Bottom);
+    }
+
     private void DetectDrag(Point cursor)
     {
         if (!_core.App.Get<bool>(K.Shelf) || !_core.App.Get<bool>(K.DragReveal) || !_core.ModuleVisible("files") || _mode == IslandMode.Open)
@@ -770,8 +873,12 @@ internal sealed partial class IslandWindow
             return;
         }
 
-        var zone = new Rect(_area.Bounds.X + ((_area.Bounds.Width - (BareWidth * _scale)) / 2) - (60 * _scale), _area.Bounds.Y, (BareWidth * _scale) + (120 * _scale), (_placeholder ? 90 : 12) * _scale);
-        var want = _lmbDown && zone.Contains(cursor);
+        var zone = DropZone(_placeholder ? 90 : 12);
+        // a file drag: the press began outside the island (and its zone), the button is still down and the pointer has travelled
+        // past the system drag distance; a plain click on the closed island never counts
+        var travel = Math.Max(4, GetSystemMetricsNative(68));
+        var moved = Math.Abs(cursor.X - _pressX) > travel || Math.Abs(cursor.Y - _pressY) > travel;
+        var want = _lmbDown && _pressOutside && moved && zone.Contains(cursor);
         if (want != _placeholder)
         {
             _placeholder = want;
@@ -1098,6 +1205,8 @@ internal sealed partial class IslandWindow
     }
 }
 
+internal sealed record ZoneSnap(double Left, double Top, double Right, double Bottom);
+
 /// <summary>A closed copy of the island on another display (Display = All displays).</summary>
 internal sealed class MirrorWindow : OverlayWindow
 {
@@ -1111,6 +1220,8 @@ internal sealed class MirrorWindow : OverlayWindow
         _area = area;
         _view.RadiusX = 12;
         _view.RadiusY = 12;
+        // the island is drawn larger by its zoom; the copy keeps the same proportions
+        _view.LayoutTransform = Math.Abs(owner.Zoom - 1) < 0.0005 ? Transform.Identity : new ScaleTransform(owner.Zoom, owner.Zoom);
         Content = _view;
         Width = 140;
         Height = 40;
@@ -1128,7 +1239,7 @@ internal sealed class MirrorWindow : OverlayWindow
         _view.Width = w;
         _view.Height = h;
         _view.Fill = new VisualBrush(src) { Stretch = Stretch.None };
-        var scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
-        SetPhysicalBounds((int)(_area.Bounds.X + ((_area.Bounds.Width - (w * scale)) / 2)), (int)_area.Bounds.Y, (int)(w * scale), (int)(h * scale) + 4);
+        var scale = VisualTreeHelper.GetDpi(this).DpiScaleX * _owner.Zoom;
+        SetPhysicalBounds((int)(_area.Bounds.X + ((_area.Bounds.Width - (w * scale)) / 2)), (int)_area.Bounds.Y, (int)Math.Ceiling(w * scale), (int)Math.Ceiling(h * scale) + 4);
     }
 }

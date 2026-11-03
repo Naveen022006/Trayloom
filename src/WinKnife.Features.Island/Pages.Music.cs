@@ -269,9 +269,15 @@ internal sealed class MusicPage : IslandPage
         {
             var p = Core.Playback.Current;
             var hadTimeline = _hadTimeline;
-            if ((p.Duration > 0) != hadTimeline || p.Identity != _identity || p.IsPlaying != _wasPlaying)
+            if ((p.Duration > 0) != hadTimeline || p.Identity != _identity || Core.Playback.CommandFailed != _commandFailed)
             {
                 Reopen();
+            }
+            else if (p.IsPlaying != _wasPlaying)
+            {
+                // play / pause only changes the glyph, the cover's size and the bars: the page is not rebuilt (a rebuild reloads
+                // everything on it, the Apple Music queue view included, which would drive Apple Music's window again)
+                ApplyPlaying(p);
             }
         });
     }
@@ -279,6 +285,36 @@ internal sealed class MusicPage : IslandPage
     private bool _hadTimeline;
     private string _identity = "";
     private bool _wasPlaying;
+    private bool _commandFailed;
+    private TextBlock? _playGlyph;
+    private FrameworkElement? _cover;
+    private EqBars? _bars;
+
+    private void ApplyPlaying(Playback p)
+    {
+        _wasPlaying = p.IsPlaying;
+        if (_playGlyph is not null)
+        {
+            _playGlyph.Text = p.IsPlaying ? G.Pause : G.Play;
+        }
+
+        if (_bars is not null)
+        {
+            _bars.Playing = p.IsPlaying;
+        }
+
+        if (_cover?.RenderTransform is ScaleTransform scale)
+        {
+            var to = p.IsPlaying || !p.HasTrack ? 1 : 0.94;
+            var animation = D.ReduceMotion ? null : new System.Windows.Media.Animation.DoubleAnimation(to, TimeSpan.FromMilliseconds(180));
+            scale.BeginAnimation(ScaleTransform.ScaleXProperty, animation);
+            scale.BeginAnimation(ScaleTransform.ScaleYProperty, animation);
+            if (animation is null)
+            {
+                scale.ScaleX = scale.ScaleY = to;
+            }
+        }
+    }
 
     private void SetExtra(MusicExtra e)
     {
@@ -309,6 +345,10 @@ internal sealed class MusicPage : IslandPage
         _hadTimeline = p.Duration > 0;
         _identity = p.Identity;
         _wasPlaying = p.IsPlaying;
+        _commandFailed = Core.Playback.CommandFailed;
+        _playGlyph = null;
+        _cover = null;
+        _bars = null;
         var idle = !p.HasTrack;
         var awaiting = idle && Core.Playback.AwaitingPlayback;
         var preferred = PlaybackService.ResolvePreferredPlayer(Core.App.Get<string>(K.PreferredPlayer), Core.Playback);
@@ -352,12 +392,33 @@ internal sealed class MusicPage : IslandPage
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var icon = Core.Playback.Sources.FirstOrDefault(s => s.Aumid == p.Aumid)?.Icon;
-        var coverBtn = new HoverButton(() => { if (idle) { MusicUi.IdleAction(Core, preferred, AmAction.PlayPause)(); } else { PlaybackService.OpenPlayer(p.Aumid); } }) { Width = 56, Height = 56, CornerRadius = new CornerRadius(10.64), Lifts = false, IsEnabled = !idle || preferred is not null || MusicUi.HiddenApple(Core, preferred) };
+
+        // Apple Music is never opened from the island (that would show and activate its window): its cover opens the island's own Library
+        var appleLibrary = !idle && Core.AppleMusic.Available && p.Aumid.Contains("AppleMusic", StringComparison.OrdinalIgnoreCase);
+        var coverBtn = new HoverButton(() =>
+        {
+            if (idle)
+            {
+                MusicUi.IdleAction(Core, preferred, AmAction.PlayPause)();
+            }
+            else if (appleLibrary)
+            {
+                if (_extra != MusicExtra.Library)
+                {
+                    SetExtra(MusicExtra.Library);
+                }
+            }
+            else
+            {
+                PlaybackService.OpenPlayer(p.Aumid);
+            }
+        }) { Width = 56, Height = 56, CornerRadius = new CornerRadius(10.64), Lifts = false, IsEnabled = !idle || preferred is not null || MusicUi.HiddenApple(Core, preferred) };
         var cover = Cover.For(p, 56, false, icon);
         cover.RenderTransformOrigin = new Point(0.5, 0.5);
         cover.RenderTransform = new ScaleTransform(p.IsPlaying || idle ? 1 : 0.94, p.IsPlaying || idle ? 1 : 0.94);
         coverBtn.Child = cover;
-        D.Tip(coverBtn, idle && (preferred is not null || MusicUi.HiddenApple(Core, preferred)) ? MusicUi.IdleLabel(Core, preferred) : Strings.MediaNowPlaying);
+        _cover = cover;
+        D.Tip(coverBtn, idle && (preferred is not null || MusicUi.HiddenApple(Core, preferred)) ? MusicUi.IdleLabel(Core, preferred) : appleLibrary ? LibStrings.Library : Strings.MediaNowPlaying);
         head.Children.Add(coverBtn);
 
         var titles = new StackPanel { Margin = new Thickness(14, 0, 8, 0), VerticalAlignment = VerticalAlignment.Bottom, Height = 38 };
@@ -421,6 +482,7 @@ internal sealed class MusicPage : IslandPage
         }
 
         var bars = new EqBars(4, 2.5, 15, D.White(0.5)) { Playing = p.IsPlaying, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
+        _bars = bars;
         bottom.Children.Add(bars);
         cluster.Children.Add(bottom);
         Grid.SetColumn(cluster, 2);
@@ -521,7 +583,7 @@ internal sealed class MusicPage : IslandPage
 
             Btn(1, G.Previous, 19, Core.Playback.Previous, p.CanPrevious, Strings.Previous, p.CanPrevious || true);
             var play = Btn(2, p.IsPlaying ? G.Pause : G.Play, 28, Core.Playback.TogglePlayPause, p.CanPlayPause || true, Strings.PlayPause);
-            _ = play;
+            _playGlyph = play.Child as TextBlock;
             Btn(3, G.Next, 19, Core.Playback.Next, p.CanNext, Strings.Next);
         }
 
@@ -567,7 +629,19 @@ internal sealed class MusicPage : IslandPage
         refresh.HorizontalAlignment = HorizontalAlignment.Right;
         header.Children.Add(refresh);
         grid.Children.Add(header);
-        var empty = D.EmptyView(G.List, Strings.QueueUnavailable, D.PillButton(Strings.OpenPlayer, () => PlaybackService.OpenPlayer(preferred ?? Core.Playback.Current.Aumid), true));
+        var target = preferred ?? Core.Playback.Current.Aumid;
+        var empty = D.EmptyView(G.List, Strings.QueueUnavailable, D.PillButton(Strings.OpenPlayer, () =>
+        {
+            // never open Apple Music itself (its window would show): the island's Library is the way in
+            if (Core.AppleMusic.Available && target.Contains("AppleMusic", StringComparison.OrdinalIgnoreCase))
+            {
+                SetExtra(MusicExtra.Library);
+            }
+            else
+            {
+                PlaybackService.OpenPlayer(target);
+            }
+        }, true));
         Grid.SetRow(empty, 1);
         grid.Children.Add(empty);
         return grid;

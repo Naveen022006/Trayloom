@@ -94,6 +94,17 @@ internal sealed partial class IslandWindow
                 return;
             }
 
+            if (key == ZoomKey)
+            {
+                ApplyZoom();
+            }
+
+            if (key == ZoomKey || (_mode == IslandMode.Closed && key is K.Size or K.CustomWidth or K.CustomHeight or K.Silhouette))
+            {
+                // the envelope may shrink again: a new size or silhouette is a deliberate change, not an animation
+                ResetEnvelope();
+            }
+
             if (key == K.QuickAccessLayout)
             {
                 _layout = QuickAccessLayout.Load(_core.App);
@@ -113,13 +124,13 @@ internal sealed partial class IslandWindow
                 ApplyDisplay();
             }
 
-            if (Expanded && key is K.Size or K.CustomWidth or K.CustomHeight or K.Silhouette or K.ModuleOrder or K.HiddenModules)
+            if (Expanded && key is ZoomKey or K.Size or K.CustomWidth or K.CustomHeight or K.Silhouette or K.ModuleOrder or K.HiddenModules)
             {
                 BuildOpen(rebuildPage: false);
             }
 
             RefreshClosed();
-            if (key is K.CapsuleFitWidth or K.CapsuleFitHeight or K.CapsuleFitDrop or K.Silhouette)
+            if (key is ZoomKey or K.CapsuleFitWidth or K.CapsuleFitHeight or K.CapsuleFitDrop or K.Silhouette)
             {
                 PlaceOn(_area);
             }

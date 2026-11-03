@@ -320,6 +320,20 @@ internal sealed class AppleMusicService : IDisposable
 
     // ---------------------------------------------------------------- up next
 
+    /// <summary>When the queue was last read, and for which song.</summary>
+    public DateTime QueueReadAt { get; private set; } = DateTime.MinValue;
+
+    public string QueueIdentity { get; private set; } = "";
+
+    /// <summary>Reads the queue only when none was read yet, or when the song has changed and the last read is older than 10 s.</summary>
+    public void RefreshQueueIfStale()
+    {
+        if (Queue is null || (_core.Playback.Current.Identity != QueueIdentity && (DateTime.UtcNow - QueueReadAt).TotalSeconds > 10))
+        {
+            RefreshQueue();
+        }
+    }
+
     public async void RefreshQueue()
     {
         if (_disposed || QueueLoading)
@@ -328,10 +342,13 @@ internal sealed class AppleMusicService : IDisposable
         }
 
         QueueLoading = true;
+        var identity = _core.Playback.Current.Identity;
         Changed?.Invoke();
         try
         {
             var result = await Driver.RunAsync(new AmCommand { Action = AmAction.ReadQueue });
+            QueueReadAt = DateTime.UtcNow;
+            QueueIdentity = identity;
             if (!_disposed && result.Ok)
             {
                 // Apple Music's queue list exposes a run of identical rows for the songs that follow the first of a context (a UI

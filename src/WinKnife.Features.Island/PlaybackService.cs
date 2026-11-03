@@ -257,15 +257,35 @@ internal sealed class PlaybackService : IDisposable
             return;
         }
 
+        // Apple Music tends to bring its window to the front when it gets a media command: the foreground stays where it is
+        // (the window in front now, or the top application window when that is the island itself) until 1.5 s after the command.
+        ForegroundGuard? guard = null;
+        if (entry.Aumid.Contains("AppleMusic", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                guard = ForegroundGuard.Arm(AmNative.GetForegroundWindow(), line => _log.Info("AppleMusic guard: " + line));
+            }
+            catch (Exception ex)
+            {
+                _log.Warn($"Foreground guard failed: {ex.Message}");
+            }
+        }
+
         try
         {
             var ok = await run(entry.Session);
             _commandFailed = !ok;
+            guard?.Restore();
         }
         catch (Exception ex)
         {
             _commandFailed = true;
             _log.Warn($"Media command failed: {ex.Message}");
+        }
+        finally
+        {
+            guard?.Dispose();
         }
 
         Changed?.Invoke();

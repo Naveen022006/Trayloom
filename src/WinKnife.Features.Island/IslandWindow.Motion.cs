@@ -68,6 +68,9 @@ internal sealed partial class IslandWindow
         {
             _swapOld = (FrameworkElement)_openHost.Children[^1];
             _swapOld.IsHitTestVisible = false;
+            // both pages are rasterised once for the cross-fade: the fade then only blends two textures
+            _swapOld.CacheMode = new BitmapCache(_scale);
+            root.CacheMode = new BitmapCache(_scale);
             root.Opacity = 0;
             _openHost.Children.Add(root);
             _swapNew = root;
@@ -84,12 +87,14 @@ internal sealed partial class IslandWindow
     {
         if (_swapOld is not null)
         {
+            _swapOld.CacheMode = null;
             _openHost.Children.Remove(_swapOld);
         }
 
         if (_swapNew is not null)
         {
             _swapNew.Opacity = 1;
+            _swapNew.CacheMode = null;
         }
 
         _swapOld = _swapNew = null;
@@ -111,6 +116,8 @@ internal sealed partial class IslandWindow
 
         _choreo = Choreo.Opening;
         _choreoT = 0;
+        // the page is rasterised once; the fade and the 0.86 to 1 scale then move one texture instead of re-rendering the tree
+        _openHost.CacheMode = new BitmapCache(_scale);
         _openScale.ScaleX = _openScale.ScaleY = ScaleFrom;
         _openHost.RenderTransform = _openScale;
         _openHost.Opacity = 0;
@@ -126,6 +133,7 @@ internal sealed partial class IslandWindow
         {
             _choreo = Choreo.None;
             EndSwap();
+            _openHost.CacheMode = null;
             _openHost.Opacity = 0;
             _openHost.RenderTransform = Transform.Identity;
             _openHost.Children.Clear();
@@ -137,6 +145,7 @@ internal sealed partial class IslandWindow
 
         _choreo = Choreo.Closing;
         _choreoT = 0;
+        _openHost.CacheMode = null;
         _closeFromOpen = Clamp01(_openHost.Opacity);
         _openHost.RenderTransform = Transform.Identity;
         _closedHost.Opacity = 0;
@@ -158,6 +167,7 @@ internal sealed partial class IslandWindow
                 {
                     _choreo = Choreo.None;
                     _openHost.Opacity = 1;
+                    _openHost.CacheMode = null;
                     _openHost.RenderTransform = Transform.Identity;
                     _closedHost.Opacity = 0;
                 }
@@ -231,12 +241,14 @@ internal sealed partial class IslandWindow
         else if (_choreo == Choreo.Opening)
         {
             _choreo = Choreo.None;
+            _openHost.CacheMode = null;
             _openHost.Opacity = 1;
             _openHost.RenderTransform = Transform.Identity;
             _closedHost.Opacity = 0;
         }
 
         EndSwap();
+        _openHost.CacheMode = null;
         if (_fadeIn is not null)
         {
             _fadeIn.Opacity = 1;

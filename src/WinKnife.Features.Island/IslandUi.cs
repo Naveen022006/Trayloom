@@ -160,7 +160,8 @@ internal static class D
             TextWrapping = wrap ? TextWrapping.Wrap : TextWrapping.NoWrap,
             TextTrimming = trimming,
         };
-        TextOptions.SetTextFormattingMode(t, TextFormattingMode.Display);
+        // Ideal: Display mode snaps glyphs to whole pixels and blurs under the island's zoom transform
+        TextOptions.SetTextFormattingMode(t, TextFormattingMode.Ideal);
         return t;
     }
 
@@ -191,7 +192,9 @@ internal static class D
 
     public static void Tip(FrameworkElement e, string text)
     {
-        e.ToolTip = text;
+        e.ToolTip = IslandWindow.CurrentZoom is var z && Math.Abs(z - 1) > 0.0005
+            ? new ToolTip { Content = text, LayoutTransform = new ScaleTransform(z, z) }
+            : text;
         System.Windows.Automation.AutomationProperties.SetName(e, text);
     }
 
@@ -720,6 +723,12 @@ internal static class IslandMenu
             FontSize = 12,
             HasDropShadow = false,
         };
+        // a menu is its own window and does not inherit the island's zoom
+        if ((anchor is null ? null : Window.GetWindow(anchor)) is IslandWindow owner && Math.Abs(owner.Zoom - 1) > 0.0005)
+        {
+            menu.LayoutTransform = new ScaleTransform(owner.Zoom, owner.Zoom);
+        }
+
         foreach (var item in items)
         {
             if (item.Separator)

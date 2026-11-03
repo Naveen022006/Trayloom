@@ -49,7 +49,31 @@ internal sealed partial class IslandWindow : OverlayWindow
     private bool? _translucentCache;
 
     private MonitorArea _area;
-    private double _scale = 1;
+
+    /// <summary>The monitor's DPI scale (physical pixels per DIP); <see cref="_scale"/> adds the island zoom on top.</summary>
+    private double _dpi = 1;
+
+    /// <summary>The uniform island zoom (setting <see cref="ZoomKey"/>): everything inside the window is drawn this much larger.</summary>
+    private double _zoom = DefaultZoom;
+
+    /// <summary>Physical pixels per island unit: DPI times zoom. All screen-rect math of the island uses this.</summary>
+    private double _scale => _dpi * _zoom;
+
+    /// <summary>The setting that scales the whole island (length and breadth) — clamped to 0.9 to 1.3.</summary>
+    internal const string ZoomKey = "notchZoom";
+
+    internal const double DefaultZoom = 1.10;
+
+    /// <summary>The zoom the live island uses (read by pop-up menus and tips, which are separate windows).</summary>
+    internal static double CurrentZoom { get; private set; } = 1;
+
+    /// <summary>Grow-only width of the window in island units: sized for the widest state (both gutters, hover emphasis, swing) so x never moves.</summary>
+    private double _envW;
+
+    /// <summary>Grow-only height of the window in island units (see <see cref="ComputeEnvelope"/>).</summary>
+    private double _envH;
+
+    private (int X, int Y, int W, int H) _lastBounds;
     private double _winW = 160;
     private double _winH = 60;
     private double _closedW = 109;
@@ -84,6 +108,7 @@ internal sealed partial class IslandWindow : OverlayWindow
         _stage.Children.Add(_clipLayer);
         _stage.Children.Add(_quick);
         _openHost.RenderTransformOrigin = new Point(0.5, 0);
+        ApplyZoom();
         AllowDrop = true;
         InitInput();
         core.Window = this;
@@ -121,6 +146,22 @@ internal sealed partial class IslandWindow : OverlayWindow
 
     internal double Scale => _scale;
 
+    internal double Zoom => _zoom;
+
+    private double ReadZoom()
+    {
+        var z = _core.App.Get(ZoomKey, DefaultZoom);
+        return double.IsNaN(z) || double.IsInfinity(z) ? DefaultZoom : Math.Clamp(z, 0.9, 1.3);
+    }
+
+    /// <summary>Reads the zoom setting and scales the whole stage (layout transform: text stays sharp, hit tests follow).</summary>
+    private void ApplyZoom()
+    {
+        _zoom = ReadZoom();
+        CurrentZoom = _zoom;
+        _stage.LayoutTransform = Math.Abs(_zoom - 1) < 0.0005 ? Transform.Identity : new ScaleTransform(_zoom, _zoom);
+    }
+
     // ---------------------------------------------------------------- geometry helpers
 
     private double BodyHeight => IsCapsule ? Math.Clamp(20 + _core.App.Get<double>(K.CapsuleFitHeight), 16, 24) : BarHeight;
@@ -155,7 +196,9 @@ internal sealed partial class IslandWindow : OverlayWindow
         _area = area;
         var centre = new POINT { X = (int)(area.Bounds.X + (area.Bounds.Width / 2)), Y = (int)(area.Bounds.Y + (area.Bounds.Height / 2)) };
         var monitor = NativeMethods.MonitorFromPoint(centre, NativeConstants.MONITOR_DEFAULTTONEAREST);
-        _scale = IslandNative.MonitorScale(monitor);
+        _dpi = IslandNative.MonitorScale(monitor);
+        ResetEnvelope();
+        _lastBounds = default;
         ApplyWindow();
     }
 
@@ -173,35 +216,31 @@ internal sealed partial class IslandWindow : OverlayWindow
         {
             _area = Screens.Primary();
             var c = new POINT { X = (int)(_area.Bounds.X + (_area.Bounds.Width / 2)), Y = (int)(_area.Bounds.Y + (_area.Bounds.Height / 2)) };
-            _scale = IslandNative.MonitorScale(NativeMethods.MonitorFromPoint(c, NativeConstants.MONITOR_DEFAULTTONEAREST));
-        }
-
-        var gx = GuttersWanted ? SideGutter : 0;
-        var gb = GuttersWanted && _layout.On(QuickSide.Bottom).Any() ? SideGutter : 0;
-        var emph = _hoverEmphasis ? 24 : 0;
-        // the window is the envelope of the transition (target plus the allowed swing), sized once before the first frame
-        var swing = _shrinkPending ? OvershootLimit : 0;
-        _winW = Math.Min(ScreenWidthDip, Math.Max(Math.Max(_sw.Position, _sw.Target) + swing, 20) + (2 * gx) + emph + 4);
-        _winH = Math.Max(Math.Max(_sh.Position, _sh.Target) + swing, 8) + SurfaceTop + gb + 10;
-        if (_mode == IslandMode.Open || _shrinkPending)
-        {
-            _winH += 4;
+            _dpi = IslandNative.MonitorScale(NativeMethods.MonitorFromPoint(c, NativeConstants.MONITOR_DEFAULTTONEAREST));
+            ResetEnvelope();
         }
 
         for (var pass = 0; pass < 2; pass++)
         {
+            ComputeEnvelope();
             var pw = (int)Math.Ceiling(_winW * _scale);
             var ph = (int)Math.Ceiling(_winH * _scale);
             var x = (int)Math.Round(_area.Bounds.X + ((_area.Bounds.Width - pw) / 2));
             var y = (int)Math.Round(_area.Bounds.Y);
-            SetPhysicalBounds(x, y, pw, ph);
+            if (_lastBounds != (x, y, pw, ph))
+            {
+                _lastBounds = (x, y, pw, ph);
+                SetPhysicalBounds(x, y, pw, ph);
+            }
+
             var actual = VisualTreeHelper.GetDpi(this).DpiScaleX;
-            if (Math.Abs(actual - _scale) < 0.001)
+            if (Math.Abs(actual - _dpi) < 0.001)
             {
                 break;
             }
 
-            _scale = actual;
+            _dpi = actual;
+            ResetEnvelope();
         }
 
         _stage.Width = _winW;
@@ -210,9 +249,46 @@ internal sealed partial class IslandWindow : OverlayWindow
         PublishPill();
     }
 
+    /// <summary>
+    /// The window is the envelope of everything the island can be, not of the current frame. Its width only grows and always has
+    /// room for both gutters, the hover emphasis and the spring swing, so the centred x never changes while animating (a layered
+    /// window moves its stale bitmap at once but WPF re-renders a frame later: any x change shows as a one-frame jump). The height may
+    /// grow at any time (top and left stay put) and shrinks only once the motion has settled.
+    /// </summary>
+    private void ComputeEnvelope()
+    {
+        var wide = Math.Min(ScreenWidthDip, Math.Max(600, Math.Max(_sw.Position, _sw.Target)) + OvershootLimit + (2 * SideGutter) + 24 + 4);
+        _envW = Math.Max(_envW, wide);
+        _winW = _envW;
+        var gb = GuttersWanted && _layout.On(QuickSide.Bottom).Any() ? SideGutter : 0;
+        var swing = _shrinkPending ? OvershootLimit : 0;
+        var h = Math.Max(Math.Max(_sh.Position, _sh.Target) + swing, 8) + SurfaceTop + gb + 10;
+        if (_mode == IslandMode.Open || _shrinkPending)
+        {
+            h += 4;
+        }
+
+        // growing a layered window blanks it for a frame or two until WPF has rendered at the new size, so the height starts at what
+        // every normal page needs (nothing resizes while opening) and only grows for a taller page; it returns to that base after a
+        // long rest closed (shrinking shows no blank)
+        _envH = Math.Max(_envH, Math.Min(Math.Max(h, EnvelopeBaseHeight), ScreenHeightDip));
+        _winH = _envH;
+    }
+
+    /// <summary>Height (island units) the window has at least: the tallest budget-sized page with its bottom quick buttons.</summary>
+    private const double EnvelopeBaseHeight = 460;
+
+    private void ResetEnvelope()
+    {
+        _envW = 0;
+        _envH = 0;
+    }
+
     protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi)
     {
         base.OnDpiChanged(oldDpi, newDpi);
+        ResetEnvelope();
+        _lastBounds = default;
         Dispatcher.BeginInvoke(ApplyWindow, DispatcherPriority.Background);
     }
 
@@ -241,7 +317,7 @@ internal sealed partial class IslandWindow : OverlayWindow
     // ---------------------------------------------------------------- spring animation
 
     /// <summary>The farthest a side may pass its target (the display keeps this much free around the island).</summary>
-    private const double OvershootLimit = 12;
+    private const double OvershootLimit = 6;
 
     /// <summary>
     /// Points the silhouette at a size. Each side follows its own spring as in the macOS original (growing: 0.44 / 0.38 s with a
@@ -290,7 +366,7 @@ internal sealed partial class IslandWindow : OverlayWindow
         else if (grow)
         {
             duration = width ? 0.44 : 0.38;
-            bounce = Spring.LimitedBounce(width ? 0.25 : 0.22, Math.Abs(target - s.Position), OvershootLimit);
+            bounce = Spring.LimitedBounce(width ? 0.12 : 0.10, Math.Abs(target - s.Position), OvershootLimit);
         }
         else
         {
@@ -352,7 +428,7 @@ internal sealed partial class IslandWindow : OverlayWindow
         var choreoDone = StepChoreography(dt);
         UpdateSurface();
         var settled = _sw.Settled && _sh.Settled;
-        if (_sw.Position > _winW - ((GuttersWanted ? 2 * SideGutter : 0) + 4) || _sh.Position + SurfaceTop > _winH - 2)
+        if (_sw.Position > _winW - 4 || _sh.Position + SurfaceTop > _winH - 2)
         {
             // only a retarget in flight can get here (the envelope covers a normal swing)
             ApplyWindow();
@@ -395,6 +471,7 @@ internal sealed partial class IslandWindow : OverlayWindow
 
     private void PublishPill()
     {
+        PublishIdleZone();
         if (_suppressed || !_core.IslandOn)
         {
             IslandRects.Pill = null;
