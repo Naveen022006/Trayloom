@@ -196,6 +196,7 @@ internal static class NoticeEvents
     public static readonly NoticeEvent ClipboardCopy = new("clipboard", K.Clipboard, 0, 2.5, "clipboard");
     public static readonly NoticeEvent Download = new("download", K.DownloadsEnabled, 0, 6, "downloads");
     public static readonly NoticeEvent Track = new("track", K.TrackChange, 0, 3, "music");
+    public static readonly NoticeEvent AppleMusic = new("appleMusic", K.AppleMusicKeepHidden, 1, 4, "music");
     public static readonly NoticeEvent Unlock = new("unlock", K.LockScreen, 2, 1.4, "controls");
 }
 

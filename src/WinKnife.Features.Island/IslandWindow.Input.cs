@@ -213,7 +213,7 @@ internal sealed partial class IslandWindow
 
             foreach (var main in mains)
             {
-                if (!(AmNative.IsIconic(main) || ParkedOrInvisible(main)))
+                if (!(AmNative.IsIconic(main) || !AmNative.IsWindowVisible(main) || AppleMusicKeeper.Instance?.IsKept(main) == true || ParkedOrInvisible(main)))
                 {
                     return false;
                 }

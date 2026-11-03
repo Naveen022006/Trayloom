@@ -14,9 +14,11 @@ internal static class AmNative
     internal delegate void WinEventProc(nint hook, uint eventType, nint hwnd, int idObject, int idChild, uint thread, uint time);
 
     internal const int SwHide = 0;
+    internal const int SwShow = 5;
     internal const int SwShowNoActivate = 4;
     internal const int SwMinimize = 6;
     internal const int SwShowMinNoActive = 7;
+    internal const int SwRestore = 9;
     internal const uint SwpNoZOrder = 0x0004;
     internal const uint SwpNoActivate = 0x0010;
     internal const uint SwpNoOwnerZOrder = 0x0200;
@@ -25,11 +27,15 @@ internal static class AmNative
     internal const long WsExTransparent = 0x20;
     internal const uint LwaAlpha = 2;
     internal const long WsExToolWindow = 0x80;
+    internal const long WsExAppWindow = 0x40000;
     internal const long WsExNoActivate = 0x08000000;
     internal const uint GwOwner = 4;
     internal const uint EventSystemForeground = 3;
+    internal const uint EventSystemMinimizeStart = 0x16;
     internal const uint EventObjectCreate = 0x8000;
+    internal const uint EventObjectDestroy = 0x8001;
     internal const uint EventObjectShow = 0x8002;
+    internal const uint EventObjectHide = 0x8003;
     internal const uint GaRoot = 2;
     internal const uint WmQuit = 0x0012;
 
@@ -257,6 +263,41 @@ internal static class AmNative
             return true;
         }, 0);
         return list;
+    }
+
+    /// <summary>
+    /// The titled main window of an Apple Music process (class WinUIDesktopWin32WindowClass, title not empty and not the "WinUI Desktop" of the
+    /// invisible helper window every launch creates). <paramref name="preferred"/> (the window the keeper hides) wins, then a visible window; among
+    /// several (the mini player is a second titled window) the one with the biggest restore rectangle is the main window.
+    /// </summary>
+    internal static nint MainWindow(uint pid, nint preferred = 0)
+    {
+        nint best = 0;
+        long bestScore = -1;
+        foreach (var h in TopLevelWindows(pid))
+        {
+            if (ClassOf(h) != "WinUIDesktopWin32WindowClass")
+            {
+                continue;
+            }
+
+            var title = TitleOf(h);
+            if (title.Length == 0 || title == "WinUI Desktop")
+            {
+                continue;
+            }
+
+            var wp = new WindowPlacement { Length = Marshal.SizeOf<WindowPlacement>() };
+            var area = GetWindowPlacement(h, ref wp) ? Math.Max(0L, (long)(wp.Normal.Right - wp.Normal.Left) * (wp.Normal.Bottom - wp.Normal.Top)) : 0L;
+            var score = (h == preferred && preferred != 0 ? 1L << 60 : 0L) + (IsWindowVisible(h) ? 1L << 50 : 0L) + area;
+            if (score > bestScore)
+            {
+                best = h;
+                bestScore = score;
+            }
+        }
+
+        return best;
     }
 
     /// <summary>True when Apple Music has no window the user can see: none at all, or all minimised, hidden, parked off-screen or transparent.</summary>
@@ -491,7 +532,7 @@ internal sealed class ForegroundGuard : IDisposable
 
     private void Reclaim(string why, bool counted)
     {
-        if (!_enforce)
+        if (!_enforce || AppleMusicKeeper.Instance?.JustShown == true)
         {
             return;
         }
@@ -525,8 +566,17 @@ internal sealed class ForegroundGuard : IDisposable
             {
                 if (AmNative.IsWindowVisible(h) && !AmNative.IsIconic(h) && !AmNative.IsGhost(h))
                 {
-                    AmNative.ShowWindow(h, AmNative.SwShowMinNoActive);
-                    _say("Apple Music main window had been restored; minimised again without activation");
+                    if (AppleMusicKeeper.Instance?.IsKept(h) == true)
+                    {
+                        // a window the keeper hides has no taskbar button to go back to: it is hidden again
+                        AmNative.ShowWindow(h, AmNative.SwHide);
+                        _say("Apple Music main window had been shown; hidden again");
+                    }
+                    else
+                    {
+                        AmNative.ShowWindow(h, AmNative.SwShowMinNoActive);
+                        _say("Apple Music main window had been restored; minimised again without activation");
+                    }
                 }
             }
         }
@@ -538,7 +588,7 @@ internal sealed class ForegroundGuard : IDisposable
         return f != 0 && (f == target || AmNative.GetAncestor(f, AmNative.GaRoot) == target);
     }
 
-    private static bool Focus(nint target)
+    internal static bool Focus(nint target)
     {
         AmNative.SetForegroundWindow(target);
         if (HasForeground(target))

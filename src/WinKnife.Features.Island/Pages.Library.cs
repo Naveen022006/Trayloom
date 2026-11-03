@@ -40,6 +40,12 @@ internal static class LibStrings
     public static string NoRecent => Loc.T("No recently added songs");
     public static string UpNextHint => Loc.T("Nothing is queued in Apple Music.");
     public static string UpNextLoading => Loc.T("Reading the queue…");
+    public static string ShowApple => Loc.T("Show Apple Music");
+    public static string HideApple => Loc.T("Hide Apple Music");
+    public static string KeptTitle => Loc.T("Apple Music keeps playing");
+    public static string KeptDetail => Loc.T("Show it from the island");
+    public static string ClosedTitle => Loc.T("Apple Music was closed");
+    public static string Resuming => Loc.T("Keeping your music playing…");
 
     public static string Count(int n) => n == 1 ? Loc.T("1 song") : Loc.F("{0} songs", n);
 }

@@ -229,6 +229,13 @@ internal sealed class PlaybackService : IDisposable
     {
         if (CurrentEntry() is { } e)
         {
+            if (IsAppleMusic(e) && AppleMusicSeek is { } appleSeek)
+            {
+                // Apple Music accepts the media session's seek request and ignores it: its own scrubber is set instead
+                appleSeek(seconds);
+                return;
+            }
+
             Command(s => s.TryChangePlaybackPositionAsync(TimeSpan.FromSeconds(seconds).Ticks + e.StartTicks));
         }
     }
@@ -246,6 +253,42 @@ internal sealed class PlaybackService : IDisposable
             });
         }
     }
+
+    private static bool IsAppleMusic(Entry e) => e.Aumid.Contains("AppleMusic", StringComparison.OrdinalIgnoreCase);
+
+    private DateTime _appleStoppedAt = DateTime.MinValue;
+
+    /// <summary>Seeks Apple Music through its own scrubber (set by the Apple Music service).</summary>
+    public Func<double, bool>? AppleMusicSeek { get; set; }
+
+    /// <summary>Apple Music's own media session whether or not it is the selected source (null without one).</summary>
+    public Playback? AppleMusicNow()
+    {
+        var e = _entries.Values.FirstOrDefault(IsAppleMusic);
+        if (e is null || !e.HasProps)
+        {
+            return null;
+        }
+
+        return new Playback
+        {
+            HasTrack = !string.IsNullOrEmpty(e.Title) || !string.IsNullOrEmpty(e.Artist) || e.Playing,
+            Title = e.Title,
+            Artist = e.Artist,
+            Album = e.Album,
+            IsPlaying = e.Playing,
+            Aumid = e.Aumid,
+            Duration = e.Duration,
+            HasPosition = e.Duration > 0,
+            BasePosition = e.BasePos,
+            BaseStamp = e.Stamp,
+            Rate = e.Rate,
+        };
+    }
+
+    /// <summary>Apple Music is playing or stopped playing less than <paramref name="span"/> ago.</summary>
+    public bool AppleMusicPlayedWithin(TimeSpan span) =>
+        _entries.Values.Any(e => IsAppleMusic(e) && e.Playing) || DateTime.UtcNow - _appleStoppedAt < span;
 
     private Entry? CurrentEntry() => _effective is not null && _entries.TryGetValue(_effective, out var e) ? e : null;
 
@@ -347,6 +390,11 @@ internal sealed class PlaybackService : IDisposable
 
         foreach (var gone in _entries.Keys.Where(k => !seen.Contains(k)).ToList())
         {
+            if (_entries[gone] is { Playing: true } playing && IsAppleMusic(playing))
+            {
+                _appleStoppedAt = DateTime.UtcNow;
+            }
+
             Unhook(_entries[gone]);
             _entries.Remove(gone);
         }
@@ -385,7 +433,13 @@ internal sealed class PlaybackService : IDisposable
                 e.Tint = null;
             }
 
+            var wasPlaying = e.Playing;
             ReadState(e);
+            if (wasPlaying && !e.Playing && IsAppleMusic(e))
+            {
+                _appleStoppedAt = DateTime.UtcNow;
+            }
+
             Recompute();
             if (e.Art is null && props.Thumbnail is not null)
             {

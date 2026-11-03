@@ -21,6 +21,9 @@ internal enum AmAction
     PlayPause,
     SkipForward,
     SkipBack,
+
+    /// <summary>Sets Apple Music's own scrubber to <see cref="AmCommand.SeekTo"/> (its media session ignores a seek request).</summary>
+    Seek,
 }
 
 internal enum AmFailure
@@ -58,6 +61,12 @@ internal sealed class AmCommand
     public ulong DbId { get; init; }
 
     public string PlaylistAutomationId { get; init; } = "";
+
+    /// <summary>After a song or playlist has been started: scrub to this position (seconds). Used to continue where a closed Apple Music stopped.</summary>
+    public double? ResumeAt { get; init; }
+
+    /// <summary>The position (seconds) of <see cref="AmAction.Seek"/>.</summary>
+    public double SeekTo { get; init; }
 }
 
 internal sealed record AmQueueItem(string Title, string Subtitle, string Duration, bool Current);
@@ -106,7 +115,13 @@ internal sealed class AppleMusicDriver : IDisposable
     private Job? _running;
     private bool _disposed;
 
-    public AppleMusicDriver(Action<string>? log = null) => _log = log ?? (_ => { });
+    private readonly AppleMusicKeeper? _keeper;
+
+    public AppleMusicDriver(Action<string>? log = null, AppleMusicKeeper? keeper = null)
+    {
+        _log = log ?? (_ => { });
+        _keeper = keeper;
+    }
 
     /// <summary>Raised from the worker thread for every diagnostic line (tests print them).</summary>
     public event Action<string>? Trace;
@@ -229,6 +244,20 @@ internal sealed class AppleMusicDriver : IDisposable
 
     private AmResult Execute(AmCommand cmd, CancellationToken ct)
     {
+        // while the driver works its own show / hide / minimise events are none of the keeper's business
+        _keeper?.EnterDriver();
+        try
+        {
+            return ExecuteCore(cmd, ct);
+        }
+        finally
+        {
+            _keeper?.ExitDriver();
+        }
+    }
+
+    private AmResult ExecuteCore(AmCommand cmd, CancellationToken ct)
+    {
         var previous = AmNative.GetForegroundWindow();
         Say($"{cmd.Action} '{cmd.Track?.Title ?? cmd.Playlist?.Name}'; foreground before: {AmNative.Describe(previous)}");
 
@@ -244,7 +273,12 @@ internal sealed class AppleMusicDriver : IDisposable
         }
 
         var before = Snapshot();
-        var am = AmUia.Find();
+        var am = AmUia.Find(_keeper);
+        if (am is null && cmd.Action == AmAction.Seek)
+        {
+            return AmResult.Fail(AmFailure.Unavailable, "Apple Music is not running");
+        }
+
         if (am is null && Process.GetProcessesByName("AppleMusic").Length > 0)
         {
             // it is starting (or only its tray part is up): starting it again would show its window, so wait for the window instead
@@ -253,7 +287,7 @@ internal sealed class AppleMusicDriver : IDisposable
             {
                 ct.ThrowIfCancellationRequested();
                 Thread.Sleep(200);
-                am = AmUia.Find();
+                am = AmUia.Find(_keeper);
             }
         }
 
@@ -274,15 +308,23 @@ internal sealed class AppleMusicDriver : IDisposable
 
         AmResult result;
         using (new PopupHider(am.Hwnd, am.Pid))
-        using (new HiddenWindow(am.Hwnd, Say))
+        using (new HiddenWindow(am.Hwnd, Say, _keeper))
         {
             result = cmd.Action switch
             {
                 AmAction.PlayPlaylist or AmAction.ShufflePlaylist => PlayPlaylist(am, cmd, ct),
                 AmAction.ReadQueue => ReadQueue(am, ct),
                 AmAction.PlayPause or AmAction.SkipForward or AmAction.SkipBack => PressTransport(am, cmd.Action, launched ? 10000 : 4000, ct),
+                AmAction.Seek => SeekScrubber(am, cmd.SeekTo, ct),
                 _ => PlaySong(am, cmd, launched ? 10000 : 4500, ct),
             };
+
+            if (result.Ok && cmd.ResumeAt is { } resumeAt && cmd.Action is AmAction.Play or AmAction.PlayPlaylist or AmAction.ShufflePlaylist)
+            {
+                // continue where a closed Apple Music stopped (a failed seek still leaves the song playing)
+                var seek = SeekScrubber(am, resumeAt, ct);
+                Say(seek.Ok ? $"resumed at {resumeAt:0.#} s" : "could not seek to the old position: " + seek.Detail);
+            }
 
             // Hand the focus back while the window is still parked (and transparent), then minimise without activating anything.
             // If Windows refuses, the minimise below falls back to SW_MINIMIZE, which activates the next window in z-order.
@@ -395,6 +437,36 @@ internal sealed class AppleMusicDriver : IDisposable
 
         Say("pressed " + id);
         Thread.Sleep(250);
+        return AmResult.Success();
+    }
+
+    /// <summary>Sets the position of the playing song through the LCD scrubber's range value (Apple Music ignores the media session's seek).</summary>
+    private AmResult SeekScrubber(AmUia am, double seconds, CancellationToken ct)
+    {
+        var scrubber = am.WaitFor(() => am.ById("LCDScrubber"), 4000, ct);
+        if (scrubber is null || !scrubber.TryGetCurrentPattern(RangeValuePattern.Pattern, out var pattern))
+        {
+            return AmResult.Fail(AmFailure.NoMenu, "scrubber");
+        }
+
+        var range = (RangeValuePattern)pattern;
+        var watch = Stopwatch.StartNew();
+        while (watch.ElapsedMilliseconds < 3000 && range.Current.Maximum <= 0)
+        {
+            ct.ThrowIfCancellationRequested();
+            Thread.Sleep(30);
+        }
+
+        var max = range.Current.Maximum;
+        if (max <= 0)
+        {
+            return AmResult.Fail(AmFailure.NoMenu, "scrubber range");
+        }
+
+        var min = range.Current.Minimum;
+        range.SetValue(Math.Clamp(seconds, min, Math.Max(min, max - 1)));
+        Say($"scrubbed to {seconds:0.#} s (of {max:0.#})");
+        Thread.Sleep(150);
         return AmResult.Success();
     }
 
@@ -877,6 +949,11 @@ internal sealed class AppleMusicDriver : IDisposable
             return null;
         }
 
+        if (_keeper is { Enabled: true })
+        {
+            return LaunchKept(_keeper, guard, ct);
+        }
+
         Say("Apple Music is not running; starting it hidden");
         var touched = new Dictionary<nint, long>();
         var watch = Stopwatch.StartNew();
@@ -978,6 +1055,136 @@ internal sealed class AppleMusicDriver : IDisposable
         return am;
     }
 
+    /// <summary>
+    /// Starts Apple Music so that it never has a taskbar button: it is shown without activation (a window hidden from the start never
+    /// realises its UI), every window it creates is transparent, click-through and a tool window from the moment it exists, the main window
+    /// is parked far off-screen, and once the transport bar is up it is hidden and its styles are put back (the caller ghosts it again for its job).
+    /// </summary>
+    private AmUia? LaunchKept(AppleMusicKeeper keeper, ForegroundGuard guard, CancellationToken ct)
+    {
+        Say("Apple Music is not running; starting it out of sight");
+        var touched = new Dictionary<nint, long>();
+        var rects = new Dictionary<nint, AmNative.Rect>();
+        var watch = Stopwatch.StartNew();
+        AmUia? am = null;
+        keeper.Launching = true;
+        try
+        {
+            using (var hook = new AmEventHook(AmNative.EventObjectCreate, AmNative.EventObjectShow, 0, (ev, hwnd) =>
+            {
+                if (AmNative.GetAncestor(hwnd, AmNative.GaRoot) != hwnd)
+                {
+                    return;
+                }
+
+                string name;
+                try
+                {
+                    name = Process.GetProcessById((int)AmNative.ProcessOf(hwnd)).ProcessName;
+                }
+                catch
+                {
+                    return;
+                }
+
+                if (name != "AppleMusic")
+                {
+                    return;
+                }
+
+                var cls = AmNative.ClassOf(hwnd);
+                if (cls is not (WindowClass or PopupClass))
+                {
+                    return;
+                }
+
+                lock (touched)
+                {
+                    if (!touched.ContainsKey(hwnd))
+                    {
+                        var ex = AmNative.GetWindowLongPtr(hwnd, AmNative.GwlExStyle);
+                        touched[hwnd] = ex;
+                        var ghost = (nint)(ex | AmNative.WsExLayered | AmNative.WsExTransparent);
+                        if (cls == WindowClass)
+                        {
+                            ghost = (nint)((ghost | AmNative.WsExToolWindow) & ~AmNative.WsExAppWindow);
+                        }
+
+                        AmNative.SetWindowLongPtr(hwnd, AmNative.GwlExStyle, ghost);
+                        AmNative.SetLayeredWindowAttributes(hwnd, 0, 0, AmNative.LwaAlpha);
+                    }
+
+                    if (ev == AmNative.EventObjectShow && cls == WindowClass)
+                    {
+                        if (!rects.ContainsKey(hwnd) && AmNative.GetWindowRect(hwnd, out var r) && AmNative.OnAnyScreen(r))
+                        {
+                            rects[hwnd] = r;
+                        }
+
+                        AmNative.SetWindowPos(hwnd, 0, -30000, -30000, 2400, 1500, AmNative.SwpNoZOrder | AmNative.SwpNoActivate | AmNative.SwpNoOwnerZOrder);
+                    }
+                }
+            }))
+            {
+                var info = new AmNative.StartupInfo { Cb = System.Runtime.InteropServices.Marshal.SizeOf<AmNative.StartupInfo>(), Flags = 1, ShowWindow = AmNative.SwShowNoActivate }; // STARTF_USESHOWWINDOW
+                var started = AmNative.CreateProcess(null, new System.Text.StringBuilder($"\"{AmDb.AliasPath}\""), 0, 0, false, 0, 0, null, ref info, out var pi);
+                if (!started)
+                {
+                    return null;
+                }
+
+                AmNative.CloseHandle(pi.Process);
+                AmNative.CloseHandle(pi.Thread);
+                while (watch.ElapsedMilliseconds < 30000)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    am ??= AmUia.Find(keeper);
+                    try
+                    {
+                        if (am is not null && am.ById("TransportControl_PlayPauseStop") is not null)
+                        {
+                            Say($"Apple Music UI ready after {watch.ElapsedMilliseconds} ms");
+                            break;
+                        }
+                    }
+                    catch (ElementNotAvailableException)
+                    {
+                        am = null;
+                    }
+
+                    Thread.Sleep(50);
+                }
+
+                if (am is not null)
+                {
+                    AmNative.ShowWindow(am.Hwnd, AmNative.SwHide);
+                    if (rects.TryGetValue(am.Hwnd, out var home))
+                    {
+                        AmNative.SetWindowPos(am.Hwnd, 0, home.Left, home.Top, home.Right - home.Left, home.Bottom - home.Top, AmNative.SwpNoZOrder | AmNative.SwpNoActivate | AmNative.SwpNoOwnerZOrder);
+                    }
+                }
+            }
+
+            lock (touched)
+            {
+                foreach (var (h, ex) in touched)
+                {
+                    if (AmNative.IsWindow(h))
+                    {
+                        AmNative.SetWindowLongPtr(h, AmNative.GwlExStyle, (nint)ex);
+                    }
+                }
+            }
+        }
+        finally
+        {
+            keeper.Launching = false;
+        }
+
+        guard.Restore();
+        return am;
+    }
+
     // ---------------------------------------------------------------- window hiding
 
     /// <summary>
@@ -1039,13 +1246,17 @@ internal sealed class AppleMusicDriver : IDisposable
         private readonly bool _wasIconic;
         private readonly nint _originalEx;
         private readonly Action<string> _say;
+        private readonly AppleMusicKeeper? _keeper;
+        private readonly bool _wasHidden;
 
-        public HiddenWindow(nint hwnd, Action<string> say)
+        public HiddenWindow(nint hwnd, Action<string> say, AppleMusicKeeper? keeper = null)
         {
             _hwnd = hwnd;
             _say = say;
+            _keeper = keeper is { Enabled: true } ? keeper : null;
+            _wasHidden = !AmNative.IsWindowVisible(hwnd);
             AmNative.GetWindowRect(hwnd, out var rect);
-            _wasIconic = AmNative.IsIconic(hwnd) || !OnAnyScreen(rect);
+            _wasIconic = _wasHidden || AmNative.IsIconic(hwnd) || !OnAnyScreen(rect);
             _original = new AmNative.WindowPlacement { Length = System.Runtime.InteropServices.Marshal.SizeOf<AmNative.WindowPlacement>() };
             AmNative.GetWindowPlacement(hwnd, ref _original);
             if (!OnAnyScreen(_original.Normal))
@@ -1064,7 +1275,14 @@ internal sealed class AppleMusicDriver : IDisposable
                 return;
             }
 
-            AmNative.SetWindowLongPtr(hwnd, AmNative.GwlExStyle, (nint)(_originalEx | AmNative.WsExLayered | AmNative.WsExTransparent));
+            var ghost = (nint)(_originalEx | AmNative.WsExLayered | AmNative.WsExTransparent);
+            if (_wasHidden || _keeper is not null)
+            {
+                // no taskbar button while it is shown for the job
+                ghost = (nint)((ghost | AmNative.WsExToolWindow) & ~AmNative.WsExAppWindow);
+            }
+
+            AmNative.SetWindowLongPtr(hwnd, AmNative.GwlExStyle, ghost);
             AmNative.SetLayeredWindowAttributes(hwnd, 0, 0, AmNative.LwaAlpha);
             var wp = _original;
             wp.ShowCmd = AmNative.SwShowNoActivate;
@@ -1079,6 +1297,19 @@ internal sealed class AppleMusicDriver : IDisposable
         {
             if (!_wasIconic)
             {
+                return;
+            }
+
+            if (_keeper is not null)
+            {
+                // Kept out of sight: hidden while still transparent, back at the user's own restore position (so that is where Windows
+                // remembers it), original styles back, then the keeper takes it over (no taskbar button, no Alt+Tab entry).
+                AmNative.ShowWindow(_hwnd, AmNative.SwHide);
+                var rect = _original.Normal;
+                AmNative.SetWindowPos(_hwnd, 0, rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top, AmNative.SwpNoZOrder | AmNative.SwpNoActivate | AmNative.SwpNoOwnerZOrder);
+                AmNative.SetWindowLongPtr(_hwnd, AmNative.GwlExStyle, _originalEx);
+                _keeper.Adopt(_hwnd, AmNative.ProcessOf(_hwnd));
+                _say("window hidden and kept; foreground now " + AmNative.Describe(AmNative.GetForegroundWindow()));
                 return;
             }
 
@@ -1124,16 +1355,17 @@ internal sealed class AmUia
 
     public AutomationElement Root { get; }
 
-    public static AmUia? Find()
+    /// <summary>Apple Music's main window: a visible one, or the one the <paramref name="keeper"/> keeps hidden.</summary>
+    public static AmUia? Find(AppleMusicKeeper? keeper = null)
     {
         foreach (var p in Process.GetProcessesByName("AppleMusic"))
         {
-            foreach (var h in AmNative.TopLevelWindows((uint)p.Id))
+            var pid = (uint)p.Id;
+            var kept = keeper is not null && keeper.KeptPid == pid ? keeper.KeptHwnd : 0;
+            var h = AmNative.MainWindow(pid, kept);
+            if (h != 0 && (AmNative.IsWindowVisible(h) || (kept != 0 && h == kept)))
             {
-                if (AmNative.ClassOf(h) == "WinUIDesktopWin32WindowClass" && AmNative.IsWindowVisible(h))
-                {
-                    return new AmUia(h, (uint)p.Id);
-                }
+                return new AmUia(h, pid);
             }
         }
 

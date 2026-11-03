@@ -230,10 +230,33 @@ internal sealed class MusicPage : IslandPage
         return Math.Min(h, budget);
     }
 
+    /// <summary>0 = no Apple Music button, 1 = "Show Apple Music" (kept hidden), 2 = "Hide Apple Music" (its window is up).</summary>
+    private int _appleButton;
+
+    private int AppleButtonState()
+    {
+        if (!Core.AppleMusic.Available || !AppleMusicKeeper.IsRunning())
+        {
+            return 0;
+        }
+
+        var keeper = Core.AppleMusic.Keeper;
+        return keeper.KeptHwnd != 0 ? 1 : keeper.HasVisibleWindow() ? 2 : 0;
+    }
+
+    private void OnKeeper() => _view.Dispatcher.BeginInvoke(() =>
+    {
+        if (AppleButtonState() != _appleButton)
+        {
+            Reopen();
+        }
+    });
+
     public override void Shown()
     {
         Core.Playback.Changed += OnChanged;
         Core.Lyrics.Changed += OnLyrics;
+        Core.AppleMusic.Keeper.Changed += OnKeeper;
         _poll.Start();
         Core.Levels.ForgetSilence();
     }
@@ -242,6 +265,7 @@ internal sealed class MusicPage : IslandPage
     {
         Core.Playback.Changed -= OnChanged;
         Core.Lyrics.Changed -= OnLyrics;
+        Core.AppleMusic.Keeper.Changed -= OnKeeper;
         _poll.Stop();
     }
 
@@ -475,6 +499,30 @@ internal sealed class MusicPage : IslandPage
         if (QueueOn)
         {
             Toggle(G.List, Strings.Queue, MusicExtra.Queue);
+        }
+
+        _appleButton = AppleButtonState();
+        if (_appleButton != 0)
+        {
+            var keeper = Core.AppleMusic.Keeper;
+            var show = _appleButton == 1;
+            var b = D.IconButton(show ? G.OpenApp : G.EyeOff, show ? LibStrings.ShowApple : LibStrings.HideApple, () =>
+            {
+                if (show)
+                {
+                    keeper.Show(true);
+                }
+                else
+                {
+                    keeper.HideNow();
+                }
+            });
+            if (top.Children.Count > 0)
+            {
+                b.Margin = new Thickness(6, 0, 0, 0);
+            }
+
+            top.Children.Add(b);
         }
 
         cluster.Children.Add(top);

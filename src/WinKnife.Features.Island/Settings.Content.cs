@@ -326,6 +326,16 @@ internal sealed class ContentEditor : Grid
                     card.Add(SUi.Indent(SUi.SwitchRow(app, K.LyricsOnline, "", Loc.T("Find lyrics online"), Strings.LyricsOnlineHint)));
                 }
 
+                if (IslandCore.Current?.AppleMusic.Available ?? false)
+                {
+                    card.AddDivider();
+                    card.Add(SUi.SwitchRow(app, K.AppleMusicKeepHidden, "", Loc.T("Keep Apple Music out of sight"), Loc.T("While the island plays Apple Music its window stays hidden and off the taskbar. Minimising Apple Music while it plays sends it to the island."), _ => _c.RequestRebuild()));
+                    if (app.Get<bool>(K.AppleMusicKeepHidden))
+                    {
+                        card.Add(SUi.Indent(SUi.SwitchRow(app, K.AppleMusicResumeOnQuit, "", Loc.T("Keep playing if Apple Music is closed"), Loc.T("Starts it again in the background and continues the song where it stopped (takes about 20 seconds)."))));
+                    }
+                }
+
                 card.AddDivider();
                 card.Add(new FeatureSwitchRow(rt, _c.Shell, "notch-queue", "", Loc.T("Show upcoming songs"), Loc.T("See the actual upcoming songs shared by your player."), app.Get<bool>(K.QueueEnabled), on => app.Set(K.QueueEnabled, on), Loc.T("Enable “Up next” in Features.")));
                 card.AddDivider();

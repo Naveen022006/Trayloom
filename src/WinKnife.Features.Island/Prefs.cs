@@ -85,6 +85,11 @@ internal static class K
     public const string BrowserCovers = "notchBrowserCovers";
     public const string LiveEqualizer = "notchLiveEqualizer";
     public const string QueueEnabled = "notchQueueEnabled";
+    public const string AppleMusicKeepHidden = "notchAppleMusicKeepHidden";
+    public const string AppleMusicResumeOnQuit = "notchAppleMusicResumeOnQuit";
+
+    /// <summary>"pid:hwnd" of the Apple Music window the keeper has hidden (crash recovery); empty when none.</summary>
+    public const string AppleMusicKeptWindow = "notchAppleMusicKeptWindow";
     public const string ShowPlayingMusic = "notchShowPlayingMusic";
     public const string IncludeOtherPlayers = "notchIncludeOtherPlayers";
     public const string MusicShowVolume = "notchMusicShowVolume";
@@ -209,6 +214,9 @@ internal static class K
             [BrowserCovers] = false,
             [LiveEqualizer] = false,
             [QueueEnabled] = true,
+            [AppleMusicKeepHidden] = true,
+            [AppleMusicResumeOnQuit] = true,
+            [AppleMusicKeptWindow] = "",
             [ShowPlayingMusic] = true,
             [IncludeOtherPlayers] = true,
             [MusicShowVolume] = false,
