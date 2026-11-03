@@ -13,9 +13,5 @@ TestResults/
 publish/
 artifacts/
 dist/
-screenshots/demo/
-screenshots/r2/
-screenshots/features-hub.png
-screenshots/r3/
-screenshots/r4/
-screenshots/r5/
+## Local screenshots (never published)
+screenshots/
