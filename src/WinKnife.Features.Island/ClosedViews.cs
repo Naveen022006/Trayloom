@@ -177,8 +177,9 @@ internal static class ClosedViews
             return MicNotice(win, n);
         }
 
-        if (n.Element is { } custom)
+        if (Detach.From(n.Element) is { } custom)
         {
+            // the same notice element is placed again by every rebuild of the closed layer while the notice lasts
             custom.VerticalAlignment = VerticalAlignment.Center;
             custom.Margin = new Thickness(Math.Max(6, (body - 14) / 2), 0, 12, 0);
             var holder = new Grid { Height = body };

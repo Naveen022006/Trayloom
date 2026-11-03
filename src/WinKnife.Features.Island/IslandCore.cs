@@ -193,6 +193,7 @@ internal sealed class IslandCore : IDisposable
         SyncMicUse();
         Ctx.Runtime.Changed += OnRuntime;
         Ctx.Island.Changed += OnRuntime;
+        Ctx.Services.Changed += OnServices;
         App.Changed += OnSetting;
         EqBars.LiveSource = () => Levels.Levels;
         Playback.Changed += SyncLevels;
@@ -201,6 +202,13 @@ internal sealed class IslandCore : IDisposable
         _ = dir;
     }
 
+    /// <summary>
+    /// A feature published or withdrew a service. The island starts before the features that contribute strips (the Agents runtime is
+    /// provided a moment after the first closed render), and a contribution that asked for its service too early has not seen the island's
+    /// context yet and cannot invalidate: so the island asks again itself.
+    /// </summary>
+    private void OnServices() => InvalidateExternal();
+
     private void OnRuntime() => Ui.BeginInvoke(() =>
     {
         if (_disposed)
@@ -208,6 +216,9 @@ internal sealed class IslandCore : IDisposable
             return;
         }
 
+        // installing or removing a feature changes which strips exist and what they answer
+        ResetStrips();
+        ExternalInvalidated?.Invoke();
         ModulesChanged?.Invoke();
         Downloads.Sync();
         Notifications.Sync();
@@ -481,7 +492,11 @@ internal sealed class IslandCore : IDisposable
 
     private readonly Dictionary<string, FrameworkElement?> _strips = [];
 
-    /// <summary>Cached strip element of a contributed island strip (null = nothing to show).</summary>
+    /// <summary>
+    /// The strip element of a contributed island strip, cached while it exists (null = nothing to show). A "nothing" answer is never
+    /// cached: the contribution is asked again on the next read, so an answer given before its feature finished starting (or before a
+    /// session began) cannot hide the strip until some unrelated refresh happens.
+    /// </summary>
     public FrameworkElement? ExternalStrip(string id)
     {
         var strip = Ctx.Island.Strips.FirstOrDefault(s => s.Id == id);
@@ -491,19 +506,29 @@ internal sealed class IslandCore : IDisposable
             return null;
         }
 
-        if (!_strips.TryGetValue(id, out var el))
+        if (_strips.TryGetValue(id, out var cached) && cached is not null)
         {
-            try
-            {
-                el = strip.CreateStrip(IslandContext);
-            }
-            catch (Exception ex)
-            {
-                Ctx.Log.Warn($"Island strip {id} failed: {ex.Message}");
-                el = null;
-            }
+            return cached;
+        }
 
+        FrameworkElement? el;
+        try
+        {
+            el = strip.CreateStrip(IslandContext);
+        }
+        catch (Exception ex)
+        {
+            Ctx.Log.Warn($"Island strip {id} failed: {ex.Message}");
+            el = null;
+        }
+
+        if (el is not null)
+        {
             _strips[id] = el;
+        }
+        else
+        {
+            _strips.Remove(id);
         }
 
         return el;
@@ -526,7 +551,7 @@ internal sealed class IslandCore : IDisposable
         foreach (var s in Ctx.Island.Strips.Where(x => x.Id.EndsWith(".attention", StringComparison.Ordinal)).ToList())
         {
             var attention = TakeStrip(s.Id);
-            _strips[s.Id] = null;
+            _strips.Remove(s.Id);
             if (attention is null)
             {
                 continue;
@@ -543,7 +568,7 @@ internal sealed class IslandCore : IDisposable
             }
 
             var el = TakeStrip(s.Id);
-            _strips[s.Id] = null;
+            _strips.Remove(s.Id);
             if (el is null)
             {
                 continue;
@@ -647,6 +672,7 @@ internal sealed class IslandCore : IDisposable
         _disposed = true;
         Ctx.Runtime.Changed -= OnRuntime;
         Ctx.Island.Changed -= OnRuntime;
+        Ctx.Services.Changed -= OnServices;
         App.Changed -= OnSetting;
         Playback.Changed -= SyncLevels;
         EqBars.LiveSource = null;
