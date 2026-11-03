@@ -21,6 +21,7 @@ internal sealed partial class IslandWindow
     private DateTime _trackSince = DateTime.MinValue;
     private string _trackIdentity = "";
     private bool _openedFresh;
+    private string _closedKey = "";
     private nint _prevForeground;
 
     public DateTime TrackSince => _trackSince;
@@ -85,6 +86,7 @@ internal sealed partial class IslandWindow
             return;
         }
 
+        InvalidateStyleCache();
         Dispatcher.BeginInvoke(() =>
         {
             if (_disposed)
@@ -195,14 +197,30 @@ internal sealed partial class IslandWindow
             return;
         }
 
+        var steady = false;
         if (rebuild || _closed is null)
         {
+            var hadContent = _closed is not null;
+            var previousKey = _closedKey;
             _closed = BuildClosed();
             _closedHost.Children.Clear();
             _closed.Element.HorizontalAlignment = HorizontalAlignment.Center;
             _closed.Element.VerticalAlignment = VerticalAlignment.Center;
             _closedHost.Children.Add(_closed.Element);
             _closedHost.Background = Brushes.Transparent;
+            // the same kind of content with a new reading eases its width; other content cross-fades in (spec 5: replace 0.18 s)
+            steady = hadContent && previousKey == _closedKey && _mode != IslandMode.Open;
+            if (hadContent && previousKey != _closedKey && _mode != IslandMode.Open && _choreo == Choreo.None && !snap && !D.ReduceMotion)
+            {
+                _fadeIn = _closed.Element;
+                _fadeT = 0;
+                _fadeIn.Opacity = 0;
+                StartRendering();
+            }
+            else if (_fadeIn is not null && !ReferenceEquals(_fadeIn, _closed.Element))
+            {
+                _fadeIn = null;
+            }
         }
 
         var body = BodyHeight;
@@ -235,8 +253,12 @@ internal sealed partial class IslandWindow
 
         if (_mode != IslandMode.Open)
         {
-            SetTarget(width, height, snap);
-            _closedHost.Opacity = 1;
+            SetTarget(width, height, snap, steady);
+            if (_choreo == Choreo.None)
+            {
+                _closedHost.Opacity = _surface.Alpha;
+            }
+
             _closedHost.IsHitTestVisible = true;
         }
 
@@ -250,6 +272,7 @@ internal sealed partial class IslandWindow
         var body = BodyHeight;
         if (_placeholder)
         {
+            _closedKey = "placeholder";
             return BuildPlaceholder();
         }
 
@@ -258,21 +281,25 @@ internal sealed partial class IslandWindow
             _shownNotice = n;
             if (_noticeExpanded && n.Banner)
             {
+                _closedKey = "noticePreview:" + n.Event.Id;
                 return BuildNoticePreview(n);
             }
 
+            _closedKey = "notice:" + n.Event.Id;
             return ClosedViews.NoticeView(_core, this, n);
         }
 
         _shownNotice = null;
         if (_mode == IslandMode.Peek)
         {
+            _closedKey = "peek";
             return BuildPeek();
         }
 
         var live = _core.LiveActivities();
         if (_picker && live.Count > 1)
         {
+            _closedKey = "picker";
             return BuildPicker(live);
         }
 
@@ -282,10 +309,12 @@ internal sealed partial class IslandWindow
             var v = BuildActivity(act);
             if (v is not null)
             {
+                _closedKey = "act:" + act;
                 return v;
             }
         }
 
+        _closedKey = "rest";
         return ClosedViews.Resting(_core, this);
     }
 
@@ -537,10 +566,15 @@ internal sealed partial class IslandWindow
             clip.PasteTarget = NativeForeground();
         }
 
+        if (!wasOpen)
+        {
+            ResetOpenLayer();
+        }
+
         BuildOpen(rebuildPage: true);
         if (!wasOpen)
         {
-            Reveal();
+            BeginOpening();
         }
 
         if (!wasOpen)
@@ -554,31 +588,6 @@ internal sealed partial class IslandWindow
     }
 
     private static nint NativeForeground() => WinKnife.Core.Native.NativeMethods.GetForegroundWindow();
-
-    private void Reveal()
-    {
-        _openHost.IsHitTestVisible = true;
-        _closedHost.IsHitTestVisible = false;
-        var reveal = new DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromMilliseconds(450) };
-        reveal.KeyFrames.Add(new DiscreteDoubleKeyFrame(0, KeyTime.FromPercent(0)));
-        reveal.KeyFrames.Add(new LinearDoubleKeyFrame(0, KeyTime.FromPercent(0.35)));
-        reveal.KeyFrames.Add(new EasingDoubleKeyFrame(1, KeyTime.FromPercent(1), new CubicEase { EasingMode = EasingMode.EaseOut }));
-        if (D.ReduceMotion)
-        {
-            _openHost.Opacity = 1;
-            _closedHost.Opacity = 0;
-            return;
-        }
-
-        _openHost.BeginAnimation(OpacityProperty, reveal);
-        _closedHost.BeginAnimation(OpacityProperty, new DoubleAnimation(0, TimeSpan.FromMilliseconds(160)));
-        var scale = new ScaleTransform(0.86, 0.86);
-        _openHost.RenderTransformOrigin = new Point(0.5, 0);
-        _openHost.RenderTransform = scale;
-        var ease = new DoubleAnimation(1, TimeSpan.FromMilliseconds(450)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
-        scale.BeginAnimation(ScaleTransform.ScaleXProperty, ease);
-        scale.BeginAnimation(ScaleTransform.ScaleYProperty, ease);
-    }
 
     public void Collapse(bool immediate = false)
     {
@@ -616,23 +625,10 @@ internal sealed partial class IslandWindow
             }
 
             _openHost.IsHitTestVisible = false;
-            if (D.ReduceMotion || immediate)
-            {
-                _openHost.BeginAnimation(OpacityProperty, null);
-                _openHost.Opacity = 0;
-            }
-            else
-            {
-                _openHost.BeginAnimation(OpacityProperty, new DoubleAnimation(0, TimeSpan.FromMilliseconds(220)));
-            }
-
-            _quick.Children.Clear();
+            BeginClosing(immediate);
             _core.Playback.Reevaluate();
         }
 
-        _closedHost.BeginAnimation(OpacityProperty, null);
-        _closedHost.Opacity = 0;
-        _closedHost.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(immediate || D.ReduceMotion ? 1 : 260)) { BeginTime = TimeSpan.FromMilliseconds(immediate ? 0 : 110) });
         RefreshClosed(snap: immediate);
         ApplyWindow();
         PublishPill();
@@ -785,7 +781,7 @@ internal sealed partial class IslandWindow
         h = Math.Min(h, cap);
         _openW = w;
         _openH = h;
-        var root = new Grid { Width = w, Height = h, Background = Brushes.Transparent };
+        var root = new Grid { Width = w, Height = h, Background = Brushes.Transparent, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top };
         // page
         var pageTop = hasRow ? topInset + 48 : 16;
         var host = new Grid { Margin = new Thickness(28, pageTop, 28, 16), ClipToBounds = true };
@@ -796,13 +792,22 @@ internal sealed partial class IslandWindow
             root.Children.Add(BuildBand(page, topInset, w));
         }
 
-        _openHost.Children.Clear();
-        _openHost.Children.Add(root);
+        SwapOpenRoot(root, rebuildPage);
         _openHost.Width = w;
         _openHost.Height = h;
-        SetTarget(w, h);
         LayoutHosts();
-        BuildQuick();
+        // the whole page is measured and arranged now, before the first animation frame, never during it
+        _openHost.UpdateLayout();
+        SetTarget(w, h);
+        if (_quick.Children.Count == 0)
+        {
+            BuildQuick();
+        }
+        else
+        {
+            PositionQuick();
+        }
+
         page.Resized(contentW, ch);
         page.Shown();
         PublishPill();

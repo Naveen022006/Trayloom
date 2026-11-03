@@ -108,7 +108,7 @@ public static class UiKit
             TextTrimming = trimming,
         };
         block.SetResourceReference(TextBlock.ForegroundProperty, brushKey);
-        return block;
+        return GlyphBlock.Realize(block);
     }
 
     /// <summary>Creates a themed glyph (Segoe Fluent Icons).</summary>

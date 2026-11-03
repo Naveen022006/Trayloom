@@ -176,7 +176,7 @@ public sealed class AgentNoticeView : StackPanel
         var tint = AgentColors.Of(notice.Tint);
         if (notice.Provider is { } provider && notice.Glyph.Length == 0)
         {
-            Children.Add(new AgentGlyph(provider, 11, true));
+            Children.Add(new AgentGlyph(provider, 11, false));
         }
         else
         {
@@ -275,8 +275,8 @@ public sealed class AgentsIslandSection : IIslandSection
 
     public string Title => AgentStrings.Title;
 
-    /// <summary>Sparkles have no stock glyph; this is the closest Segoe Fluent Icons symbol.</summary>
-    public string Glyph => "";
+    /// <summary>Claude's mark: the island icon helpers draw this pseudo glyph as the spark (the section shows Claude's work).</summary>
+    public string Glyph => WinKnife.Core.Ui.ClaudeMark.Glyph;
 
     public FrameworkElement CreateView(IIslandContext context)
     {

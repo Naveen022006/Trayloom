@@ -52,6 +52,7 @@ public sealed class IslandFeature : IFeature
         _context = context;
         _stopped = false;
         K.RegisterDefaults(context.App);
+        BrightnessService.Probe();
         _core = new IslandCore(context);
         _core.Start();
         context.App.Changed += OnSetting;
@@ -126,6 +127,9 @@ public sealed class IslandFeature : IFeature
         public uint Last;
         public bool Decided;
         public uint LockedUntil;
+
+        /// <summary>The decided gesture owns the rest of its physical scroll sequence (momentum must not scroll the page it just opened).</summary>
+        public bool Swallow;
     }
 
     private bool OnMouse(MouseHookEvent e)
@@ -158,6 +162,7 @@ public sealed class IslandFeature : IFeature
         {
             g.AccV = g.AccH = 0;
             g.Decided = false;
+            g.Swallow = false;
         }
 
         g.Last = t;
@@ -174,7 +179,7 @@ public sealed class IslandFeature : IFeature
 
         if (g.Decided && unchecked(t - g.LockedUntil) < int.MaxValue)
         {
-            return pill.Expanded ? false : true;
+            return g.Swallow;
         }
 
         var absV = Math.Abs(g.AccV);
@@ -195,6 +200,7 @@ public sealed class IslandFeature : IFeature
         {
             g.Decided = true;
             g.LockedUntil = t + 500;
+            g.Swallow = pill.MusicShowing;
             if (!pill.MusicShowing)
             {
                 return false;
@@ -222,6 +228,7 @@ public sealed class IslandFeature : IFeature
             {
                 g.Decided = true;
                 g.LockedUntil = t + 450;
+                g.Swallow = down;
                 if (down)
                 {
                     ui.BeginInvoke(() => window.Open(takeFocus: true));
@@ -237,6 +244,7 @@ public sealed class IslandFeature : IFeature
             {
                 g.Decided = true;
                 g.LockedUntil = t + 450;
+                g.Swallow = true;
                 ui.BeginInvoke(() => window.Collapse());
                 return true;
             }

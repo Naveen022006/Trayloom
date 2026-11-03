@@ -102,7 +102,7 @@ internal static class ClosedViews
                 }
                 else
                 {
-                    left = D.I(G.Sparkle, 11, D.White(0.7));
+                    left = D.I(G.Claude, 11, D.Frozen(WinKnife.Core.Ui.ClaudeMark.Orange));
                     right = D.Digits("", 9, FontWeights.Medium, D.White(0.7));
                 }
 

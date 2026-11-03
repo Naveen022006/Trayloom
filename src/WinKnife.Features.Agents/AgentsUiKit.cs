@@ -21,7 +21,7 @@ internal static class AgentColors
 
     public static Color Tint(this AgentProvider p) => p switch
     {
-        AgentProvider.Claude => Color.FromRgb(0xD9, 0x78, 0x57),
+        AgentProvider.Claude => WinKnife.Core.Ui.ClaudeMark.Orange,
         AgentProvider.Codex => Color.FromRgb(0x7D, 0x99, 0xFF),
         AgentProvider.OpenCode => Color.FromRgb(0x0F, 0xBA, 0x82),
         _ => Color.FromRgb(0x4D, 0xC7, 0xAD),
@@ -377,25 +377,38 @@ internal static class AgentMarks
     }
 }
 
-/// <summary>An agent's mark breathing while it works. A turn would read as a cross halfway round, so the mark keeps its angle.</summary>
+/// <summary>
+/// An agent's mark while it works: it breathes (scale 0.84 to 1, opacity 0.7 to 1, one swing every 1.2 s) and Claude's spark also
+/// turns slowly, one full turn every 3.5 s, like Claude's own working indicator. Stepped by the shared 30 Hz decorative clock through
+/// render transforms only (no layout); still when idle, hidden, or when motion is reduced.
+/// </summary>
 internal sealed class AgentGlyph : Grid
 {
+    /// <summary>Seconds for one full turn of Claude's spark.</summary>
+    public const double TurnSeconds = 3.5;
+
     private readonly FrameworkElement _mark;
     private readonly ScaleTransform _scale = new(1, 1);
+    private readonly RotateTransform _turn = new(0);
     private readonly bool _working;
+    private readonly bool _spins;
     private IDisposable? _subscription;
     private double _start;
 
-    public AgentGlyph(AgentProvider provider, double size = 13, bool working = true, Brush? brush = null)
+    public AgentGlyph(AgentProvider provider, double size = 13, bool working = true, Brush? brush = null, bool spin = true)
     {
         _working = working;
+        _spins = spin && provider == AgentProvider.Claude;
         // Room for the widest mark, the Claude one, drawn past its size.
         Width = size * 1.45 + 1;
         Height = size * 1.45 + 1;
         IsHitTestVisible = false;
         _mark = AgentMarks.Create(provider, size * AgentMarks.Scale(provider), brush);
         _mark.RenderTransformOrigin = new Point(0.5, 0.5);
-        _mark.RenderTransform = _scale;
+        var group = new TransformGroup();
+        group.Children.Add(_turn);
+        group.Children.Add(_scale);
+        _mark.RenderTransform = group;
         _mark.HorizontalAlignment = HorizontalAlignment.Center;
         _mark.VerticalAlignment = VerticalAlignment.Center;
         Children.Add(_mark);
@@ -407,6 +420,9 @@ internal sealed class AgentGlyph : Grid
             Subscribe();
         };
     }
+
+    /// <summary>True when the mark is animating right now.</summary>
+    public bool IsAnimating => _subscription is not null;
 
     private void Subscribe()
     {
@@ -424,15 +440,21 @@ internal sealed class AgentGlyph : Grid
         _subscription?.Dispose();
         _subscription = null;
         _scale.ScaleX = _scale.ScaleY = 1;
+        _turn.Angle = 0;
         _mark.Opacity = 1;
     }
 
     private void Step(double time)
     {
-        var b = AgentClock.Swing((time - _start) / 1.2);
+        var t = time - _start;
+        var b = AgentClock.Swing(t / 1.2);
         var s = 0.84 + 0.16 * b;
         _scale.ScaleX = _scale.ScaleY = s;
         _mark.Opacity = 0.7 + 0.3 * b;
+        if (_spins)
+        {
+            _turn.Angle = t / TurnSeconds * 360 % 360;
+        }
     }
 }
 

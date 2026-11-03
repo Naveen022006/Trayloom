@@ -402,7 +402,7 @@ internal sealed class LayoutEditor : Grid
         var box = new TextBox { Margin = new Thickness(0, 0, 0, 8), Height = 26, VerticalContentAlignment = VerticalAlignment.Center, Padding = new Thickness(6, 0, 6, 0) };
         var host = new StackPanel();
         host.Children.Add(box);
-        var listHost = new ScrollViewer { Height = 200, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        var listHost = new SmoothScrollViewer { Height = 200 };
         host.Children.Add(listHost);
         void Fill()
         {

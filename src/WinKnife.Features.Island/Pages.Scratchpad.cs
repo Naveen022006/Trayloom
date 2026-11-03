@@ -9,6 +9,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using WinKnife.Core;
+using WinKnife.Core.Ui;
 
 namespace WinKnife.Features.Island;
 
@@ -248,7 +249,7 @@ internal sealed class ScratchpadPage : IslandPage
             tabs.Children.Add(tab);
         }
 
-        var scrollTabs = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = tabs, MaxWidth = 250 };
+        var scrollTabs = new SmoothScrollViewer { ScrollOrientation = ScrollAxis.Horizontal, HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, Content = tabs, MaxWidth = 250 };
         _leading.Children.Add(scrollTabs);
         var full = _doc.Pads.Count >= ScratchDocument.MaxPads;
         var plus = D.IconButton(G.Plus, full ? Loc.F("You can keep up to {0} scratchpads", ScratchDocument.MaxPads) : Loc.T("New scratchpad"), NewPad);

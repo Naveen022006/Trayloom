@@ -46,7 +46,7 @@ internal static class IslandCatalog
         new("camera", Loc.T("Camera mirror"), G.Video, 'w', C("#40C8E0"), false, Loc.T("A mirror to check yourself before a call."), ["camera-preview"], K.CameraEnabled, true),
         new("downloads", Loc.T("Downloads"), G.Download, 'd', C("#0A84FF"), false, Loc.T("Downloads in progress and just finished."), ["notch-downloads"], null, true),
         new("scratchpad", Loc.T("Scratchpad"), G.Note, 'p', C("#FFD60A"), true, Loc.T("Quick notes that save by themselves."), ["scratchpad"], null, true),
-        new("agents", Loc.T("AI Agents"), G.Sparkle, 'g', C("#D97857"), false, Loc.T("Claude Code, Codex, OpenCode and GitHub Copilot usage, limits and costs."), ["notch-agents"], K.AgentsEnabled, true),
+        new("agents", Loc.T("AI Agents"), G.Claude, 'g', C("#D97757"), false, Loc.T("Claude Code, Codex, OpenCode and GitHub Copilot usage, limits and costs."), ["notch-agents"], K.AgentsEnabled, true),
         new("watch", Loc.T("Watch"), G.Eye, 'o', C("#BF5AF2"), false, Loc.T("Any part of a window, read live, with an alert when it changes."), ["notch-watch"], K.WatchEnabled, true),
     ]);
 

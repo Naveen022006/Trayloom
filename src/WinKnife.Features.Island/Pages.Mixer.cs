@@ -9,6 +9,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using WinKnife.Core;
+using WinKnife.Core.Ui;
 
 namespace WinKnife.Features.Island;
 
@@ -277,8 +278,7 @@ internal sealed class MixerPage : IslandPage
         var div = new Border { Width = 1, Background = D.White(0.12), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 0) };
         Grid.SetColumn(div, col);
         row.Children.Add(div);
-        var railHost = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, Margin = new Thickness(10, 0, 0, 0) };
-        railHost.PreviewMouseWheel += (s, e) => { railHost.ScrollToHorizontalOffset(railHost.HorizontalOffset - e.Delta); e.Handled = true; };
+        var railHost = new SmoothScrollViewer { ScrollOrientation = ScrollAxis.Horizontal, Margin = new Thickness(10, 0, 0, 0) };
         _rail = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Left };
         railHost.Content = _rail;
         Grid.SetColumn(railHost, col + 1);

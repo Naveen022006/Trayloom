@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using WinKnife.Core;
+using WinKnife.Core.Ui;
 
 namespace WinKnife.Features.Island;
 
@@ -173,9 +174,7 @@ internal sealed class FilesPage : IslandPage
                 wrap.Children.Add(Tile(path));
             }
 
-            var sc = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = wrap };
-            sc.PreviewMouseWheel += (s, e) => { sc.ScrollToHorizontalOffset(sc.HorizontalOffset - e.Delta); e.Handled = true; };
-            body = sc;
+            body = PageUi.HScroll(wrap);
         }
 
         root.Children.Add(body);

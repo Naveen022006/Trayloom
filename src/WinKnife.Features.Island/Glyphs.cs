@@ -21,6 +21,9 @@ internal static class G
     public const string Download = "\uE896";
     public const string Note = "\uE70B";
     public const string Sparkle = "\uE945";
+
+    /// <summary>Claude's mark (drawn by the icon helpers, see <see cref="WinKnife.Core.Ui.ClaudeMark"/>): the AI Agents section and Claude strips.</summary>
+    public const string Claude = WinKnife.Core.Ui.ClaudeMark.Glyph;
     public const string Eye = "\uE7B3";
     public const string EyeOff = "\uED1A";
     public const string Brightness = "\uE706";
@@ -57,6 +60,7 @@ internal static class G
     public const string Desktop = "\uE7F4";
     public const string Lyrics = "\uE90A";
     public const string List = "\uE8FD";
+    public const string MusicLibrary = "\uE90B";
     public const string Refresh = "\uE72C";
     public const string Search = "\uE721";
     public const string Trash = "\uE74D";

@@ -98,6 +98,8 @@ public sealed class AgentsPageView : Grid
         var snapshot = _runtime.Service.Snapshot;
         var accounts = settings.ShowsCodexAccounts() ? _runtime.Accounts.States : [];
         var status = _runtime.Service.Status;
+        // a refresh (new reading, a session starting) must not throw the reader back to the top of the list
+        var keepOffset = _scroll?.VerticalOffset ?? 0;
         Children.Clear();
         _scroll = null;
         _scrollIndicator = NewIndicator();
@@ -173,14 +175,17 @@ public sealed class AgentsPageView : Grid
             root.Children.Add(bar);
         }
 
-        var scroll = new ScrollViewer
+        var scroll = new WinKnife.Core.Ui.SmoothScrollViewer
         {
             VerticalScrollBarVisibility = ScrollBarVisibility.Hidden,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             Content = grid,
-            Focusable = false,
         };
         _scroll = scroll;
+        if (keepOffset > 0)
+        {
+            Dispatcher.BeginInvoke(() => scroll.ScrollToVerticalOffset(keepOffset), DispatcherPriority.Loaded);
+        }
+
         scroll.ScrollChanged += (_, _) => UpdateIndicator();
         scroll.SizeChanged += (_, _) => UpdateIndicator();
         var host = new Grid { Children = { scroll, _scrollIndicator } };
@@ -246,7 +251,7 @@ public sealed class AgentsPageView : Grid
     {
         var stack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, MaxWidth = 300 };
         FrameworkElement icon = symbol == "sparkles"
-            ? AgentMarks.Sparkles(30, AgentColors.White(0.4))
+            ? WinKnife.Core.Ui.ClaudeMark.Create(30, AgentColors.Of(WinKnife.Core.Ui.ClaudeMark.Orange, 0.75))
             : AU.Icon("", 28, AgentColors.White(0.4));
         icon.HorizontalAlignment = HorizontalAlignment.Center;
         stack.Children.Add(icon);

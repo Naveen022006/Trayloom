@@ -3,6 +3,7 @@
 
 using System.Windows;
 using WinKnife.Core;
+using WinKnife.Core.Ui;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -152,7 +153,6 @@ internal static class PageUi
             return wrap;
         }
 
-        var scroll = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled };
         var grid = new WrapPanel { Orientation = Orientation.Vertical, Height = (rows * (itemH + rowSpacing)) };
         foreach (var it in items)
         {
@@ -160,31 +160,17 @@ internal static class PageUi
             grid.Children.Add(it);
         }
 
-        scroll.Content = grid;
-        scroll.PreviewMouseWheel += (s, e) =>
-        {
-            scroll.ScrollToHorizontalOffset(scroll.HorizontalOffset - e.Delta);
-            e.Handled = true;
-        };
-        return scroll;
+        return HScroll(grid);
     }
 
-    /// <summary>A vertical scroll viewer with hidden bars and mouse wheel support.</summary>
-    public static ScrollViewer VScroll(FrameworkElement content)
-    {
-        var s = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = content };
-        s.Resources.Add(typeof(System.Windows.Controls.Primitives.ScrollBar), ScrollBarStyle());
-        return s;
-    }
+    /// <summary>
+    /// The island's vertical list scroller: <see cref="SmoothScrollViewer"/> (animated wheel steps that accumulate, 1:1 touchpad,
+    /// thin overlay thumb that fades in while scrolling). Every scrolling list in the island uses this (or <see cref="HScroll"/>).
+    /// </summary>
+    public static SmoothScrollViewer VScroll(FrameworkElement content) => SmoothScrollViewer.Vertical(content);
 
-    private static Style ScrollBarStyle()
-    {
-        var xaml = "<Style xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" TargetType=\"ScrollBar\">"
-            + "<Setter Property=\"Width\" Value=\"4\"/><Setter Property=\"Opacity\" Value=\"0.5\"/><Setter Property=\"Background\" Value=\"Transparent\"/>"
-            + "<Setter Property=\"Template\"><Setter.Value><ControlTemplate TargetType=\"ScrollBar\"><Grid Background=\"Transparent\"><Track x:Name=\"PART_Track\" IsDirectionReversed=\"True\"><Track.Thumb><Thumb><Thumb.Template><ControlTemplate TargetType=\"Thumb\"><Border Background=\"#55FFFFFF\" CornerRadius=\"2\"/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb></Track></Grid></ControlTemplate></Setter.Value></Setter>"
-            + "</Style>";
-        return (Style)System.Windows.Markup.XamlReader.Parse(xaml);
-    }
+    /// <summary>A horizontal rail scroller (the vertical wheel scrolls sideways, same smooth motion, thin overlay thumb).</summary>
+    public static SmoothScrollViewer HScroll(FrameworkElement content) => SmoothScrollViewer.Horizontal(content);
 
     public static FrameworkElement Spinner(double size = 14)
     {

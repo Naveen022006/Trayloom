@@ -10,11 +10,15 @@ using WinKnife.Core.Ui;
 
 namespace WinKnife.Features.Island;
 
-/// <summary>Perceptual-duration spring (SwiftUI definition) used for the island silhouette.</summary>
+/// <summary>
+/// Perceptual-duration spring (SwiftUI / Core Animation definition: duration + bounce) solved in closed form, so a step of any
+/// length lands exactly where the continuous spring is (frame-rate independent, never unstable on a slow frame) and a retarget
+/// in flight keeps position and velocity.
+/// </summary>
 internal sealed class Spring
 {
-    private readonly double _omega;
-    private readonly double _zeta;
+    private double _omega;
+    private double _zeta;
 
     public double Position;
     public double Velocity;
@@ -22,12 +26,44 @@ internal sealed class Spring
 
     public Spring(double duration, double bounce, double start = 0)
     {
-        _omega = 2 * Math.PI / Math.Max(0.05, duration);
-        _zeta = Math.Max(0.2, 1 - bounce);
+        Configure(duration, bounce);
         Position = Target = start;
     }
 
-    public bool Settled => Math.Abs(Position - Target) < 0.35 && Math.Abs(Velocity) < 8;
+    /// <summary>Changes the character of the spring (position and velocity carry on).</summary>
+    public void Configure(double duration, double bounce)
+    {
+        _omega = 2 * Math.PI / Math.Max(0.05, duration);
+        _zeta = Math.Clamp(1 - bounce, 0.2, 1);
+    }
+
+    /// <summary>
+    /// How far past its target a spring of this bounce swings, as a share of its travel (Mac <c>NotchMotion.Spring.overshoot</c>).
+    /// </summary>
+    public static double Overshoot(double bounce)
+    {
+        if (bounce <= 0)
+        {
+            return 0;
+        }
+
+        var damping = 1 - bounce;
+        return Math.Exp(-Math.PI * damping / Math.Sqrt(1 - (damping * damping)));
+    }
+
+    /// <summary>The bounce, reduced just enough that a swing over <paramref name="travel"/> stays within <paramref name="limit"/> (Mac <c>limited</c>).</summary>
+    public static double LimitedBounce(double bounce, double travel, double limit)
+    {
+        if (bounce <= 0 || travel <= 0 || travel * Overshoot(bounce) <= limit)
+        {
+            return bounce;
+        }
+
+        var share = Math.Log(Math.Max(limit, 0.01) / travel);
+        return 1 + (share / Math.Sqrt((Math.PI * Math.PI) + (share * share)));
+    }
+
+    public bool Settled => Math.Abs(Position - Target) < 0.3 && Math.Abs(Velocity) < 6;
 
     public void Snap(double value)
     {
@@ -37,16 +73,37 @@ internal sealed class Spring
 
     public void Step(double dt)
     {
-        // semi-implicit Euler with small sub steps keeps the underdamped spring stable
-        var steps = Math.Max(1, (int)Math.Ceiling(dt / 0.004));
-        var h = dt / steps;
-        for (var i = 0; i < steps; i++)
+        if (dt <= 0)
         {
-            var accel = (-_omega * _omega * (Position - Target)) - (2 * _zeta * _omega * Velocity);
-            Velocity += accel * h;
-            Position += Velocity * h;
+            return;
         }
 
+        var x0 = Position - Target;
+        var v0 = Velocity;
+        var w = _omega;
+        double x;
+        double v;
+        if (_zeta >= 0.9999)
+        {
+            var e = Math.Exp(-w * dt);
+            var k = v0 + (w * x0);
+            x = (x0 + (k * dt)) * e;
+            v = (v0 - (w * k * dt)) * e;
+        }
+        else
+        {
+            var wd = w * Math.Sqrt(1 - (_zeta * _zeta));
+            var zw = _zeta * w;
+            var e = Math.Exp(-zw * dt);
+            var c = (v0 + (zw * x0)) / wd;
+            var cos = Math.Cos(wd * dt);
+            var sin = Math.Sin(wd * dt);
+            x = e * ((x0 * cos) + (c * sin));
+            v = e * (((c * wd) - (zw * x0)) * cos - (((x0 * wd) + (zw * c)) * sin));
+        }
+
+        Position = Target + x;
+        Velocity = v;
         if (Settled)
         {
             Position = Target;
@@ -127,7 +184,7 @@ internal static class D
             VerticalAlignment = VerticalAlignment.Center,
         };
         TextOptions.SetTextRenderingMode(t, TextRenderingMode.Auto);
-        return t;
+        return GlyphBlock.Realize(t);
     }
 
     public static Brush Tint(Color c, double alpha = 1) => Frozen(Color.FromArgb((byte)(alpha * 255), c.R, c.G, c.B));

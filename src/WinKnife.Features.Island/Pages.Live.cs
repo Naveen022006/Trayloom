@@ -13,6 +13,7 @@ using Windows.Graphics.Imaging;
 using Windows.Media.Capture;
 using Windows.Media.Capture.Frames;
 using WinKnife.Core;
+using WinKnife.Core.Ui;
 
 namespace WinKnife.Features.Island;
 
@@ -96,8 +97,7 @@ internal sealed class NotificationsPage : IslandPage
             wrap.Children.Add(Card(n, cardH));
         }
 
-        var sc = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = wrap };
-        sc.PreviewMouseWheel += (a, e) => { sc.ScrollToHorizontalOffset(sc.HorizontalOffset - e.Delta); e.Handled = true; };
+        var sc = PageUi.HScroll(wrap);
         _view.Children.Add(sc);
     }
 
@@ -739,8 +739,7 @@ internal sealed class CapturesPage : IslandPage
             wrap.Children.Add(b);
         }
 
-        var sc = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = wrap };
-        sc.PreviewMouseWheel += (s, e) => { sc.ScrollToHorizontalOffset(sc.HorizontalOffset - e.Delta); e.Handled = true; };
+        var sc = PageUi.HScroll(wrap);
         _view.Children.Add(sc);
     }
 }

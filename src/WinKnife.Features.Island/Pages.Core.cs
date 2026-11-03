@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using WinKnife.Core;
+using WinKnife.Core.Ui;
 
 namespace WinKnife.Features.Island;
 
@@ -74,7 +75,7 @@ internal sealed class ExplorePage : IslandPage
     private const double Gap = 8;
 
     private readonly Grid _view = new();
-    private readonly ScrollViewer _scroll = new() { VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+    private readonly SmoothScrollViewer _scroll = new() { VerticalScrollBarVisibility = ScrollBarVisibility.Hidden };
     private readonly WrapPanel _wrap = new() { Orientation = Orientation.Horizontal };
     private readonly TextBox _search = PageUi.FlatTextBox(12);
     private readonly StackPanel _leading = new() { Orientation = Orientation.Horizontal };
@@ -178,7 +179,7 @@ internal sealed class ExplorePage : IslandPage
                 BorderThickness = new Thickness(1),
             };
             var stack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-            var tint = m.Id switch { "music" => (Brush)D.Frozen(Color.FromRgb(0xFF, 0x37, 0x5F)), "calendar" => D.Red, "timer" => D.Orange, _ => D.White(0.85) };
+            var tint = m.Id switch { "music" => (Brush)D.Frozen(Color.FromRgb(0xFF, 0x37, 0x5F)), "calendar" => D.Red, "timer" => D.Orange, "agents" => (Brush)D.Frozen(WinKnife.Core.Ui.ClaudeMark.Orange), _ => D.White(0.85) };
             var icon = D.I(m.Glyph, 22, tint);
             icon.FontWeight = FontWeights.Medium;
             icon.Margin = new Thickness(0, 0, 0, 6);
@@ -229,22 +230,29 @@ internal sealed class ExplorePage : IslandPage
         return shown * (TileH + Gap) - Gap;
     }
 
-    public override void Shown() => ScrollToHighlight();
+    public override void Shown()
+    {
+        // laid out first so the offset is not clamped to an unmeasured extent; opening lands there without gliding
+        _scroll.UpdateLayout();
+        ScrollToHighlight(animate: false);
+    }
 
-    private void ScrollToHighlight()
+    private void ScrollToHighlight(bool animate = true)
     {
         var row = _highlight / Math.Max(1, _columns);
         var top = row * (TileH + Gap);
-        _scroll.ScrollToVerticalOffset(Math.Max(0, Math.Min(top, (Math.Ceiling(_tiles.Count / (double)_columns) - _visibleRows) * (TileH + Gap))));
+        var offset = Math.Max(0, Math.Min(top, (Math.Ceiling(_tiles.Count / (double)_columns) - _visibleRows) * (TileH + Gap)));
+        SmoothScroll.ScrollTo(_scroll, offset, animate);
     }
 
+    /// <summary>The wheel steps whole rows (spec 7.11), each step gliding to its row; steps accumulate when the wheel spins fast.</summary>
     private void OnWheel(object sender, MouseWheelEventArgs e)
     {
         var rows = (int)Math.Ceiling(_tiles.Count / (double)_columns);
         var maxTop = Math.Max(0, rows - _visibleRows);
-        var cur = (int)Math.Round(_scroll.VerticalOffset / (TileH + Gap));
+        var cur = (int)Math.Round(_scroll.ScrollTarget / (TileH + Gap));
         cur = Math.Clamp(cur + (e.Delta > 0 ? -1 : 1), 0, maxTop);
-        _scroll.ScrollToVerticalOffset(cur * (TileH + Gap));
+        SmoothScroll.ScrollTo(_scroll, cur * (TileH + Gap));
         e.Handled = true;
     }
 

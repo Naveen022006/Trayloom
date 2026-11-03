@@ -420,7 +420,7 @@ internal sealed partial class IslandWindow
         if (Math.Abs(_surface.Alpha - target) > 0.01)
         {
             _surface.Alpha = target;
-            _closedHost.Opacity = _mode == IslandMode.Closed ? target : _closedHost.Opacity;
+            _closedHost.Opacity = _mode == IslandMode.Closed && _choreo == Choreo.None && _fadeIn is null ? target : _closedHost.Opacity;
             _surface.InvalidateVisual();
             ClickThrough = hidden;
         }
@@ -644,6 +644,24 @@ internal sealed partial class IslandWindow
         if (!_keyFocus && Expanded)
         {
             SetKeyFocus(true);
+        }
+    }
+
+    /// <summary>Whether the island currently holds the keyboard focus (it is activated).</summary>
+    internal bool KeyboardActive => _keyFocus;
+
+    /// <summary>Gives the keyboard back (the island becomes non-activating again) and returns to the window the user was in.</summary>
+    internal void ReleaseKeyboard()
+    {
+        if (!_keyFocus)
+        {
+            return;
+        }
+
+        SetKeyFocus(false);
+        if (_prevForeground != 0 && _prevForeground != Handle && WinKnife.Core.Native.NativeMethods.GetForegroundWindow() == Handle)
+        {
+            WinKnife.Core.Native.NativeMethods.SetForegroundWindow(_prevForeground);
         }
     }
 
@@ -935,7 +953,7 @@ internal sealed partial class IslandWindow
             el.RenderTransformOrigin = new Point(0.5, 0.5);
             el.RenderTransform = st;
             el.Opacity = 0;
-            var delay = TimeSpan.FromMilliseconds(40 * i++);
+            var delay = TimeSpan.FromMilliseconds(110 + (40 * i++));
             var ease = new DoubleAnimation(1, TimeSpan.FromMilliseconds(380)) { BeginTime = delay, EasingFunction = new BackEase { Amplitude = 0.25, EasingMode = EasingMode.EaseOut } };
             st.BeginAnimation(ScaleTransform.ScaleXProperty, ease);
             st.BeginAnimation(ScaleTransform.ScaleYProperty, ease);

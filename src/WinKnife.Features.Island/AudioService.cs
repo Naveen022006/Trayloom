@@ -415,6 +415,8 @@ internal sealed class AudioService : IDisposable
     // ---------------------------------------------------------------- app sessions
 
     /// <summary>Audio sessions of the default output merged by executable.</summary>
+    private readonly Dictionary<int, (string Key, string Name, string? Path, long At)> _identity = [];
+
     public List<AppAudio> Apps()
     {
         var result = new Dictionary<string, AppAudio>(StringComparer.OrdinalIgnoreCase);
@@ -439,31 +441,42 @@ internal sealed class AudioService : IDisposable
                     var pid = (int)s.GetProcessID;
                     string key, name;
                     string? path = null;
-                    try
+                    var stamp = Environment.TickCount64;
+                    if (_identity.TryGetValue(pid, out var known) && stamp - known.At < 60_000)
                     {
-                        using var p = Process.GetProcessById(pid);
-                        path = p.MainModule?.FileName;
-                        name = p.ProcessName;
-                        key = path ?? name;
-                        if (!string.IsNullOrEmpty(path))
+                        // process lookups (module path, file version) cost milliseconds per session: remembered per pid
+                        (key, name, path) = (known.Key, known.Name, known.Path);
+                    }
+                    else
+                    {
+                        try
                         {
-                            try
+                            using var p = Process.GetProcessById(pid);
+                            path = p.MainModule?.FileName;
+                            name = p.ProcessName;
+                            key = path ?? name;
+                            if (!string.IsNullOrEmpty(path))
                             {
-                                var desc = FileVersionInfo.GetVersionInfo(path).FileDescription;
-                                if (!string.IsNullOrWhiteSpace(desc))
+                                try
                                 {
-                                    name = desc;
+                                    var desc = FileVersionInfo.GetVersionInfo(path).FileDescription;
+                                    if (!string.IsNullOrWhiteSpace(desc))
+                                    {
+                                        name = desc;
+                                    }
+                                }
+                                catch
+                                {
                                 }
                             }
-                            catch
-                            {
-                            }
                         }
-                    }
-                    catch
-                    {
-                        key = s.GetSessionIdentifier ?? ("pid" + pid);
-                        name = string.IsNullOrWhiteSpace(s.DisplayName) ? key : s.DisplayName;
+                        catch
+                        {
+                            key = s.GetSessionIdentifier ?? ("pid" + pid);
+                            name = string.IsNullOrWhiteSpace(s.DisplayName) ? key : s.DisplayName;
+                        }
+
+                        _identity[pid] = (key, name, path, stamp);
                     }
 
                     if (!result.TryGetValue(key, out var app))
@@ -568,23 +581,75 @@ internal static class BrightnessService
 {
     private static readonly object Gate = new();
     private static bool? _available;
+    private static int _probing;
     private static double? _pending;
     private static bool _writing;
 
-    public static bool Available => _available ??= Read() is not null;
+    /// <summary>
+    /// Whether the built-in panel can be controlled. The answer comes from a background check (WMI must not be called on the
+    /// island's UI thread: COM refuses calls made while a window message is being handled), and only a check that ran and found
+    /// no panel says "no"; a failed check is retried. Until the first answer the slider is offered.
+    /// </summary>
+    public static bool Available
+    {
+        get
+        {
+            if (_available is null)
+            {
+                Probe();
+            }
+
+            return _available ?? true;
+        }
+    }
+
+    /// <summary>Raised (on a worker thread) when the background check changes the answer.</summary>
+    public static event Action? AvailabilityChanged;
+
+    public static void Probe()
+    {
+        if (Interlocked.Exchange(ref _probing, 1) == 1)
+        {
+            return;
+        }
+
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                double? level = null;
+                var ran = ForEach("SELECT CurrentBrightness FROM WmiMonitorBrightness WHERE Active=TRUE", item => level ??= Level(item));
+                bool? answer = ran ? level is not null : null;
+                if (answer is not null && answer != _available)
+                {
+                    _available = answer;
+                    AvailabilityChanged?.Invoke();
+                }
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _probing, 0);
+            }
+        });
+    }
 
     public static double? Read()
     {
         double? result = null;
-        ForEach("SELECT CurrentBrightness FROM WmiMonitorBrightness WHERE Active=TRUE", item =>
+        var ran = ForEach("SELECT CurrentBrightness FROM WmiMonitorBrightness WHERE Active=TRUE", item => result ??= Level(item));
+        if (ran && _available != (result is not null))
         {
-            if (result is null)
-            {
-                dynamic d = item;
-                result = Convert.ToInt32(d.Properties_.Item("CurrentBrightness").Value, System.Globalization.CultureInfo.InvariantCulture) / 100.0;
-            }
-        });
+            _available = result is not null;
+            AvailabilityChanged?.Invoke();
+        }
+
         return result;
+    }
+
+    private static double Level(object item)
+    {
+        dynamic d = item;
+        return Convert.ToInt32(d.Properties_.Item("CurrentBrightness").Value, System.Globalization.CultureInfo.InvariantCulture) / 100.0;
     }
 
     /// <summary>Sets the level off the UI thread; while a write runs, only the newest requested level is kept (dragging stays smooth).</summary>
@@ -625,7 +690,8 @@ internal static class BrightnessService
         });
     }
 
-    private static void ForEach(string query, Action<object> action)
+    /// <summary>Runs the query and calls <paramref name="action"/> per object; false when WMI could not be asked.</summary>
+    private static bool ForEach(string query, Action<object> action)
     {
         object? locator = null;
         object? service = null;
@@ -635,7 +701,7 @@ internal static class BrightnessService
             var type = Type.GetTypeFromProgID("WbemScripting.SWbemLocator");
             if (type is null)
             {
-                return;
+                return false;
             }
 
             locator = Activator.CreateInstance(type);
@@ -655,7 +721,8 @@ internal static class BrightnessService
         }
         catch
         {
-            // No panel, WMI unavailable or access denied.
+            // WMI unavailable, access denied, or the call was refused for now.
+            return false;
         }
         finally
         {
@@ -663,6 +730,8 @@ internal static class BrightnessService
             Release(service);
             Release(locator);
         }
+
+        return true;
     }
 
     private static void Release(object? o)

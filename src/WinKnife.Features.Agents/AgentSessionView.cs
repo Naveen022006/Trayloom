@@ -49,7 +49,10 @@ internal static class AgentSessionCard
         }
 
         var body = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Top };
-        body.Children.Add(AgentCardViews.Header(AgentStrings.LiveCard, AgentCard.Live.Glyph(), waiting > 0 ? AgentColors.Orange : sessions.Count > 0 ? sessions[0].Provider.Tint() : null, null, accessory));
+        FrameworkElement? claudeMark = sessions.Any(s => s.Provider == AgentProvider.Claude)
+            ? new AgentGlyph(AgentProvider.Claude, 8, sessions.Any(s => s.Provider == AgentProvider.Claude && s.State == AgentSessionState.Working)) { HorizontalAlignment = HorizontalAlignment.Center }
+            : null;
+        body.Children.Add(AgentCardViews.Header(AgentStrings.LiveCard, AgentCard.Live.Glyph(), waiting > 0 ? AgentColors.Orange : sessions.Count > 0 ? sessions[0].Provider.Tint() : null, null, accessory, claudeMark));
         var rows = new StackPanel { Margin = new Thickness(0, 7, 0, 0) };
         var clocks = new List<(TextBlock Block, DateTime Started, string Prefix)>();
         if (sessions.Count == 0)
@@ -223,7 +226,7 @@ public sealed class AgentAttentionView : StackPanel
         VerticalAlignment = VerticalAlignment.Center;
         var amber = AgentColors.Orange;
         Children.Add(new AgentPulse(amber, 5) { Margin = new Thickness(0, 0, 2, 0) });
-        Children.Add(new AgentGlyph(attention.Provider, 11, true));
+        Children.Add(new AgentGlyph(attention.Provider, 11, true, spin: false));
         var title = AU.Text(attention.Title, 11, FontWeights.Medium, AgentColors.Primary, TextTrimming.CharacterEllipsis, false, true);
         title.Margin = new Thickness(4, 0, 8, 0);
         title.MaxWidth = 160;

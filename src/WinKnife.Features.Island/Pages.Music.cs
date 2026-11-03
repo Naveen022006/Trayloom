@@ -149,6 +149,7 @@ internal enum MusicExtra
     None,
     Lyrics,
     Queue,
+    Library,
 }
 
 internal sealed class MusicPage : IslandPage
@@ -160,23 +161,38 @@ internal sealed class MusicPage : IslandPage
     private readonly StackPanel _trailing = new() { Orientation = Orientation.Horizontal };
     private readonly DispatcherTimer _poll = new(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(250) };
     private LyricsView? _lyrics;
+    private LibraryPanel? _library;
+    private double _extraHeight = 216;
+
+    // The page is rebuilt whenever the track changes: the Apple Music library panel is carried over to the new instance.
+    private static (MusicExtra Extra, DateTime At)? s_carry;
 
     public MusicPage(IslandCore core, IslandWindow? window)
         : base(core, window)
     {
+        if (s_carry is { Extra: MusicExtra.Library } carry && (DateTime.UtcNow - carry.At).TotalSeconds < 3 && Core.AppleMusic.Available)
+        {
+            _extra = MusicExtra.Library;
+        }
+
+        s_carry = null;
     }
 
     public override string ModuleId => "music";
 
     public override FrameworkElement View => _view;
 
-    public override double? NaturalWidth => 344;
+    public override double? NaturalWidth => _extra == MusicExtra.Library ? 400 : 344;
 
+    // The Library search box asks the island for the keyboard itself, and only while it is focused.
     public override bool WantsKeyboard => false;
 
     public override FrameworkElement? Trailing => null;
 
     public override bool GrowsBeyondBudget => _extra != MusicExtra.None;
+
+    // the Library list scrolls with the wheel (the island's own wheel gestures leave it alone)
+    public override bool ScrollsContent => _extra == MusicExtra.Library;
 
     private bool LyricsOn => Core.App.Get<bool>(K.LyricsEnabled) && Core.Ctx.Runtime.IsAvailable("notch-lyrics");
 
@@ -184,17 +200,18 @@ internal sealed class MusicPage : IslandPage
 
     public override double Height(double width, double budget)
     {
-        _width = Math.Min(344, width);
+        _width = Math.Min(NaturalWidth ?? 344, width);
         var p = Core.Playback.Current;
-        var h = (p.Duration > 0 ? 56 + 14 + 14 + 10 + 44 + 8 : 56 + 14 + 44 + 8);
+        double h = (p.Duration > 0 ? 56 + 14 + 14 + 10 + 44 + 8 : 56 + 14 + 44 + 8);
         if (Core.App.Get<bool>(K.MusicShowVolume) && Core.ModuleVisible("mixer"))
         {
             h += 38;
         }
 
+        _extraHeight = _extra == MusicExtra.Library ? Math.Clamp(budget - h - 10, 200, 330) : 216;
         if (_extra != MusicExtra.None)
         {
-            h += 10 + 216;
+            h += 10 + _extraHeight;
         }
 
         Build();
@@ -218,6 +235,11 @@ internal sealed class MusicPage : IslandPage
 
     public override bool StepBack()
     {
+        if (_extra == MusicExtra.Library && _library?.StepBack() == true)
+        {
+            return true;
+        }
+
         if (_extra == MusicExtra.None)
         {
             return false;
@@ -237,10 +259,7 @@ internal sealed class MusicPage : IslandPage
             var hadTimeline = _hadTimeline;
             if ((p.Duration > 0) != hadTimeline || p.Identity != _identity || p.IsPlaying != _wasPlaying)
             {
-                if (HasWindow)
-                {
-                    Window.ReopenPage();
-                }
+                Reopen();
             }
         });
     }
@@ -257,10 +276,18 @@ internal sealed class MusicPage : IslandPage
             Core.Lyrics.Ensure(Core.Playback.Current);
         }
 
-        if (HasWindow)
+        Reopen();
+    }
+
+    private void Reopen()
+    {
+        if (!HasWindow)
         {
-            Window.ReopenPage();
+            return;
         }
+
+        s_carry = (_extra, DateTime.UtcNow);
+        Window.ReopenPage();
     }
 
     private void Build()
@@ -292,8 +319,13 @@ internal sealed class MusicPage : IslandPage
 
         if (_extra != MusicExtra.None)
         {
-            _extraView = _extra == MusicExtra.Lyrics ? (_lyrics = new LyricsView(Core, () => HasWindow ? Window.HoldOpen() : null)) : BuildQueue(preferred);
-            var holder = new Grid { Height = 216, ClipToBounds = true, Margin = new Thickness(0, 10, 0, 0) };
+            _extraView = _extra switch
+            {
+                MusicExtra.Lyrics => _lyrics = new LyricsView(Core, () => HasWindow ? Window.HoldOpen() : null),
+                MusicExtra.Library => _library = new LibraryPanel(Core, () => HasWindow ? Window.HoldOpen() : null, () => { if (HasWindow) { Window.EnsureKeyboard(); } }, () => { if (HasWindow) { Window.ReleaseKeyboard(); } }, () => HasWindow && Window.KeyboardActive),
+                _ => BuildQueue(preferred),
+            };
+            var holder = new Grid { Height = _extraHeight, ClipToBounds = true, Margin = new Thickness(0, 10, 0, 0) };
             holder.Children.Add(_extraView);
             stack.Children.Add(holder);
         }
@@ -342,16 +374,30 @@ internal sealed class MusicPage : IslandPage
         // right cluster: toggles + source + bars
         var cluster = new StackPanel { VerticalAlignment = VerticalAlignment.Stretch, HorizontalAlignment = HorizontalAlignment.Right };
         var top = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Height = 28 };
+        void Toggle(string glyph, string title, MusicExtra extra)
+        {
+            var b = D.IconButton(glyph, title, () => SetExtra(extra), _extra == extra);
+            if (top.Children.Count > 0)
+            {
+                b.Margin = new Thickness(6, 0, 0, 0);
+            }
+
+            top.Children.Add(b);
+        }
+
+        if (Core.AppleMusic.Available)
+        {
+            Toggle(G.MusicLibrary, LibStrings.Library, MusicExtra.Library);
+        }
+
         if (LyricsOn)
         {
-            top.Children.Add(D.IconButton(G.Lyrics, Strings.Lyrics, () => SetExtra(MusicExtra.Lyrics), _extra == MusicExtra.Lyrics));
+            Toggle(G.Lyrics, Strings.Lyrics, MusicExtra.Lyrics);
         }
 
         if (QueueOn)
         {
-            var q = D.IconButton(G.List, Strings.Queue, () => SetExtra(MusicExtra.Queue), _extra == MusicExtra.Queue);
-            q.Margin = new Thickness(6, 0, 0, 0);
-            top.Children.Add(q);
+            Toggle(G.List, Strings.Queue, MusicExtra.Queue);
         }
 
         cluster.Children.Add(top);
@@ -496,6 +542,11 @@ internal sealed class MusicPage : IslandPage
 
     private FrameworkElement BuildQueue(string? preferred)
     {
+        if (Core.AppleMusic.Available && Core.Playback.Current.Aumid.Contains("AppleMusic", StringComparison.OrdinalIgnoreCase))
+        {
+            return new AppleQueueView(Core);
+        }
+
         var grid = new Grid { Margin = new Thickness(0, 6, 0, 0) };
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });

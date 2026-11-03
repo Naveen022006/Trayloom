@@ -111,6 +111,7 @@ internal sealed class IslandCore : IDisposable
         Accessories = new AccessoryService(this);
         Mascot = new MascotService(this);
         Lyrics = new LyricsService(this);
+        AppleMusic = new AppleMusicService(this);
         Sources = new NoticeSources(this);
         Current = this;
     }
@@ -150,6 +151,8 @@ internal sealed class IslandCore : IDisposable
     public MascotService Mascot { get; }
 
     public LyricsService Lyrics { get; }
+
+    public AppleMusicService AppleMusic { get; }
 
     public NoticeSources Sources { get; }
 
@@ -477,7 +480,7 @@ internal sealed class IslandCore : IDisposable
                 continue;
             }
 
-            ShowNotice(new Notice { Event = NoticeEvents.AgentsAttention, Element = attention, Glyph = G.Sparkle, Title = "attention", Detail = Guid.NewGuid().ToString("N"), OnClick = attention.Tag as Action, Banner = false });
+            ShowNotice(new Notice { Event = NoticeEvents.AgentsAttention, Element = attention, Glyph = G.Claude, Title = "attention", Detail = Guid.NewGuid().ToString("N"), OnClick = attention.Tag as Action, Banner = false });
         }
 
         foreach (var s in Ctx.Island.Strips.Where(x => x.Id.EndsWith(".notice", StringComparison.Ordinal)).ToList())
@@ -495,7 +498,7 @@ internal sealed class IslandCore : IDisposable
             }
 
             _lastExternalNotice = DateTime.UtcNow;
-            ShowNotice(new Notice { Event = NoticeEvents.Agents, Element = el, Glyph = G.Sparkle, Title = "" });
+            ShowNotice(new Notice { Event = NoticeEvents.Agents, Element = el, Glyph = G.Claude, Title = "" });
         }
     }
 
@@ -597,6 +600,7 @@ internal sealed class IslandCore : IDisposable
         EqBars.LiveSource = null;
         Levels.Dispose();
         Playback.Dispose();
+        AppleMusic.Dispose();
         Audio.Dispose();
         Timer.Dispose();
         Calendar.Dispose();

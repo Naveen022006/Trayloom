@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // WinKnife — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
 
-using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -35,14 +34,19 @@ internal sealed partial class IslandWindow : OverlayWindow
     private readonly IslandCore _core;
     private readonly Canvas _stage = new() { ClipToBounds = false };
     private readonly IslandSurface _surface = new();
+    private readonly Canvas _clipLayer = new() { ClipToBounds = false };
     private readonly Grid _closedHost = new() { ClipToBounds = false };
     private readonly Grid _openHost = new() { ClipToBounds = false, Opacity = 0, IsHitTestVisible = false };
     private readonly Canvas _quick = new();
     private readonly Spring _sw = new(0.44, 0.25, 109);
     private readonly Spring _sh = new(0.38, 0.22, 24);
-    private readonly Stopwatch _clock = new();
-    private double _lastTick;
+    private readonly ScaleTransform _openScale = new(1, 1);
+    private TimeSpan _lastRender;
+    private bool _firstFrame;
     private bool _rendering;
+    private bool? _capsuleCache;
+    private bool? _outlineCache;
+    private bool? _translucentCache;
 
     private MonitorArea _area;
     private double _scale = 1;
@@ -74,12 +78,13 @@ internal sealed partial class IslandWindow : OverlayWindow
         UseLayoutRounding = false;
         SnapsToDevicePixels = false;
         _stage.Children.Add(_surface);
-        _stage.Children.Add(_closedHost);
-        _stage.Children.Add(_openHost);
+        // both content layers share one clip: the live silhouette, so content never shows outside the growing shape
+        _clipLayer.Children.Add(_closedHost);
+        _clipLayer.Children.Add(_openHost);
+        _stage.Children.Add(_clipLayer);
         _stage.Children.Add(_quick);
-        _surface.GeometryChanged += () => { };
+        _openHost.RenderTransformOrigin = new Point(0.5, 0);
         AllowDrop = true;
-        _clock.Start();
         InitInput();
         core.Window = this;
     }
@@ -98,7 +103,19 @@ internal sealed partial class IslandWindow : OverlayWindow
 
     public bool Exploring => _exploring;
 
-    public bool IsCapsule => _core.App.Get<string>(K.Silhouette) != "notch";
+    public bool IsCapsule => _capsuleCache ??= _core.App.Get<string>(K.Silhouette) != "notch";
+
+    private bool OutlineOn => _outlineCache ??= _core.App.Get<bool>(K.Outline);
+
+    private bool TranslucentOn => _translucentCache ??= _core.App.Get<bool>(K.Translucent);
+
+    /// <summary>Settings that shape the silhouette are read once, not on every animation frame.</summary>
+    private void InvalidateStyleCache()
+    {
+        _capsuleCache = null;
+        _outlineCache = null;
+        _translucentCache = null;
+    }
 
     internal MonitorArea Area => _area;
 
@@ -162,8 +179,10 @@ internal sealed partial class IslandWindow : OverlayWindow
         var gx = GuttersWanted ? SideGutter : 0;
         var gb = GuttersWanted && _layout.On(QuickSide.Bottom).Any() ? SideGutter : 0;
         var emph = _hoverEmphasis ? 24 : 0;
-        _winW = Math.Min(ScreenWidthDip, Math.Max(Math.Max(_sw.Position, _sw.Target), 20) + (2 * gx) + emph + 4);
-        _winH = Math.Max(Math.Max(_sh.Position, _sh.Target), 8) + SurfaceTop + gb + 10;
+        // the window is the envelope of the transition (target plus the allowed swing), sized once before the first frame
+        var swing = _shrinkPending ? OvershootLimit : 0;
+        _winW = Math.Min(ScreenWidthDip, Math.Max(Math.Max(_sw.Position, _sw.Target) + swing, 20) + (2 * gx) + emph + 4);
+        _winH = Math.Max(Math.Max(_sh.Position, _sh.Target) + swing, 8) + SurfaceTop + gb + 10;
         if (_mode == IslandMode.Open || _shrinkPending)
         {
             _winH += 4;
@@ -211,6 +230,8 @@ internal sealed partial class IslandWindow : OverlayWindow
         _surface.Height = _winH;
         Canvas.SetLeft(_surface, 0);
         Canvas.SetTop(_surface, 0);
+        _clipLayer.Width = _winW;
+        _clipLayer.Height = _winH;
         _quick.Width = _winW;
         _quick.Height = _winH;
         PositionQuick();
@@ -219,21 +240,65 @@ internal sealed partial class IslandWindow : OverlayWindow
 
     // ---------------------------------------------------------------- spring animation
 
-    internal void SetTarget(double w, double h, bool snap = false)
+    /// <summary>The farthest a side may pass its target (the display keeps this much free around the island).</summary>
+    private const double OvershootLimit = 12;
+
+    /// <summary>
+    /// Points the silhouette at a size. Each side follows its own spring as in the macOS original (growing: 0.44 / 0.38 s with a
+    /// small swing, shrinking: 0.30 / 0.26 s with none; a strip that only fits a new reading eases 0.5 s without a swing).
+    /// The window is resized here, once, to the envelope of the move; the frames only move numbers of the live shape.
+    /// </summary>
+    internal void SetTarget(double w, double h, bool snap = false, bool steady = false)
     {
         w = Math.Round(w);
         h = Math.Round(h);
+        if (!snap && !_rendering && Math.Abs(_sw.Target - w) < 0.5 && Math.Abs(_sh.Target - h) < 0.5 && _sw.Settled && _sh.Settled)
+        {
+            // a refresh that changed nothing (a timer tick, a playback update): no window resize, no frame loop
+            return;
+        }
+
         if (snap || D.ReduceMotion)
         {
             _sw.Snap(w);
             _sh.Snap(h);
+        }
+        else
+        {
+            ConfigureSide(_sw, w, width: true, steady);
+            ConfigureSide(_sh, h, width: false, steady);
         }
 
         _sw.Target = w;
         _sh.Target = h;
         _shrinkPending = true;
         ApplyWindow();
+        UpdateSurface();
         StartRendering();
+    }
+
+    private static void ConfigureSide(Spring s, double target, bool width, bool steady)
+    {
+        var grow = target > s.Position;
+        double duration;
+        double bounce;
+        if (steady && width)
+        {
+            duration = 0.5;
+            bounce = 0;
+        }
+        else if (grow)
+        {
+            duration = width ? 0.44 : 0.38;
+            bounce = Spring.LimitedBounce(width ? 0.25 : 0.22, Math.Abs(target - s.Position), OvershootLimit);
+        }
+        else
+        {
+            duration = width ? 0.30 : 0.26;
+            bounce = 0;
+        }
+
+        s.Configure(duration, bounce);
     }
 
     private void StartRendering()
@@ -243,56 +308,64 @@ internal sealed partial class IslandWindow : OverlayWindow
             return;
         }
 
+        // time starts at the first frame after the move was requested, so the page build and its layout never eat into the animation
         _rendering = true;
-        _lastTick = _clock.Elapsed.TotalSeconds;
+        _firstFrame = true;
         CompositionTarget.Rendering += OnRendering;
+    }
+
+    private void StopRendering()
+    {
+        if (!_rendering)
+        {
+            return;
+        }
+
+        CompositionTarget.Rendering -= OnRendering;
+        _rendering = false;
     }
 
     private void OnRendering(object? sender, EventArgs e)
     {
-        var now = _clock.Elapsed.TotalSeconds;
-        var dt = Math.Min(0.05, Math.Max(0.001, now - _lastTick));
-        _lastTick = now;
-        // direction dependent spring character (growing springs bounce, shrinking ones do not)
-        StepDir(_sw, dt, 0.44, 0.25, 0.30, 0);
-        StepDir(_sh, dt, 0.38, 0.22, 0.26, 0);
+        var now = e is RenderingEventArgs ra ? ra.RenderingTime : TimeSpan.Zero;
+        double dt;
+        if (_firstFrame)
+        {
+            _firstFrame = false;
+            dt = 0;
+        }
+        else
+        {
+            dt = (now - _lastRender).TotalSeconds;
+            if (dt <= 0)
+            {
+                // the same composition frame reported twice
+                return;
+            }
+
+            dt = Math.Min(dt, 0.25);
+        }
+
+        _lastRender = now;
+        _sw.Step(dt);
+        _sh.Step(dt);
+        var choreoDone = StepChoreography(dt);
         UpdateSurface();
         var settled = _sw.Settled && _sh.Settled;
-        var needGrow = _sw.Position > _winW - ((GuttersWanted ? 2 * SideGutter : 0) + 8) || _sh.Position + SurfaceTop > _winH - 4;
-        if (needGrow)
+        if (_sw.Position > _winW - ((GuttersWanted ? 2 * SideGutter : 0) + 4) || _sh.Position + SurfaceTop > _winH - 2)
         {
+            // only a retarget in flight can get here (the envelope covers a normal swing)
             ApplyWindow();
         }
 
-        if (settled)
+        if (settled && choreoDone)
         {
-            CompositionTarget.Rendering -= OnRendering;
-            _rendering = false;
+            StopRendering();
             _shrinkPending = false;
+            FinishChoreography();
             ApplyWindow();
             OnSettled();
         }
-    }
-
-    private static void StepDir(Spring s, double dt, double growDur, double growBounce, double shrinkDur, double shrinkBounce)
-    {
-        var grow = s.Target >= s.Position;
-        var tmp = grow ? new Spring(growDur, growBounce) : new Spring(shrinkDur, shrinkBounce);
-        tmp.Position = s.Position;
-        tmp.Velocity = s.Velocity;
-        tmp.Target = s.Target;
-        tmp.Step(dt);
-        // overshoot is limited to 12 DIP
-        var limit = 12.0;
-        var pos = tmp.Position;
-        if (grow && pos > tmp.Target + limit)
-        {
-            pos = tmp.Target + limit;
-            tmp.Velocity = Math.Min(tmp.Velocity, 0);
-        }
-
-        s.Position = pos;
-        s.Velocity = tmp.Velocity;
     }
 
     private void UpdateSurface()
@@ -301,21 +374,13 @@ internal sealed partial class IslandWindow : OverlayWindow
         var h = Math.Max(0, _sh.Position);
         _surface.Capsule = IsCapsule;
         _surface.Open = _mode == IslandMode.Open || h > 60;
-        _surface.Outline = _core.App.Get<bool>(K.Outline);
-        _surface.Translucent = _core.App.Get<bool>(K.Translucent);
-        var x = (_winW - w) / 2;
-        _surface.Set(x, SurfaceTop, w, h);
-        ClipHost(_closedHost, x, w, h);
-        ClipHost(_openHost, x, w, h);
-        var emphasis = _hoverEmphasis ? 1 : 0;
-        _ = emphasis;
-    }
-
-    private void ClipHost(Grid host, double surfaceX, double w, double h)
-    {
-        var hostX = (_winW - host.Width) / 2;
-        var geo = IslandSurface.Build(surfaceX - hostX, 0, w, h, IsCapsule, _surface.Open);
-        host.Clip = geo;
+        _surface.Outline = OutlineOn;
+        _surface.Translucent = TranslucentOn;
+        _surface.Set((_winW - w) / 2, SurfaceTop, w, h);
+        if (!ReferenceEquals(_clipLayer.Clip, _surface.CurrentGeometry))
+        {
+            _clipLayer.Clip = _surface.CurrentGeometry;
+        }
     }
 
     private void OnSettled()

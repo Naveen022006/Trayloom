@@ -195,6 +195,17 @@ internal sealed class ControlsPage : IslandPage
         Compute();
     }
 
+    /// <summary>The background panel check finished with a different answer: rebuild so the brightness slider appears or goes.</summary>
+    private void OnBrightnessAvailability() => _view.Dispatcher.BeginInvoke(() =>
+    {
+        var before = _levels.Contains("brightness");
+        Compute();
+        if (before != _levels.Contains("brightness") && HasWindow && !IsPreview)
+        {
+            Window.ReopenPage();
+        }
+    });
+
     public override string ModuleId => "controls";
 
     public override FrameworkElement View => _view;
@@ -222,10 +233,25 @@ internal sealed class ControlsPage : IslandPage
             "timer" => Core.ModuleVisible("timer"),
             "calendar" => Core.ModuleVisible("calendar"),
             "speedTest" => Core.ModuleVisible("system") && rt.IsAvailable("monitor-network"),
-            "brightness" => rt.IsAvailable("brightness") && BrightnessService.Available,
+            "brightness" => BrightnessVisible(rt),
             "keyboardLight" => false,
             _ => true,
         };
+    }
+
+    private static bool _brightnessLogged;
+
+    private bool BrightnessVisible(IFeatureRuntime rt)
+    {
+        var installed = rt.IsAvailable("brightness");
+        var panel = BrightnessService.Available;
+        if (!(installed && panel) && !_brightnessLogged)
+        {
+            _brightnessLogged = true;
+            Core.Ctx.Log.Info($"Island brightness slider hidden: feature installed={installed}, panel controllable={panel}");
+        }
+
+        return installed && panel;
     }
 
     private void Compute()
@@ -368,6 +394,7 @@ internal sealed class ControlsPage : IslandPage
 
     public override void Shown()
     {
+        BrightnessService.AvailabilityChanged += OnBrightnessAvailability;
         Core.Timer.Ticked += Refresh;
         Core.Timer.Changed += Refresh;
         Core.Audio.MicChanged += Refresh;
@@ -379,6 +406,7 @@ internal sealed class ControlsPage : IslandPage
 
     public override void Hidden()
     {
+        BrightnessService.AvailabilityChanged -= OnBrightnessAvailability;
         Core.Timer.Ticked -= Refresh;
         Core.Timer.Changed -= Refresh;
         Core.Audio.MicChanged -= Refresh;

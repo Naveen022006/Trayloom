@@ -268,7 +268,7 @@ internal static class SettingsTabs
         choices.Add(RestChoice(Loc.T("Music"), G.Music, "music", marked == "music", current == "music", core is not null && !core.ModuleVisible("music") ? Loc.T("Show “Now Playing” on the Content tab.") : null, () => Pick("music")));
         if (core?.ModuleVisible("agents") == true || current == "agents")
         {
-            choices.Add(RestChoice(Loc.T("AI limits"), G.Sparkle, "agents", marked == "agents", current == "agents", core is not null && !core.ModuleVisible("agents") ? Loc.T("Show “AI Agents” on the Content tab.") : null, () => Pick("agents")));
+            choices.Add(RestChoice(Loc.T("AI limits"), G.Claude, "agents", marked == "agents", current == "agents", core is not null && !core.ModuleVisible("agents") ? Loc.T("Show “AI Agents” on the Content tab.") : null, () => Pick("agents")));
         }
 
         var grid = new UniformGrid { Columns = choices.Count };

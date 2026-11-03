@@ -250,7 +250,7 @@ internal sealed class ContentEditor : Grid
                 double w = preset switch { "compact" => 480, "custom" => Math.Clamp(_c.App.Get<double>(K.CustomWidth), 360, 600), _ => 560 };
                 IslandPage? page = m.Id == "camera"
                     ? new StillPage(Loc.T("The camera turns on only in the island."), G.Video)
-                    : (m.Id == "agents" && _core.External("agents") is null ? new StillPage(Loc.T("Claude Code, Codex, OpenCode and GitHub Copilot usage, limits and costs."), G.Sparkle) : PageFactory.Create(_core, null, m.Id));
+                    : (m.Id == "agents" && _core.External("agents") is null ? new StillPage(Loc.T("Claude Code, Codex, OpenCode and GitHub Copilot usage, limits and costs."), G.Claude) : PageFactory.Create(_core, null, m.Id));
                 if (page is not null)
                 {
                     page.IsPreview = true;
