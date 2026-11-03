@@ -197,8 +197,12 @@ internal static class SettingsTabs
             string Signed(double v, int d) => (v > 0 ? "+" : "") + v.ToString(d == 0 ? "0" : "0.#", System.Globalization.CultureInfo.InvariantCulture);
             fit.Add(SUi.SliderLine(Loc.T("Width"), -40, 40, app.Get<double>(K.CapsuleFitWidth), 2, v => Signed(v, 0), v => app.Set(K.CapsuleFitWidth, v)));
             fit.Add(SUi.SliderLine(Loc.T("Height"), -4, 4, app.Get<double>(K.CapsuleFitHeight), 1, v => Signed(v, 0), v => app.Set(K.CapsuleFitHeight, v)));
-            fit.Add(SUi.SliderLine(Loc.T("Distance from top"), 0, 20, app.Get<double>(K.CapsuleFitDrop), 1, v => Signed(v, 0), v => app.Set(K.CapsuleFitDrop, v)));
-            fit.AddCaption(Loc.T("Resizes the capsule and lowers it from the top of the screen on displays without a notch."));
+            // the drop applies on whichever edge the island rests on
+            var atBottom = IsAtBottom(app);
+            fit.Add(SUi.SliderLine(atBottom ? Loc.T("Distance from bottom") : Loc.T("Distance from top"), 0, 20, app.Get<double>(K.CapsuleFitDrop), 1, v => Signed(v, 0), v => app.Set(K.CapsuleFitDrop, v)));
+            fit.AddCaption(atBottom
+                ? Loc.T("Resizes the capsule and raises it from the bottom of the screen on displays without a notch.")
+                : Loc.T("Resizes the capsule and lowers it from the top of the screen on displays without a notch."));
             stack.AddSpaced(fit, 20);
         }
 
@@ -482,7 +486,11 @@ internal static class SettingsTabs
             opening.Add(SUi.Indent(error));
         }
 
-        opening.Add(new FeatureSwitchRow(rt, c.Shell, "notch-gestures", "", Loc.T("Dynamic Island Gestures"), app.Get<bool>(K.Gestures) ? Loc.T("Scroll down to open. Scroll up over the top row to close. Swipe left or right over the music to change tracks. Lists keep their own scrolling.") : null, app.Get<bool>(K.Gestures), on => { app.Set(K.Gestures, on); rebuildTab(); }, Loc.T("Enable “Dynamic Island Gestures” in Features.")));
+        // at the bottom the pages open upward, so the wheel directions swap (read from the stored position, so it also works while the island is off)
+        var gesturesCaption = IsAtBottom(app)
+            ? Loc.T("Scroll up to open. Scroll down over the top row to close. Swipe left or right over the music to change tracks. Lists keep their own scrolling.")
+            : Loc.T("Scroll down to open. Scroll up over the top row to close. Swipe left or right over the music to change tracks. Lists keep their own scrolling.");
+        opening.Add(new FeatureSwitchRow(rt, c.Shell, "notch-gestures","", Loc.T("Dynamic Island Gestures"), app.Get<bool>(K.Gestures) ? gesturesCaption : null, app.Get<bool>(K.Gestures), on => { app.Set(K.Gestures, on); rebuildTab(); }, Loc.T("Enable “Dynamic Island Gestures” in Features.")));
         var modules = IslandCore.Current?.Modules() ?? [];
         var reopenItems = new List<(string Value, string Label)> { ("", Loc.T("Last page")), ("appPanel", Loc.T("Open app panel")), ("explore", Loc.T("Explore")) };
         reopenItems.AddRange(modules.Select(m => (m.Id, m.Title)));
@@ -507,14 +515,38 @@ internal static class SettingsTabs
         }
 
         var disp = app.Get<string>(K.Display);
-        if (disp is not ("automatic" or "builtIn" or "main" or "pointer" or "all"))
+        if (disp is not ("automatic" or "builtIn" or "main" or "pointer" or "all" or IslandPlacement.SpecificDisplay))
         {
             disp = "automatic";
         }
 
+        // Own() keeps the live refresh (below) from rebuilding the tab a second time for a change this page makes itself
+        var own = false;
+        void Own(Action write)
+        {
+            own = true;
+            try
+            {
+                write();
+            }
+            finally
+            {
+                own = false;
+            }
+        }
+
         void SetDisp(string v)
         {
-            app.Set(K.Display, v);
+            Own(() =>
+            {
+                // "specific" starts on the display the island is on now; the id goes first so the island never flashes to the main display
+                if (v == IslandPlacement.SpecificDisplay && app.Get<string>(K.DisplayId).Length == 0 && ResolveMonitor(app) is { } here)
+                {
+                    app.Set(K.DisplayId, here.Key);
+                }
+
+                app.Set(K.Display, v);
+            });
             rebuildTab();
         }
 
@@ -523,8 +555,60 @@ internal static class SettingsTabs
             SUi.ChoiceTile("", Loc.T("Built-in display"), disp == "builtIn", () => SetDisp("builtIn")),
             SUi.ChoiceTile("", Loc.T("Main display"), disp == "main", () => SetDisp("main")),
             SUi.ChoiceTile("", Loc.T("Follow pointer"), disp == "pointer", () => SetDisp("pointer")),
-            SUi.ChoiceTile("", Loc.T("All displays"), disp == "all", () => SetDisp("all"))));
+            SUi.ChoiceTile("", Loc.T("All displays"), disp == "all", () => SetDisp("all")),
+            SUi.ChoiceTile(G.Display, Loc.T("Choose a display"), disp == IslandPlacement.SpecificDisplay, () => SetDisp(IslandPlacement.SpecificDisplay))));
+        if (disp == IslandPlacement.SpecificDisplay)
+        {
+            var connected = IslandDisplays.Enumerate();
+            var savedId = app.Get<string>(K.DisplayId);
+            var match = IslandPlacement.FindByKey(connected, savedId);
+            var items = connected.Select(m => (m.Key, DisplayLabel(m))).ToList();
+            if (match is null)
+            {
+                // nothing to select while the saved display is unplugged: show the prompt instead of silently naming another display
+                items.Insert(0, ("", Loc.T("Choose a display")));
+            }
+
+            display.Add(new PickerRow<string>("", Loc.T("Display"), null, items, match?.Key ?? "", v =>
+            {
+                if (v.Length > 0)
+                {
+                    Own(() => app.Set(K.DisplayId, v));
+                    rebuildTab();
+                }
+            }, 300));
+            if (savedId.Length > 0 && match is null)
+            {
+                display.AddCaption(Loc.T("This display isn’t connected. Dynamic Island shows on the main display until it’s back."));
+            }
+        }
+
         stack.AddSpaced(display, 20);
+
+        stack.AddSpaced(PositionCard(app, Own, rebuildTab), 20);
+
+        // the page follows the island when it is moved elsewhere (a drag, "Move island…", a dev action) or turned on or off
+        var refreshPending = false;
+        void OnSetting(string key)
+        {
+            if (own || refreshPending || key is not (K.Enabled or K.Display or K.DisplayId or K.Position or K.PositionsByDisplay))
+            {
+                return;
+            }
+
+            refreshPending = true;
+            stack.Dispatcher.BeginInvoke(() =>
+            {
+                refreshPending = false;
+                if (stack.IsLoaded)
+                {
+                    rebuildTab();
+                }
+            });
+        }
+
+        stack.Loaded += (_, _) => app.Changed += OnSetting;
+        stack.Unloaded += (_, _) => app.Changed -= OnSetting;
 
         // Where things open
         var where = new SettingsCard(Loc.T("Where things open"));
@@ -547,5 +631,173 @@ internal static class SettingsTabs
         privacy.Add(SUi.SwitchRow(app, K.ShowInCaptures, G.Camera, Loc.T("Show in screenshots and videos")));
         stack.AddSpaced(privacy, 20);
         return stack;
+    }
+
+    // ================================================================== Position
+
+    /// <summary>Card "Position": six presets, the distance from the edge, Move island / Reset position, Lock position (spec 02d, Behavior tab).</summary>
+    private static SettingsCard PositionCard(IAppSettings app, Action<Action> own, Action rebuildTab)
+    {
+        var card = new SettingsCard(Loc.T("Position"));
+        var monitor = ResolveMonitor(app);
+        var frame = monitor is null ? (IslandFrame?)null : IslandPlacement.Frame(monitor, IslandPlacementStore.Load(app, monitor), SettingsZoom(app));
+        var pos = frame?.Position ?? IslandPosition.Default;
+
+        bool At(double x, IslandEdge edge) => pos.Edge == edge && Math.Abs(pos.X - x) < 0.005;
+        void Preset(double x, IslandEdge edge)
+        {
+            if (monitor is null)
+            {
+                return;
+            }
+
+            // only the side and edge change; the distance from the edge is kept (the slider owns it)
+            var current = IslandPlacementStore.Load(app, monitor);
+            own(() => IslandPlacementStore.Save(app, monitor, current with { X = x, Edge = edge }, null));
+            rebuildTab();
+        }
+
+        var presets = new (string Title, double X, IslandEdge Edge)[]
+        {
+            (Loc.T("Top left"), 0, IslandEdge.Top),
+            (Loc.T("Top center"), 0.5, IslandEdge.Top),
+            (Loc.T("Top right"), 1, IslandEdge.Top),
+            (Loc.T("Bottom left"), 0, IslandEdge.Bottom),
+            (Loc.T("Bottom center"), 0.5, IslandEdge.Bottom),
+            (Loc.T("Bottom right"), 1, IslandEdge.Bottom),
+        };
+        var matched = false;
+        var tiles = new List<FrameworkElement>();
+        foreach (var p in presets)
+        {
+            var selected = monitor is not null && At(p.X, p.Edge);
+            matched |= selected;
+            var (x, edge) = (p.X, p.Edge);
+            tiles.Add(PositionTile(p.Title, x, edge == IslandEdge.Bottom, selected, () => Preset(x, edge)));
+        }
+
+        card.Add(SUi.TileRow(3, 8, tiles.ToArray()));
+        if (!matched)
+        {
+            card.AddCaption(Loc.T("Custom position"));
+        }
+
+        if (frame is { } f && Math.Floor(f.MaxOffset) >= 2 && monitor is not null)
+        {
+            var max = Math.Floor(f.MaxOffset / 2) * 2;
+            card.Add(SUi.SliderLine(Loc.T("Distance from edge"), 0, max, Math.Round(pos.Offset / 2) * 2, 2, v => ((int)v).ToString(System.Globalization.CultureInfo.InvariantCulture), v =>
+            {
+                var current = IslandPlacementStore.Load(app, monitor);
+                var next = current with { Offset = v };
+                if (next != current)
+                {
+                    own(() => IslandPlacementStore.Save(app, monitor, next, null));
+                }
+            }));
+        }
+
+        var window = IslandCore.Current?.Window;
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal };
+        var move = UiKit.Button(Loc.T("Move island…"), ButtonKind.Bordered, 12, null, () => IslandCore.Current?.Window?.EnterMoveMode());
+        move.IsEnabled = app.Get<bool>(K.Enabled) && window is not null;
+        buttons.Children.Add(move);
+        var reset = UiKit.Button(Loc.T("Reset position"), ButtonKind.Bordered, 12, null, () =>
+        {
+            own(() =>
+            {
+                if (IslandCore.Current?.Window is { } w)
+                {
+                    w.ResetPosition();
+                }
+                else
+                {
+                    IslandPlacementStore.Reset(app);
+                }
+            });
+            rebuildTab();
+        });
+        reset.Margin = new Thickness(8, 0, 0, 0);
+        buttons.Children.Add(reset);
+        card.Add(buttons);
+        card.AddDivider();
+        card.Add(SUi.SwitchRow(app, K.PositionLocked, "", Loc.T("Lock position"), Loc.T("Dragging the closed island doesn’t move it. “Move island…” still works.")));
+        card.AddCaption(Loc.T("Drag the closed island to move it. Pages open away from the edge it rests on."));
+        return card;
+    }
+
+    /// <summary>A preset tile: a small screen with the island drawn where the preset puts it.</summary>
+    private static Border PositionTile(string title, double x, bool bottom, bool selected, Action onClick)
+    {
+        var b = new Border { Padding = new Thickness(8), CornerRadius = new CornerRadius(12), Cursor = Cursors.Hand, BorderThickness = new Thickness(1) };
+        if (selected)
+        {
+            b.SetResourceReference(Border.BackgroundProperty, ThemeKeys.AccentFill12);
+            b.SetResourceReference(Border.BorderBrushProperty, ThemeKeys.Accent);
+        }
+        else
+        {
+            b.SetResourceReference(Border.BackgroundProperty, ThemeKeys.ControlFill);
+            b.BorderBrush = Brushes.Transparent;
+        }
+
+        var stack = new StackPanel();
+        var sample = new Grid { Height = 30, MaxWidth = 120 };
+        var screen = new Border { CornerRadius = new CornerRadius(6) };
+        screen.SetResourceReference(Border.BackgroundProperty, ThemeKeys.RowHover);
+        sample.Children.Add(screen);
+        sample.Children.Add(new Border
+        {
+            Width = 26,
+            Height = 7,
+            Background = Brushes.Black,
+            CornerRadius = new CornerRadius(3.5),
+            Margin = new Thickness(6, 4, 6, 4),
+            HorizontalAlignment = x <= 0 ? HorizontalAlignment.Left : x >= 1 ? HorizontalAlignment.Right : HorizontalAlignment.Center,
+            VerticalAlignment = bottom ? VerticalAlignment.Bottom : VerticalAlignment.Top,
+        });
+        stack.Children.Add(sample);
+        var t = UiKit.Text(title, 11, FontWeights.Medium, selected ? ThemeKeys.Accent : ThemeKeys.TextPrimary);
+        t.HorizontalAlignment = HorizontalAlignment.Center;
+        t.Margin = new Thickness(0, 8, 0, 0);
+        stack.Children.Add(t);
+        b.Child = stack;
+        b.MouseLeftButtonUp += (_, _) => onClick();
+        return b;
+    }
+
+    /// <summary>The display the island is on: the live window's, else the one the Display setting resolves to right now.</summary>
+    private static IslandMonitor? ResolveMonitor(IAppSettings app)
+    {
+        try
+        {
+            if (IslandCore.Current?.Window?.CurrentMonitor is { } live)
+            {
+                return live;
+            }
+
+            var cursor = System.Windows.Forms.Cursor.Position;
+            return IslandPlacement.Resolve(app.Get<string>(K.Display), app.Get<string>(K.DisplayId), IslandDisplays.Enumerate(), cursor.X, cursor.Y);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The stored position of the island's display rests on the bottom edge (read from the settings, so it holds while the island is off).</summary>
+    private static bool IsAtBottom(IAppSettings app) =>
+        ResolveMonitor(app) is { } m && IslandPlacementStore.Load(app, m).Edge == IslandEdge.Bottom;
+
+    private static double SettingsZoom(IAppSettings app)
+    {
+        var z = app.Get(IslandWindow.ZoomKey, IslandWindow.DefaultZoom);
+        return double.IsFinite(z) ? Math.Clamp(z, 0.9, 1.3) : IslandWindow.DefaultZoom;
+    }
+
+    /// <summary>"Name — W × H" in physical pixels, with the main display marked.</summary>
+    private static string DisplayLabel(IslandMonitor m)
+    {
+        var label = $"{m.Name} — {m.Bounds.Width} × {m.Bounds.Height}";
+        return m.IsPrimary ? $"{label} · {Loc.T("Main display")}" : label;
     }
 }

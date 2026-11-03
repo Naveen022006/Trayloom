@@ -35,6 +35,7 @@ internal sealed class IslandSurface : FrameworkElement
     private bool _open;
     private bool _outline;
     private bool _translucent;
+    private bool _flip;
     private double _alpha = 1;
 
     public IslandSurface()
@@ -128,6 +129,20 @@ internal sealed class IslandSurface : FrameworkElement
         }
     }
 
+    /// <summary>The island rests on the bottom edge: the notch silhouette is drawn mirrored (flat edge on the screen edge, rounded corners away from it).</summary>
+    public bool FlipVertical
+    {
+        get => _flip;
+        set
+        {
+            if (_flip != value)
+            {
+                _flip = value;
+                InvalidateVisual();
+            }
+        }
+    }
+
     public bool Open
     {
         get => _open;
@@ -178,29 +193,33 @@ internal sealed class IslandSurface : FrameworkElement
         var bottom = Y + H;
         var r = Math.Max(0, Math.Min(radius, Math.Min(H / 2, (W - (2 * sh)) / 2)));
         const double k = 0.55228475;
-        _figure.StartPoint = new Point(left - sh, top);
-        _top.Point = new Point(right + sh, top);
-        _tr.Point1 = new Point(right + sh - (sh * k), top);
-        _tr.Point2 = new Point(right, top + sh - (sh * k));
-        _tr.Point3 = new Point(right, top + sh);
-        _right.Point = new Point(right, bottom - r);
-        _br.Point1 = new Point(right, bottom - r + (r * (1 - k)));
-        _br.Point2 = new Point(right - r + (r * (1 - k)), bottom);
-        _br.Point3 = new Point(right - r, bottom);
-        _bottom.Point = new Point(left + r, bottom);
-        _bl.Point1 = new Point(left + r - (r * (1 - k)), bottom);
-        _bl.Point2 = new Point(left, bottom - r + (r * (1 - k)));
-        _bl.Point3 = new Point(left, bottom - r);
-        _left.Point = new Point(left, top + sh);
-        _tl.Point1 = new Point(left, top + sh - (sh * k));
-        _tl.Point2 = new Point(left - sh + (sh * k), top);
-        _tl.Point3 = new Point(left - sh, top);
+
+        // a bottom island is the same shape mirrored around the body's horizontal axis (y' = 2Y + H - y): flat edge on the screen edge, rounded corners away from it
+        var mirror = 2 * Y + H;
+        double M(double y) => _flip ? mirror - y : y;
+        _figure.StartPoint = new Point(left - sh, M(top));
+        _top.Point = new Point(right + sh, M(top));
+        _tr.Point1 = new Point(right + sh - (sh * k), M(top));
+        _tr.Point2 = new Point(right, M(top + sh - (sh * k)));
+        _tr.Point3 = new Point(right, M(top + sh));
+        _right.Point = new Point(right, M(bottom - r));
+        _br.Point1 = new Point(right, M(bottom - r + (r * (1 - k))));
+        _br.Point2 = new Point(right - r + (r * (1 - k)), M(bottom));
+        _br.Point3 = new Point(right - r, M(bottom));
+        _bottom.Point = new Point(left + r, M(bottom));
+        _bl.Point1 = new Point(left + r - (r * (1 - k)), M(bottom));
+        _bl.Point2 = new Point(left, M(bottom - r + (r * (1 - k))));
+        _bl.Point3 = new Point(left, M(bottom - r));
+        _left.Point = new Point(left, M(top + sh));
+        _tl.Point1 = new Point(left, M(top + sh - (sh * k)));
+        _tl.Point2 = new Point(left - sh + (sh * k), M(top));
+        _tl.Point3 = new Point(left - sh, M(top));
     }
 
     /// <summary>Corner radius used for the body at this size (spec 4.1/4.2).</summary>
     public static double BottomRadius(double h, bool open) => Math.Min(open ? 28 : h / 2, Math.Min(28, Math.Max(2, h * 0.34 * (open ? 1 : 1.5))));
 
-    public static Geometry Build(double x, double y, double w, double h, bool capsule, bool open)
+    public static Geometry Build(double x, double y, double w, double h, bool capsule, bool open, bool flip = false)
     {
         if (w <= 0 || h <= 0)
         {
@@ -224,15 +243,17 @@ internal sealed class IslandSurface : FrameworkElement
         var bottom = y + h;
         var r = Math.Min(radius, Math.Min(h / 2, (w - (2 * sh)) / 2));
         const double k = 0.55228475;
-        var fig = new PathFigure { StartPoint = new Point(left - sh, top), IsClosed = true };
-        fig.Segments.Add(new LineSegment(new Point(right + sh, top), true));
-        fig.Segments.Add(new BezierSegment(new Point(right + sh - (sh * k), top), new Point(right, top + sh - (sh * k)), new Point(right, top + sh), true));
-        fig.Segments.Add(new LineSegment(new Point(right, bottom - r), true));
-        fig.Segments.Add(new BezierSegment(new Point(right, bottom - r + (r * (1 - k))), new Point(right - r + (r * (1 - k)), bottom), new Point(right - r, bottom), true));
-        fig.Segments.Add(new LineSegment(new Point(left + r, bottom), true));
-        fig.Segments.Add(new BezierSegment(new Point(left + r - (r * (1 - k)), bottom), new Point(left, bottom - r + (r * (1 - k))), new Point(left, bottom - r), true));
-        fig.Segments.Add(new LineSegment(new Point(left, top + sh), true));
-        fig.Segments.Add(new BezierSegment(new Point(left, top + sh - (sh * k)), new Point(left - sh + (sh * k), top), new Point(left - sh, top), true));
+        var mirror = (2 * y) + h;
+        double M(double v) => flip ? mirror - v : v;
+        var fig = new PathFigure { StartPoint = new Point(left - sh, M(top)), IsClosed = true };
+        fig.Segments.Add(new LineSegment(new Point(right + sh, M(top)), true));
+        fig.Segments.Add(new BezierSegment(new Point(right + sh - (sh * k), M(top)), new Point(right, M(top + sh - (sh * k))), new Point(right, M(top + sh)), true));
+        fig.Segments.Add(new LineSegment(new Point(right, M(bottom - r)), true));
+        fig.Segments.Add(new BezierSegment(new Point(right, M(bottom - r + (r * (1 - k)))), new Point(right - r + (r * (1 - k)), M(bottom)), new Point(right - r, M(bottom)), true));
+        fig.Segments.Add(new LineSegment(new Point(left + r, M(bottom)), true));
+        fig.Segments.Add(new BezierSegment(new Point(left + r - (r * (1 - k)), M(bottom)), new Point(left, M(bottom - r + (r * (1 - k)))), new Point(left, M(bottom - r)), true));
+        fig.Segments.Add(new LineSegment(new Point(left, M(top + sh)), true));
+        fig.Segments.Add(new BezierSegment(new Point(left, M(top + sh - (sh * k))), new Point(left - sh + (sh * k), M(top)), new Point(left - sh, M(top)), true));
         var geo = new PathGeometry([fig]);
         geo.Freeze();
         return geo;

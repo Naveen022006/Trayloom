@@ -130,4 +130,7 @@ internal static class G
     public const string Swap = "\uE8AB";
     public const string Dismiss = "\uE711";
     public const string PlayRect = "\uE714";
+
+    /// <summary>The move glyph of the "Move island" mode.</summary>
+    public const string Move = "\uE7C2";
 }

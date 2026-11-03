@@ -30,13 +30,32 @@ public sealed class IslandFeature : IFeature
 
             var core = _core;
             // Developer aid (TRAYLOOM_DEV=1): one action per page, so screenshots can open every page without synthesized input.
-            var dev = Environment.GetEnvironmentVariable("TRAYLOOM_DEV") == "1"
+            var devOn = Environment.GetEnvironmentVariable("TRAYLOOM_DEV") == "1";
+            var dev = devOn
                 ? IslandCatalog.Modules.Select(m => new FeatureAction("dev-open-" + m.Id, "Island page: " + m.Title, () => _window?.Open(m.Id), G.Controls)).ToList()
                 : [];
+
+            // Developer aid too: put the island at each preset place (and step through the displays) without dragging, so every edge and display can be checked
+            List<FeatureAction> place = devOn
+            ?
+            [
+                new("dev-place-top-left", "Island place: top left", () => Place(new IslandPosition(0, IslandEdge.Top, 0)), G.Mappin),
+                new("dev-place-top-right", "Island place: top right", () => Place(new IslandPosition(1, IslandEdge.Top, 0)), G.Mappin),
+                new("dev-place-bottom-left", "Island place: bottom left", () => Place(new IslandPosition(0, IslandEdge.Bottom, 0)), G.Mappin),
+                new("dev-place-bottom-center", "Island place: bottom center", () => Place(new IslandPosition(0.5, IslandEdge.Bottom, 0)), G.Mappin),
+                new("dev-place-bottom-right", "Island place: bottom right", () => Place(new IslandPosition(1, IslandEdge.Bottom, 0)), G.Mappin),
+                new("dev-place-float", "Island place: floating", () => Place(new IslandPosition(0.3, IslandEdge.Top, 160)), G.Mappin),
+                new("dev-place-next-display", "Island place: next display", PlaceOnNextDisplay, G.Mappin),
+                new("dev-place-reset", "Island place: reset", () => _window?.ResetPosition(), G.Mappin),
+            ]
+            : [];
             return
             [
                 .. dev,
+                .. place,
                 new FeatureAction("toggle", Loc.T("Open or close Dynamic Island"), () => _window?.Toggle(), G.Controls),
+                new FeatureAction("move", Loc.T("Move Dynamic Island"), () => _window?.EnterMoveMode(), G.Mappin),
+                new FeatureAction("reset-position", Loc.T("Reset Dynamic Island position"), () => _window?.ResetPosition(), G.Mappin),
                 new FeatureAction("explore", Loc.T("Explore the island sections"), () => _window?.Open("explore"), G.Explore),
                 new FeatureAction("open-music", Loc.T("Open the island music page"), () => _window?.Open("music"), G.Music),
                 new FeatureAction("play-pause", Loc.T("Play or pause music"), () => Transport(core, AmAction.PlayPause, core.Playback.TogglePlayPause), G.Play),
@@ -46,6 +65,34 @@ public sealed class IslandFeature : IFeature
                 new FeatureAction("calendar", Loc.T("Open the island calendar"), () => _window?.Open("calendar"), G.Calendar),
             ];
         }
+    }
+
+    /// <summary>Saves a position for the display the island is on (the island moves there at once); the dev-place actions use it.</summary>
+    private void Place(IslandPosition position)
+    {
+        if (_window is null || _context is null)
+        {
+            return;
+        }
+
+        var monitor = _window.CurrentMonitor ?? IslandDisplays.Enumerate()[0];
+        IslandPlacementStore.Save(_context.App, monitor, position, monitor);
+    }
+
+    /// <summary>Chooses the next connected display (main first, then left to right) as the island's display, whatever the display setting was.</summary>
+    private void PlaceOnNextDisplay()
+    {
+        if (_window is null || _context is null)
+        {
+            return;
+        }
+
+        var all = IslandDisplays.Enumerate();
+        var current = _window.CurrentMonitor;
+        var index = current is null ? -1 : all.ToList().FindIndex(m => string.Equals(m.Key, current.Key, StringComparison.OrdinalIgnoreCase));
+        var next = all[(index + 1) % all.Count];
+        _context.App.Set(K.DisplayId, next.Key);
+        _context.App.Set(K.Display, IslandPlacement.SpecificDisplay);
     }
 
     /// <summary>
@@ -279,7 +326,9 @@ public sealed class IslandFeature : IFeature
 
         if (absV > absH * 1.5 && absV >= 16)
         {
-            var down = g.AccV < 0; // wheel toward the user
+            // the wheel turns toward the way the island opens: toward the user for an island at the top of the screen (pages open down),
+            // away from the user for one at the bottom (pages open up)
+            var down = pill.OpensUp ? g.AccV > 0 : g.AccV < 0;
             if (!pill.Expanded)
             {
                 g.Decided = true;
@@ -294,7 +343,7 @@ public sealed class IslandFeature : IFeature
                 return false;
             }
 
-            // open island: scroll up over the top row (or a page without a scrolling list) closes it
+            // open island: the opposite direction over the top row (or a page without a scrolling list) closes it
             var inHeader = e.Y < pill.HeaderBottom;
             if (!down && (inHeader || !pill.ContentScrolls) && inHeader)
             {

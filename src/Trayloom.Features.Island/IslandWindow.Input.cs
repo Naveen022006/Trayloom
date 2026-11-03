@@ -29,19 +29,36 @@ internal sealed partial class IslandWindow
     private volatile int _pressX;
     private volatile int _pressY;
     private volatile bool _pressOutside;
+
+    /// <summary>The last left press began on the closed (or peeking) island: a drag of it moves the island (set on the hook thread).</summary>
+    private volatile bool _pressOnPill;
+
+    /// <summary>
+    /// WPF delivered the last left press to the island's own closed layer. The hook sees every press on screen, so a press whose position merely lies
+    /// over the pill (a region selector, a pinned screenshot, a share bar, the island's own menu, a transparent corner, a click-through island) is not
+    /// a press on the island: only this flag says the island's window got it. Cleared on the hook thread at every press, set on the UI thread.
+    /// </summary>
+    private volatile bool _pressSeenByIsland;
+
+    /// <summary>The button is down and the press began on the closed island, in the island's own window: a drag of it may move the island.</summary>
+    private bool PressOnIsland => _lmbDown && _pressOnPill && _pressSeenByIsland;
+
     private volatile ZoneSnap? _idleZone;
     private DateTime _pointerSince = DateTime.MinValue;
-    private MonitorArea _pointerArea;
+    private IslandMonitor? _pointerMonitor;
     private DateTime _pointerAreaSince = DateTime.MinValue;
+    private DateTime _workCheck = DateTime.MinValue;
     private DateTime _fullscreenCheck = DateTime.MinValue;
     private bool _fullscreen;
     private DateTime _noticeHoverSince = DateTime.MinValue;
     private readonly List<MirrorWindow> _mirrors = [];
+    private string _mirrorSignature = "";
 
     private void InitInput()
     {
         PreviewKeyDown += OnKeyDown;
         _closedHost.MouseLeftButtonUp += OnClosedClick;
+        _closedHost.PreviewMouseLeftButtonDown += (_, _) => _pressSeenByIsland = true;
         _closedHost.Background = Brushes.Transparent;
         MouseRightButtonUp += OnContextMenu;
         DragEnter += OnDragEnter;
@@ -86,6 +103,12 @@ internal sealed partial class IslandWindow
 
     private bool OnMouseHook(MouseHookEvent e)
     {
+        // a move in progress may swallow the right button (it cancels the drag); decided from flags only
+        if (OnMoveHook(e))
+        {
+            return true;
+        }
+
         if (e.Kind == MouseEventKind.LeftDown)
         {
             // where the press started decides later whether this is a file drag (outside the island and its drop zone) or a plain click
@@ -96,7 +119,12 @@ internal sealed partial class IslandWindow
             _pressX = e.X;
             _pressY = e.Y;
             _pressOutside = !onPill && !onZone;
+            _pressOnPill = onPill && down is { Expanded: false };
+
+            // the hook runs before the press is delivered to any window: the island's own handler sets this again if the island gets it
+            _pressSeenByIsland = false;
             _lmbDown = true;
+            OnMoveHookDown(_pressOnPill, _pressOutside);
         }
         else if (e.Kind == MouseEventKind.LeftUp)
         {
@@ -114,9 +142,9 @@ internal sealed partial class IslandWindow
             return false;
         }
 
-        // gutters hold the quick-access buttons; a child popup (menu) belongs to the island too
-        var gut = (int)(SideGutter * _scale);
-        var inside = e.X >= pill.Left - gut && e.X < pill.Right + gut && e.Y >= pill.Top && e.Y < pill.Bottom + gut;
+        // the quick-access gutters on the sides and the far side belong to the island; a child popup (menu) belongs to it too
+        var zoneRect = pill.Interactive;
+        var inside = e.X >= zoneRect.L && e.X < zoneRect.R && e.Y >= zoneRect.T && e.Y < zoneRect.B;
         if (!inside)
         {
             Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
@@ -240,14 +268,11 @@ internal sealed partial class IslandWindow
 
     // ---------------------------------------------------------------- polling
 
-    private Rect SurfaceScreenRect()
-    {
-        var w = Math.Max(_sw.Position, 1) * _scale;
-        var h = Math.Max(_sh.Position, 1) * _scale;
-        var left = _area.Bounds.X + ((_area.Bounds.Width - w) / 2);
-        var top = _area.Bounds.Y + (SurfaceTop * _scale);
-        return new Rect(left, top, w, h);
-    }
+    private static Rect ToRect(RECT r) => new(r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top);
+
+    /// <summary>The live silhouette on screen (physical pixels), on the display's frame: it moves with the animation.</summary>
+    private Rect SurfaceScreenRect() =>
+        ToRect(IslandPlacement.BodyRectPx(_frame, _sx.Position, Math.Max(_sw.Position, 1), Math.Max(_sh.Position, 1), NearGap));
 
     private bool IsPointerInside()
     {
@@ -260,7 +285,10 @@ internal sealed partial class IslandWindow
 
         if (Expanded && _quick.Children.Count > 0)
         {
-            var g = new Rect(r.Left - ((SideGutter + 4) * _scale), r.Top, r.Width + (2 * (SideGutter + 4) * _scale), r.Height + (SideGutter * _scale * (_layout.On(QuickSide.Bottom).Any() ? 1 : 0)));
+            // the quick buttons sit on both sides and on the far side (below a top island, above a bottom one)
+            var side = (SideGutter + 4) * _scale;
+            var far = _layout.On(QuickSide.Bottom).Any() ? SideGutter * _scale : 0;
+            var g = new Rect(r.Left - side, OpensUp ? r.Top - far : r.Top, r.Width + (2 * side), r.Height + far);
             return g.Contains(c);
         }
 
@@ -284,20 +312,27 @@ internal sealed partial class IslandWindow
             RefreshNav();
         }
 
+        CheckWorkArea(now);
         var inside = IsPointerInside();
-        if (_mode == IslandMode.Closed && !_rendering && _envH > EnvelopeBaseHeight + 0.5 && now - _lastChange > TimeSpan.FromSeconds(20))
+        if (_mode == IslandMode.Closed && !_rendering && !OpensUp && _envH > EnvelopeBaseHeight + _frame.Inset + 0.5 && now - _lastChange > TimeSpan.FromSeconds(20))
         {
-            // a tall page grew the window; after a long rest closed it goes back to the base height (shrinking shows no blank)
+            // a tall page grew the window; after a long rest closed it goes back to the base height (shrinking shows no blank);
+            // a bottom island's window is always full height and never grows
             _envH = 0;
             ApplyWindow();
         }
 
-        var rest = new Rect(_area.Bounds.X + ((_area.Bounds.Width - (BareWidth * _scale)) / 2) - 6, _area.Bounds.Y, (BareWidth * _scale) + 12, (BodyHeight + SurfaceTop + 2) * _scale);
+        // the resting island and the strip of screen next to it that reveals it: the body plus a little room on its far side
+        var restBody = IslandPlacement.PillRectPx(_frame, BareWidth, BodyHeight, NearGap);
+        var gapPx = NearGap * _scale;
+        var rest = OpensUp
+            ? new Rect(restBody.Left - 6, restBody.Top - (2 * _scale), (restBody.Right - restBody.Left) + 12, (restBody.Bottom - restBody.Top) + (2 * _scale) + gapPx)
+            : new Rect(restBody.Left - 6, restBody.Top - gapPx, (restBody.Right - restBody.Left) + 12, (restBody.Bottom - restBody.Top) + (2 * _scale) + gapPx);
 
         // Idle economy: poll fast only while the pointer is near the island (or something is going on); otherwise 150 ms.
         var wake = rest;
         wake.Inflate(220 * _scale, 160 * _scale);
-        var busy = _mode != IslandMode.Closed || inside || _lmbDown || _core.Mascot.Enabled || wake.Contains(cursor);
+        var busy = _mode != IslandMode.Closed || inside || _lmbDown || MoveMode || _core.Mascot.Enabled || wake.Contains(cursor);
         var wanted = TimeSpan.FromMilliseconds(busy ? 40 : 150);
         if (_poll is { } poll && poll.Interval != wanted)
         {
@@ -347,8 +382,57 @@ internal sealed partial class IslandWindow
         }
 
         ApplyHiddenAlpha();
+        PollMove(cursor);
         DetectDrag(cursor);
         PollMascotGaze(cursor);
+    }
+
+    /// <summary>Every couple of seconds: has the display's work area changed (a taskbar moved, resized or toggled auto-hide)?</summary>
+    private void CheckWorkArea(DateTime now)
+    {
+        if ((now - _workCheck).TotalSeconds < 2)
+        {
+            return;
+        }
+
+        _workCheck = now;
+        var raw = RawWork(_monitor.Handle);
+        if (raw.Left != _rawWork.Left || raw.Top != _rawWork.Top || raw.Right != _rawWork.Right || raw.Bottom != _rawWork.Bottom)
+        {
+            ReapplyDisplays();
+        }
+    }
+
+    /// <summary>The display configuration or a work area changed: re-read the displays, then place the island again on its display.</summary>
+    private void ReapplyDisplays()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        RefreshMonitors();
+
+        // a re-read that found the same place (a work-area broadcast with nothing changed) leaves the island, an open page and a drag alone
+        if (!ApplyDisplay())
+        {
+            return;
+        }
+
+        RefreshClosed(snap: true);
+        if (Expanded)
+        {
+            // the open page was sized for the old work area
+            BuildOpen(rebuildPage: false);
+        }
+    }
+
+    private void OnSystemParameter(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(SystemParameters.WorkArea))
+        {
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, ReapplyDisplays);
+        }
     }
 
     private void PollMascotGaze(Point cursor)
@@ -389,7 +473,7 @@ internal sealed partial class IslandWindow
         if (entered)
         {
             _leaveAt = null;
-            if (_suppressHover || _suppressed || _holds > 0)
+            if (_suppressHover || _suppressed || _holds > 0 || MoveBlocksHover || PressOnIsland)
             {
                 return;
             }
@@ -455,6 +539,17 @@ internal sealed partial class IslandWindow
 
     private void ContinueHover(DateTime now)
     {
+        if (MoveBlocksHover || PressOnIsland)
+        {
+            // a press on the island may become a drag: the hover open waits (and starts over once the button is up)
+            if (_hoverDeadline is not null)
+            {
+                _hoverDeadline = now.AddSeconds(Math.Clamp(_core.App.Get<double>(K.HoverDelay), 0.1, 1));
+            }
+
+            return;
+        }
+
         if (_hoverDeadline is { } d && now >= d && _mode == IslandMode.Closed && _holds == 0)
         {
             _hoverDeadline = null;
@@ -514,7 +609,7 @@ internal sealed partial class IslandWindow
     {
         var hideUntil = _core.App.Get<bool>(K.HideUntilHover) && _core.App.Get<bool>(K.OpenOnHover);
         var showActivity = _core.App.Get<bool>(K.HiddenShowsActivity) && (_core.LiveActivities().Count > 0 || _core.Notices.Current is not null);
-        var hidden = hideUntil && _mode == IslandMode.Closed && !_inside && !showActivity && !_placeholder;
+        var hidden = hideUntil && _mode == IslandMode.Closed && !_inside && !showActivity && !_placeholder && !MoveMode;
         var target = hidden ? 0 : 1;
         if (Math.Abs(_surface.Alpha - target) > 0.01)
         {
@@ -527,53 +622,69 @@ internal sealed partial class IslandWindow
 
     // ---------------------------------------------------------------- display handling
 
-    public void ApplyDisplay()
+    /// <summary>Places the island on the display the settings choose. Returns true when that moved or re-framed it (false: nothing about its place changed).</summary>
+    public bool ApplyDisplay()
+    {
+        if (_disposed)
+        {
+            return false;
+        }
+
+        // the display the setting chooses (main, built-in, one picked by id, or the one under the pointer) and that display's saved position
+        var cursor = Screens.CursorPosition();
+        var monitor = IslandPlacement.Resolve(_core.App.Get<string>(K.Display), _core.App.Get<string>(K.DisplayId), _monitors, (int)cursor.X, (int)cursor.Y);
+        var position = IslandPlacement.Frame(monitor, IslandPlacementStore.Load(_core.App, monitor), _zoom).Position;
+        var placed = !SameDisplay(monitor, _monitor) || !SameRect(monitor.Bounds, _monitor.Bounds) || !SameRect(monitor.Work, _monitor.Work) || position != _frame.Position;
+        if (placed)
+        {
+            PlaceOn(monitor);
+        }
+        else
+        {
+            // nothing moved, but the display list was re-read: keep its fresh handle (the old one may be stale) and the DPI Windows settled on
+            _monitor = monitor with { Dpi = _monitor.Dpi };
+            _frame = _frame with { Monitor = _monitor };
+            _rawWork = RawWork(_monitor.Handle);
+        }
+
+        UpdateVisibility();
+        SyncMirrors();
+        return placed;
+    }
+
+    private static bool SameDisplay(IslandMonitor a, IslandMonitor b) => string.Equals(a.Key, b.Key, StringComparison.OrdinalIgnoreCase);
+
+    private static bool SameRect(RECT a, RECT b) => a.Left == b.Left && a.Top == b.Top && a.Right == b.Right && a.Bottom == b.Bottom;
+
+    private void OnDisplayChanged(object? sender, EventArgs e) => Dispatcher.BeginInvoke(() =>
     {
         if (_disposed)
         {
             return;
         }
 
-        var mode = _core.App.Get<string>(K.Display);
-        var area = mode switch
-        {
-            "pointer" or "all" => Screens.UnderCursor(),
-            _ => Screens.Primary(),
-        };
-        if (_area.Bounds != area.Bounds || _area.Bounds.Width <= 0)
-        {
-            PlaceOn(area);
-        }
-
-        UpdateVisibility();
-        SyncMirrors();
-    }
-
-    private void OnDisplayChanged(object? sender, EventArgs e) => Dispatcher.BeginInvoke(() =>
-    {
-        _area = default;
-        ApplyDisplay();
-        RefreshClosed(snap: true);
+        ReapplyDisplays();
     });
 
     private void FollowPointerDisplay(Point cursor, DateTime now)
     {
         var mode = _core.App.Get<string>(K.Display);
-        if (mode is not ("pointer" or "all") || _mode != IslandMode.Closed || _inside)
+        // A drag or Move mode decides the display itself; following the pointer then would pull the island away.
+        if (mode is not ("pointer" or "all") || _mode != IslandMode.Closed || _inside || _dragging || MoveMode)
         {
             return;
         }
 
-        var under = Screens.FromPoint(cursor);
-        if (under.Bounds == _area.Bounds)
+        var under = IslandPlacement.Resolve("pointer", "", _monitors, (int)cursor.X, (int)cursor.Y);
+        if (SameDisplay(under, _monitor))
         {
             _pointerAreaSince = DateTime.MinValue;
             return;
         }
 
-        if (_pointerArea.Bounds != under.Bounds)
+        if (_pointerMonitor is null || !SameDisplay(_pointerMonitor, under))
         {
-            _pointerArea = under;
+            _pointerMonitor = under;
             _pointerAreaSince = DateTime.UtcNow;
             return;
         }
@@ -642,7 +753,7 @@ internal sealed partial class IslandWindow
         if (show && !IsVisible)
         {
             ShowNoActivate();
-            PlaceOn(_area);
+            PlaceOn(_monitor);
         }
         else if (!show && IsVisible)
         {
@@ -655,6 +766,17 @@ internal sealed partial class IslandWindow
     private void SyncMirrors()
     {
         var all = _core.App.Get<string>(K.Display) == "all";
+
+        // the mirrors follow their display's own position by themselves (see MirrorWindow.Update): only a change of the set of displays rebuilds them
+        var signature = all
+            ? string.Join(';', _monitors.Where(m => !SameDisplay(m, _monitor)).Select(m => $"{m.Key}|{m.Bounds.Left},{m.Bounds.Top},{m.Bounds.Right},{m.Bounds.Bottom}|{m.Work.Left},{m.Work.Top},{m.Work.Right},{m.Work.Bottom}|{m.Dpi}"))
+            : "";
+        if (signature == _mirrorSignature && (!all || _mirrors.Count > 0 || signature.Length == 0))
+        {
+            return;
+        }
+
+        _mirrorSignature = signature;
         foreach (var m in _mirrors.ToList())
         {
             m.Close();
@@ -666,40 +788,47 @@ internal sealed partial class IslandWindow
             return;
         }
 
-        foreach (var area in MonitorsAll())
+        foreach (var monitor in _monitors)
         {
-            if (area.Bounds == _area.Bounds)
+            if (SameDisplay(monitor, _monitor))
             {
                 continue;
             }
 
-            var mirror = new MirrorWindow(this, area);
+            var mirror = new MirrorWindow(this, monitor);
             _mirrors.Add(mirror);
             mirror.Show();
         }
     }
 
-    private static List<MonitorArea> MonitorsAll()
+    internal void MoveHere(IslandMonitor monitor)
     {
-        var list = new List<MonitorArea>();
-        foreach (var s in System.Windows.Forms.Screen.AllScreens)
-        {
-            var b = s.Bounds;
-            list.Add(Screens.FromPoint(new Point(b.X + (b.Width / 2), b.Y + (b.Height / 2))));
-        }
-
-        return list;
-    }
-
-    internal void MoveHere(MonitorArea area)
-    {
-        PlaceOn(area);
+        PlaceOn(monitor);
         RefreshClosed(snap: true);
         SyncMirrors();
         Open(takeFocus: true);
     }
 
     internal FrameworkElement MirrorSource => _closedHost;
+
+    /// <summary>The geometry the island has on another display (that display's saved position, the live zoom): what a mirror there is placed by.</summary>
+    internal IslandFrame FrameFor(IslandMonitor monitor)
+    {
+        // A mirror asks on every decorative tick (30 Hz each): reading the saved position parses its JSON map from the settings, so the frame is kept
+        // until a position or display setting changes (OnSetting bumps the stamp), the zoom changes, or the display list is re-read (new monitor objects).
+        var stamp = Volatile.Read(ref _frameStamp);
+        if (_mirrorFrames.TryGetValue(monitor.Key, out var hit) && hit.Stamp == stamp && ReferenceEquals(hit.Monitor, monitor) && hit.Zoom == _zoom)
+        {
+            return hit.Frame;
+        }
+
+        var frame = IslandPlacement.Frame(monitor, IslandPlacementStore.Load(_core.App, monitor), _zoom);
+        _mirrorFrames[monitor.Key] = (stamp, monitor, _zoom, frame);
+        return frame;
+    }
+
+    private readonly Dictionary<string, (int Stamp, IslandMonitor Monitor, double Zoom, IslandFrame Frame)> _mirrorFrames = [];
+    private int _frameStamp;
 
     // ---------------------------------------------------------------- key focus + keyboard
 
@@ -851,6 +980,7 @@ internal sealed partial class IslandWindow
     {
         if (!Expanded)
         {
+            ShowClosedMenu(e);
             return;
         }
 
@@ -859,17 +989,47 @@ internal sealed partial class IslandWindow
             new(_exploring ? Strings.Back : Strings.Explore, ToggleExplore, Glyph: G.Explore),
             new(_pinned ? Strings.Unpin : Strings.Pin, () => { _pinned = !_pinned; BuildOpen(false); }, _pinned, Glyph: G.Pin),
             new(Strings.SettingsEllipsis, () => { _core.Ctx.Shell.OpenSettings(SettingsPages.Island); Collapse(); }, Glyph: G.Gear),
+            new(Loc.T("Move island"), () => { Collapse(immediate: true); EnterMoveMode(); }),
             IslandMenu.Sep(),
             new(Strings.Collapse, () => Collapse(), Glyph: G.ChevronUp),
         };
-        IslandMenu.Show(_surface, items, () => HoldOpen());
+        IslandMenu.Show(_surface, items, () => HoldOpen(), atPointer: true);
+        e.Handled = true;
+    }
+
+    /// <summary>The closed island's menu (right click): move it, put it back, open its settings.</summary>
+    private void ShowClosedMenu(MouseButtonEventArgs e)
+    {
+        if (MoveMode || _placeholder || _suppressed)
+        {
+            return;
+        }
+
+        var items = new List<IslandMenu.Item>
+        {
+            new(Loc.T("Move island"), () => EnterMoveMode()),
+        };
+        if (_frame.Position != IslandPosition.Default)
+        {
+            items.Add(new(Loc.T("Reset position"), () => ResetPosition()));
+        }
+
+        items.Add(new(Strings.SettingsEllipsis, () => _core.Ctx.Shell.OpenSettings(SettingsPages.Island), Glyph: G.Gear));
+        IslandMenu.Show(_surface, items, () => HoldOpen(), atPointer: true);
         e.Handled = true;
     }
 
     // ---------------------------------------------------------------- file drag (drop placeholder)
 
-    private Rect DropZone(double heightDip) =>
-        new(_area.Bounds.X + ((_area.Bounds.Width - (BareWidth * _scale)) / 2) - (60 * _scale), _area.Bounds.Y, (BareWidth * _scale) + (120 * _scale), heightDip * _scale);
+    private Rect DropZone(double heightDip)
+    {
+        // the resting body's strip of screen, 60 units wider on each side: from the near edge (the gap included) inward, or up from the bottom
+        var body = IslandPlacement.PillRectPx(_frame, BareWidth, BodyHeight, NearGap);
+        var height = heightDip * _scale;
+        var gapPx = NearGap * _scale;
+        var top = OpensUp ? body.Bottom + gapPx - height : body.Top - gapPx;
+        return new Rect(body.Left - (60 * _scale), top, (body.Right - body.Left) + (120 * _scale), height);
+    }
 
     /// <summary>The resting drop zone as an immutable snapshot for the hook thread (called whenever the geometry is published).</summary>
     private void PublishIdleZone()
@@ -1093,9 +1253,11 @@ internal sealed partial class IslandWindow
             return;
         }
 
-        var left = (_winW - _openW) / 2;
+        // the buttons sit around the open page at its final place; the side columns are measured from the page's top, the bottom row
+        // ("Bottom" in the layout) goes on the far side: below a top island's page, above a bottom island's
+        var left = BodyCentre(_openW, GutterOf(QuickSide.Left), GutterOf(QuickSide.Right)) - (_openW / 2);
         var right = left + _openW;
-        var top = SurfaceTop;
+        var top = BodyTop(_openH);
         var bottom = top + _openH;
         foreach (var side in new[] { QuickSide.Left, QuickSide.Right, QuickSide.Bottom })
         {
@@ -1108,12 +1270,16 @@ internal sealed partial class IslandWindow
                 if (side == QuickSide.Bottom)
                 {
                     cx = ((left + right) / 2) + ((i - ((n - 1) / 2.0)) * 54);
-                    cy = bottom + 12 + 22;
+                    cy = OpensUp ? top - 12 - 22 : bottom + 12 + 22;
                 }
                 else
                 {
                     var span = (n - 1) * 54.0;
                     var y0 = Math.Max(top + 22 + 12, Math.Min(top + (IsCapsule ? 12 : 0) + 24, top + (_openH / 2) - (span / 2)));
+
+                    // a column longer than a short page reaches past the page's near end: keep it inside the work area (never under the taskbar)
+                    var workTop = _frame.WorkTopIn(_winY);
+                    y0 = Math.Max(workTop + 4 + 22, Math.Min(y0, workTop + _frame.UsableHeight - 4 - 22 - span));
                     cx = side == QuickSide.Left ? left - 48 : right + 48;
                     cy = y0 + (i * 54);
                 }
@@ -1229,13 +1395,13 @@ internal sealed record ZoneSnap(double Left, double Top, double Right, double Bo
 internal sealed class MirrorWindow : OverlayWindow
 {
     private readonly IslandWindow _owner;
-    private readonly MonitorArea _area;
+    private readonly IslandMonitor _monitor;
     private readonly System.Windows.Shapes.Rectangle _view = new();
 
-    public MirrorWindow(IslandWindow owner, MonitorArea area)
+    public MirrorWindow(IslandWindow owner, IslandMonitor monitor)
     {
         _owner = owner;
-        _area = area;
+        _monitor = monitor;
         _view.RadiusX = 12;
         _view.RadiusY = 12;
         // the island is drawn larger by its zoom; the copy keeps the same proportions
@@ -1243,7 +1409,7 @@ internal sealed class MirrorWindow : OverlayWindow
         Content = _view;
         Width = 140;
         Height = 40;
-        MouseLeftButtonUp += (_, _) => _owner.MoveHere(_area);
+        MouseLeftButtonUp += (_, _) => _owner.MoveHere(_monitor);
         Loaded += (_, _) => Update();
         DecorativeClock.Subscribe(Update);
         Closed += (_, _) => DecorativeClock.Unsubscribe(Update);
@@ -1257,7 +1423,13 @@ internal sealed class MirrorWindow : OverlayWindow
         _view.Width = w;
         _view.Height = h;
         _view.Fill = new VisualBrush(src) { Stretch = Stretch.None };
-        var scale = VisualTreeHelper.GetDpi(this).DpiScaleX * _owner.Zoom;
-        SetPhysicalBounds((int)(_area.Bounds.X + ((_area.Bounds.Width - (w * scale)) / 2)), (int)_area.Bounds.Y, (int)Math.Ceiling(w * scale), (int)Math.Ceiling(h * scale) + 4);
+
+        // placed by the display's own frame (its saved position, its DPI scale): the window's own DPI can still be the one of the display it
+        // was created on until Windows has moved it here
+        var frame = _owner.FrameFor(_monitor);
+        var body = IslandPlacement.PillRectPx(frame, w, h, 0);
+        var width = (int)Math.Ceiling(w * frame.Scale);
+        var height = (int)Math.Ceiling(h * frame.Scale) + 4;
+        SetPhysicalBounds(body.Left, frame.OpensUp ? body.Bottom - height : body.Top, width, height);
     }
 }

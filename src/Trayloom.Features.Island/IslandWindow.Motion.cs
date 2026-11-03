@@ -10,7 +10,7 @@ namespace Trayloom.Features.Island;
 /// <summary>
 /// Choreography of the island's layers around the silhouette spring (spec 5 content transitions). Everything here is stepped from
 /// the same frame loop as the silhouette (one clock, elapsed time, never per-tick increments): the open page fades in once the
-/// shape has grown about 60 %, scaling from the top centre; on close it leaves fast and the closed strip returns at the end; a
+/// shape has grown about 60 %, scaling from the pill's near-side centre (top, or bottom for an island opening upward); on close it leaves fast and the closed strip returns at the end; a
 /// page switch cross-fades the old and new page while the height springs; a new closed strip fades in over the old width.
 /// </summary>
 internal sealed partial class IslandWindow
@@ -100,11 +100,24 @@ internal sealed partial class IslandWindow
         _swapOld = _swapNew = null;
     }
 
+    /// <summary>
+    /// The open page's zoom origin as a fraction of its size: horizontally where the pill's centre lies over the page (0.5 when they coincide, clamped
+    /// to the page), vertically the page's near side (top for a top island, bottom for one that opens upward).
+    /// </summary>
+    internal static Point OpenZoomOrigin(double pillCx, double openCx, double openW, bool opensUp) =>
+        new(Math.Clamp(0.5 + ((pillCx - openCx) / Math.Max(openW, 1)), 0, 1), opensUp ? 1 : 0);
+
     private void BeginOpening()
     {
         _openHost.IsHitTestVisible = true;
         _closedHost.IsHitTestVisible = false;
         _quick.Opacity = 1;
+
+        // the page grows out of the pill: its zoom origin is the pill's centre on the near side, so a page shifted by the work-area clamp or the
+        // quick-button gutters still scales from where the island was (the top centre of a centred island, the bottom centre of one opening upward)
+        var pillCx = CentreUnits(_closedW, 0, 0);
+        var openCx = CentreUnits(_openW, GutterOf(QuickSide.Left), GutterOf(QuickSide.Right));
+        _openHost.RenderTransformOrigin = OpenZoomOrigin(pillCx, openCx, _openW, OpensUp);
         if (D.ReduceMotion)
         {
             _choreo = Choreo.None;

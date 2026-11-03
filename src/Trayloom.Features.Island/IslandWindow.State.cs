@@ -41,19 +41,20 @@ internal sealed partial class IslandWindow
         _core.Session.Changed += OnSessionChanged;
         _core.Calendar.Changed += RefreshClosedSoon;
         _core.App.Changed += OnSetting;
-        SystemParameters.StaticPropertyChanged += (_, _) => { };
+        SystemParameters.StaticPropertyChanged += OnSystemParameter;
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplayChanged;
         ApplyDisplay();
         RefreshClosed(snap: true);
         ShowNoActivate();
         ApplyCaptureExclusion();
-        PlaceOn(_area);
+        PlaceOn(_monitor);
         StartPolling();
     }
 
     public void Shutdown()
     {
         _disposed = true;
+        TeardownMove();
         StopPolling();
         _core.Notices.Changed -= OnNotice;
         _core.Playback.Changed -= OnPlayback;
@@ -66,6 +67,7 @@ internal sealed partial class IslandWindow
         _core.Calendar.Changed -= RefreshClosedSoon;
         _core.App.Changed -= OnSetting;
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplayChanged;
+        SystemParameters.StaticPropertyChanged -= OnSystemParameter;
         CompositionTarget.Rendering -= OnRendering;
         _page?.Hidden();
         _page = null;
@@ -79,6 +81,9 @@ internal sealed partial class IslandWindow
         Close();
     }
 
+    private readonly HashSet<string> _pendingKeys = [];
+    private bool _settingsQueued;
+
     private void OnSetting(string key)
     {
         if (!key.StartsWith("notch", StringComparison.Ordinal) && !key.StartsWith("mixer", StringComparison.Ordinal))
@@ -87,56 +92,84 @@ internal sealed partial class IslandWindow
         }
 
         InvalidateStyleCache();
-        Dispatcher.BeginInvoke(() =>
+        Interlocked.Increment(ref _frameStamp);
+
+        // several keys change at once (a saved position writes the map, the plain position and maybe the display): one relayout for all of them
+        bool queue;
+        lock (_pendingKeys)
         {
-            if (_disposed)
-            {
-                return;
-            }
+            _pendingKeys.Add(key);
+            queue = !_settingsQueued;
+            _settingsQueued = true;
+        }
 
-            if (key == ZoomKey)
-            {
-                ApplyZoom();
-            }
+        if (queue)
+        {
+            Dispatcher.BeginInvoke(ApplyPendingSettings);
+        }
+    }
 
-            if (key == ZoomKey || (_mode == IslandMode.Closed && key is K.Size or K.CustomWidth or K.CustomHeight or K.Silhouette))
-            {
-                // the envelope may shrink again: a new size or silhouette is a deliberate change, not an animation
-                ResetEnvelope();
-            }
+    private void ApplyPendingSettings()
+    {
+        HashSet<string> keys;
+        lock (_pendingKeys)
+        {
+            keys = [.. _pendingKeys];
+            _pendingKeys.Clear();
+            _settingsQueued = false;
+        }
 
-            if (key == K.QuickAccessLayout)
-            {
-                _layout = QuickAccessLayout.Load(_core.App);
-                if (Expanded)
-                {
-                    BuildQuick();
-                }
-            }
+        if (_disposed)
+        {
+            return;
+        }
 
-            if (key == K.ShowInCaptures)
-            {
-                ApplyCaptureExclusion();
-            }
+        bool Has(string k) => keys.Contains(k);
+        bool Any(params string[] ks) => ks.Any(keys.Contains);
 
-            if (key is K.Enabled or K.Display or K.HideInFullscreen)
-            {
-                ApplyDisplay();
-            }
+        if (Has(ZoomKey))
+        {
+            ApplyZoom();
+        }
 
-            if (Expanded && key is ZoomKey or K.Size or K.CustomWidth or K.CustomHeight or K.Silhouette or K.ModuleOrder or K.HiddenModules)
-            {
-                BuildOpen(rebuildPage: false);
-            }
+        if (Has(ZoomKey) || (_mode == IslandMode.Closed && Any(K.Size, K.CustomWidth, K.CustomHeight, K.Silhouette)))
+        {
+            // the envelope may shrink again: a new size or silhouette is a deliberate change, not an animation
+            ResetEnvelope();
+        }
 
-            RefreshClosed();
-            if (key is ZoomKey or K.CapsuleFitWidth or K.CapsuleFitHeight or K.CapsuleFitDrop or K.Silhouette)
+        if (Has(K.QuickAccessLayout))
+        {
+            _layout = QuickAccessLayout.Load(_core.App);
+            if (Expanded)
             {
-                PlaceOn(_area);
+                BuildQuick();
             }
+        }
 
-            UpdateSurface();
-        });
+        if (Has(K.ShowInCaptures))
+        {
+            ApplyCaptureExclusion();
+        }
+
+        var placement = Any(K.Display, K.DisplayId, K.Position, K.PositionsByDisplay, K.PositionLocked);
+        if (placement || Any(K.Enabled, K.HideInFullscreen))
+        {
+            ApplyDisplay();
+        }
+
+        if (Expanded && (placement || Any(ZoomKey, K.Size, K.CustomWidth, K.CustomHeight, K.Silhouette, K.ModuleOrder, K.HiddenModules)))
+        {
+            BuildOpen(rebuildPage: false);
+        }
+
+        RefreshClosed(snap: placement);
+        if (Any(ZoomKey, K.CapsuleFitWidth, K.CapsuleFitHeight, K.CapsuleFitDrop, K.Silhouette))
+        {
+            PlaceOn(_monitor);
+        }
+
+        UpdateSurface();
     }
 
     private void ApplyCaptureExclusion()
@@ -248,7 +281,7 @@ internal sealed partial class IslandWindow
         }
 
         width = Math.Min(width, ScreenWidthDip - 24);
-        var height = _placeholder ? SurfaceTop + 66 - SurfaceTop : (el.DesiredSize.Height > body + 1 ? el.DesiredSize.Height : body);
+        var height = _placeholder ? 66 : (el.DesiredSize.Height > body + 1 ? el.DesiredSize.Height : body);
         if (_picker || _mode == IslandMode.Peek || _noticeExpanded)
         {
             height = Math.Max(height, el.DesiredSize.Height);
@@ -280,6 +313,12 @@ internal sealed partial class IslandWindow
 
     private ClosedView BuildClosed()
     {
+        if (MoveModeView() is { } moveView)
+        {
+            _closedKey = "move";
+            return moveView;
+        }
+
         var body = BodyHeight;
         if (_placeholder)
         {
@@ -380,7 +419,15 @@ internal sealed partial class IslandWindow
         var w = Math.Min(ScreenWidthDip - 24, Math.Max((CameraWidth * BodyHeight / BarHeight) + 110, 340));
         var h = (IsCapsule ? 16 : BodyHeight + 10) + 52 - (IsCapsule ? 8 : 0);
         var grid = new Grid { Width = w, Height = h };
-        var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(16, 0, 16, 10), Height = 36 };
+
+        // the row sits on the far side of the pill: below it for a top island, above it for one resting on the bottom edge
+        var row = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            VerticalAlignment = OpensUp ? VerticalAlignment.Top : VerticalAlignment.Bottom,
+            Margin = OpensUp ? new Thickness(16, 10, 16, 0) : new Thickness(16, 0, 16, 10),
+            Height = 36,
+        };
         var p = _core.Playback.Current;
         var mod = _core.Modules().FirstOrDefault(m => m.Id == _module) ?? _core.Modules().FirstOrDefault();
         if (p.HasTrack && _core.ModuleVisible("music"))
@@ -432,8 +479,25 @@ internal sealed partial class IslandWindow
             chips.Children.Add(chip);
         }
 
-        panel.Children.Add(chips);
         var combine = BuildCombine(live);
+        if (OpensUp)
+        {
+            // mirrored: the strip stays on the near (bottom) side, the chips and Combine grow upward away from the edge
+            panel.Children.Clear();
+            chips.Margin = new Thickness(24, 4, 24, 12);
+            if (combine is not null)
+            {
+                combine.Margin = new Thickness(0, 0, 0, 2);
+                panel.Children.Add(combine);
+            }
+
+            panel.Children.Add(chips);
+            panel.Children.Add(stripHost);
+            panel.Margin = new Thickness(0, 10, 0, 0);
+            return new ClosedView(panel, w, w, true);
+        }
+
+        panel.Children.Add(chips);
         if (combine is not null)
         {
             panel.Children.Add(combine);
@@ -470,8 +534,12 @@ internal sealed partial class IslandWindow
     private ClosedView BuildNoticePreview(Notice n)
     {
         var w = Math.Min(Math.Max(400, (CameraWidth * BodyHeight / BarHeight) + 200), 560);
-        var panel = new StackPanel { Width = w, Margin = new Thickness(0, 0, 0, 14) };
-        var header = new Grid { Height = 28, Margin = new Thickness(16, 8, 16, 0) };
+
+        // the preview grows away from the edge the island rests on and never past the room there is on that side; the reading order stays,
+        // the small margin moves to the near side and the larger one to the far side
+        var far = Math.Max(120, FarRoomDip(0));
+        var panel = new StackPanel { Width = w, Margin = OpensUp ? new Thickness(0, 14, 0, 0) : new Thickness(0, 0, 0, 14), MaxHeight = far };
+        var header = new Grid { Height = 28, Margin = OpensUp ? new Thickness(16, 0, 16, 0) : new Thickness(16, 8, 16, 0) };
         var left = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         if (n.Image is not null)
         {
@@ -481,7 +549,7 @@ internal sealed partial class IslandWindow
         left.Children.Add(D.T(n.Detail.Length > 0 && n.Banner ? (_core.Notifications.Items.FirstOrDefault()?.App ?? "") : "", 12, FontWeights.SemiBold, D.White(0.7)));
         header.Children.Add(left);
         panel.Children.Add(header);
-        var body = new StackPanel { Margin = new Thickness(16, 6, 16, 0) };
+        var body = new StackPanel { Margin = new Thickness(16, 6, 16, OpensUp ? 8 : 0) };
         body.Children.Add(D.T(n.Title, 14, FontWeights.SemiBold, D.Text, true));
         if (_core.Notifications.Items.FirstOrDefault() is { Subtitle.Length: > 0 } item)
         {
@@ -489,7 +557,7 @@ internal sealed partial class IslandWindow
         }
 
         var msg = D.T(n.FullBody ?? n.Detail, 13, null, D.White(0.82), true);
-        msg.MaxHeight = 110;
+        msg.MaxHeight = Math.Clamp(far - 190, 36, 110);
         msg.TextTrimming = TextTrimming.CharacterEllipsis;
         msg.Margin = new Thickness(0, 6, 0, 0);
         body.Children.Add(msg);
@@ -534,6 +602,13 @@ internal sealed partial class IslandWindow
     public void Open(string? module = null, bool pinned = false, bool takeFocus = true, bool byHover = false)
     {
         if (!_core.IslandOn || _suppressed || _disposed || !_core.Session.CanPresent)
+        {
+            return;
+        }
+
+        // opening hides the closed layer, which would take the mouse capture of a drag (a wheel notch over the dimmed island, a shortcut) and
+        // commit it half way; Move mode likewise does not open by hover (any other open ends the mode, see MoveWatchTick)
+        if (_dragging || _draining || (_moveMode && byHover))
         {
             return;
         }
@@ -1031,7 +1106,10 @@ internal sealed partial class IslandWindow
 
         var w = Math.Min(Math.Max(chosen, (CameraWidth * BodyHeight / BarHeight) + 36), ScreenWidthDip - 24 - (2 * SideGutter));
         var bottom = _layout.On(QuickSide.Bottom).Any() ? SideGutter : 0;
-        var cap = Math.Max(120, ScreenHeightDip - 48 - bottom);
+
+        // the room is measured away from the edge the island rests on: the work area minus the near inset, the free margin at the far end and
+        // the quick-button row on the far side (the taskbar is not part of the work area, so a page never reaches under it)
+        var cap = Math.Max(120, FarRoomDip(bottom));
         var chrome = page.HasTopRow ? (IsCapsule ? 12 : 0) + 64 : 32;
         double budget = preset switch
         {
@@ -1185,6 +1263,12 @@ internal sealed partial class IslandWindow
 
     private void OnClosedClick(object sender, MouseButtonEventArgs e)
     {
+        if (SwallowClosedClick())
+        {
+            e.Handled = true;
+            return;
+        }
+
         if (_mode == IslandMode.Open || e.Handled)
         {
             return;

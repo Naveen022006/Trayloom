@@ -167,7 +167,7 @@ Developer flags (a second launch hands them to the running copy): `--open-settin
 `--dev-uninstall <id>`, `--close-panel`, `--dump-info <file>` (features, actions, panel utilities, shortcut defaults,
 duplicate checks), `--open-onboarding [step]`, `--open-install`, `--show-toast`, `--simulate-problem sac|crash`,
 `--dev-key escape` (raises a key event inside the app), `--slow-start <ms>`, `--shot <png> [window title]` (saves a
-picture of one of Trayloom's own windows), `--install`, `--uninstall [--quiet]`, `--no-onboarding`. With `TRAYLOOM_DEV=1` the island also exposes one action per page.
+picture of one of Trayloom's own windows), `--install`, `--uninstall [--quiet]`, `--no-onboarding`. With `TRAYLOOM_DEV=1` the island also exposes one action per page. Island placement: `--action island move` enters "Move island" mode and `--action island reset-position` puts the island back at the top center; with `TRAYLOOM_DEV=1` also `--action island dev-place-top-left`, `dev-place-top-right`, `dev-place-bottom-left`, `dev-place-bottom-center`, `dev-place-bottom-right`, `dev-place-float`, `dev-place-next-display` (cycles "Choose a display" through the connected displays) and `dev-place-reset`.
 
 `ARCHITECTURE_V2.md` and `specs/CONTRACTS.md` describe the solution layout and the contracts feature projects code
 against; `specs/R3_NOTES.md` is the integration checklist this release worked through.

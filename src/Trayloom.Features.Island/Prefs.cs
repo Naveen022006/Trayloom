@@ -33,6 +33,18 @@ internal static class K
     public const string HideInFullscreen = "notchHideInFullscreen";
     public const string HoverInFullscreen = "notchHoverInFullscreen";
     public const string Display = "notchDisplay";
+
+    /// <summary>Stable key (<see cref="IslandMonitor.Key"/>) of the display chosen when <see cref="Display"/> is "specific"; kept while that display is unplugged.</summary>
+    public const string DisplayId = "notchDisplayId";
+
+    /// <summary>The island's place as <c>"x,top|bottom,offset"</c> (<see cref="IslandPosition.Format"/>); the fallback for a display with no entry in <see cref="PositionsByDisplay"/>.</summary>
+    public const string Position = "notchPosition";
+
+    /// <summary>JSON object {display key: position text}, at most 16 displays (<see cref="IslandPlacementStore"/>).</summary>
+    public const string PositionsByDisplay = "notchPositionsByDisplay";
+
+    /// <summary>Dragging the closed island does not move it (the "Move island" mode still does).</summary>
+    public const string PositionLocked = "notchPositionLocked";
     public const string ShowInCaptures = "notchShowInCaptures";
     public const string HiddenModules = "notchHiddenModules";
     public const string ModuleOrder = "notchModuleOrder";
@@ -167,6 +179,10 @@ internal static class K
             [HideInFullscreen] = false,
             [HoverInFullscreen] = false,
             [Display] = "automatic",
+            [DisplayId] = "",
+            [Position] = "0.5,top,0",
+            [PositionsByDisplay] = "",
+            [PositionLocked] = false,
             [ShowInCaptures] = true,
             [HiddenModules] = "",
             [ModuleOrder] = "",

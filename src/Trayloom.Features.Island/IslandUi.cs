@@ -720,13 +720,19 @@ internal static class IslandMenu
 
     public static Item Sep() => new("", null, Separator: true);
 
-    /// <summary>Shows the menu below <paramref name="anchor"/>; <paramref name="hold"/> is called to keep the island open while it is shown.</summary>
-    public static void Show(FrameworkElement anchor, IEnumerable<Item> items, Func<IDisposable?>? hold = null, bool above = false)
+    /// <summary>
+    /// Shows the menu below <paramref name="anchor"/> (WPF flips it when it does not fit), or at the pointer when <paramref name="atPointer"/> is set
+    /// (the island's own menus: the island can sit at any edge, so "below the island" is no place at all); <paramref name="hold"/> is called to keep the
+    /// island open while it is shown.
+    /// </summary>
+    public static void Show(FrameworkElement anchor, IEnumerable<Item> items, Func<IDisposable?>? hold = null, bool above = false, bool atPointer = false)
     {
         var holdToken = hold?.Invoke();
         var menu = new ContextMenu
         {
-            Placement = above ? System.Windows.Controls.Primitives.PlacementMode.Top : System.Windows.Controls.Primitives.PlacementMode.Bottom,
+            Placement = atPointer
+                ? System.Windows.Controls.Primitives.PlacementMode.MousePoint
+                : above ? System.Windows.Controls.Primitives.PlacementMode.Top : System.Windows.Controls.Primitives.PlacementMode.Bottom,
             PlacementTarget = anchor,
             StaysOpen = false,
             Background = new SolidColorBrush(Color.FromRgb(0x1C, 0x1C, 0x1E)),
