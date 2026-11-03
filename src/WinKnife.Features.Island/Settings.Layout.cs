@@ -77,6 +77,8 @@ internal sealed class LayoutEditor : Grid
         var iw = w * _scale;
         var ih = h * _scale;
         _island = new Rect((cw - iw) / 2, 20, iw, ih);
+        // Room for the island, the buttons around it and the row of buttons below it (no empty band under a small island).
+        _canvas.Height = Math.Max(220, _island.Bottom + 90);
         // the island itself (real controls page scaled)
         var surface = new Border
         {

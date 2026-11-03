@@ -40,13 +40,15 @@ internal static class InputUi
     /// <summary>A line with an orange warning glyph and orange text.</summary>
     public static FrameworkElement Warning(string text, double left = 0, string glyph = "")
     {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(left, 0, 0, 0) };
+        var row = new Grid { Margin = new Thickness(left, 0, 0, 0) };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         var icon = UiKit.Icon(glyph, 12, ThemeKeys.Orange);
         icon.Margin = new Thickness(0, 1, 6, 0);
         icon.VerticalAlignment = VerticalAlignment.Top;
         row.Children.Add(icon);
         var label = UiKit.Text(text, 11.5, FontWeights.Normal, ThemeKeys.Orange, wrap: true);
-        label.MaxWidth = 560;
+        Grid.SetColumn(label, 1);
         row.Children.Add(label);
         return row;
     }

@@ -66,13 +66,13 @@ public sealed class MouseLegendSection : MouseSectionBase
     {
         Prepare(c);
         var card = new SettingsCard();
-        var wrap = new WrapPanel();
+        var wrap = new System.Windows.Controls.Primitives.UniformGrid { Columns = 2 };
         var dots = new List<(Ellipse Dot, TextBlock Label, Entry Entry)>();
         foreach (var entry in Entries.Where(e => c.Runtime.IsAvailable(e.FeatureId)))
         {
             var title = FeatureCatalog.Get(entry.FeatureId)?.Title ?? entry.FeatureId;
             var dot = new Ellipse { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center };
-            var label = UiKit.Text(title, 12.5, FontWeights.Normal, ThemeKeys.TextPrimary, trimming: TextTrimming.CharacterEllipsis);
+            var label = UiKit.Text(title, 12.5, FontWeights.Normal, ThemeKeys.TextPrimary, wrap: true);
             label.Margin = new Thickness(10, 0, 0, 0);
             var chevron = UiKit.Icon("", 9, ThemeKeys.TextTertiary, FontWeights.SemiBold);
             chevron.HorizontalAlignment = HorizontalAlignment.Right;
@@ -85,7 +85,7 @@ public sealed class MouseLegendSection : MouseSectionBase
             grid.Children.Add(label);
             Grid.SetColumn(chevron, 2);
             grid.Children.Add(chevron);
-            var cell = new Border { Width = 236, Padding = new Thickness(8, 6, 8, 6), CornerRadius = new CornerRadius(8), Background = Brushes.Transparent, Cursor = Cursors.Hand, Child = grid };
+            var cell = new Border { Padding = new Thickness(8), Margin = new Thickness(0, 0, 4, 0), CornerRadius = new CornerRadius(8), Background = Brushes.Transparent, Cursor = Cursors.Hand, Child = grid };
             cell.MouseEnter += (_, _) => cell.SetResourceReference(Border.BackgroundProperty, ThemeKeys.RowHover);
             cell.MouseLeave += (_, _) => cell.Background = Brushes.Transparent;
             var anchor = entry.Anchor;

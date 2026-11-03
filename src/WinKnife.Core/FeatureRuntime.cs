@@ -89,7 +89,7 @@ public sealed class FeatureRuntime : IFeatureRuntime
     /// <inheritdoc />
     public string? InstallBlockedReason(string featureId) =>
         FeatureCatalog.TryResolve(featureId, out var entry) && !IsAvailable(entry.Id) && !entry.CanInstall
-            ? entry.UnavailableReason ?? "Not available on Windows."
+            ? Loc.T(entry.UnavailableReason ?? "Not available on Windows.")
             : null;
 
     /// <summary>

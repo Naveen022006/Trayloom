@@ -57,7 +57,7 @@ internal static class GeneralPage
         {
             card.AddDivider();
             card.Add(new SettingsRow("", Loc.T("Install WinKnife"), Loc.T("Add it to the Start menu and keep it if you delete the download. No administrator password needed."),
-                UiKit.Button("Install…", ButtonKind.Bordered, 12, onClick: () => s.Shell.ShowInstallOffer())));
+                UiKit.Button(Loc.T("Install…"), ButtonKind.Bordered, 12, onClick: () => s.Shell.ShowInstallOffer())));
         }
 
         card.AddDivider();

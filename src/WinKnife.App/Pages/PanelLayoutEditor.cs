@@ -53,7 +53,7 @@ internal static class PanelLayoutEditor
                 var tile = UiKit.IconTile(tab.Glyph, 26, 12, 7, shown ? ThemeKeys.Accent : ThemeKeys.TextSecondary, shown ? ThemeKeys.AccentFill12 : ThemeKeys.ControlFill);
                 Grid.SetColumn(tile, 2);
                 grid.Children.Add(tile);
-                var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
                 text.Children.Add(UiKit.Text(tab.Title, 13, FontWeights.Medium, shown ? ThemeKeys.TextPrimary : ThemeKeys.TextSecondary));
                 text.Children.Add(UiKit.Text(tab.Description, 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true));
                 Grid.SetColumn(text, 4);
@@ -69,7 +69,7 @@ internal static class PanelLayoutEditor
                 Grid.SetColumn(toggle, 5);
                 grid.Children.Add(toggle);
 
-                var row = new Border { CornerRadius = new CornerRadius(10), Padding = new Thickness(8, 6, 8, 6), Child = grid, Tag = tab.Id, Background = Brushes.Transparent };
+                var row = new Border { CornerRadius = new CornerRadius(10), Padding = new Thickness(8), Child = grid, Tag = tab.Id, Background = Brushes.Transparent };
                 row.MouseEnter += (_, _) =>
                 {
                     row.SetResourceReference(Border.BackgroundProperty, ThemeKeys.RowHover);

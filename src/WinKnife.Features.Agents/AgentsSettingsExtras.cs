@@ -32,7 +32,7 @@ internal sealed class AgentAttentionSettings : StackPanel
         _status = UiKit.Text("", 12.5, FontWeights.Medium, ThemeKeys.TextPrimary, wrap: true);
         _result = UiKit.Text("", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
 
-        var toggle = new SettingsRow("", Loc.T("Tell me when an agent needs me"),
+        var toggle = new SettingsRow("", Loc.T("Tell me when an agent needs me"),
             Loc.T("Shows “Claude needs your permission - project: tool” on the island, and an amber “Waiting for you” state in the Now card and the closed island. Applies to Claude Code (terminal and Claude app) and Codex."),
             new MacSwitch(app.Get(AgentKeys.Attention, true), SwitchSize.Regular, on => app.Set(AgentKeys.Attention, on)));
         Children.Add(toggle);
@@ -171,6 +171,14 @@ internal sealed class LimitDiagnosticsView : StackPanel
         var sources = _runtime?.Service.Snapshot.LimitSources ?? [];
         var intro = UiKit.Text(Loc.T("Each source below is shown as it reads right now, so you can check it against Claude (Settings > Usage) and the Codex app. The newest reading is the one WinKnife shows; a source is never mixed with another. Reset times appear only when a source reports one."), 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
         _list.Children.Add(intro);
+        var plans = _runtime?.Service.Snapshot.Plans;
+        if (plans is not null && plans.TryGetValue(AgentProvider.Claude, out var claudePlan) && AgentLimitPlan.Describe(AgentProvider.Claude, claudePlan) is { } planNote)
+        {
+            var plan = UiKit.Text(Loc.F("Your Claude plan: {0}. ", claudePlan.Name) + planNote, 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+            plan.Margin = new Thickness(0, 8, 0, 0);
+            _list.Children.Add(plan);
+        }
+
         if (sources.Count == 0)
         {
             var none = UiKit.Text(Loc.T("No readings yet. Open the AI Agents page in the island, or press Read now."), 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);

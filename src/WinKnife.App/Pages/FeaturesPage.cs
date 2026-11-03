@@ -16,6 +16,9 @@ internal sealed class FeaturesPageState
 {
     public int Tab { get; set; }
 
+    /// <summary>The router request whose <c>features#permissions</c> anchor was already applied to <see cref="Tab"/>.</summary>
+    public Guid AppliedRequest { get; set; }
+
     public HashSet<string> CollapsedGroups { get; } = [];
 
     public bool IslandModulesCollapsed { get; set; }
@@ -74,8 +77,25 @@ internal static class FeaturesPage
             }
         }
 
+        // A fresh request for features#permissions (or features#features) selects that tab; rebuilds caused by the tab control itself keep it.
+        if (router.RequestId != state.AppliedRequest)
+        {
+            state.AppliedRequest = router.RequestId;
+            var anchor = router.Current?.Anchor;
+            if (string.Equals(anchor, "permissions", StringComparison.OrdinalIgnoreCase))
+            {
+                state.Tab = 1;
+                s.App.Set(AppKeys.FeaturesTabSelected, 1);
+            }
+            else if (string.Equals(anchor, "features", StringComparison.OrdinalIgnoreCase))
+            {
+                state.Tab = 0;
+                s.App.Set(AppKeys.FeaturesTabSelected, 0);
+            }
+        }
+
         var stack = new StackPanel();
-        stack.AddSpaced(HeaderBlock(state, rebuild, rt), 20);
+        stack.AddSpaced(HeaderBlock(state, rebuild, rt, s), 20);
         if (rt.NeedsRestartToUnload)
         {
             stack.AddSpaced(RestartCard(s), 20);
@@ -126,13 +146,14 @@ internal static class FeaturesPage
 
     // ------------------------------------------------------------------------------------------------ top
 
-    private static UIElement HeaderBlock(FeaturesPageState state, Action rebuild, FeatureRuntime rt)
+    private static UIElement HeaderBlock(FeaturesPageState state, Action rebuild, FeatureRuntime rt, ShellServices s)
     {
         var card = new SettingsCard();
         var seg = new SegmentedControl([Loc.T("Features"), Loc.T("Permissions")], state.Tab, false, 13);
         seg.SelectionChanged += i =>
         {
             state.Tab = i;
+            s.App.Set(AppKeys.FeaturesTabSelected, i);
             rebuild();
         };
         card.Add(seg);
@@ -288,14 +309,25 @@ internal static class FeaturesPage
 
     private static Border PresetCard(ShellServices s, FeaturePreset preset)
     {
-        var inner = new StackPanel();
-        var head = new StackPanel { Orientation = Orientation.Horizontal };
-        head.Children.Add(UiKit.Icon(preset.Glyph, 15, ThemeKeys.Accent, FontWeights.SemiBold));
-        var name = UiKit.Text(preset.Name, 14, FontWeights.SemiBold, ThemeKeys.TextPrimary);
+        var inner = new Grid();
+        inner.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        inner.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        inner.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        var head = new Grid();
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var glyph = UiKit.Icon(preset.Glyph, 15, ThemeKeys.Accent, FontWeights.SemiBold);
+        glyph.VerticalAlignment = VerticalAlignment.Top;
+        glyph.Margin = new Thickness(0, 1, 0, 0);
+        head.Children.Add(glyph);
+        var name = UiKit.Text(preset.Name, 14, FontWeights.SemiBold, ThemeKeys.TextPrimary, wrap: true);
         name.Margin = new Thickness(8, 0, 0, 0);
+        Grid.SetColumn(name, 1);
         head.Children.Add(name);
         inner.Children.Add(head);
-        inner.Children.Add(Spaced(UiKit.Text(preset.Description, 12, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true), 6));
+        var blurb = Spaced(UiKit.Text(preset.Description, 12, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true), 6);
+        Grid.SetRow(blurb, 1);
+        inner.Children.Add(blurb);
         var apply = UiKit.Button(Loc.T("Apply"), ButtonKind.Bordered, 12.5, onClick: () =>
         {
             var choice = Dialogs.Show(Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault(), preset.Name,
@@ -307,7 +339,9 @@ internal static class FeaturesPage
             }
         });
         apply.HorizontalAlignment = HorizontalAlignment.Left;
+        apply.VerticalAlignment = VerticalAlignment.Bottom;
         apply.Margin = new Thickness(0, 12, 0, 0);
+        Grid.SetRow(apply, 2);
         inner.Children.Add(apply);
         var card = new Border { CornerRadius = new CornerRadius(12), Padding = new Thickness(12), MinHeight = 138, Child = inner };
         card.SetResourceReference(Border.BackgroundProperty, ThemeKeys.ControlFill);
@@ -452,7 +486,7 @@ internal static class FeaturesPage
         var blocked = rt.InstallBlockedReason(entry.Id);
         var unavailable = blocked is not null;
 
-        var root = new Border { CornerRadius = new CornerRadius(10), Padding = new Thickness(8, 7, 8, 7), Background = Brushes.Transparent };
+        var root = new Border { CornerRadius = new CornerRadius(10), Padding = new Thickness(8), Background = Brushes.Transparent }; // 8 DIP = whole pixels at 125 / 150 / 175 % (7 left a fractional padding that clipped the last text line)
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -499,7 +533,9 @@ internal static class FeaturesPage
         titleRow.Children.Add(info);
         titleRow.Children.Add(Margined(EnergyPill(entry), 4, 0));
         text.Children.Add(titleRow);
-        var desc = UiKit.Text(entry.Description, 12.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+        // A feature Windows cannot offer explains why instead of repeating the macOS wording of its description.
+        var descriptionText = unavailable && !installed && blocked is { Length: > 0 } ? blocked : entry.Description;
+        var desc = UiKit.Text(descriptionText, 12.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
         desc.Opacity = installed ? 1 : 0.7;
         desc.Margin = new Thickness(0, 2, 0, 0);
         text.Children.Add(desc);

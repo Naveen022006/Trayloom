@@ -72,13 +72,15 @@ public sealed class QuitOnCloseSettingsSection : ISettingsSection
         var predictable = UiKit.Text(Strings.AutoQuitPredictable, 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
         predictable.Margin = new Thickness(0, 10, 0, 0);
         how.Children.Add(predictable);
-        var ongoing = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 0) };
+        var ongoing = new Grid { Margin = new Thickness(0, 10, 0, 0) };
+        ongoing.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        ongoing.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         var warn = UiKit.Icon("", 11, ThemeKeys.Orange);
         warn.Margin = new Thickness(0, 1, 6, 0);
         warn.VerticalAlignment = VerticalAlignment.Top;
         ongoing.Children.Add(warn);
         var ongoingText = UiKit.Text(Strings.AutoQuitOngoing, 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
-        ongoingText.MaxWidth = 560;
+        Grid.SetColumn(ongoingText, 1);
         ongoing.Children.Add(ongoingText);
         how.Children.Add(ongoing);
         Add(FormUi.Section(Strings.HowItWorks, how));

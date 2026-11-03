@@ -415,7 +415,7 @@ internal static class MonitorSettingsUi
         var app = c.App;
         var inset = new Border { CornerRadius = new CornerRadius(10), Padding = new Thickness(10) };
         inset.SetResourceReference(Border.BackgroundProperty, ThemeKeys.ControlFill);
-        var grid = new UniformGrid { Columns = 3 };
+        var grid = new UniformGrid { Columns = 2 };
         inset.Child = grid;
         var order = MetricBlocks.Order(app);
         var tokens = new Dictionary<string, MonitorToken>();
@@ -563,7 +563,7 @@ internal static class MonitorSettingsUi
             itemsHost.Children.Add(heading);
             var inset = new Border { CornerRadius = new CornerRadius(10), Padding = new Thickness(10), Opacity = app.Get<bool>(def.Key) ? 1 : 0.5, IsEnabled = app.Get<bool>(def.Key) };
             inset.SetResourceReference(Border.BackgroundProperty, ThemeKeys.ControlFill);
-            var items = new UniformGrid { Columns = 3 };
+            var items = new UniformGrid { Columns = 2 };
             foreach (var item in PanelItems(c, selected))
             {
                 items.Children.Add(item);
@@ -731,7 +731,7 @@ internal static class MonitorSettingsUi
         var card = new SettingsCard(Strings.Alerts.Section);
         var inset = new Border { CornerRadius = new CornerRadius(10), Padding = new Thickness(10) };
         inset.SetResourceReference(Border.BackgroundProperty, ThemeKeys.ControlFill);
-        var grid = new UniformGrid { Columns = 3 };
+        var grid = new UniformGrid { Columns = 2 };
         inset.Child = grid;
         var battery = PowerStatus.HasBattery && c.Runtime.IsAvailable("monitor-power");
         var fahrenheit = app.Get<string>("temperatureUnit") == "fahrenheit";

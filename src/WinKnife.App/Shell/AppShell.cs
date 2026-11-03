@@ -178,6 +178,9 @@ internal sealed class AppShell : IShell
         }
     }
 
+    /// <summary>Developer flag <c>--host-utility &lt;id&gt;</c>: shows a hosted utility panel inside the open flyout (screenshots).</summary>
+    public void HostUtilityForDevelopment(string id) => _panel?.HostUtility(id);
+
     public void Quit() => Application.Current.Dispatcher.BeginInvoke(() => Application.Current.Shutdown());
 
     public void Restart() => Restart(false);
@@ -260,7 +263,7 @@ internal sealed class AppShell : IShell
         _tray?.Recreate();
         UpdateTrayState();
         ShowSettings(SettingsPages.Last, null);
-        _tray?.ShowBalloon("WinKnife is already running", "Settings is open. The WinKnife icon is next to the clock (click the ^ arrow if it is hidden).", NotificationLevel.Info);
+        _tray?.ShowBalloon(Loc.T("WinKnife is already running"), Loc.T("Settings is open. The WinKnife icon is next to the clock (click the ^ arrow if it is hidden)."), NotificationLevel.Info);
     }
 
     /// <summary>Opens the flyout next to the tray corner (where the icon lives), as if the icon had been clicked.</summary>
@@ -276,8 +279,8 @@ internal sealed class AppShell : IShell
     /// <summary>The one-time "WinKnife is running" toast (balloon) that points at the tray icon.</summary>
     public void ShowRunningToast(bool justInstalled)
     {
-        var title = justInstalled ? "WinKnife is installed and running" : "WinKnife is running";
-        _tray?.ShowBalloon(title, "Click the icon by the clock to open it. If you cannot see it, click the ^ arrow next to the clock.", NotificationLevel.Info);
+        var title = justInstalled ? Loc.T("WinKnife is installed and running") : Loc.T("WinKnife is running");
+        _tray?.ShowBalloon(title, Loc.T("Click the icon by the clock to open it. If you cannot see it, click the ^ arrow next to the clock."), NotificationLevel.Info);
         _s.App.Set(AppKeys.FirstRunToastShown, true);
     }
 

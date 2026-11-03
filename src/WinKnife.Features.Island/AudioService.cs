@@ -559,61 +559,123 @@ internal sealed class AudioService : IDisposable
     }
 }
 
-/// <summary>Panel brightness through WMI (late bound, no package needed). Works for built-in panels.</summary>
+/// <summary>
+/// Panel brightness through WMI (late bound, no package needed). Works for built-in panels. WMI scripting objects give every
+/// instance its own dispatch ids, so properties are read through <c>Properties_</c> and methods called through IDispatch by name:
+/// the C# dynamic binder would cache the ids of the first object and fail on every later call.
+/// </summary>
 internal static class BrightnessService
 {
+    private static readonly object Gate = new();
     private static bool? _available;
+    private static double? _pending;
+    private static bool _writing;
 
     public static bool Available => _available ??= Read() is not null;
 
     public static double? Read()
     {
+        double? result = null;
+        ForEach("SELECT CurrentBrightness FROM WmiMonitorBrightness WHERE Active=TRUE", item =>
+        {
+            if (result is null)
+            {
+                dynamic d = item;
+                result = Convert.ToInt32(d.Properties_.Item("CurrentBrightness").Value, System.Globalization.CultureInfo.InvariantCulture) / 100.0;
+            }
+        });
+        return result;
+    }
+
+    /// <summary>Sets the level off the UI thread; while a write runs, only the newest requested level is kept (dragging stays smooth).</summary>
+    public static void Write(double value)
+    {
+        lock (Gate)
+        {
+            _pending = value;
+            if (_writing)
+            {
+                return;
+            }
+
+            _writing = true;
+        }
+
+        _ = Task.Run(() =>
+        {
+            while (true)
+            {
+                double next;
+                lock (Gate)
+                {
+                    if (_pending is not { } p)
+                    {
+                        _writing = false;
+                        return;
+                    }
+
+                    next = p;
+                    _pending = null;
+                }
+
+                var percent = (byte)Math.Clamp(Math.Round(next * 100), 0, 100);
+                ForEach("SELECT * FROM WmiMonitorBrightnessMethods WHERE Active=TRUE", item =>
+                    item.GetType().InvokeMember("WmiSetBrightness", System.Reflection.BindingFlags.InvokeMethod, null, item, [1, percent]));
+            }
+        });
+    }
+
+    private static void ForEach(string query, Action<object> action)
+    {
+        object? locator = null;
+        object? service = null;
+        object? set = null;
         try
         {
             var type = Type.GetTypeFromProgID("WbemScripting.SWbemLocator");
             if (type is null)
             {
-                return null;
+                return;
             }
 
-            dynamic locator = Activator.CreateInstance(type)!;
-            dynamic service = locator.ConnectServer(".", "root\\wmi");
-            dynamic results = service.ExecQuery("SELECT CurrentBrightness FROM WmiMonitorBrightness WHERE Active=TRUE");
-            foreach (dynamic item in results)
+            locator = Activator.CreateInstance(type);
+            service = ((dynamic)locator!).ConnectServer(".", "root\\wmi");
+            set = ((dynamic)service!).ExecQuery(query, "WQL", 0x10);
+            foreach (object item in (dynamic)set!)
             {
-                return (int)item.CurrentBrightness / 100.0;
+                try
+                {
+                    action(item);
+                }
+                finally
+                {
+                    Release(item);
+                }
+            }
+        }
+        catch
+        {
+            // No panel, WMI unavailable or access denied.
+        }
+        finally
+        {
+            Release(set);
+            Release(service);
+            Release(locator);
+        }
+    }
+
+    private static void Release(object? o)
+    {
+        try
+        {
+            if (o is not null && System.Runtime.InteropServices.Marshal.IsComObject(o))
+            {
+                System.Runtime.InteropServices.Marshal.ReleaseComObject(o);
             }
         }
         catch
         {
         }
-
-        return null;
-    }
-
-    public static void Write(double value)
-    {
-        _ = Task.Run(() =>
-        {
-            try
-            {
-                var type = Type.GetTypeFromProgID("WbemScripting.SWbemLocator");
-                if (type is null)
-                {
-                    return;
-                }
-
-                dynamic locator = Activator.CreateInstance(type)!;
-                dynamic service = locator.ConnectServer(".", "root\\wmi");
-                dynamic results = service.ExecQuery("SELECT * FROM WmiMonitorBrightnessMethods WHERE Active=TRUE");
-                foreach (dynamic item in results)
-                {
-                    item.WmiSetBrightness(1, (byte)Math.Clamp(Math.Round(value * 100), 0, 100));
-                }
-            }
-            catch
-            {
-            }
-        });
     }
 }

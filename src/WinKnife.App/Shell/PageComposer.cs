@@ -184,7 +184,9 @@ internal static class PageComposer
             FrameworkElement view;
             try
             {
-                view = section.CreateView(context(section.Anchor));
+                // RequestedAnchor is the anchor the router asked for (not each section's own anchor: that made the last tool section of
+                // Screen capture always win the tool picker).
+                view = section.CreateView(context(visit.Anchor));
             }
             catch (Exception ex)
             {
@@ -215,7 +217,7 @@ internal static class PageComposer
 
     private static string? PageDescription(string page) => page switch
     {
-        SettingsPages.Monitor => "Choose what the system monitor shows in the panel and on the taskbar.",
+        SettingsPages.Monitor => Loc.T("Choose what the system monitor shows in the panel and on the taskbar."),
         _ => null,
     };
 }

@@ -10,7 +10,7 @@ WinKnife is licensed under the same terms as Vorssaint, **GPL-3.0-or-later** (se
 project and is **not affiliated with or endorsed by Vorssaint**; the Vorssaint name, logo and icon are not used.
 
 * Languages: 15 (System default, English and the 13 other Vorssaint languages), switched live in Settings > General > Language;
-  see `specs/L10N_TODO.md` for coverage. A few WinKnife-only texts (the first-run guide, install offer) are still English.
+  see `specs/L10N_TODO.md` for coverage. The first-run guide, the install / uninstall windows and the Settings pages General, About and Advanced are translated into all 15 languages; some captions of the feature pages are still English.
 * Settings: `%APPDATA%\WinKnife\settings.json` (override the folder with the `WINKNIFE_DATA` environment variable).
 * Log: `<settings folder>\logs\winknife.log`.
 * First run: onboarding, then only the **Essentials** bundle (Volume mixer, System monitor, Keep awake) is installed.

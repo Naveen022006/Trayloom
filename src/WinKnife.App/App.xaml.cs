@@ -257,7 +257,7 @@ public partial class App : Application
         {
             if (manual)
             {
-                Dialogs.Show(null, Loc.T("WinKnife is installed"), "This copy already runs from " + InstallManager.InstallRoot + ".", [Loc.T("OK")]);
+                Dialogs.Show(null, Loc.T("WinKnife is installed"), Loc.F("This copy already runs from {0}.", InstallManager.InstallRoot), [Loc.T("OK")]);
             }
 
             done?.Invoke();
@@ -305,7 +305,7 @@ public partial class App : Application
         catch (Exception ex)
         {
             host.Log.Error("Could not start the installed copy", ex);
-            Dialogs.Show(null, Loc.T("WinKnife was installed"), "It could not be started automatically. Open it from the Start menu, or run " + window.InstalledExe + ".", [Loc.T("OK")]);
+            Dialogs.Show(null, Loc.T("WinKnife was installed"), Loc.F("It could not be started automatically. Open it from the Start menu, or run {0}.", window.InstalledExe), [Loc.T("OK")]);
             return;
         }
 
@@ -464,7 +464,18 @@ public partial class App : Application
 
         if (Arg("--dev-install") is { } install)
         {
-            Dispatcher.BeginInvoke(priority, () => _host!.Runtime.SetAvailable([install], true));
+            Dispatcher.BeginInvoke(priority, () =>
+            {
+                if (install == "all")
+                {
+                    // --dev-install all: Install all (no enable key is switched on, so no hook starts doing anything).
+                    _host!.Runtime.SetAllAvailable(true);
+                }
+                else
+                {
+                    _host!.Runtime.SetAvailable([install], true);
+                }
+            });
         }
 
         if (Arg("--dump-info") is { } dump)
@@ -536,13 +547,47 @@ public partial class App : Application
         if (Arg("--shot") is { } shotFile)
         {
             var titlePart = Arg("--shot", 2) is { } t && !t.StartsWith("--", StringComparison.Ordinal) ? t : null;
-            Dispatcher.BeginInvoke(priority, () => DevShot.Take(shotFile, titlePart));
+            var delay = int.TryParse(Arg("--shot-delay"), out var shotDelay) ? Math.Clamp(shotDelay, 100, 20_000) : 900;
+            Dispatcher.BeginInvoke(priority, () => DevShot.Take(shotFile, titlePart, delay));
+        }
+
+        if (Arg("--host-utility") is { } hostUtility)
+        {
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, () => shell.HostUtilityForDevelopment(hostUtility));
+        }
+
+        if (Arg("--scroll-to") is { } scrollNeedle)
+        {
+            // --scroll-to <text>: scrolls the first text block containing it into view (underscores = spaces).
+            Dispatcher.BeginInvoke(priority, () => DevLayout.ScrollTo(scrollNeedle.Replace('_', ' ')));
+        }
+
+        if (Arg("--dump-text") is { } needle && Arg("--dump-text", 2) is { } dumpFile)
+        {
+            // --dump-text <needle> <file>: layout facts (sizes, parents) of every TextBlock whose text contains the needle (underscores = spaces).
+            Dispatcher.BeginInvoke(priority, () => DevLayout.Dump(needle.Replace('_', ' '), dumpFile));
+        }
+
+        if (Arg("--shot-full") is { } fullFile)
+        {
+            var delay = int.TryParse(Arg("--shot-delay"), out var fullDelay) ? Math.Clamp(fullDelay, 100, 20_000) : 1200;
+            Dispatcher.BeginInvoke(priority, () => DevShot.TakeFull(fullFile, delay));
         }
 
         if (Arg("--set-language") is { } languageCode)
         {
             // --set-language <code|system>: the same change as Settings > General > Language (checks the live language switch).
             Dispatcher.BeginInvoke(priority, () => _host!.App.Set(AppKeys.AppLanguage, languageCode));
+        }
+
+        if (Arg("--set-appearance") is { } appearance)
+        {
+            // --set-appearance <system|light|dark>: the same change as Settings > General > Appearance.
+            Dispatcher.BeginInvoke(priority, () =>
+            {
+                _host!.App.Set(AppKeys.AppAppearance, appearance);
+                ThemeManager.SetAppearance(appearance switch { "light" => AppAppearance.Light, "dark" => AppAppearance.Dark, _ => AppAppearance.System });
+            });
         }
 
         if (Arg("--dev-key") is { } keyName)
@@ -559,7 +604,7 @@ public partial class App : Application
         }
     }
 
-    private static readonly string[] DevFlags = ["--open-settings", "--open-panel", "--open-menu", "--search", "--dev-uninstall", "--dev-install", "--action", "--dump-info", "--close-panel", "--open-onboarding", "--open-install", "--show-toast", "--simulate-problem", "--dev-key", "--shot", "--set-language"];
+    private static readonly string[] DevFlags = ["--open-settings", "--open-panel", "--open-menu", "--search", "--dev-uninstall", "--dev-install", "--action", "--dump-info", "--close-panel", "--open-onboarding", "--open-install", "--show-toast", "--simulate-problem", "--dev-key", "--shot", "--set-language", "--set-appearance", "--shot-delay", "--shot-full", "--dump-text", "--scroll-to", "--host-utility"];
 
     /// <summary>Raises a PreviewKeyDown for <paramref name="name"/> (e.g. "escape") on the active window, as if it had been typed there.</summary>
     private void RaiseKey(string name)

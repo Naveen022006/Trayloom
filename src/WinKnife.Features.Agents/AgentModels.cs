@@ -309,6 +309,9 @@ public enum AgentReadout
     Tokens,
     Cost,
     Limit,
+
+    /// <summary>The time and, beside it, the limit closest to running out: "2:43 · Wk 100%".</summary>
+    TimeAndLimit,
 }
 
 public enum AgentLimitFocus

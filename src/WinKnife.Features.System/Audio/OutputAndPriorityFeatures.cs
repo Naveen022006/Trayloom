@@ -132,7 +132,10 @@ public sealed class OutputSwitcherSettingsSection : ISettingsSection
 
 /// <summary>
 /// Audio device priority (spec 05 D3): keeps the default output and microphone on the highest-priority connected device of the lists
-/// the user ordered. Devices not ranked yet wait a moment for the OS to settle before they join the list.
+/// the user ordered. Like the Mac version it only steps in when a device connects or disconnects, or when the lists change; a device
+/// picked by hand in Windows stays picked. Devices not ranked yet wait a moment for Windows to settle before they join the list: first
+/// when Windows switched to them, or (Windows does not always switch) when they are headphones; below the other hardware otherwise.
+/// A Bluetooth hands-free endpoint never goes first by itself, since using it drops the headset to call quality.
 /// </summary>
 public sealed class AudioPriorityFeature : IFeature
 {
@@ -146,13 +149,15 @@ public sealed class AudioPriorityFeature : IFeature
     private DispatcherTimer? _debounce;
     private DispatcherTimer? _settle;
     private readonly HashSet<string> _waiting = [];
+    private readonly Dictionary<DataFlow, HashSet<string>> _settled = [];
+    private readonly HashSet<DataFlow> _pending = [];
     private bool _writing;
 
     public string Id => "audio-priority";
 
     public IReadOnlyList<FeatureAction> Actions =>
     [
-        new FeatureAction("apply", Loc.T("Apply audio priority now"), () => Sync(settle: false), ""),
+        new FeatureAction("apply", Loc.T("Apply audio priority now"), () => Sync(settle: false, force: true), ""),
     ];
 
     public void Start(IFeatureContext context)
@@ -162,13 +167,13 @@ public sealed class AudioPriorityFeature : IFeature
         _debounce = new DispatcherTimer(TimeSpan.FromMilliseconds(700), DispatcherPriority.Background, (_, _) =>
         {
             _debounce?.Stop();
-            Sync(settle: true);
+            Sync(settle: true, force: false);
         }, context.Ui);
         _debounce.Stop();
-        _settle = new DispatcherTimer(TimeSpan.FromMilliseconds(1800), DispatcherPriority.Background, (_, _) =>
+        _settle = new DispatcherTimer(TimeSpan.FromMilliseconds(2000), DispatcherPriority.Background, (_, _) =>
         {
             _settle?.Stop();
-            Sync(settle: false);
+            Sync(settle: false, force: false);
         }, context.Ui);
         _settle.Stop();
         context.App.Changed += OnSetting;
@@ -181,7 +186,8 @@ public sealed class AudioPriorityFeature : IFeature
             context.Log.Error("Could not watch audio devices", ex);
         }
 
-        Sync(settle: false);
+        // The first pass takes the baseline and gives unranked devices their place; it does not override what is in use.
+        Sync(settle: true, force: false);
     }
 
     public void Stop()
@@ -197,6 +203,9 @@ public sealed class AudioPriorityFeature : IFeature
         _debounce = null;
         _settle?.Stop();
         _settle = null;
+        _waiting.Clear();
+        _settled.Clear();
+        _pending.Clear();
         _ctx = null;
     }
 
@@ -206,7 +215,7 @@ public sealed class AudioPriorityFeature : IFeature
         {
             if (!_writing)
             {
-                _ctx?.Ui.BeginInvoke(() => Sync(settle: false));
+                _ctx?.Ui.BeginInvoke(() => Sync(settle: false, force: true));
             }
         }
     }
@@ -218,7 +227,7 @@ public sealed class AudioPriorityFeature : IFeature
             _debounce?.Start();
         });
 
-    private void Sync(bool settle)
+    private void Sync(bool settle, bool force)
     {
         var ctx = _ctx;
         if (ctx is null)
@@ -228,8 +237,8 @@ public sealed class AudioPriorityFeature : IFeature
 
         try
         {
-            SyncFlow(ctx, DataFlow.Render, "audioPriorityOutputUIDs", "audioPriorityOutputEnabled", settle);
-            SyncFlow(ctx, DataFlow.Capture, "audioPriorityInputUIDs", "audioPriorityInputEnabled", settle);
+            SyncFlow(ctx, DataFlow.Render, "audioPriorityOutputUIDs", "audioPriorityOutputEnabled", settle, force);
+            SyncFlow(ctx, DataFlow.Capture, "audioPriorityInputUIDs", "audioPriorityInputEnabled", settle, force);
         }
         catch (Exception ex)
         {
@@ -237,7 +246,7 @@ public sealed class AudioPriorityFeature : IFeature
         }
     }
 
-    private void SyncFlow(IFeatureContext ctx, DataFlow flow, string listKey, string enabledKey, bool settle)
+    private void SyncFlow(IFeatureContext ctx, DataFlow flow, string listKey, string enabledKey, bool settle, bool force)
     {
         var active = AudioDevices.List(flow);
         var list = ctx.App.Get<List<string>>(listKey).ToList();
@@ -253,10 +262,26 @@ public sealed class AudioPriorityFeature : IFeature
             }
         }
 
+        // Only a device connecting or disconnecting is a priority event. Windows changing the default, or the person picking a
+        // device by hand, is not, so a manual choice stays until the hardware changes.
+        var ids = active.Select(a => a.Id).ToHashSet();
+        if (_settled.TryGetValue(flow, out var before) && !before.SetEquals(ids))
+        {
+            _pending.Add(flow);
+        }
+
+        _settled[flow] = ids;
+        if (force)
+        {
+            _pending.Add(flow);
+        }
+
+        _waiting.RemoveWhere(id => id.Contains(flow == DataFlow.Render ? "{0.0.0." : "{0.0.1.", StringComparison.Ordinal) && !ids.Contains(id));
+
         var changed = false;
         if (list.Count == 0 && active.Count > 0)
         {
-            // Seed: the current device, then built-in / real hardware, then virtual and aggregate devices.
+            // Seed: the current device, then headphones, then the other hardware, then virtual and aggregate devices.
             var hardware = active.Where(a => !IsVirtual(a.Name)).ToList();
             var virtuals = active.Where(a => IsVirtual(a.Name)).ToList();
             var seed = new List<string>();
@@ -265,6 +290,7 @@ public sealed class AudioPriorityFeature : IFeature
                 seed.Add(current);
             }
 
+            seed.AddRange(hardware.Where(a => IsHeadphones(flow, a)).Select(a => a.Id).Where(i => !seed.Contains(i)));
             seed.AddRange(hardware.Select(a => a.Id).Where(i => !seed.Contains(i)));
             seed.AddRange(virtuals.Select(a => a.Id).Where(i => !seed.Contains(i)));
             list = seed;
@@ -274,24 +300,28 @@ public sealed class AudioPriorityFeature : IFeature
         {
             foreach (var device in active.Where(a => !list.Contains(a.Id)))
             {
-                // A device that is not ranked yet waits until the OS settles on it: it joins first when the OS switched to it,
-                // below the other hardware if not.
-                if (settle && _waiting.Add(device.Id))
+                // A device that is not ranked yet waits until Windows settles on it before it gets its place.
+                if (settle)
                 {
-                    _settle?.Stop();
-                    _settle?.Start();
+                    if (_waiting.Add(device.Id))
+                    {
+                        _settle?.Stop();
+                        _settle?.Start();
+                    }
+
                     continue;
                 }
 
-                if (!settle && !_waiting.Contains(device.Id))
+                if (!_waiting.Remove(device.Id))
                 {
                     continue;
                 }
 
-                _waiting.Remove(device.Id);
-                if (device.Id == current)
+                if ((device.Id == current && !IsHandsFree(device.Name)) || IsHeadphones(flow, device))
                 {
+                    // Windows (or the person) switched to it, or it is headphones that just connected: it goes first and takes over.
                     list.Insert(0, device.Id);
+                    _pending.Add(flow);
                 }
                 else if (IsVirtual(device.Name))
                 {
@@ -328,6 +358,13 @@ public sealed class AudioPriorityFeature : IFeature
             }
         }
 
+        // Wait while a device of this direction still has no place, so a headset Windows just moved to is not taken back first.
+        if (!_pending.Contains(flow) || active.Any(a => _waiting.Contains(a.Id)))
+        {
+            return;
+        }
+
+        _pending.Remove(flow);
         if (!ctx.App.Get<bool>(enabledKey) || list.Count == 0)
         {
             return;
@@ -346,6 +383,14 @@ public sealed class AudioPriorityFeature : IFeature
     }
 
     private static bool IsVirtual(string name) => VirtualMarkers.Any(m => name.Contains(m, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>A Bluetooth headset's call endpoint ("Headset (... Hands-Free)"): low quality, and using it puts the headset in call mode.</summary>
+    private static bool IsHandsFree(string name) =>
+        name.Contains("Hands-Free", StringComparison.OrdinalIgnoreCase) || name.Contains("Hands Free", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Headphones or a headset for listening (wired, USB or Bluetooth), which people expect to take over when they connect.</summary>
+    private static bool IsHeadphones(DataFlow flow, AudioEndpoint device) =>
+        flow == DataFlow.Render && device.IsHeadphones && !IsHandsFree(device.Name) && !IsVirtual(device.Name);
 }
 
 /// <summary>General page: the Audio priority card (anchor <c>audioPriority</c>).</summary>

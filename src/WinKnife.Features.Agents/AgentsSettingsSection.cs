@@ -134,9 +134,19 @@ internal sealed class AgentsSettingsView
         var used = new SegmentedControl([AgentStrings.Remaining, AgentStrings.Used], _app.Get(AgentKeys.LimitDisplay, "remaining") == "used" ? 1 : 0, false, 12.5);
         used.SelectionChanged += i => _app.Set(AgentKeys.LimitDisplay, i == 1 ? "used" : "remaining");
         card.Add(new SettingsRow(AgentCard.Limits.Glyph(), AgentStrings.LimitsAs, null, used));
+        // Claude Ultra has no 5-hour limit, so the menu does not offer one (unless another agent in use has it).
+        var focusOptions = new List<(string, string)> { ("mostUsed", AgentStrings.MostUsed) };
+        var snapshot = _runtime?.Service.Snapshot ?? new AgentUsageSnapshot();
+        var hasSession = AgentLimitPlan.AnySessionWindow(snapshot, enabled);
+        if (hasSession)
+        {
+            focusOptions.Add(("session", AgentStrings.FocusSession));
+        }
+
+        focusOptions.Add(("weekly", AgentStrings.FocusWeekly));
+        var focusNow = _app.Get(AgentKeys.LimitFocus, "mostUsed");
         card.Add(Menu("", AgentStrings.LimitFocus,
-            [("mostUsed", AgentStrings.MostUsed), ("session", AgentStrings.Session), ("weekly", AgentStrings.Weekly)],
-            _app.Get(AgentKeys.LimitFocus, "mostUsed"), v => _app.Set(AgentKeys.LimitFocus, v)));
+            focusOptions, !hasSession && focusNow == "session" ? "mostUsed" : focusNow, v => _app.Set(AgentKeys.LimitFocus, v)));
 
         card.AddDivider();
         card.Add(Subheading(AgentStrings.LiveTitle));
@@ -144,8 +154,8 @@ internal sealed class AgentsSettingsView
         if (_app.Get(AgentKeys.LiveActivity, true))
         {
             card.Add(Indent(Menu("", AgentStrings.Readout,
-                [("elapsed", AgentStrings.ReadoutElapsed), ("tokens", AgentStrings.ReadoutTokens), ("cost", AgentStrings.ReadoutCost), ("limit", AgentStrings.ReadoutLimit)],
-                _app.Get(AgentKeys.Readout, "elapsed"), v =>
+                [("timeLimit", AgentStrings.ReadoutTimeLimit), ("elapsed", AgentStrings.ReadoutElapsed), ("limit", AgentStrings.ReadoutLimit), ("tokens", AgentStrings.ReadoutTokens), ("cost", AgentStrings.ReadoutCost)],
+                AgentSettings.ReadoutKey(_app.Get(AgentKeys.Readout, AgentSettings.DefaultReadout)), v =>
                 {
                     _app.Set(AgentKeys.Readout, v);
                     _context.RequestRebuild();
@@ -516,7 +526,7 @@ internal sealed class AgentsSettingsView
         var pill = new Border
         {
             Height = 24,
-            Width = 150,
+            Width = 190,
             CornerRadius = new CornerRadius(12),
             Background = Brushes.Black,
             HorizontalAlignment = HorizontalAlignment.Left,
@@ -537,13 +547,29 @@ internal sealed class AgentsSettingsView
             grid.Children.Clear();
             var glyph = new AgentGlyph(working, 11) { HorizontalAlignment = HorizontalAlignment.Left };
             grid.Children.Add(glyph);
-            reading.Text = AgentSettings.StripReading(sample, readout, used, focus, now);
+            var info = AgentSettings.Strip(sample, readout, used, focus, now);
+            reading.Inlines.Clear();
             reading.Foreground = AgentColors.Of(working.Tint());
+            if (info.Lead.Length > 0)
+            {
+                reading.Inlines.Add(new System.Windows.Documents.Run(info.Lead));
+            }
+
+            if (info.Limit is not null)
+            {
+                if (info.Lead.Length > 0)
+                {
+                    reading.Inlines.Add(new System.Windows.Documents.Run(" · ") { Foreground = AgentColors.White(0.45) });
+                }
+
+                reading.Inlines.Add(new System.Windows.Documents.Run(info.Limit) { Foreground = AgentColors.Of(AgentColors.LimitTint(working, info.Window?.UsedFraction ?? 0)) });
+            }
+
             grid.Children.Add(reading);
         }
 
         Fill();
-        if (readout is AgentReadout.Elapsed or AgentReadout.Limit)
+        if (readout is AgentReadout.Elapsed or AgentReadout.Limit or AgentReadout.TimeAndLimit)
         {
             var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             timer.Tick += (_, _) => Fill();

@@ -284,8 +284,10 @@ public sealed class AgentsRuntime : IDisposable
 
             case AgentUsageEvent.LimitWarning w:
             {
-                var share = AgentSettings.LimitShare(w.Window, Settings.UsedDisplay());
-                return new AgentNotice(LimitTitle(w.Provider, w.Window), share, w.Provider, "", warn, false, expires);
+                // At the limit the notice says so, instead of a share that reads as nothing left in one display mode and everything in the other.
+                var reached = w.Window.UsedPercent >= 100;
+                var share = reached ? AgentStrings.LimitReached : AgentSettings.LimitShare(w.Window, Settings.UsedDisplay());
+                return new AgentNotice(LimitTitle(w.Provider, w.Window), share, w.Provider, "", reached ? System.Windows.Media.Color.FromRgb(0xFF, 0x45, 0x3A) : warn, false, expires);
             }
 
             case AgentUsageEvent.LimitReset r:
@@ -297,16 +299,7 @@ public sealed class AgentsRuntime : IDisposable
         }
     }
 
-    private static string LimitTitle(AgentProvider provider, LimitWindow window)
-    {
-        var name = window.Kind switch
-        {
-            LimitKind.Session => AgentStrings.Session,
-            LimitKind.Weekly => window.Scope is { } s ? AgentStrings.Weekly + " · " + s : AgentStrings.Weekly,
-            _ => window.Minutes is { } m ? AgentFormat.Duration(m * 60.0, 1) : window.Scope ?? AgentStrings.ReadoutLimit,
-        };
-        return provider.DisplayName() + " · " + name;
-    }
+    private static string LimitTitle(AgentProvider provider, LimitWindow window) => provider.DisplayName() + " · " + AgentLimitPlan.Name(window);
 }
 
 /// <summary>The installable "AI Agents" Dynamic Island extension: owns the usage engine while installed.</summary>

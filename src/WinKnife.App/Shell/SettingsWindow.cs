@@ -77,6 +77,12 @@ internal sealed class SettingsWindow : Window
     private Guid _builtRequest;
     private DispatcherTimer? _sizeSaveTimer;
 
+    /// <summary>The whole page (not only what is scrolled into view) for developer screenshots.</summary>
+    internal FrameworkElement DetailContentForShot => _detailHost;
+
+    /// <summary>Size of the visible page area, for developer screenshots.</summary>
+    internal ScrollViewer DetailScrollForShot => _detailScroll;
+
     public SettingsWindow(ShellServices services)
     {
         _s = services;
@@ -556,7 +562,7 @@ internal sealed class SettingsWindow : Window
                 install.MinHeight = 0;
                 install.Margin = new Thickness(0, 5, 0, 1);
                 install.HorizontalAlignment = HorizontalAlignment.Left;
-                install.ToolTip = "Install " + entry.Title;
+                install.ToolTip = Loc.F("Install {0}", entry.Title);
                 text.Children.Add(install);
             }
 

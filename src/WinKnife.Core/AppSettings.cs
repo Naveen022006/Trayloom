@@ -246,7 +246,7 @@ public static class AppKeys
             [PanelCollapsedSections] = string.Empty,
             [PanelKeys.UtilityOrder] = string.Empty,
             [PanelKeys.ControlOrder] = string.Empty,
-            [BrightnessControlEnabled] = false,
+            [BrightnessControlEnabled] = true,
             [FeaturesTabSelected] = 0,
             [TrayTipShown] = false,
             [SettingsLastPage] = string.Empty,

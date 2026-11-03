@@ -155,6 +155,7 @@
       { "id": "claude-3-haiku", "input": 0.25, "output": 1.25, "cacheRead": 0.03, "cacheWrite": 0.3, "cacheWriteLong": 0.5 }
     ],
     "plans": [
+      { "match": "ultra", "name": "Ultra" },
       { "match": "max_20x", "name": "Max 20×", "monthly": 200 },
       { "match": "max_5x", "name": "Max 5×", "monthly": 100 },
       { "match": "max", "name": "Max" },

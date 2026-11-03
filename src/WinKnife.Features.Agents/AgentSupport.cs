@@ -14,11 +14,20 @@ public sealed record AgentTile(AgentCard Card, AgentProvider? Provider, string? 
     public string Id => Card.Raw() + (Provider is { } p ? "." + p.Raw() : "") + (AccountId is { } a ? "." + a : "");
 }
 
+/// <summary>The closed island's reading: a lead (the time), the limit beside it, and the window the limit is about (for its tint).</summary>
+public sealed record StripText(string Lead, string? Limit, LimitWindow? Window, AgentProvider? Provider)
+{
+    public string Text => Lead.Length == 0 ? Limit ?? "" : Limit is null ? Lead : Lead + " · " + Limit;
+}
+
 /// <summary>The settings of the AI Agents extension and the pure rules built on them (Vorssaint <c>NotchAgentSupport</c>).</summary>
 public sealed class AgentSettings
 {
     public const double DefaultFinishMinimum = 60;
     public const double DefaultLimitThreshold = 80;
+
+    /// <summary>The closed island shows the time and the limit together unless the person chose one of them.</summary>
+    public const string DefaultReadout = "timeLimit";
     public static readonly double[] FinishMinimums = [0, 30, 60, 120, 300];
     public static readonly double[] LimitThresholds = [50, 75, 80, 90, 95];
     public static readonly double[] Budgets = [0, 5, 10, 25, 50, 100, 250];
@@ -53,7 +62,7 @@ public sealed class AgentSettings
         app.Register(AgentKeys.LimitDisplay, "remaining");
         app.Register(AgentKeys.LimitFocus, "mostUsed");
         app.Register(AgentKeys.LiveActivity, true);
-        app.Register(AgentKeys.Readout, "elapsed");
+        app.Register(AgentKeys.Readout, DefaultReadout);
         app.Register(AgentKeys.FinishAlert, true);
         app.Register(AgentKeys.FinishMinimum, DefaultFinishMinimum);
         app.Register(AgentKeys.LimitAlert, true);
@@ -117,7 +126,19 @@ public sealed class AgentSettings
 
     public bool ShowsLiveActivity() => IsEnabled() && _app.Get(AgentKeys.LiveActivity, true);
 
-    public AgentReadout Readout() => _app.Get(AgentKeys.Readout, "elapsed") switch { "tokens" => AgentReadout.Tokens, "cost" => AgentReadout.Cost, "limit" => AgentReadout.Limit, _ => AgentReadout.Elapsed };
+    public AgentReadout Readout() => ParseReadout(_app.Get(AgentKeys.Readout, DefaultReadout));
+
+    /// <summary>The menu value of a stored readout (a stored word nothing knows is the default).</summary>
+    public static string ReadoutKey(string raw) => raw is "elapsed" or "tokens" or "cost" or "limit" ? raw : DefaultReadout;
+
+    public static AgentReadout ParseReadout(string raw) => raw switch
+    {
+        "tokens" => AgentReadout.Tokens,
+        "cost" => AgentReadout.Cost,
+        "limit" => AgentReadout.Limit,
+        "elapsed" => AgentReadout.Elapsed,
+        _ => AgentReadout.TimeAndLimit,
+    };
 
     /// <summary>The shortest turn worth a notice when it ends; null while those are off.</summary>
     public TimeSpan? FinishMinimum()
@@ -159,7 +180,7 @@ public sealed class AgentSettings
     /// <summary>Whether anything shows or alerts on the plan limits.</summary>
     public bool LimitsInUse(bool pageShown) =>
         LimitThreshold() is not null
-        || (ShowsLiveActivity() && Readout() == AgentReadout.Limit)
+        || (ShowsLiveActivity() && Readout() is AgentReadout.Limit or AgentReadout.TimeAndLimit)
         || IdleContent() == "agents"
         || (pageShown && !HiddenCards().Contains(AgentCard.Limits));
 
@@ -196,7 +217,7 @@ public sealed class AgentSettings
             (AgentProvider Provider, LimitWindow Window)? best = null;
             foreach (var (provider, limits) in snapshot.Limits)
             {
-                if (pick(limits) is not { } w)
+                if (pick(limits) is not { Renewed: false } w)
                 {
                     continue;
                 }
@@ -216,8 +237,40 @@ public sealed class AgentSettings
 
     public static double StripTextSize(double height) => Math.Min(15, height - 7);
 
+    /// <summary>"Wk 100%" (used) or "Wk 0% left" (left): the tag says which window, the words which share, so a bare number is never ambiguous.</summary>
+    public static string LimitReading(LimitWindow window, bool usedDisplay)
+    {
+        var percent = AgentFormat.Percent(usedDisplay ? window.UsedFraction : window.RemainingFraction);
+        return AgentLimitPlan.Tag(window) + " " + (usedDisplay ? percent : AgentStrings.Left(percent));
+    }
+
+    /// <summary>The focused limit of one provider as the closed island writes it; null when it has none or it renewed and nothing says what it holds now.</summary>
+    public static (string Text, LimitWindow Window)? LimitPart(AgentUsageSnapshot snapshot, AgentProvider provider, bool usedDisplay, AgentLimitFocus focus, DateTime now)
+    {
+        if (!snapshot.Limits.TryGetValue(provider, out var limits) || FocusedLimit(limits, focus, now) is not { Renewed: false } window)
+        {
+            return null;
+        }
+
+        return (LimitReading(window, usedDisplay), window);
+    }
+
+    /// <summary>The longest "time · limit" reading the closed island has room for; past it the limit stands alone.</summary>
+    private const int StripRoom = 24;
+
+    /// <summary>The time and the limit together, or the limit alone when the readout asks for that or the pair would not fit the capsule.</summary>
+    public static StripText Join(AgentReadout readout, string time, (string Text, LimitWindow Window) limit, AgentProvider provider)
+    {
+        var alone = readout == AgentReadout.Limit || time.Length + 3 + limit.Text.Length > StripRoom;
+        return new StripText(alone ? "" : time, limit.Text, limit.Window, provider);
+    }
+
     /// <summary>What the strip shows beside the island centre while agents work.</summary>
-    public static string StripReading(AgentUsageSnapshot snapshot, AgentReadout readout, bool usedDisplay, AgentLimitFocus focus, DateTime now)
+    public static string StripReading(AgentUsageSnapshot snapshot, AgentReadout readout, bool usedDisplay, AgentLimitFocus focus, DateTime now) =>
+        Strip(snapshot, readout, usedDisplay, focus, now).Text;
+
+    /// <summary>The strip's reading in its parts, so the limit can be tinted by how much is left of it.</summary>
+    public static StripText Strip(AgentUsageSnapshot snapshot, AgentReadout readout, bool usedDisplay, AgentLimitFocus focus, DateTime now)
     {
         var live = snapshot.Live;
 
@@ -226,20 +279,22 @@ public sealed class AgentSettings
         switch (readout)
         {
             case AgentReadout.Elapsed:
-                return Elapsed();
+                return new StripText(Elapsed(), null, null, null);
             case AgentReadout.Tokens:
-                return AgentFormat.Tokens(live.Sum(l => l.Tokens.Output));
+                return new StripText(AgentFormat.Tokens(live.Sum(l => l.Tokens.Output)), null, null, null);
             case AgentReadout.Cost:
-                return AgentFormat.Cost(live.Sum(l => l.Cost));
+                return new StripText(AgentFormat.Cost(live.Sum(l => l.Cost)), null, null, null);
             default:
             {
-                var provider = AgentProviders.All.FirstOrDefault(p => live.Any(l => l.Provider == p));
-                if (live.Count == 0 || !snapshot.Limits.TryGetValue(provider, out var limits) || FocusedLimit(limits, focus, now) is not { } window)
+                foreach (var provider in AgentProviders.All.Where(p => live.Any(l => l.Provider == p)))
                 {
-                    return Elapsed();
+                    if (LimitPart(snapshot, provider, usedDisplay, focus, now) is { } part)
+                    {
+                        return Join(readout, Elapsed(), part, provider);
+                    }
                 }
 
-                return AgentFormat.Percent(usedDisplay ? window.UsedFraction : window.RemainingFraction);
+                return new StripText(Elapsed(), null, null, null);
             }
         }
     }
@@ -252,6 +307,7 @@ public sealed class AgentSettings
             Loaded = snapshot.Loaded,
             Now = snapshot.Now,
             Limits = new Dictionary<AgentProvider, AgentLimits>(snapshot.Limits),
+            Plans = new Dictionary<AgentProvider, AgentPlan>(snapshot.Plans),
             Live = [.. snapshot.Live],
         };
         if (sample.Live.Count == 0)
@@ -263,11 +319,15 @@ public sealed class AgentSettings
         sample.Limits.TryGetValue(working, out var existing);
         if (FocusedLimit(existing, focus, now) is null)
         {
-            sample.Limits[working] = new AgentLimits(working,
-            [
-                new LimitWindow("example-session", LimitKind.Session, 300, null, 32, now.AddHours(1)),
-                new LimitWindow("example-week", LimitKind.Weekly, 10_080, null, 57, now.AddDays(1)),
-            ], now, LimitSource.SessionLog);
+            sample.Plans.TryGetValue(working, out var plan);
+            var windows = new List<LimitWindow>();
+            if (AgentLimitPlan.HasSessionWindow(working, plan))
+            {
+                windows.Add(new LimitWindow("example-session", LimitKind.Session, 300, null, 32, now.AddHours(1)));
+            }
+
+            windows.Add(new LimitWindow("example-week", LimitKind.Weekly, 10_080, null, 57, now.AddDays(1)));
+            sample.Limits[working] = new AgentLimits(working, windows, now, LimitSource.SessionLog);
         }
 
         return sample;

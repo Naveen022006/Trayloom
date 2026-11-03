@@ -195,13 +195,15 @@ public sealed class CommandBarMainSection : ISettingsSection
         var settingsCaption = BarSettingsKit.Caption(Loc.T("One shortcut opens a field over whatever you are doing. Type a few letters, press Return and it happens. Nothing you type is saved."));
         settingsCaption.Margin = new Thickness(0, 6, 0, 0);
         explain.Children.Add(settingsCaption);
-        var privacy = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
+        var privacy = new Grid { Margin = new Thickness(0, 6, 0, 0) };
+        privacy.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        privacy.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         var lockIcon = UiKit.Icon("", 12, ThemeKeys.TextSecondary);
         lockIcon.Margin = new Thickness(0, 2, 6, 0);
         lockIcon.VerticalAlignment = VerticalAlignment.Top;
         privacy.Children.Add(lockIcon);
         var privacyText = BarSettingsKit.Caption(Loc.T("Search runs on this PC with no account or cloud, and what you type leaves it only through sites you open or scripts you add."));
-        privacyText.MaxWidth = 560;
+        Grid.SetColumn(privacyText, 1);
         privacy.Children.Add(privacyText);
         explain.Children.Add(privacy);
         var tryRow = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };

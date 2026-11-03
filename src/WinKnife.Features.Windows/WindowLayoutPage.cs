@@ -39,13 +39,16 @@ internal static class SnapConflict
                 return;
             }
 
-            var warning = new StackPanel { Orientation = Orientation.Horizontal };
+            // A grid (not a horizontal stack) so the sentence wraps inside the card instead of running past its edge.
+            var warning = new Grid();
+            warning.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            warning.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             var icon = UiKit.Icon("", 12, ThemeKeys.Orange);
             icon.Margin = new Thickness(0, 1, 6, 0);
             icon.VerticalAlignment = VerticalAlignment.Top;
             warning.Children.Add(icon);
             var text = FormUi.Warning(Strings.EdgeSnapConflict);
-            text.MaxWidth = 560;
+            Grid.SetColumn(text, 1);
             warning.Children.Add(text);
             host.Children.Add(warning);
             if (app.Get<bool>(Keys.EdgeSnapEnabled))

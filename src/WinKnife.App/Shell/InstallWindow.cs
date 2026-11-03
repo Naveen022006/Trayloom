@@ -92,10 +92,10 @@ internal sealed class InstallWindow : Window
         _body.Children.Clear();
         var update = _installedVersion is not null;
         var intro = update
-            ? $"WinKnife {_installedVersion} is already installed for your account. This updates it to {AppInfo.Version}, keeping your settings."
-            : "WinKnife is running straight from the folder you unzipped it to. Install it to find it in the Start menu and to keep it if you delete the download. It is installed for your account only, so Windows will not ask for an administrator password.";
+            ? Loc.F("WinKnife {0} is already installed for your account. This updates it to {1}, keeping your settings.", _installedVersion, AppInfo.Version)
+            : Loc.T("WinKnife is running straight from the folder you unzipped it to. Install it to find it in the Start menu and to keep it if you delete the download. It is installed for your account only, so Windows will not ask for an administrator password.");
         _body.Children.Add(UiParts.Paragraph(intro, 13, ThemeKeys.TextPrimary, 6));
-        _body.Children.Add(UiParts.Paragraph("Installs to " + InstallManager.InstallRoot, 11.5, ThemeKeys.TextTertiary, 14));
+        _body.Children.Add(UiParts.Paragraph(Loc.F("Installs to {0}", InstallManager.InstallRoot), 11.5, ThemeKeys.TextTertiary, 14));
 
         var card = new SettingsCard();
         card.Add(Row("", Loc.T("Start menu shortcut"), Loc.T("Press the Windows key and type “WinKnife” to open it."), _startMenu, on => _startMenu = on));
@@ -107,7 +107,7 @@ internal sealed class InstallWindow : Window
 
         if (error is not null)
         {
-            var err = UiParts.Paragraph("The install did not finish: " + error, 12, ThemeKeys.Orange, 0);
+            var err = UiParts.Paragraph(Loc.F("The install did not finish: {0}", error), 12, ThemeKeys.Orange, 0);
             err.Margin = new Thickness(0, 12, 0, 0);
             _body.Children.Add(err);
         }
@@ -151,8 +151,8 @@ internal sealed class InstallWindow : Window
         var options = new InstallOptions(_startMenu, _desktop, _login);
         _busy = true;
         _body.Children.Clear();
-        _body.Children.Add(UiParts.Paragraph(_installedVersion is not null ? "Updating WinKnife…" : "Installing WinKnife…", 14, ThemeKeys.TextPrimary, 6));
-        _body.Children.Add(UiParts.Paragraph("Copying files. This takes a few seconds the first time because Windows checks each file.", 12, ThemeKeys.TextSecondary, 14));
+        _body.Children.Add(UiParts.Paragraph(_installedVersion is not null ? Loc.T("Updating WinKnife…") : Loc.T("Installing WinKnife…"), 14, ThemeKeys.TextPrimary, 6));
+        _body.Children.Add(UiParts.Paragraph(Loc.T("Copying files. This takes a few seconds the first time because Windows checks each file."), 12, ThemeKeys.TextSecondary, 14));
         var bar = new ProgressBar { Minimum = 0, Maximum = 1, Height = 6 };
         _body.Children.Add(bar);
         var progress = new Progress<double>(v => bar.Value = v);
@@ -192,7 +192,7 @@ internal sealed class UninstallWindow : Window
 
         var body = new StackPanel { Margin = new Thickness(24, 22, 24, 20) };
         body.Children.Add(UiKit.Text(Loc.T("Uninstall WinKnife?"), 17, FontWeights.Bold, ThemeKeys.TextPrimary));
-        var text = UiParts.Paragraph("This quits WinKnife and removes its program files, the Start menu and Desktop shortcuts, the Apps & features entry and the start-at-sign-in entry.", 13, ThemeKeys.TextSecondary, 14);
+        var text = UiParts.Paragraph(Loc.T("This quits WinKnife and removes its program files, the Start menu and Desktop shortcuts, the Apps & features entry and the start-at-sign-in entry."), 13, ThemeKeys.TextSecondary, 14);
         text.Margin = new Thickness(0, 8, 0, 14);
         body.Children.Add(text);
         var card = new SettingsCard();

@@ -86,9 +86,11 @@ public sealed class SegmentedControl : Border
                 CornerRadius = new CornerRadius(6),
                 Padding = new Thickness(stretch ? 12 : 18, 4, stretch ? 12 : 18, 4),
                 Cursor = Cursors.Hand,
-                Child = UiKit.Text(_items[i], fontSize, FontWeights.Normal, ThemeKeys.TextPrimary),
+                Child = UiKit.Text(_items[i], fontSize, FontWeights.Normal, ThemeKeys.TextPrimary, wrap: stretch),
             };
             ((TextBlock)cell.Child).HorizontalAlignment = HorizontalAlignment.Center;
+            ((TextBlock)cell.Child).TextAlignment = TextAlignment.Center;
+            ((TextBlock)cell.Child).VerticalAlignment = VerticalAlignment.Center;
             cell.MouseLeftButtonUp += (_, _) => SelectedIndex = index;
             Grid.SetColumn(cell, i);
             grid.Children.Add(cell);

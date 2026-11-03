@@ -236,7 +236,7 @@ internal static class K
             [MascotSide] = "left",
             [MascotFrequency] = "normal",
             [MascotHides] = true,
-            [AgentsReadout] = "elapsed",
+            [AgentsReadout] = "timeLimit",
             [AgentsLiveActivity] = true,
             [ScratchpadTextSize] = 13.0,
             [MixerHideInactive] = false,

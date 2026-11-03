@@ -3,6 +3,7 @@
 
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Threading;
 using WinKnife.Core;
@@ -17,6 +18,8 @@ public sealed class AgentStripView : StackPanel
     private readonly TextBlock _reading;
     private readonly AgentReadout _readout;
     private string _shape = "";
+    private string _tip = "";
+    private string _names = "";
     private readonly bool _waiting;
 
     /// <summary>
@@ -53,11 +56,12 @@ public sealed class AgentStripView : StackPanel
         _reading.Margin = new Thickness(6, 0, 0, 0);
         Children.Add(_reading);
         Update(snapshotOverride);
-        AU.Tip(this, string.Join(", ", working.Select(w => w.DisplayName())));
+        _names = string.Join(", ", working.Select(w => w.DisplayName()));
+        AU.Tip(this, _names);
         Loaded += (_, _) =>
         {
             _timer.Tick += OnTick;
-            if (_readout is AgentReadout.Elapsed or AgentReadout.Limit)
+            if (_readout is AgentReadout.Elapsed or AgentReadout.Limit or AgentReadout.TimeAndLimit)
             {
                 _timer.Start();
             }
@@ -84,25 +88,72 @@ public sealed class AgentStripView : StackPanel
         _fixed = snapshotOverride;
         var settings = _runtime.Settings;
         var snapshot = snapshotOverride ?? _runtime.Service.Snapshot;
-        var text = AgentSettings.StripReading(snapshot, _readout, settings.UsedDisplay(), settings.Focus(), DateTime.UtcNow);
+        var used = settings.UsedDisplay();
+        var focus = settings.Focus();
+        var now = DateTime.UtcNow;
+        var info = AgentSettings.Strip(snapshot, _readout, used, focus, now);
         if (snapshotOverride is null)
         {
             var sessions = _runtime.Sessions.Current.Where(s => s.State != AgentSessionState.Idle).ToList();
             if (sessions.Any(s => s.IsWaiting))
             {
-                text = "Needs you";
+                info = new StripText(Loc.T("Needs you"), null, null, null);
             }
             else if (snapshot.Live.Count == 0 && sessions.Count > 0)
             {
-                // Sessions found from their files have no token counts yet: the clock is the one reading they can give.
-                text = AgentFormat.Clock((DateTime.UtcNow - sessions.Min(s => s.Since)).TotalSeconds);
+                // Sessions found from their files have no token counts yet: the clock is the one reading they can give, and the limit of the agent that works.
+                var clock = AgentFormat.Clock((now - sessions.Min(s => s.Since)).TotalSeconds);
+                info = new StripText(clock, null, null, null);
+                if (_readout is AgentReadout.Limit or AgentReadout.TimeAndLimit)
+                {
+                    foreach (var provider in AgentProviders.All.Where(p => sessions.Any(s => s.Provider == p)))
+                    {
+                        if (AgentSettings.LimitPart(snapshot, provider, used, focus, now) is { } part)
+                        {
+                            info = AgentSettings.Join(_readout, clock, part, provider);
+                            break;
+                        }
+                    }
+                }
             }
         }
 
-        _reading.Foreground = _waiting ? AgentColors.Of(AgentColors.Orange) : _reading.Foreground;
-        _reading.Text = text;
+        _reading.Inlines.Clear();
+        if (info.Lead.Length > 0)
+        {
+            _reading.Inlines.Add(new Run(info.Lead));
+        }
+
+        if (info.Limit is not null)
+        {
+            if (info.Lead.Length > 0)
+            {
+                _reading.Inlines.Add(new Run(" · ") { Foreground = AgentColors.White(0.45) });
+            }
+
+            // The limit says how close it is: the agent's colour while there is room, orange then red as it runs out.
+            var window = info.Window;
+            var tint = window is null || info.Provider is not { } provider ? AgentColors.Of(AgentColors.Orange) : AgentColors.Of(AgentColors.LimitTint(provider, window.UsedFraction));
+            _reading.Inlines.Add(new Run(info.Limit) { Foreground = _waiting ? AgentColors.Of(AgentColors.Orange) : tint });
+        }
+
+        if (_waiting)
+        {
+            _reading.Foreground = AgentColors.Of(AgentColors.Orange);
+        }
+
+        var tip = info.Window is { } w
+            ? _names + "\n" + AgentLimitPlan.Name(w) + ": " + AgentSettings.LimitShare(w, used) + (w.UsedPercent >= 100 ? " · " + AgentStrings.LimitReached : "")
+              + (AgentLimitSupport.DisplayedReset(w, now) is not null ? "\n" + Loc.T("resets") + " " + LimitPresenter.ResetText(w, now, false) : "")
+            : _names;
+        if (tip != _tip)
+        {
+            _tip = tip;
+            AU.Tip(this, tip);
+        }
+
         // A reading that gains a digit, like an hour passing, needs a wider island; the island measures the same reading.
-        var shape = AgentSettings.ReadingShape(text);
+        var shape = AgentSettings.ReadingShape(info.Text);
         if (shape != _shape)
         {
             var first = _shape.Length == 0;
@@ -183,10 +234,15 @@ public sealed class AgentRestingView : StackPanel
         var used = settings.UsedDisplay();
         if (AgentSettings.RestingLimit(snapshot, settings.Focus(), now) is { } limit)
         {
-            var tint = AgentColors.LimitTint(limit.Provider, limit.Window.UsedFraction);
-            var value = used ? limit.Window.UsedFraction : limit.Window.RemainingFraction;
-            Children.Add(new AgentRing(value, tint, 2) { Width = 11, Height = 11 });
-            var text = AU.Text(AgentFormat.Percent(value), 9, FontWeights.Medium, AgentColors.Primary, TextTrimming.None, false, true);
+            // The same rules as the closed strip: a tag says which window, the words which share, and the tint how close it is to running out.
+            var window = limit.Window;
+            var tint = AgentColors.LimitTint(limit.Provider, window.UsedFraction);
+            var exhausted = window.UsedPercent >= 100;
+            var value = exhausted ? 1 : used ? window.UsedFraction : window.RemainingFraction;
+            var ring = new AgentRing(value, tint, 2) { Width = 11, Height = 11 };
+            AU.Tip(ring, limit.Provider.DisplayName() + " · " + AgentLimitPlan.Name(window) + ": " + AgentSettings.LimitShare(window, used) + (exhausted ? " · " + AgentStrings.LimitReached : ""));
+            Children.Add(ring);
+            var text = AU.Text(AgentSettings.LimitReading(window, used), 9, FontWeights.Medium, window.UsedFraction >= 0.8 ? AgentColors.Of(tint) : AgentColors.Primary, TextTrimming.None, false, true);
             text.Margin = new Thickness(5, 0, 0, 0);
             Children.Add(text);
         }

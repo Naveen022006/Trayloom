@@ -387,8 +387,8 @@ internal sealed class TrayPanel : Window
         var text = new StackPanel { Margin = new Thickness(11, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
         text.Children.Add(UiKit.Text(Loc.T("Add features"), empty ? 14 : 12.5, FontWeights.SemiBold, ThemeKeys.TextPrimary));
         var caption = message ?? (empty
-            ? "Nothing to show yet. This panel is built from the features you install: monitors, a volume mixer, window tools and more."
-            : $"{installed} of {total} features installed. The panel grows with every feature you add.");
+            ? Loc.T("Nothing to show yet. This panel is built from the features you install: monitors, a volume mixer, window tools and more.")
+            : Loc.F("{0} of {1} features installed. The panel grows with every feature you add.", installed, total));
         text.Children.Add(UiKit.Text(caption, empty ? 12 : 11, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true).Also(t => t.Margin = new Thickness(0, 2, 0, 0)));
         Grid.SetColumn(text, 1);
         head.Children.Add(text);
@@ -402,7 +402,7 @@ internal sealed class TrayPanel : Window
         button.Margin = new Thickness(0, 10, 0, 0);
         stack.Children.Add(button);
         var card = new PanelCard(stack, 12) { Cursor = Cursors.Arrow };
-        System.Windows.Automation.AutomationProperties.SetName(card, "Add features");
+        System.Windows.Automation.AutomationProperties.SetName(card, Loc.T("Add features"));
         return card;
     }
 

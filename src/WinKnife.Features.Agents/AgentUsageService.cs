@@ -1041,7 +1041,7 @@ public sealed class AgentUsageService : IDisposable
                     info.Status = info.InUse ? Loc.T("In use: the newest reading") : Loc.T("Not used: an older reading than the one in use");
                     foreach (var w in reading.Windows)
                     {
-                        info.Raw.Add($"window {w.Minutes?.ToString() ?? "?"} min: used {w.UsedPercent:0.#}%, reset {(w.ResetsAt is { } r ? r.ToString("u") : "none given")}" + (w.Note is { } n ? " - " + n : ""));
+                        info.Raw.Add($"{AgentLimitPlan.Name(w)} ({w.Minutes?.ToString() ?? "?"} min): used {w.UsedPercent:0.#}%, reset {(w.ResetsAt is { } r ? r.ToString("u") : "none given")}" + (w.Note is { } n ? " - " + n : ""));
                     }
                 }
 
@@ -1100,14 +1100,14 @@ public sealed class AgentUsageService : IDisposable
 
                 break;
             case AgentUsageEvent.LimitWarning w:
-                if (!_providers.Contains(w.Provider) || _settings.LimitThreshold() is null)
+                if (!_providers.Contains(w.Provider) || _settings.LimitThreshold() is null || !HasWindow(w.Provider, w.Window))
                 {
                     return;
                 }
 
                 break;
             case AgentUsageEvent.LimitReset r:
-                if (!_providers.Contains(r.Provider) || _settings.LimitThreshold() is null)
+                if (!_providers.Contains(r.Provider) || _settings.LimitThreshold() is null || !HasWindow(r.Provider, r.Window))
                 {
                     return;
                 }
@@ -1124,6 +1124,10 @@ public sealed class AgentUsageService : IDisposable
 
         _ui.BeginInvoke(() => Alert?.Invoke(e));
     }
+
+    /// <summary>False for a window the plan does not have (a 5-hour window on Claude Ultra): it never raises an alert.</summary>
+    private bool HasWindow(AgentProvider provider, LimitWindow window) =>
+        window.Kind != LimitKind.Session || AgentLimitPlan.HasSessionWindow(provider, provider == AgentProvider.Claude ? _claudePlan : null);
 
     /// <summary>Runs whenever limits may have changed.</summary>
     private void CheckLimits()

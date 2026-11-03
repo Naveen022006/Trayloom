@@ -73,7 +73,7 @@ internal static class SystemDefaults
             ["clamshellPreferred"] = false,
             ["dimScreenOnLidClose"] = false,
             ["hotkeyEnabled"] = true,
-            ["brightnessControlEnabled"] = false,
+            ["brightnessControlEnabled"] = true,
             ["brightnessKeysEnabled"] = false,
             ["brightnessOSDEnabled"] = false,
             ["brightnessKeyStep"] = "standard",

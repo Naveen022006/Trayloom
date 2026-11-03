@@ -121,7 +121,7 @@ internal static class AboutPage
         updates.Add(checkButton);
         if (last.Length > 0)
         {
-            updates.AddCaption("Last checked: " + last);
+            updates.AddCaption(Loc.F("Last checked: {0}", last));
         }
 
         stack.AddSpaced(updates, 20);

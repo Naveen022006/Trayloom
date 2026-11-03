@@ -95,7 +95,7 @@ internal sealed class ProblemReporter
     private static Window Build(List<StartupProblem> problems, List<StartupProblem> blocked, SmartAppControlState sac)
     {
         var isBlock = blocked.Count > 0;
-        var window = UiParts.PlainWindow(isBlock ? "Windows blocked part of WinKnife" : "WinKnife could not start everything", 520);
+        var window = UiParts.PlainWindow(isBlock ? Loc.T("Windows blocked part of WinKnife") : Loc.T("WinKnife could not start everything"), 520);
         window.Topmost = true;
         var body = new StackPanel { Margin = new Thickness(24, 22, 24, 20) };
         var head = new StackPanel { Orientation = Orientation.Horizontal };
@@ -117,7 +117,7 @@ internal sealed class ProblemReporter
         }
         else
         {
-            var text = UiParts.Paragraph("The rest of WinKnife keeps working. The log file has the technical details; send it along if you report the problem.", 12.5, ThemeKeys.TextSecondary);
+            var text = UiParts.Paragraph(Loc.T("The rest of WinKnife keeps working. The log file has the technical details; send it along if you report the problem."), 12.5, ThemeKeys.TextSecondary);
             text.Margin = new Thickness(0, 12, 0, 0);
             body.Children.Add(text);
         }

@@ -150,7 +150,7 @@ public sealed class AgentsPageView : Grid
         {
             AgentCard.Live => t with { HeightHint = AgentSessionCard.Height(context) },
             AgentCard.Spend => t with { HeightHint = 146 },
-            AgentCard.Limits when t.AccountId is null && t.Provider is { } p => t with { HeightHint = AgentCardViews.LimitsHeight(context, p) },
+            AgentCard.Limits when t.Provider is not null => t with { HeightHint = AgentCardViews.LimitsHeight(context, t) },
             _ => t,
         }).ToList();
         var grid = new AgentCardGrid();

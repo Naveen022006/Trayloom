@@ -50,7 +50,14 @@ internal static class ProcNative
 }
 
 /// <summary>One row of the process list.</summary>
-internal sealed record KillEntry(int Pid, int ParentPid, string Name, string Path, double Cpu, long Memory, bool IsRegularApp, int GroupedCount, bool IsProtected, long StartedAt, IReadOnlyList<(int Pid, long Started)> Members);
+internal sealed record KillEntry(int Pid, int ParentPid, string Name, string Path, double Cpu, long Memory, bool IsRegularApp, int GroupedCount, bool IsProtected, long StartedAt, IReadOnlyList<(int Pid, long Started)> Members)
+{
+    /// <summary><see cref="Memory"/> of a process that cannot be read (protected or elevated): shown as a dash and sorted last.</summary>
+    public const long UnknownMemory = -1;
+
+    /// <summary>True when the working set could be read.</summary>
+    public bool HasMemory => Memory >= 0;
+}
 
 internal enum KillResult
 {
@@ -189,7 +196,7 @@ internal sealed class KillService
 
             long created = 0;
             long cpuTicks = 0;
-            long memory = 0;
+            long memory = KillEntry.UnknownMemory;
             string? path = null;
             var handle = Win32.OpenProcess(Win32.PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
             if (handle != 0)
@@ -360,7 +367,7 @@ internal sealed class KillService
             result.Add(main with
             {
                 Cpu = members.Sum(m => m.Cpu),
-                Memory = members.Sum(m => m.Memory),
+                Memory = members.Any(m => m.Memory >= 0) ? members.Where(m => m.Memory >= 0).Sum(m => m.Memory) : KillEntry.UnknownMemory,
                 GroupedCount = members.Count,
                 IsRegularApp = members.Any(m => m.IsRegularApp),
                 Members = members.Select(m => (m.Pid, m.StartedAt)).ToList(),

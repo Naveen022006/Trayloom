@@ -482,7 +482,16 @@ public static class AgentPlans
         list ??= AgentPricing.List;
         var type = (organizationType ?? "").ToLowerInvariant();
         var recorded = (rateLimitTier ?? "").ToLowerInvariant() + " " + type;
-        var plan = list.ClaudePlans.FirstOrDefault(p => recorded.Contains(p.Match, StringComparison.Ordinal));
+        // Ultra decides which windows exist, so it is recognised first, even when the price list in use (an older download) does not know it.
+        var ultra = recorded.Contains("ultra", StringComparison.Ordinal);
+        var plan = ultra
+            ? list.ClaudePlans.FirstOrDefault(p => p.Match == "ultra")
+            : list.ClaudePlans.FirstOrDefault(p => recorded.Contains(p.Match, StringComparison.Ordinal));
+        if (ultra && plan is null)
+        {
+            return new AgentPlan("Ultra", null);
+        }
+
         if (plan is not null)
         {
             return new AgentPlan(plan.Name, plan.Monthly);

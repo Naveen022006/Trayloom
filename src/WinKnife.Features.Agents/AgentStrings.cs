@@ -28,6 +28,15 @@ public static class AgentStrings
     public static  string Month30 => Loc.T("30 days");
     public static  string Session => Loc.T("Session");
     public static  string Weekly => Loc.T("Week");
+    public static  string SessionLimit => Loc.T("5-hour limit");
+    public static  string WeeklyLimit => Loc.T("Weekly limit");
+    public static  string FocusSession => Loc.T("5-hour");
+    public static  string FocusWeekly => Loc.T("Weekly");
+    public static  string NoReading => Loc.T("No reading yet");
+    public static  string NoReadingNote => Loc.T("Not reported by Claude yet");
+    public static  string LimitReached => Loc.T("Limit reached");
+    public static  string StartsWithMessage => Loc.T("Starts with your next message");
+    public static  string StartsWithTask => Loc.T("Starts with your next task");
     public static  string Estimated => Loc.T("Estimated from this PC");
     public static  string ClaudeLimitsHint => Loc.T("Set up plan limits…");
     public static  string WaitingForLimits => Loc.T("Limits appear after the next reply");
@@ -63,6 +72,7 @@ public static class AgentStrings
     public static  string ReadoutTokens => Loc.T("Tokens written");
     public static  string ReadoutCost => Loc.T("API value");
     public static  string ReadoutLimit => Loc.T("Limit");
+    public static  string ReadoutTimeLimit => Loc.T("Time and limit");
     public static  string Alerts => Loc.T("Alerts");
     public static  string FinishAlert => Loc.T("When a task finishes");
     public static  string FinishAfter => Loc.T("For tasks longer than");

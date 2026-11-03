@@ -507,6 +507,19 @@ internal sealed class ClipboardQuickWindow : Window, IQuickActions
             label.Margin = new Thickness(0, 10, 0, 0);
             label.HorizontalAlignment = HorizontalAlignment.Center;
             empty.Children.Add(label);
+            if (store.Entries.Count == 0 && !_host.HistoryEnabled)
+            {
+                // Say how to fix it right where the problem is seen (the island page offers the same button).
+                var enable = UiKit.Button(Strings.Clipboard.Enable, ButtonKind.Bordered, 12.5, onClick: () =>
+                {
+                    _host.Services.App.Set("clipboardHistoryEnabled", true);
+                    Rebuild();
+                });
+                enable.HorizontalAlignment = HorizontalAlignment.Center;
+                enable.Margin = new Thickness(0, 12, 0, 0);
+                empty.Children.Add(enable);
+            }
+
             _contentHost.Child = empty;
             _scroll = null;
         }

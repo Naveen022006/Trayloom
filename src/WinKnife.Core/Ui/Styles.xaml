@@ -250,16 +250,20 @@
         <Setter Property="Foreground" Value="{DynamicResource WK.Text.Primary}" />
         <Setter Property="CaretBrush" Value="{DynamicResource WK.Text.Primary}" />
         <Setter Property="Background" Value="{DynamicResource WK.Settings.Control}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource WK.Card.Border}" />
         <Setter Property="Padding" Value="8,5" />
         <Setter Property="FontSize" Value="12" />
         <Setter Property="SelectionBrush" Value="{DynamicResource WK.Accent}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="TextBox">
-                    <Border CornerRadius="7" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                    <Border x:Name="Frame" CornerRadius="7" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" Padding="{TemplateBinding Padding}">
                         <ScrollViewer x:Name="PART_ContentHost" Focusable="False" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden" />
                     </Border>
                     <ControlTemplate.Triggers>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource WK.Accent}" />
+                        </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.5" />
                         </Trigger>
@@ -290,6 +294,115 @@
                         </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="Root" Property="Background" Value="{DynamicResource WK.SurfaceHover}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <!-- Pop-up menus. The stock Windows template draws a light icon gutter down the left edge, which shows as a white block
+         over dark menus. Every ContextMenu / MenuItem in the app uses these instead; a menu may still set its own colours. -->
+    <Style TargetType="ContextMenu">
+        <Setter Property="Background" Value="{DynamicResource WK.Surface}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource WK.Card.Border}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Foreground" Value="{DynamicResource WK.Text.Primary}" />
+        <Setter Property="FontFamily" Value="Segoe UI Variable Text, Segoe UI" />
+        <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="Padding" Value="4" />
+        <Setter Property="HasDropShadow" Value="True" />
+        <Setter Property="Grid.IsSharedSizeScope" Value="True" />
+        <Setter Property="OverridesDefaultStyle" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ContextMenu">
+                    <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True">
+                        <ScrollViewer CanContentScroll="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle" />
+                        </ScrollViewer>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="{x:Static MenuItem.SeparatorStyleKey}" TargetType="Separator">
+        <Setter Property="Background" Value="{DynamicResource WK.Divider}" />
+        <Setter Property="Margin" Value="8,4,8,4" />
+        <Setter Property="OverridesDefaultStyle" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Separator">
+                    <Border Height="1" Background="{TemplateBinding Background}" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="MenuItem">
+        <Setter Property="Padding" Value="6,5,10,5" />
+        <Setter Property="MinHeight" Value="26" />
+        <Setter Property="OverridesDefaultStyle" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="MenuItem">
+                    <Grid SnapsToDevicePixels="True">
+                        <Border x:Name="Bg" CornerRadius="5" Background="Transparent" Padding="{TemplateBinding Padding}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="22" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="WKMenuGesture" />
+                                    <ColumnDefinition Width="14" />
+                                </Grid.ColumnDefinitions>
+                                <ContentPresenter x:Name="Icon" ContentSource="Icon" VerticalAlignment="Center" HorizontalAlignment="Left"
+                                                  Width="16" Height="16" />
+                                <TextBlock x:Name="Check" Text="&#xE73E;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="11"
+                                           VerticalAlignment="Center" HorizontalAlignment="Left" Visibility="Collapsed"
+                                           Foreground="{TemplateBinding Foreground}" />
+                                <ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center"
+                                                  TextElement.Foreground="{TemplateBinding Foreground}" />
+                                <TextBlock Grid.Column="2" Text="{TemplateBinding InputGestureText}" Margin="18,0,0,0" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource WK.Text.Secondary}" />
+                                <TextBlock x:Name="Arrow" Grid.Column="3" Text="&#xE76C;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="9"
+                                           VerticalAlignment="Center" HorizontalAlignment="Right" Visibility="Collapsed"
+                                           Foreground="{TemplateBinding Foreground}" />
+                            </Grid>
+                        </Border>
+                        <Popup x:Name="PART_Popup" Placement="Right" HorizontalOffset="-2" VerticalOffset="-5" AllowsTransparency="True"
+                               Focusable="False" PopupAnimation="Fade" IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}">
+                            <Border Background="{DynamicResource WK.Surface}"
+                                    BorderBrush="{DynamicResource WK.Card.Border}" BorderThickness="1" CornerRadius="8" Padding="4"
+                                    TextElement.Foreground="{TemplateBinding Foreground}">
+                                <ScrollViewer CanContentScroll="True" VerticalScrollBarVisibility="Auto">
+                                    <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle" Grid.IsSharedSizeScope="True" />
+                                </ScrollViewer>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="Icon" Value="{x:Null}">
+                            <Setter TargetName="Icon" Property="Visibility" Value="Collapsed" />
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Check" Property="Visibility" Value="Visible" />
+                            <Setter TargetName="Icon" Property="Visibility" Value="Collapsed" />
+                        </Trigger>
+                        <Trigger Property="Role" Value="SubmenuHeader">
+                            <Setter TargetName="Arrow" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                        <Trigger Property="Role" Value="TopLevelHeader">
+                            <Setter TargetName="Arrow" Property="Visibility" Value="Visible" />
+                            <Setter TargetName="PART_Popup" Property="Placement" Value="Bottom" />
+                        </Trigger>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="Bg" Property="Background" Value="{DynamicResource WK.Accent}" />
+                            <Setter Property="Foreground" Value="{DynamicResource WK.OnAccent}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.4" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

@@ -55,10 +55,10 @@ internal static class PermissionService
     {
         AppPermission.Accessibility => Loc.T("Accessibility"),
         AppPermission.ScreenRecording => Loc.T("Screen Recording"),
-        AppPermission.FullDiskAccess => "Administrator access",
+        AppPermission.FullDiskAccess => Loc.T("Administrator access"),
         AppPermission.FilesAndFolders => Loc.T("Files & Folders"),
         AppPermission.Notifications => Loc.T("Notifications"),
-        AppPermission.AutomationFinder => "Explorer automation",
+        AppPermission.AutomationFinder => Loc.T("Explorer automation"),
         AppPermission.AutomationPlayback => Loc.T("Playback automation"),
         AppPermission.AudioCapture => Loc.T("App audio"),
         AppPermission.Microphone => Loc.T("Microphone"),
@@ -146,7 +146,7 @@ internal static class PermissionService
         status.State != PermissionState.Granted && p is AppPermission.Accessibility or AppPermission.FullDiskAccess or AppPermission.AppManagement;
 
     public static string RequestLabel(AppPermission p) => p is AppPermission.Accessibility or AppPermission.FullDiskAccess or AppPermission.AppManagement
-        ? "Restart as administrator"
+        ? Loc.T("Restart as administrator")
         : Loc.T("Request");
 
     public static void Request(AppPermission p)

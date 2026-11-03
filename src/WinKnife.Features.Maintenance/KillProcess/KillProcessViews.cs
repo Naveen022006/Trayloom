@@ -177,7 +177,7 @@ internal sealed class KillProcessPageView : StackPanel
         var asc = Ascending;
         rows = SortBy switch
         {
-            "memory" => (asc ? rows.OrderBy(r => r.Memory) : rows.OrderByDescending(r => r.Memory)).ThenBy(r => r.Pid),
+            "memory" => (asc ? rows.OrderBy(r => r.HasMemory ? 0 : 1).ThenBy(r => r.Memory) : rows.OrderBy(r => r.HasMemory ? 0 : 1).ThenByDescending(r => r.Memory)).ThenBy(r => r.Pid),
             "name" => (asc ? rows.OrderBy(r => r.Name, StringComparer.CurrentCultureIgnoreCase) : rows.OrderByDescending(r => r.Name, StringComparer.CurrentCultureIgnoreCase)).ThenBy(r => r.Pid),
             "pid" => asc ? rows.OrderBy(r => r.Pid) : rows.OrderByDescending(r => r.Pid),
             _ => (asc ? rows.OrderBy(r => r.Cpu) : rows.OrderByDescending(r => r.Cpu)).ThenBy(r => r.Pid),
@@ -251,7 +251,7 @@ internal sealed class KillProcessPageView : StackPanel
         }
 
         Metric($"{entry.Cpu:0.0}%", 2);
-        Metric(Fmt.MetricBytes(entry.Memory), 3);
+        Metric(entry.HasMemory ? Fmt.MetricBytes(entry.Memory) : "–", 3);
         Metric(entry.Pid.ToString(), 4);
 
         var cluster = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };

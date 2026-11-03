@@ -663,7 +663,6 @@ internal static class IslandMenu
             FontSize = 12,
             HasDropShadow = false,
         };
-        menu.Resources.Add(typeof(ContextMenu), null);
         foreach (var item in items)
         {
             if (item.Separator)

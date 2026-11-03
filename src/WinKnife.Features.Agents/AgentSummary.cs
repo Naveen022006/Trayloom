@@ -16,7 +16,8 @@ internal static class AgentUsageSummary
         Dictionary<AgentProvider, AgentPlan> plans, HashSet<AgentProvider> providers, DateTime nowUtc)
     {
         var snapshot = new AgentUsageSnapshot { Loaded = true, Now = nowUtc };
-        snapshot.Limits = limits.Where(kv => providers.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
+        // A plan without a 5-hour window (Claude Ultra) never shows one, even when a source sends it.
+        snapshot.Limits = limits.Where(kv => providers.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => AgentLimitPlan.Shape(kv.Key, kv.Value, plans.GetValueOrDefault(kv.Key))!);
         snapshot.Plans = plans.Where(kv => providers.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
         snapshot.Live = live.Where(s => providers.Contains(s.Provider)).OrderBy(s => s.Started).ToList();
         snapshot.Seen = new HashSet<AgentProvider>(snapshot.Limits.Keys);
@@ -256,7 +257,9 @@ public static class AgentLimitSupport
             return null;
         }
 
-        foreach (var w in limits.Windows.Select(w => Current(w, now)))
+        // A window that renewed since it was read holds an unknown amount, so it only counts when nothing else is known.
+        var current = limits.Windows.Select(w => Current(w, now)).ToList();
+        foreach (var w in current.Any(x => !x.Renewed) ? current.Where(x => !x.Renewed) : current)
         {
             if (best is null || w.UsedPercent > best.UsedPercent
                 || (w.UsedPercent == best.UsedPercent && (w.ResetsAt ?? DateTime.MinValue) >= (best.ResetsAt ?? DateTime.MinValue)))

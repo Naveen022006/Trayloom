@@ -232,7 +232,7 @@ internal sealed class OnboardingWindow : Window
         var heading = new Grid { Margin = new Thickness(0, 14, 0, 8) };
         heading.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        heading.Children.Add(UiKit.Text("FEATURES", 11, FontWeights.Bold, ThemeKeys.TextSecondary));
+        heading.Children.Add(UiKit.Text(Loc.T("Features").ToUpper(Loc.Culture), 11, FontWeights.Bold, ThemeKeys.TextSecondary));
         var total = FeatureCatalog.All.Count(e => e.CanInstall);
         var count = UiKit.Text(Loc.F("{0} of {1} features installed", _selection.Count, total), 11.5, FontWeights.Normal, ThemeKeys.TextTertiary);
         Grid.SetColumn(count, 1);
@@ -241,10 +241,17 @@ internal sealed class OnboardingWindow : Window
 
         foreach (var group in new[] { FeatureGroup.WindowsTaskbar, FeatureGroup.MouseKeyboard, FeatureGroup.ClipboardFiles, FeatureGroup.Sound, FeatureGroup.EnergyDisplay, FeatureGroup.Tools, FeatureGroup.Island, FeatureGroup.Monitor })
         {
+            // Features that do not exist on Windows are not offered here at all (the Features hub lists them greyed out).
+            var offered = FeatureCatalog.InGroup(group).Where(e => e.CanInstall).ToList();
+            if (offered.Count == 0)
+            {
+                continue;
+            }
+
             var gh = UiKit.Text(group.DisplayName(), 12, FontWeights.SemiBold, ThemeKeys.TextSecondary);
             gh.Margin = new Thickness(2, 10, 0, 6);
             stack.Children.Add(gh);
-            foreach (var entry in FeatureCatalog.InGroup(group))
+            foreach (var entry in offered)
             {
                 stack.Children.Add(FeatureCard(entry));
             }
@@ -375,7 +382,7 @@ internal sealed class OnboardingWindow : Window
                 var users = FeatureCatalog.UsingPermission(p).Where(e => _selection.Contains(e.Id)).Select(e => e.Title).Order(StringComparer.CurrentCultureIgnoreCase).ToList();
                 if (users.Count > 0)
                 {
-                    row.Children.Add(UiKit.Text("Used by " + string.Join(", ", users), 11.5, FontWeights.Normal, ThemeKeys.TextTertiary, wrap: true).Also(x => x.Margin = new Thickness(22, 3, 0, 0)));
+                    row.Children.Add(UiKit.Text(Loc.F("Used by {0}", string.Join(", ", users)), 11.5, FontWeights.Normal, ThemeKeys.TextTertiary, wrap: true).Also(x => x.Margin = new Thickness(22, 3, 0, 0)));
                 }
 
                 card.Add(row);
@@ -462,8 +469,8 @@ internal sealed class OnboardingWindow : Window
         if (!InstallManager.IsInstalledCopy && !InstallManager.IsDevelopmentBuild)
         {
             card.AddDivider();
-            card.Add(new SettingsRow("", Loc.T("WinKnife is not installed yet"), "It is running from " + InstallManager.CurrentDirectory + ". Install it so the Start menu and the login entry keep working if you move or delete that folder.",
-                UiKit.Button("Install…", ButtonKind.Bordered, 12, onClick: () => _s.Shell.ShowInstallOffer())));
+            card.Add(new SettingsRow("", Loc.T("WinKnife is not installed yet"), Loc.F("It is running from {0}. Install it so the Start menu and the login entry keep working if you move or delete that folder.", InstallManager.CurrentDirectory),
+                UiKit.Button(Loc.T("Install…"), ButtonKind.Bordered, 12, onClick: () => _s.Shell.ShowInstallOffer())));
         }
 
         stack.Children.Add(card);

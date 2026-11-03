@@ -101,67 +101,69 @@ internal static class AgentCardViews
 
     // ------------------------------------------------------------------------------------------ limits
 
+    /// <summary>Everything a limits card needs to know about whose limits it shows.</summary>
+    private sealed record LimitsSource(AgentLimits? Limits, AgentPlan? Plan, string? AccountName, bool IsAccountCard, bool Checking, string? Failure, Action? Refresh);
+
+    private static LimitsSource Resolve(AgentCardContext c, AgentTile tile)
+    {
+        var provider = tile.Provider!.Value;
+        var snapshot = c.Snapshot;
+        snapshot.Plans.TryGetValue(provider, out var plan);
+        if (provider == AgentProvider.Claude && tile.AccountId is not null)
+        {
+            // An explicitly chosen Claude profile: only its own checks.
+            var status = c.Runtime.Service.Status;
+            return new LimitsSource(snapshot.Limits.GetValueOrDefault(AgentProvider.Claude), plan, ClaudeName(status), true, status.ClaudeAccountChecking,
+                status.ClaudeAccountFailure is { } f ? AgentStrings.ClaudeCode(f) : null, c.Runtime.Service.CheckClaudeAccount);
+        }
+
+        if (tile.AccountId is not null)
+        {
+            var account = c.CodexAccounts.FirstOrDefault(a => a.Id == tile.AccountId);
+            if (account is null)
+            {
+                return new LimitsSource(null, null, null, true, false, null, null);
+            }
+
+            var id = account.Id;
+            return new LimitsSource(account.CurrentLimits(c.Now), account.Plan is { Length: > 0 } name ? new AgentPlan(name, null) : null, account.Profile.Name, true, account.Checking,
+                account.Failure is { } e ? CodexAccountMessage(e) : null, () => c.Runtime.Accounts.Refresh(id, true));
+        }
+
+        return new LimitsSource(snapshot.Limits.GetValueOrDefault(provider), plan, provider == AgentProvider.Claude ? ClaudeName(c.Runtime.Service.Status, true) : null, false, false, null, null);
+    }
+
     public static FrameworkElement Limits(AgentCardContext c, AgentTile tile)
     {
         var provider = tile.Provider!.Value;
         var snapshot = c.Snapshot;
         var now = c.Now;
-        CodexProfileState? account = null;
-        string? accountName = null;
-        string? plan = snapshot.Plans.TryGetValue(provider, out var pl) ? pl.Name : null;
-        AgentLimits? limits;
-        var checking = false;
-        string? failure = null;
-        Action? refresh = null;
-        var isAccountCard = false;
-        if (provider == AgentProvider.Claude && tile.AccountId is not null)
+        var owner = Resolve(c, tile);
+        if (tile.AccountId is not null && owner.Limits is null && owner.AccountName is null && provider != AgentProvider.Claude)
         {
-            // An explicitly chosen Claude profile: only its own checks.
-            isAccountCard = true;
-            var status = c.Runtime.Service.Status;
-            accountName = ClaudeName(status);
-            limits = snapshot.Limits.GetValueOrDefault(AgentProvider.Claude);
-            checking = status.ClaudeAccountChecking;
-            failure = status.ClaudeAccountFailure is { } f ? AgentStrings.ClaudeCode(f) : null;
-            refresh = c.Runtime.Service.CheckClaudeAccount;
-        }
-        else if (tile.AccountId is not null)
-        {
-            account = c.CodexAccounts.FirstOrDefault(a => a.Id == tile.AccountId);
-            if (account is null)
-            {
-                return Chrome(new Grid());
-            }
-
-            isAccountCard = true;
-            accountName = account.Profile.Name;
-            limits = account.CurrentLimits(now);
-            plan = account.Plan;
-            checking = account.Checking;
-            failure = account.Failure is { } e ? CodexAccountMessage(e) : null;
-            var id = account.Id;
-            refresh = () => c.Runtime.Accounts.Refresh(id, true);
-        }
-        else
-        {
-            limits = snapshot.Limits.GetValueOrDefault(provider);
-            if (provider == AgentProvider.Claude)
-            {
-                accountName = ClaudeName(c.Runtime.Service.Status, true);
-            }
+            return Chrome(new Grid());
         }
 
+        var limits = owner.Limits;
+        var accountName = owner.AccountName;
+        var plan = owner.Plan?.Name;
+        var checking = owner.Checking;
+        var failure = owner.Failure;
+        var refresh = owner.Refresh;
+        var isAccountCard = owner.IsAccountCard;
         var stale = AgentSettings.LimitsAreStale(limits, provider, isAccountCard, now);
-        var windows = LimitPresenter.Rows(provider, limits, now, c.UsedDisplay);
+        var windows = LimitPresenter.Rows(provider, limits, now, c.UsedDisplay, provider == AgentProvider.Claude ? owner.Plan : null);
 
         var accessory = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        if (plan is not null)
+        {
+            var chip = AU.Chip(plan, provider.Tint());
+            AU.Tip(chip, AgentLimitPlan.Describe(provider, owner.Plan));
+            accessory.Children.Add(chip);
+        }
+
         if (isAccountCard)
         {
-            if (plan is not null)
-            {
-                accessory.Children.Add(AU.Chip(plan, provider.Tint()));
-            }
-
             // A check waiting its turn shows as one under way.
             if (checking)
             {
@@ -182,24 +184,22 @@ internal static class AgentCardViews
                 accessory.Children.Add(button);
             }
         }
-        else
+        else if (snapshot.Working(provider).Any())
         {
-            if (plan is not null)
-            {
-                accessory.Children.Add(AU.Chip(plan, provider.Tint()));
-            }
-
-            if (snapshot.Working(provider).Any())
-            {
-                accessory.Children.Add(new AgentPulse(provider.Tint(), 5) { Margin = new Thickness(2, 0, 0, 0) });
-            }
+            accessory.Children.Add(new AgentPulse(provider.Tint(), 5) { Margin = new Thickness(2, 0, 0, 0) });
         }
 
-        var title = accountName is not null ? provider.DisplayName() + " · " + accountName : provider.DisplayName();
-        var header = Header(title, "", provider.Tint(), provider, accessory);
-        AU.Tip(header, accountName ?? provider.DisplayName());
+        // The header is only the agent and its plan; the account (an email can be long) is its own quieter line, never cut to fit beside the plan.
+        var header = Header(provider.DisplayName(), "", provider.Tint(), provider, accessory);
         var body = Body();
         body.Children.Add(header);
+        if (accountName is not null)
+        {
+            var who = AU.Text(accountName, 9, null, AgentColors.Tertiary, TextTrimming.CharacterEllipsis);
+            who.Margin = new Thickness(23, 1, 0, 0);
+            AU.Tip(who, provider.DisplayName() + " · " + accountName);
+            body.Children.Add(who);
+        }
 
         if (isAccountCard)
         {
@@ -239,14 +239,17 @@ internal static class AgentCardViews
                 Add(body, line, 5);
                 if (LimitPresenter.Breakdown(limits) is { } breakdown)
                 {
-                    var uses = AU.Text("This week's use: " + breakdown, 9, null, AgentColors.Secondary, TextTrimming.CharacterEllipsis);
+                    var uses = AU.Text(LimitPresenter.BreakdownPrefix + breakdown, 9, null, AgentColors.Secondary);
+                    uses.TextWrapping = TextWrapping.Wrap;
                     AU.Tip(uses, "Share of this week's plan use by product, as Claude reports it" + (limits.BreakdownAsOf is { } at ? " (as of " + AgentFormat.Relative(at, now, false) + ")" : "") + ".");
                     Add(body, uses, 3);
                 }
 
                 if (LimitPresenter.Disagreement(snapshot, provider, now) is { } diff)
                 {
-                    Add(body, AU.Text(diff, 8.5, null, AgentColors.Tertiary, TextTrimming.CharacterEllipsis), 3);
+                    var other = AU.Text(diff, 8.5, null, AgentColors.Tertiary);
+                    other.TextWrapping = TextWrapping.Wrap;
+                    Add(body, other, 3);
                 }
             }
         }
@@ -254,17 +257,21 @@ internal static class AgentCardViews
         return Chrome(body);
     }
 
-    /// <summary>The height the default limits card of a provider needs (the page sizes its row from this).</summary>
-    public static double LimitsHeight(AgentCardContext c, AgentProvider provider)
+    /// <summary>The height a limits card needs for what it shows (the page sizes its row from this).</summary>
+    public static double LimitsHeight(AgentCardContext c, AgentTile tile)
     {
-        var limits = c.Snapshot.Limits.GetValueOrDefault(provider);
-        var rows = LimitPresenter.Rows(provider, limits, c.Now, c.UsedDisplay);
+        var provider = tile.Provider!.Value;
+        var source = Resolve(c, tile);
+        var floor = tile.AccountId is not null ? AgentSettings.AccountCardHeight : AgentSettings.CardHeight;
+        var rows = LimitPresenter.Rows(provider, source.Limits, c.Now, c.UsedDisplay, provider == AgentProvider.Claude ? source.Plan : null);
         if (rows.Count == 0)
         {
-            return AgentSettings.CardHeight;
+            return floor + (source.AccountName is not null && tile.AccountId is null ? 14 : 0);
         }
 
-        return LimitPresenter.CardHeight(rows, LimitPresenter.Breakdown(limits) is not null, LimitPresenter.Disagreement(c.Snapshot, provider, c.Now) is not null);
+        var breakdown = source.IsAccountCard ? null : LimitPresenter.Breakdown(source.Limits);
+        var disagreement = source.IsAccountCard ? null : LimitPresenter.Disagreement(c.Snapshot, provider, c.Now);
+        return Math.Max(floor, LimitPresenter.CardHeight(rows, breakdown, disagreement) + (source.AccountName is not null ? 14 : 0));
     }
 
     private static string CodexAccountMessage(CodexAccountError e) => e switch
@@ -300,24 +307,28 @@ internal static class AgentCardViews
         return panel;
     }
 
-    /// <summary>A row says what is left or used, when the source says the window renews, or why there is nothing to count.</summary>
+    private static readonly Color AlertRed = Color.FromRgb(0xFF, 0x45, 0x3A);
+
+    /// <summary>A row says the window's name and how much is used or left, with a bar; a note says why it is paused, used up or not started yet.</summary>
     private static FrameworkElement LimitRow(LimitRowModel model)
     {
         var row = new StackPanel();
         var line = new AgentFitRow { Height = 15 };
         line.Children.Add(AU.Text(model.Label, 10, FontWeights.Medium, AgentColors.White(0.85), TextTrimming.CharacterEllipsis));
         var quiet = model.Fraction is null && !model.NoteIsAlert;
-        var share = AU.Text(model.Value, model.Fraction is null ? 11 : 12, FontWeights.SemiBold, quiet ? AgentColors.Secondary : AgentColors.Of(model.Tint), display: true, mono: true);
+        var share = AU.Text(model.Value, model.Fraction is null ? 11 : 12, FontWeights.SemiBold, quiet || model.Dimmed ? AgentColors.Secondary : AgentColors.Of(model.Tint, 1), display: true, mono: true);
         line.Children.Add(share);
         row.Children.Add(line);
         if (model.Fraction is { } fraction)
         {
-            var meter = new AgentMeter(fraction, model.Pace, model.Tint, 4) { Margin = new Thickness(0, 2, 0, 0) };
+            var meter = new AgentMeter(fraction, model.Pace, model.Dimmed ? Color.FromRgb(0x8E, 0x8E, 0x93) : model.Tint, 4, model.Dimmed) { Margin = new Thickness(0, 2, 0, 0) };
             row.Children.Add(meter);
         }
-        else if (model.Note is { } note)
+
+        if (model.Note is { } note)
         {
-            var t = AU.Text(note, 9.5, null, model.NoteIsAlert ? AgentColors.Of(model.Tint) : AgentColors.Secondary, TextTrimming.CharacterEllipsis);
+            var t = AU.Text(note, 9.5, model.NoteIsAlert ? FontWeights.Medium : null, model.NoteIsAlert ? AgentColors.Of(AlertRed) : AgentColors.Secondary);
+            t.TextWrapping = TextWrapping.Wrap;
             t.Margin = new Thickness(0, 2, 0, 0);
             row.Children.Add(t);
         }
@@ -326,7 +337,7 @@ internal static class AgentCardViews
         {
             var reset = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 0) };
             reset.Children.Add(AU.Icon(Glyphs.Refresh, 7.5, AgentColors.Secondary));
-            var text = AU.Text("resets " + model.Reset, 9.5, null, AgentColors.Secondary, TextTrimming.CharacterEllipsis);
+            var text = AU.Text(Loc.T("resets") + " " + model.Reset, 9.5, null, AgentColors.Secondary, TextTrimming.CharacterEllipsis);
             text.Margin = new Thickness(3, 0, 0, 0);
             reset.Children.Add(text);
             row.Children.Add(reset);
@@ -348,7 +359,8 @@ internal static class AgentCardViews
     {
         var snapshot = c.Snapshot;
         var now = c.Now;
-        if (provider == AgentProvider.Claude && snapshot.ClaudeBlock is { } block)
+        snapshot.Plans.TryGetValue(provider, out var plan);
+        if (provider == AgentProvider.Claude && snapshot.ClaudeBlock is { } block && AgentLimitPlan.HasSessionWindow(provider, plan))
         {
             var length = (block.End - block.Start).TotalSeconds;
             var box = new StackPanel();
@@ -357,7 +369,7 @@ internal static class AgentCardViews
             line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var left = new StackPanel { Orientation = Orientation.Horizontal };
-            left.Children.Add(AU.Text(AgentStrings.Session, 10, FontWeights.Medium, AgentColors.White(0.85)));
+            left.Children.Add(AU.Text(Loc.T("5-hour session"), 10, FontWeights.Medium, AgentColors.White(0.85)));
             var countdown = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(5, 0, 0, 0) };
             countdown.Children.Add(AU.Icon(Glyphs.Refresh, 7.5, AgentColors.Secondary));
             var ct = AU.Text(Countdown(block.End, now), 9.5, null, AgentColors.Secondary);
