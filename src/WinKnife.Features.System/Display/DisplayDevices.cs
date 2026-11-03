@@ -40,6 +40,27 @@ internal abstract class DisplayDevice : IDisposable
         }
     }
 
+    /// <summary>
+    /// Takes a level read or announced from outside (brightness keys, another slider) as the current one. Skipped while a write
+    /// is running: that write sets the level itself.
+    /// </summary>
+    public void Observe(int percent)
+    {
+        if (!Monitor.TryEnter(_gate))
+        {
+            return;
+        }
+
+        try
+        {
+            Percent = Math.Clamp(percent, 0, 100);
+        }
+        finally
+        {
+            Monitor.Exit(_gate);
+        }
+    }
+
     public virtual void Dispose()
     {
     }
@@ -55,8 +76,14 @@ internal sealed class WmiDisplay : DisplayDevice
         Percent = current;
     }
 
-    protected override bool WriteCore(int percent) =>
-        Wmi.ForEach(@"root\WMI", "SELECT * FROM WmiMonitorBrightnessMethods WHERE Active=TRUE", o => Wmi.Invoke(o, "WmiSetBrightness", 1, percent));
+    protected override bool WriteCore(int percent)
+    {
+        // marked before and after: the change notification may land after the call returns, and the island must not show it as foreign
+        BrightnessWrites.MarkOwn();
+        var ok = Wmi.ForEach(@"root\WMI", "SELECT * FROM WmiMonitorBrightnessMethods WHERE Active=TRUE", o => Wmi.Invoke(o, "WmiSetBrightness", 1, percent));
+        BrightnessWrites.MarkOwn();
+        return ok;
+    }
 }
 
 /// <summary>External monitor controlled through DDC/CI (dxva2 high-level monitor configuration API).</summary>

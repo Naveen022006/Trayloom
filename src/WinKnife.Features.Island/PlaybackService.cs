@@ -307,7 +307,8 @@ internal sealed class PlaybackService : IDisposable
         {
             try
             {
-                guard = ForegroundGuard.Arm(AmNative.GetForegroundWindow(), line => _log.Info("AppleMusic guard: " + line));
+                // 3 s at most: the command and the 1.5 s grace after it, whatever happens to the awaiting code
+                guard = ForegroundGuard.Arm(AmNative.GetForegroundWindow(), line => _log.Info("AppleMusic guard: " + line), 3000);
             }
             catch (Exception ex)
             {

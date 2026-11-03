@@ -7,6 +7,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using NAudio.CoreAudioApi;
 using NAudio.CoreAudioApi.Interfaces;
+using WinKnife.Core;
 
 namespace WinKnife.Features.Island;
 
@@ -580,10 +581,23 @@ internal sealed class AudioService : IDisposable
 internal static class BrightnessService
 {
     private static readonly object Gate = new();
+    private static readonly object CacheGate = new();
+    private static readonly object LogGate = new();
+    private static readonly Dictionary<string, DateTime> FailureLogged = [];
     private static bool? _available;
     private static int _probing;
     private static double? _pending;
     private static bool _writing;
+    private static double _lastKnown = double.NaN;
+    private static long _lastOwnWriteTicks;
+    private static int _probeLogged;
+    private static int _firstWriteLogged;
+
+    // One WMI connection and the method objects are kept while the slider is being dragged: a write takes ~5 ms instead of ~15 ms.
+    private static object? _writeLocator;
+    private static object? _writeService;
+    private static List<object>? _writeTargets;
+    private static long _writeStamp;
 
     /// <summary>
     /// Whether the built-in panel can be controlled. The answer comes from a background check (WMI must not be called on the
@@ -609,10 +623,32 @@ internal static class BrightnessService
     /// <summary>The panel level changed (0..1), whoever changed it; raised on the UI thread by the island's brightness watcher.</summary>
     public static event Action<double>? LevelChanged;
 
-    /// <summary>When the island itself last set the level (its own changes show no notice).</summary>
-    public static DateTime LastOwnWrite { get; private set; } = DateTime.MinValue;
+    /// <summary>When the island itself last set the level (the island's own changes do not move its sliders).</summary>
+    public static DateTime LastOwnWrite => new(Interlocked.Read(ref _lastOwnWriteTicks), DateTimeKind.Utc);
 
-    public static void Announce(double level) => LevelChanged?.Invoke(level);
+    /// <summary>Where failures and the one-off probe / first-write lines are logged (set by the island feature; may be called on any thread).</summary>
+    public static Action<string, Exception?>? Log { get; set; }
+
+    /// <summary>
+    /// The newest panel level (0..1) seen from a read, a notification or a write, or null before the first one. Sliders start from it
+    /// so they never open empty and animate up.
+    /// </summary>
+    public static double? LastKnown
+    {
+        get
+        {
+            var v = Volatile.Read(ref _lastKnown);
+            return double.IsNaN(v) ? null : v;
+        }
+    }
+
+    public static void Announce(double level)
+    {
+        Remember(level);
+        LevelChanged?.Invoke(level);
+    }
+
+    private static void Remember(double level) => Volatile.Write(ref _lastKnown, Math.Clamp(level, 0, 1));
 
     public static void Probe()
     {
@@ -626,11 +662,22 @@ internal static class BrightnessService
             try
             {
                 double? level = null;
-                var ran = ForEach("SELECT CurrentBrightness FROM WmiMonitorBrightness WHERE Active=TRUE", item => level ??= Level(item));
+                var ran = ForEach("probe", "SELECT CurrentBrightness FROM WmiMonitorBrightness WHERE Active=TRUE", item => level ??= Level(item));
                 bool? answer = ran ? level is not null : null;
+                if (level is { } known)
+                {
+                    Remember(known);
+                }
+
+                if (answer is not null && Interlocked.Exchange(ref _probeLogged, 1) == 0)
+                {
+                    Log?.Invoke(level is { } l ? $"Island brightness probe: built-in panel found at {(int)Math.Round(l * 100)}%" : "Island brightness probe: no controllable built-in panel", null);
+                }
+
                 if (answer is not null && answer != _available)
                 {
                     _available = answer;
+                    DropWriteCache();
                     AvailabilityChanged?.Invoke();
                 }
             }
@@ -644,10 +691,16 @@ internal static class BrightnessService
     public static double? Read()
     {
         double? result = null;
-        var ran = ForEach("SELECT CurrentBrightness FROM WmiMonitorBrightness WHERE Active=TRUE", item => result ??= Level(item));
+        var ran = ForEach("read", "SELECT CurrentBrightness FROM WmiMonitorBrightness WHERE Active=TRUE", item => result ??= Level(item));
+        if (result is { } known)
+        {
+            Remember(known);
+        }
+
         if (ran && _available != (result is not null))
         {
             _available = result is not null;
+            DropWriteCache();
             AvailabilityChanged?.Invoke();
         }
 
@@ -663,7 +716,8 @@ internal static class BrightnessService
     /// <summary>Sets the level off the UI thread; while a write runs, only the newest requested level is kept (dragging stays smooth).</summary>
     public static void Write(double value)
     {
-        LastOwnWrite = DateTime.UtcNow;
+        Interlocked.Exchange(ref _lastOwnWriteTicks, DateTime.UtcNow.Ticks);
+        BrightnessWrites.MarkOwn();
         lock (Gate)
         {
             _pending = value;
@@ -693,14 +747,149 @@ internal static class BrightnessService
                 }
 
                 var percent = (byte)Math.Clamp(Math.Round(next * 100), 0, 100);
-                ForEach("SELECT * FROM WmiMonitorBrightnessMethods WHERE Active=TRUE", item =>
-                    item.GetType().InvokeMember("WmiSetBrightness", System.Reflection.BindingFlags.InvokeMethod, null, item, [1, percent]));
+                var started = Stopwatch.GetTimestamp();
+                if (SetPanel(percent))
+                {
+                    Remember(percent / 100.0);
+                    Interlocked.Exchange(ref _lastOwnWriteTicks, DateTime.UtcNow.Ticks);
+                    BrightnessWrites.MarkOwn();
+                    if (Interlocked.Exchange(ref _firstWriteLogged, 1) == 0)
+                    {
+                        Log?.Invoke($"Island brightness first write: {percent}% in {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0} ms", null);
+                    }
+                }
             }
         });
     }
 
+    /// <summary>
+    /// Calls <c>WmiSetBrightness</c> on every active panel. The WMI objects are reused between writes (and dropped on any error or after a
+    /// pause, then rebuilt once); false when no panel took the level.
+    /// </summary>
+    private static bool SetPanel(byte percent)
+    {
+        lock (CacheGate)
+        {
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                try
+                {
+                    if (_writeTargets is null || Environment.TickCount64 - _writeStamp > 5000)
+                    {
+                        DropWriteCacheLocked();
+                        BuildWriteCache();
+                    }
+
+                    foreach (var target in _writeTargets!)
+                    {
+                        target.GetType().InvokeMember("WmiSetBrightness", System.Reflection.BindingFlags.InvokeMethod, null, target, [1, percent]);
+                    }
+
+                    _writeStamp = Environment.TickCount64;
+                    if (_writeTargets.Count > 0)
+                    {
+                        return true;
+                    }
+
+                    LogFailure("write", new InvalidOperationException("no active WmiMonitorBrightnessMethods instance"));
+                    return false;
+                }
+                catch (Exception ex)
+                {
+                    DropWriteCacheLocked();
+                    if (attempt == 1)
+                    {
+                        LogFailure("write", ex);
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static void BuildWriteCache()
+    {
+        var type = Type.GetTypeFromProgID("WbemScripting.SWbemLocator") ?? throw new InvalidOperationException("WbemScripting.SWbemLocator is not registered");
+        var targets = new List<object>();
+        object? set = null;
+        try
+        {
+            _writeLocator = Activator.CreateInstance(type);
+            _writeService = ((dynamic)_writeLocator!).ConnectServer(".", "root\\wmi");
+            set = ((dynamic)_writeService!).ExecQuery("SELECT * FROM WmiMonitorBrightnessMethods WHERE Active=TRUE", "WQL", 0x10);
+            foreach (object item in (dynamic)set!)
+            {
+                targets.Add(item);
+            }
+        }
+        catch
+        {
+            foreach (var t in targets)
+            {
+                Release(t);
+            }
+
+            throw;
+        }
+        finally
+        {
+            Release(set);
+        }
+
+        _writeTargets = targets;
+        _writeStamp = Environment.TickCount64;
+    }
+
+    private static void DropWriteCache()
+    {
+        lock (CacheGate)
+        {
+            DropWriteCacheLocked();
+        }
+    }
+
+    private static void DropWriteCacheLocked()
+    {
+        if (_writeTargets is not null)
+        {
+            foreach (var t in _writeTargets)
+            {
+                Release(t);
+            }
+        }
+
+        Release(_writeService);
+        Release(_writeLocator);
+        _writeTargets = null;
+        _writeService = null;
+        _writeLocator = null;
+    }
+
+    /// <summary>Logs a WMI failure: the first of each kind, then at most one a minute.</summary>
+    private static void LogFailure(string kind, Exception ex)
+    {
+        var log = Log;
+        if (log is null)
+        {
+            return;
+        }
+
+        lock (LogGate)
+        {
+            if (FailureLogged.TryGetValue(kind, out var at) && DateTime.UtcNow - at < TimeSpan.FromSeconds(60))
+            {
+                return;
+            }
+
+            FailureLogged[kind] = DateTime.UtcNow;
+        }
+
+        log($"Island brightness {kind} failed (0x{ex.HResult:X8}): {ex.Message}", ex);
+    }
+
     /// <summary>Runs the query and calls <paramref name="action"/> per object; false when WMI could not be asked.</summary>
-    private static bool ForEach(string query, Action<object> action)
+    private static bool ForEach(string kind, string query, Action<object> action)
     {
         object? locator = null;
         object? service = null;
@@ -710,6 +899,7 @@ internal static class BrightnessService
             var type = Type.GetTypeFromProgID("WbemScripting.SWbemLocator");
             if (type is null)
             {
+                LogFailure(kind, new InvalidOperationException("WbemScripting.SWbemLocator is not registered"));
                 return false;
             }
 
@@ -728,9 +918,10 @@ internal static class BrightnessService
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
             // WMI unavailable, access denied, or the call was refused for now.
+            LogFailure(kind, ex);
             return false;
         }
         finally

@@ -214,8 +214,12 @@ internal static class BarSystem
     [DllImport("dxva2.dll")] private static extern bool GetPhysicalMonitorsFromHMONITOR(nint monitor, uint count, [Out] PhysicalMonitor[] monitors);
     [DllImport("dxva2.dll")] private static extern bool SetMonitorBrightness(nint monitor, uint brightness);
     [DllImport("dxva2.dll")] private static extern bool DestroyPhysicalMonitors(uint count, PhysicalMonitor[] monitors);
+    [DllImport("dxva2.dll")] private static extern bool GetMonitorBrightness(nint monitor, out uint minimum, out uint current, out uint maximum);
 
-    /// <summary>Sets the brightness of the display under the pointer: DDC/CI first, then the laptop panel through WMI.</summary>
+    /// <summary>
+    /// Sets the brightness of the display under the pointer: DDC/CI first (only for monitors that can be read back; a laptop panel
+    /// "accepts" the call and ignores it), then the laptop panel through WMI. Blocking: call off the UI thread.
+    /// </summary>
     public static bool SetBrightness(int percent)
     {
         percent = Math.Clamp(percent, 0, 100);
@@ -231,7 +235,10 @@ internal static class BarSystem
                     var ok = false;
                     foreach (var m in list)
                     {
-                        ok |= SetMonitorBrightness(m.Handle, (uint)percent);
+                        if (GetMonitorBrightness(m.Handle, out var min, out _, out var max) && max > min)
+                        {
+                            ok |= SetMonitorBrightness(m.Handle, min + (uint)Math.Round((max - min) * percent / 100.0));
+                        }
                     }
 
                     DestroyPhysicalMonitors(count, list);
@@ -247,19 +254,128 @@ internal static class BarSystem
             // fall through to WMI
         }
 
+        return SetPanelBrightness(percent);
+    }
+
+    /// <summary>
+    /// Sets the laptop panel through WMI in this process (late bound; ~15 ms where a PowerShell call took a second). True only when the
+    /// panel then reads back the requested level.
+    /// </summary>
+    private static bool SetPanelBrightness(int percent)
+    {
+        object? locator = null;
+        object? service = null;
         try
         {
-            var psi = new ProcessStartInfo("powershell.exe", $"-NoProfile -NonInteractive -Command \"(Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods | Invoke-CimMethod -MethodName WmiSetBrightness -Arguments @{{Timeout=1;Brightness={percent}}}) | Out-Null\"")
+            var type = Type.GetTypeFromProgID("WbemScripting.SWbemLocator");
+            if (type is null)
             {
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            };
-            using var p = Process.Start(psi);
-            return p is not null && p.WaitForExit(4000) && p.ExitCode == 0;
+                return false;
+            }
+
+            locator = Activator.CreateInstance(type);
+            service = ((dynamic)locator!).ConnectServer(".", "root\\wmi");
+            BrightnessWrites.MarkOwn();
+            var any = false;
+            WmiEach(service!, "SELECT * FROM WmiMonitorBrightnessMethods WHERE Active=TRUE", item =>
+            {
+                item.GetType().InvokeMember("WmiSetBrightness", System.Reflection.BindingFlags.InvokeMethod, null, item, [1, (byte)percent]);
+                any = true;
+            });
+            BrightnessWrites.MarkOwn();
+            if (!any)
+            {
+                return false;
+            }
+
+            // the new level shows within a few ms; allow a short wait before calling it a failure
+            for (var attempt = 0; attempt < 6; attempt++)
+            {
+                var current = -1;
+                var nearest = -1;
+                WmiEach(service!, "SELECT CurrentBrightness, Level FROM WmiMonitorBrightness WHERE Active=TRUE", item =>
+                {
+                    if (current < 0)
+                    {
+                        current = Convert.ToInt32(((dynamic)item).Properties_.Item("CurrentBrightness").Value, CultureInfo.InvariantCulture);
+
+                        // the panel only has the levels it lists: the one nearest to the request is what a successful write ends on
+                        try
+                        {
+                            if (((dynamic)item).Properties_.Item("Level").Value is Array levels)
+                            {
+                                foreach (var level in levels)
+                                {
+                                    var l = Convert.ToInt32(level, CultureInfo.InvariantCulture);
+                                    if (nearest < 0 || Math.Abs(l - percent) < Math.Abs(nearest - percent))
+                                    {
+                                        nearest = l;
+                                    }
+                                }
+                            }
+                        }
+                        catch
+                        {
+                            // no level list: the tolerance below decides
+                        }
+                    }
+                });
+                if (current >= 0 && (current == percent || current == nearest || Math.Abs(current - percent) <= 2))
+                {
+                    return true;
+                }
+
+                Thread.Sleep(50);
+            }
+
+            return false;
         }
         catch
         {
             return false;
+        }
+        finally
+        {
+            ReleaseCom(service);
+            ReleaseCom(locator);
+        }
+    }
+
+    private static void WmiEach(object service, string query, Action<object> action)
+    {
+        object? set = null;
+        try
+        {
+            set = ((dynamic)service).ExecQuery(query, "WQL", 0x10);
+            foreach (object item in (dynamic)set!)
+            {
+                try
+                {
+                    action(item);
+                }
+                finally
+                {
+                    ReleaseCom(item);
+                }
+            }
+        }
+        finally
+        {
+            ReleaseCom(set);
+        }
+    }
+
+    private static void ReleaseCom(object? o)
+    {
+        try
+        {
+            if (o is not null && Marshal.IsComObject(o))
+            {
+                Marshal.ReleaseComObject(o);
+            }
+        }
+        catch
+        {
         }
     }
 

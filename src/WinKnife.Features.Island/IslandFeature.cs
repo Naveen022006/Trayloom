@@ -38,13 +38,33 @@ public sealed class IslandFeature : IFeature
                 .. dev,
                 new FeatureAction("toggle", Loc.T("Open or close Dynamic Island"), () => _window?.Toggle(), G.Controls),
                 new FeatureAction("explore", Loc.T("Explore the island sections"), () => _window?.Open("explore"), G.Explore),
-                new FeatureAction("play-pause", Loc.T("Play or pause music"), () => core.Playback.TogglePlayPause(), G.Play),
-                new FeatureAction("next", Loc.T("Next track"), () => core.Playback.Next(), G.Next),
-                new FeatureAction("previous", Loc.T("Previous track"), () => core.Playback.Previous(), G.Previous),
+                new FeatureAction("open-music", Loc.T("Open the island music page"), () => _window?.Open("music"), G.Music),
+                new FeatureAction("play-pause", Loc.T("Play or pause music"), () => Transport(core, AmAction.PlayPause, core.Playback.TogglePlayPause), G.Play),
+                new FeatureAction("next", Loc.T("Next track"), () => Transport(core, AmAction.SkipForward, core.Playback.Next), G.Next),
+                new FeatureAction("previous", Loc.T("Previous track"), () => Transport(core, AmAction.SkipBack, core.Playback.Previous), G.Previous),
                 new FeatureAction("timer", Loc.T("Open the island timer"), () => _window?.Open("timer"), G.Timer),
                 new FeatureAction("calendar", Loc.T("Open the island calendar"), () => _window?.Open("calendar"), G.Calendar),
             ];
         }
+    }
+
+    /// <summary>
+    /// A transport shortcut: with nothing playing it does what the island's idle buttons do (Apple Music is started in the background and
+    /// played, or the preferred player is opened), because there is no media session to command; otherwise it commands the current one.
+    /// </summary>
+    private static void Transport(IslandCore core, AmAction action, Action current)
+    {
+        if (!core.Playback.Current.HasTrack)
+        {
+            var preferred = PlaybackService.ResolvePreferredPlayer(core.App.Get<string>(K.PreferredPlayer), core.Playback);
+            if (preferred is not null || MusicUi.HiddenApple(core, preferred))
+            {
+                MusicUi.IdleAction(core, preferred, action)();
+                return;
+            }
+        }
+
+        current();
     }
 
     public void Start(IFeatureContext context)
@@ -52,6 +72,17 @@ public sealed class IslandFeature : IFeature
         _context = context;
         _stopped = false;
         K.RegisterDefaults(context.App);
+        BrightnessService.Log = (message, exception) =>
+        {
+            if (exception is null)
+            {
+                context.Log.Info(message);
+            }
+            else
+            {
+                context.Log.Warn(message);
+            }
+        };
         BrightnessService.Probe();
         _core = new IslandCore(context);
         _core.Start();
@@ -81,6 +112,7 @@ public sealed class IslandFeature : IFeature
         _wheel?.Dispose();
         _shortcut = _wheel = null;
         IslandRects.Pill = null;
+        BrightnessService.Log = null;
         _window?.Shutdown();
         _window = null;
         _core?.Dispose();
@@ -148,6 +180,24 @@ public sealed class IslandFeature : IFeature
         var inside = e.X >= pill.Left && e.X < pill.Right && e.Y >= pill.Top && e.Y < pill.Bottom;
         if (!inside)
         {
+            return false;
+        }
+
+        // over a slider of the open page (brightness, volume) the wheel belongs to the slider, not to the collapse gesture
+        if (pill.Expanded && pill.WheelZones.Any(z => e.X >= z.L && e.X < z.R && e.Y >= z.T && e.Y < z.B))
+        {
+            var s = _gesture;
+            if (s.Decided && s.Swallow && unchecked(e.Timestamp - s.Last) <= 350)
+            {
+                // the scroll sequence that just opened the island (or changed the song) is still running: its remaining notches and the
+                // touchpad's momentum must not move the slider that has appeared under the pointer
+                s.Last = e.Timestamp;
+                return true;
+            }
+
+            s.AccV = s.AccH = 0;
+            s.Decided = false;
+            s.Swallow = false;
             return false;
         }
 

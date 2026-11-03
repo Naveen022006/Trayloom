@@ -36,6 +36,9 @@ internal sealed class TimerService : IDisposable
     private int _lastWhole = -1;
     private DateTime _alarmStart;
 
+    /// <summary>The finished alarm repeats every 2 s for at most this long unless the user acknowledges it.</summary>
+    private const double AlarmSeconds = 30;
+
     public TimerService(IAppSettings app, Dispatcher ui)
     {
         _app = app;
@@ -60,6 +63,9 @@ internal sealed class TimerService : IDisposable
     public bool Completed { get; private set; }
 
     public bool CycleFinished { get; private set; }
+
+    /// <summary>True while the finished alarm is still repeating (any interaction stops it).</summary>
+    public bool Ringing => _alarm.IsEnabled;
 
     public int CompletedFocuses { get; private set; }
 
@@ -169,6 +175,7 @@ internal sealed class TimerService : IDisposable
 
     public void Start(TimerMode mode)
     {
+        StopAlarm();
         if (HasSession)
         {
             return;
@@ -215,6 +222,7 @@ internal sealed class TimerService : IDisposable
 
     public void Pause()
     {
+        StopAlarm();
         if (!Running)
         {
             return;
@@ -227,6 +235,7 @@ internal sealed class TimerService : IDisposable
 
     public void Resume()
     {
+        StopAlarm();
         if (!HasSession || Running || Completed)
         {
             return;
@@ -331,7 +340,7 @@ internal sealed class TimerService : IDisposable
 
     private void PlayAlarm()
     {
-        if ((DateTime.UtcNow - _alarmStart).TotalMinutes >= 5 || !_app.Get<bool>(K.TimerSound))
+        if ((DateTime.UtcNow - _alarmStart).TotalSeconds >= AlarmSeconds || !_app.Get<bool>(K.TimerSound))
         {
             _alarm.Stop();
             return;

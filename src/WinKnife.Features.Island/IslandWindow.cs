@@ -490,12 +490,42 @@ internal sealed partial class IslandWindow : OverlayWindow
             (int)(top + ((HeaderRow + SurfaceTop + 12) * _scale)),
             Expanded,
             _page?.ScrollsContent ?? false,
-            _core.Playback.Current.HasTrack && (Expanded ? _module == "music" : _core.CurrentActivity() == IslandCore.ActMusic || _core.Playback.Current.IsPlaying));
+            _core.Playback.Current.HasTrack && (Expanded ? _module == "music" : _core.CurrentActivity() == IslandCore.ActMusic || _core.Playback.Current.IsPlaying),
+            _mode == IslandMode.Open ? WheelZonesOnScreen() : []);
+    }
+
+    /// <summary>Where the open page's wheel-driven sliders are on screen (physical pixels), so the gesture hook leaves the wheel to them.</summary>
+    private List<(int L, int T, int R, int B)> WheelZonesOnScreen()
+    {
+        var zones = new List<(int L, int T, int R, int B)>();
+        void Walk(DependencyObject parent)
+        {
+            for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+            {
+                var child = VisualTreeHelper.GetChild(parent, i);
+                if (child is LevelSlider { IsVisible: true, IsEnabled: true, Scrollable: true, ActualWidth: > 0, ActualHeight: > 0 } slider && PresentationSource.FromVisual(slider) is not null)
+                {
+                    var a = slider.PointToScreen(new Point(0, 0));
+                    var b = slider.PointToScreen(new Point(slider.ActualWidth, slider.ActualHeight));
+                    zones.Add(((int)Math.Floor(Math.Min(a.X, b.X)), (int)Math.Floor(Math.Min(a.Y, b.Y)), (int)Math.Ceiling(Math.Max(a.X, b.X)), (int)Math.Ceiling(Math.Max(a.Y, b.Y))));
+                }
+                else if (child is UIElement { IsVisible: false })
+                {
+                    continue;
+                }
+
+                Walk(child);
+            }
+        }
+
+        Walk(_openHost);
+        return zones;
     }
 }
 
 /// <summary>Immutable snapshot of where the island is on screen (physical pixels), readable from the hook thread.</summary>
-internal sealed record PillRect(int Left, int Top, int Right, int Bottom, int HeaderBottom, bool Expanded, bool ContentScrolls, bool MusicShowing);
+/// <param name="WheelZones">Screen rectangles (left, top, right, bottom) of the open page's sliders: the wheel over them belongs to the slider.</param>
+internal sealed record PillRect(int Left, int Top, int Right, int Bottom, int HeaderBottom, bool Expanded, bool ContentScrolls, bool MusicShowing, IReadOnlyList<(int L, int T, int R, int B)> WheelZones);
 
 internal static class IslandRects
 {

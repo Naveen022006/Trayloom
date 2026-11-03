@@ -652,6 +652,17 @@ internal sealed class LevelSlider : FrameworkElement
         e.Handled = true;
     }
 
+    /// <summary>Capture was taken away mid-drag (another window, a menu, Alt+Tab): the drag ends here, as if the button had been released.</summary>
+    protected override void OnLostMouseCapture(MouseEventArgs e)
+    {
+        base.OnLostMouseCapture(e);
+        if (_dragging)
+        {
+            _dragging = false;
+            ValueCommitted?.Invoke(_value);
+        }
+    }
+
     protected override void OnMouseWheel(MouseWheelEventArgs e)
     {
         if (!Scrollable)
@@ -659,7 +670,8 @@ internal sealed class LevelSlider : FrameworkElement
             return;
         }
 
-        var step = (Maximum - Minimum) * WheelStep * (e.Delta > 0 ? 1 : -1);
+        // a mouse notch (120) moves one WheelStep; a touchpad sends many small deltas that add up to the same distance
+        var step = (Maximum - Minimum) * WheelStep * (e.Delta / 120.0);
         var v = Math.Clamp(_value + step, Minimum, Maximum);
         _value = v;
         _drawn = Normalised(v);

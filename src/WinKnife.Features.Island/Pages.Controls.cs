@@ -100,32 +100,53 @@ internal sealed class BrightnessLevel : Grid
         _slider.Margin = new Thickness(6, 0, 0, 0);
         Grid.SetColumn(_slider, 1);
         Children.Add(_slider);
-        _slider.ValueChanged += v => BrightnessService.Write(v);
-        Action<double> follow = level => Dispatcher.BeginInvoke(() =>
+        // start from the newest known level (not hidden, so no ease from empty); the refresh below only corrects it
+        if (BrightnessService.LastKnown is { } known)
         {
-            if (!_slider.IsDragging && DateTime.UtcNow - BrightnessService.LastOwnWrite > TimeSpan.FromSeconds(1))
-            {
-                _slider.IsEnabled = true;
-                _slider.Value = level;
-            }
-        });
+            _slider.Value = known;
+        }
+
+        _slider.ValueChanged += v => BrightnessService.Write(v);
+        Action<double> follow = level => Dispatcher.BeginInvoke(() => Apply(level));
         Loaded += (_, _) => BrightnessService.LevelChanged += follow;
         Unloaded += (_, _) => BrightnessService.LevelChanged -= follow;
-        Loaded += (_, _) => _ = Task.Run(() =>
+        Loaded += (_, _) => _ = Task.Run(Refresh);
+    }
+
+    /// <summary>Puts a level on the slider unless the user is dragging it or the island just set the level itself.</summary>
+    private void Apply(double level)
+    {
+        if (_slider.IsDragging || DateTime.UtcNow - BrightnessService.LastOwnWrite <= TimeSpan.FromSeconds(1))
         {
-            var v = BrightnessService.Read();
-            Dispatcher.BeginInvoke(() =>
+            return;
+        }
+
+        _slider.IsEnabled = true;
+        _slider.Value = level;
+    }
+
+    /// <summary>Reads the true level off the UI thread; one miss is retried before the slider is given up on.</summary>
+    private void Refresh()
+    {
+        var v = BrightnessService.Read();
+        if (v is null)
+        {
+            Thread.Sleep(500);
+            v = BrightnessService.Read();
+        }
+
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (v is { } value)
             {
-                if (v is { } value)
-                {
-                    _slider.Value = value;
-                }
-                else
-                {
-                    _slider.IsEnabled = false;
-                    D.Tip(this, Strings.NoDisplay);
-                }
-            });
+                Apply(value);
+            }
+            else if (!BrightnessService.Available)
+            {
+                BrightnessService.Log?.Invoke("Island brightness slider disabled: the built-in panel cannot be read", null);
+                _slider.IsEnabled = false;
+                D.Tip(this, Strings.NoDisplay);
+            }
         });
     }
 }
@@ -149,9 +170,14 @@ internal sealed class MusicCard : Border
         Loaded += (_, _) =>
         {
             _core.Playback.Changed += Build;
+            _core.AppleMusic.Changed += Build;
             Build();
         };
-        Unloaded += (_, _) => _core.Playback.Changed -= Build;
+        Unloaded += (_, _) =>
+        {
+            _core.Playback.Changed -= Build;
+            _core.AppleMusic.Changed -= Build;
+        };
     }
 
     private void Build()
@@ -173,7 +199,27 @@ internal sealed class MusicCard : Border
         var titleBlock = D.T(title, 13, FontWeights.SemiBold, D.Text, false, TextTrimming.CharacterEllipsis);
         var subBlock = D.T(sub, 11, null, _core.Playback.CommandFailed ? D.Orange : D.Secondary, false, TextTrimming.CharacterEllipsis);
         titles.Children.Add(titleBlock);
-        titles.Children.Add(subBlock);
+        if (!p.HasTrack && MusicUi.HiddenApple(_core, preferred) && _core.AppleMusic.Busy)
+        {
+            // the island's request is starting Apple Music or working in it
+            var working = new StackPanel { Orientation = Orientation.Horizontal };
+            var spinner = PageUi.Spinner(10);
+            spinner.Margin = new Thickness(0, 0, 6, 0);
+            spinner.VerticalAlignment = VerticalAlignment.Center;
+            working.Children.Add(spinner);
+            working.Children.Add(D.T(_core.AppleMusic.Resuming ? LibStrings.Resuming : LibStrings.StartingApple, 11, null, D.Secondary, false, TextTrimming.CharacterEllipsis));
+            titles.Children.Add(working);
+        }
+        else
+        {
+            if (!p.HasTrack && MusicUi.HiddenApple(_core, preferred) && _core.AppleMusic.Note is { Error: true } failed)
+            {
+                subBlock.Text = failed.Text;
+                subBlock.Foreground = D.Orange;
+            }
+
+            titles.Children.Add(subBlock);
+        }
         var titleButton = new HoverButton(() => _win?.ShowModule("music")) { Child = titles, CornerRadius = new CornerRadius(8), Lifts = false, VerticalAlignment = VerticalAlignment.Stretch };
         Grid.SetColumn(titleButton, 1);
         grid.Children.Add(titleButton);
@@ -266,13 +312,23 @@ internal sealed class ControlsPage : IslandPage
     {
         var installed = rt.IsAvailable("brightness");
         var panel = BrightnessService.Available;
-        if (!(installed && panel) && !_brightnessLogged)
+        var enabled = Core.App.Get<bool>(K.BrightnessControl);
+        if (!(installed && panel && enabled) && !_brightnessLogged)
         {
             _brightnessLogged = true;
-            Core.Ctx.Log.Info($"Island brightness slider hidden: feature installed={installed}, panel controllable={panel}");
+            Core.Ctx.Log.Info($"Island brightness slider hidden: feature installed={installed}, panel controllable={panel}, control displays={enabled}");
         }
 
-        return installed && panel;
+        return installed && panel && enabled;
+    }
+
+    /// <summary>"Control displays" was switched: rebuild so the brightness slider appears or goes.</summary>
+    private void OnDisplayControlSetting(string key)
+    {
+        if (key == K.BrightnessControl)
+        {
+            OnBrightnessAvailability();
+        }
     }
 
     private void Compute()
@@ -425,6 +481,7 @@ internal sealed class ControlsPage : IslandPage
     public override void Shown()
     {
         BrightnessService.AvailabilityChanged += OnBrightnessAvailability;
+        Core.App.Changed += OnDisplayControlSetting;
         Core.Timer.Ticked += Refresh;
         Core.Timer.Changed += Refresh;
         Core.Audio.MicChanged += Refresh;
@@ -438,6 +495,7 @@ internal sealed class ControlsPage : IslandPage
     public override void Hidden()
     {
         BrightnessService.AvailabilityChanged -= OnBrightnessAvailability;
+        Core.App.Changed -= OnDisplayControlSetting;
         Core.Timer.Ticked -= Refresh;
         Core.Timer.Changed -= Refresh;
         Core.Audio.MicChanged -= Refresh;

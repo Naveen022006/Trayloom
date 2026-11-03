@@ -31,6 +31,8 @@ internal sealed class AppleMusicKeeper : IDisposable
     private readonly ConcurrentDictionary<uint, (bool Am, long Tick)> _pids = new();
     private readonly Dictionary<nint, uint> _mains = [];
     private readonly HashSet<uint> _closing = [];
+    private readonly ConcurrentDictionary<uint, long> _closedAt = new();
+    private readonly ConcurrentDictionary<uint, byte> _seenPids = new();
     private readonly uint _own = (uint)Environment.ProcessId;
     private readonly UnhandledExceptionEventHandler _onCrash;
     private AmEventHook? _hook;
@@ -39,6 +41,10 @@ internal sealed class AppleMusicKeeper : IDisposable
     private long _driverEnd;
     private long _shownAt;
     private long _expectQuitUntil;
+    private long _launchEndedAt;
+    private readonly ConcurrentDictionary<uint, long> _ownPids = new();
+    private int _launchers;
+    private volatile bool _userOwned;
     private volatile nint _keptHwnd;
     private volatile uint _keptPid;
     private volatile bool _ending;
@@ -64,8 +70,28 @@ internal sealed class AppleMusicKeeper : IDisposable
             }
         }
 
+        // processes that already run are nobody's new launch
+        foreach (var p in Process.GetProcessesByName("AppleMusic"))
+        {
+            _seenPids[(uint)p.Id] = 0;
+            p.Dispose();
+        }
+
         Recover();
         Arm();
+
+        // a window an earlier run of WinKnife left transparent or parked (it was cut off in the middle of a job) is given back; off the UI thread: these are cross-process calls
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                AmNative.Heal(Say);
+            }
+            catch
+            {
+                // a window that vanishes under it
+            }
+        });
     }
 
     /// <summary>The running keeper (read by <see cref="ForegroundGuard"/>).</summary>
@@ -80,7 +106,58 @@ internal sealed class AppleMusicKeeper : IDisposable
     public int DriverDepth => Volatile.Read(ref _driverDepth);
 
     /// <summary>WinKnife itself is starting Apple Music (so a new Apple Music process is not the user's).</summary>
-    public volatile bool Launching;
+    public bool Launching => Volatile.Read(ref _launchers) > 0;
+
+    /// <summary>
+    /// A start of Apple Music by WinKnife begins. A count, not a flag: an abandoned job that ends its start late must not end the start of the
+    /// job that replaced it. Every <see cref="BeginLaunch"/> is paired with exactly one <see cref="EndLaunch"/>.
+    /// </summary>
+    public void BeginLaunch() => Interlocked.Increment(ref _launchers);
+
+    public void EndLaunch()
+    {
+        if (Interlocked.Decrement(ref _launchers) < 0)
+        {
+            Interlocked.Exchange(ref _launchers, 0);
+        }
+
+        // Apple Music restores its own window a moment after its start: that is not the person either
+        Interlocked.Exchange(ref _launchEndedAt, Environment.TickCount64);
+    }
+
+    /// <summary>
+    /// A process WinKnife started (or one that showed its first window while WinKnife was starting Apple Music) is not the person's launch,
+    /// whenever its windows turn up, also when the start phase has ended by then (30 s).
+    /// </summary>
+    public void NoteOwnLaunch(uint pid)
+    {
+        if (pid == 0)
+        {
+            return;
+        }
+
+        var now = Environment.TickCount64;
+        if (_ownPids.Count > 32)
+        {
+            foreach (var (key, tick) in _ownPids)
+            {
+                if (now - tick >= 30000)
+                {
+                    _ownPids.TryRemove(key, out _);
+                }
+            }
+        }
+
+        _ownPids[pid] = now;
+    }
+
+    public bool IsOwnLaunch(uint pid) => _ownPids.TryGetValue(pid, out var tick) && Environment.TickCount64 - tick < 30000;
+
+    /// <summary>
+    /// The person opened Apple Music themselves (Start menu, taskbar, jump list, Alt+Tab): WinKnife neither hides nor minimises it again
+    /// until the island next starts playback (<see cref="ClearUserOwned"/>).
+    /// </summary>
+    public bool UserOwned => _userOwned;
 
     public bool Enabled => _core.App.Get<bool>(K.AppleMusicKeepHidden);
 
@@ -105,6 +182,130 @@ internal sealed class AppleMusicKeeper : IDisposable
     {
         Interlocked.Exchange(ref _driverEnd, Environment.TickCount64);
         Interlocked.Decrement(ref _driverDepth);
+    }
+
+    private void Say(string message) => _core.Ctx.Log.Info("AppleMusic keeper: " + message);
+
+    /// <summary>
+    /// Apple Music was opened by the person (not by WinKnife): the keep ends and the window stays wherever they put it, whatever the driver
+    /// is doing. Safe to call from any thread.
+    /// </summary>
+    public void MarkUserOwned(string why)
+    {
+        if (_disposed || _userOwned)
+        {
+            return;
+        }
+
+        _userOwned = true;
+        Say($"Apple Music opened by the user ({why}): it stays shown");
+        nint kept;
+        lock (_gate)
+        {
+            kept = _keptHwnd;
+            _keptHwnd = 0;
+            _keptPid = 0;
+        }
+
+        if (kept != 0)
+        {
+            Persist("");
+        }
+
+        // also without a kept window: a window the driver has made transparent for its job (the first job after a start) is the person's now
+        RevealLater(kept, 400);
+        Raise();
+    }
+
+    /// <summary>The island is about to start playback itself: the window is the driver's to manage again (it works in place when it is on screen).</summary>
+    public void ClearUserOwned()
+    {
+        if (_userOwned)
+        {
+            _userOwned = false;
+            Say("user ownership cleared: the island plays again");
+        }
+    }
+
+    /// <summary>
+    /// The person opened Apple Music: after <paramref name="ms"/> the window the keeper had hidden (<paramref name="kept"/>) is shown if Apple
+    /// Music did not do it itself, and any window the driver made transparent or parked for its job is given back (it may be on screen as far
+    /// as Windows is concerned and still invisible to them).
+    /// </summary>
+    private void RevealLater(nint kept, int ms)
+    {
+        _ = Task.Delay(ms).ContinueWith(_ =>
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            var targets = new HashSet<nint>();
+            if (kept != 0)
+            {
+                targets.Add(kept);
+            }
+
+            foreach (var h in AmNative.MainWindows())
+            {
+                if (AmNative.IsGhost(h))
+                {
+                    targets.Add(h);
+                }
+            }
+
+            foreach (var h in targets)
+            {
+                if (!AmNative.IsWindow(h))
+                {
+                    continue;
+                }
+
+                var theirs = AmNative.IsWindowVisible(h) && !AmNative.IsIconic(h) && !AmNative.IsGhost(h) && AmNative.GetWindowRect(h, out var r) && AmNative.OnAnyScreen(r);
+                if (!theirs)
+                {
+                    Reveal(h);
+                }
+            }
+        }, TaskScheduler.Default);
+    }
+
+    /// <summary>
+    /// Makes the window the person's again: moved back from where the driver parked it, its own style back (it is not transparent any more),
+    /// shown when hidden or minimised. Bounded; retried in the background when Apple Music does not answer. Not for the UI thread.
+    /// </summary>
+    private void Reveal(nint hwnd)
+    {
+        Func<bool> reveal = () =>
+        {
+            AmNative.Unpark(hwnd);
+            AmNative.RestoreStyleNow(hwnd);
+            if (!AmNative.IsWindowVisible(hwnd) || AmNative.IsIconic(hwnd))
+            {
+                FixRect(hwnd);
+                AmNative.ShowWindow(hwnd, AmNative.SwRestore);
+            }
+
+            return true;
+        };
+        if (!AmNative.Bounded(hwnd, reveal, 800, "showing the window", Say))
+        {
+            AmNative.RetryRestore(hwnd, reveal, "showing the window", Say);
+        }
+    }
+
+    /// <summary>A process of Apple Music has just lost its main window or is being waited for to end (it is quitting, not starting).</summary>
+    public bool RecentlyClosed(uint pid) => _closedAt.TryGetValue(pid, out var tick) && Environment.TickCount64 - tick < 10000;
+
+    private void NoteClosed(uint pid)
+    {
+        if (_closedAt.Count > 64)
+        {
+            _closedAt.Clear();
+        }
+
+        _closedAt[pid] = Environment.TickCount64;
     }
 
     /// <summary>WinKnife is about to quit Apple Music on purpose: a close within the next seconds is not resumed.</summary>
@@ -138,6 +339,14 @@ internal sealed class AppleMusicKeeper : IDisposable
             return;
         }
 
+        if (_userOwned)
+        {
+            // the person has Apple Music open: nothing is hidden or kept (a window the driver hid a moment ago is shown again)
+            Say("not kept: the person has Apple Music open");
+            RevealLater(hwnd, 0);
+            return;
+        }
+
         lock (_gate)
         {
             _keptHwnd = hwnd;
@@ -147,10 +356,26 @@ internal sealed class AppleMusicKeeper : IDisposable
 
         if (AmNative.IsWindowVisible(hwnd))
         {
-            AmNative.ShowWindow(hwnd, AmNative.SwHide);
+            AmNative.ShowWindowAsync(hwnd, AmNative.SwHide);
         }
 
         Persist($"{pid}:{(long)hwnd}");
+        if (_userOwned)
+        {
+            // opened by the person while this was under way (MarkUserOwned has not seen this window as kept)
+            lock (_gate)
+            {
+                if (_keptHwnd == hwnd)
+                {
+                    _keptHwnd = 0;
+                    _keptPid = 0;
+                }
+            }
+
+            Persist("");
+            RevealLater(hwnd, 0);
+        }
+
         Arm();
         Raise();
     }
@@ -158,12 +383,14 @@ internal sealed class AppleMusicKeeper : IDisposable
     /// <summary>Hides Apple Music's main window now (the kept one again, or the visible one, which is then kept).</summary>
     public void HideNow()
     {
+        // the person asked for this: it ends their ownership of the window (Adopt would refuse otherwise)
+        ClearUserOwned();
         var kept = _keptHwnd;
         if (kept != 0 && AmNative.IsWindow(kept))
         {
             if (AmNative.IsWindowVisible(kept))
             {
-                AmNative.ShowWindow(kept, AmNative.SwHide);
+                AmNative.ShowWindowAsync(kept, AmNative.SwHide);
             }
 
             Raise();
@@ -196,12 +423,7 @@ internal sealed class AppleMusicKeeper : IDisposable
         Interlocked.Exchange(ref _shownAt, Environment.TickCount64);
         if (hwnd != 0 && AmNative.IsWindow(hwnd))
         {
-            FixRect(hwnd);
-            AmNative.ShowWindow(hwnd, AmNative.SwRestore);
-            if (activate)
-            {
-                ForegroundGuard.Focus(hwnd);
-            }
+            Bring(hwnd, AmNative.SwRestore, activate);
         }
 
         Raise();
@@ -226,8 +448,7 @@ internal sealed class AppleMusicKeeper : IDisposable
             Persist("");
             if (hwnd != 0 && AmNative.IsWindow(hwnd))
             {
-                FixRect(hwnd);
-                AmNative.ShowWindow(hwnd, AmNative.SwShowMinNoActive);
+                Bring(hwnd, AmNative.SwShowMinNoActive, false);
             }
         }
         catch
@@ -236,6 +457,33 @@ internal sealed class AppleMusicKeeper : IDisposable
         }
 
         Raise();
+    }
+
+    /// <summary>Puts the window back on screen (<paramref name="command"/>): the restore position is corrected first, in one bounded step so a stuck Apple Music cannot stall the caller.</summary>
+    private void Bring(nint hwnd, int command, bool activate)
+    {
+        Func<bool> show = () =>
+        {
+            if (AmNative.IsGhost(hwnd))
+            {
+                // a window left transparent and parked by the driver comes back as it was, not invisible
+                AmNative.Unpark(hwnd);
+                AmNative.RestoreStyleNow(hwnd);
+            }
+
+            FixRect(hwnd);
+            AmNative.ShowWindow(hwnd, command);
+            return true;
+        };
+        if (!AmNative.Bounded(hwnd, show, 800, "show window", Say))
+        {
+            AmNative.RetryRestore(hwnd, show, "show window", Say);
+        }
+
+        if (activate)
+        {
+            ForegroundGuard.Focus(hwnd);
+        }
     }
 
     /// <summary>Never leave a window whose restore position is off-screen: it would come back invisible.</summary>
@@ -478,7 +726,19 @@ internal sealed class AppleMusicKeeper : IDisposable
 
         if (ev == AmNative.EventObjectCreate)
         {
-            if (_keptHwnd != 0 && !Launching && pid != _keptPid)
+            // the first window of a process Apple Music did not have before: somebody started it (WinKnife's own starts are told apart by Launching)
+            if (_seenPids.Count > 128)
+            {
+                _seenPids.Clear();
+            }
+
+            if (Launching)
+            {
+                // whatever process shows a window while WinKnife starts Apple Music is WinKnife's, also when its start phase is over by the time the rest turns up
+                NoteOwnLaunch(pid);
+            }
+
+            if (_seenPids.TryAdd(pid, 0) && !Launching && pid != _keptPid && !IsOwnLaunch(pid))
             {
                 _ui.BeginInvoke(() => OnLaunched(pid));
             }
@@ -528,69 +788,88 @@ internal sealed class AppleMusicKeeper : IDisposable
                 _ui.BeginInvoke(() => OnGone(hwnd, pid, false));
                 break;
             case AmNative.EventObjectDestroy:
+                NoteClosed(pid);
                 _ui.BeginInvoke(() => OnGone(hwnd, pid, true));
                 break;
         }
     }
 
-    /// <summary>Somebody else showed the kept window: it is not kept any more (never fight the user).</summary>
+    /// <summary>
+    /// Somebody else showed the kept window: it is not kept any more (never fight the user). The driver's own shows are always transparent
+    /// or parked far off-screen, so a window that is neither is the person's, also while the driver is at work.
+    /// </summary>
     private void OnShown(nint hwnd)
     {
-        if (_disposed || hwnd != _keptHwnd || DriverActive || JustShown || !AmNative.IsWindowVisible(hwnd) || AmNative.IsGhost(hwnd))
+        if (_disposed || hwnd != _keptHwnd || JustShown || !AmNative.IsWindowVisible(hwnd) || AmNative.IsIconic(hwnd) || AmNative.IsGhost(hwnd))
         {
             return;
         }
 
-        lock (_gate)
+        // Apple Music restores its own window a moment after WinKnife started it
+        if (Launching || Environment.TickCount64 - Interlocked.Read(ref _launchEndedAt) < 3000)
         {
-            _keptHwnd = 0;
-            _keptPid = 0;
+            return;
         }
 
-        Persist("");
-        Raise();
+        if (!AmNative.GetWindowRect(hwnd, out var rect) || rect.Left <= -10000)
+        {
+            return;
+        }
+
+        MarkUserOwned("shown");
     }
 
-    /// <summary>A second Apple Music process started while the first one is kept: the user opened Apple Music (Start menu, pin, link), so its window comes back.</summary>
+    /// <summary>
+    /// A process of Apple Music appeared that WinKnife did not start: the person opened Apple Music (Start menu, taskbar, pin, link), so its
+    /// window is theirs. The second process of that kind usually ends again at once, after handing over to the running one.
+    /// </summary>
     private void OnLaunched(uint pid)
     {
-        if (_disposed || _keptHwnd == 0 || Launching || pid == _keptPid || _launchTimer is not null)
+        if (_disposed || Launching || pid == _keptPid || IsOwnLaunch(pid))
         {
             return;
         }
 
-        _launchTimer = new DispatcherTimer(DispatcherPriority.Normal, _ui) { Interval = TimeSpan.FromMilliseconds(300) };
-        _launchTimer.Tick += (_, _) =>
+        try
         {
-            _launchTimer?.Stop();
-            _launchTimer = null;
-            if (_disposed || _keptHwnd == 0 || Launching)
+            using var other = Process.GetProcessById((int)pid);
+            if (DateTime.Now - other.StartTime > TimeSpan.FromSeconds(20))
             {
+                // an old process showing a window for the first time (the keeper started after it): not a launch
                 return;
             }
+        }
+        catch
+        {
+            // already gone again: it was a launch that handed over to the running instance
+        }
 
-            try
+        var kept = _keptHwnd;
+        MarkUserOwned("launched");
+        if (kept != 0 && _launchTimer is null)
+        {
+            // Apple Music normally shows its running window itself; after a moment it is shown and activated if it did not
+            _launchTimer = new DispatcherTimer(DispatcherPriority.Normal, _ui) { Interval = TimeSpan.FromMilliseconds(300) };
+            _launchTimer.Tick += (_, _) =>
             {
-                using var other = Process.GetProcessById((int)pid);
-                if (other.HasExited)
+                _launchTimer?.Stop();
+                _launchTimer = null;
+                if (!_disposed && !Launching && AmNative.IsWindow(kept) && !AmNative.IsWindowVisible(kept))
                 {
-                    return;
+                    JustShownNow();
+                    _ = Task.Run(() => Bring(kept, AmNative.SwRestore, true));
                 }
-            }
-            catch
-            {
-                return;
-            }
-
-            Show(true);
-        };
-        _launchTimer.Start();
+            };
+            _launchTimer.Start();
+        }
     }
+
+    private void JustShownNow() => Interlocked.Exchange(ref _shownAt, Environment.TickCount64);
 
     /// <summary>The user minimised Apple Music while it plays: it goes to the island instead of the taskbar.</summary>
     private void OnMinimized(nint hwnd, uint pid)
     {
-        if (_disposed || !Enabled || DriverActive || hwnd == _keptHwnd || AmNative.MainWindow(pid) != hwnd || _core.Playback.AppleMusicNow() is not { IsPlaying: true })
+        if (_disposed || _userOwned || !Enabled || DriverActive || hwnd == _keptHwnd || AmNative.MainWindow(pid) != hwnd || _core.Playback.AppleMusicNow() is not { IsPlaying: true })
         {
             return;
         }
@@ -599,7 +878,7 @@ internal sealed class AppleMusicKeeper : IDisposable
         timer.Tick += (_, _) =>
         {
             timer.Stop();
-            if (_disposed || !Enabled || DriverActive || !AmNative.IsWindow(hwnd) || !AmNative.IsIconic(hwnd) || _keptHwnd != 0)
+            if (_disposed || _userOwned || !Enabled || DriverActive || !AmNative.IsWindow(hwnd) || !AmNative.IsIconic(hwnd) || _keptHwnd != 0)
             {
                 return;
             }
@@ -653,6 +932,7 @@ internal sealed class AppleMusicKeeper : IDisposable
         var last = _lastCommand();
         var snapshot = new ClosedSnapshot(now.Title, now.Artist, now.Album, now.Position, now.Duration, last?.Track, last?.Playlist, DateTime.UtcNow);
         _closing.Add(pid);
+        NoteClosed(pid);
         _ = Task.Run(() =>
         {
             var exited = false;

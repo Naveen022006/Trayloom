@@ -54,6 +54,8 @@ internal sealed class KeepAwakeService : IKeepAwakeService, IDisposable
     private bool _lidApplied;
     private int _savedBrightness = -1;
     private bool _lidClosedNow;
+    private readonly object _lidGate = new();
+    private Task _lidWork = Task.CompletedTask;
     private bool _disposed;
 
     public KeepAwakeService(IFeatureContext ctx)
@@ -755,7 +757,7 @@ internal sealed class KeepAwakeService : IKeepAwakeService, IDisposable
     private void RestoreLid()
     {
         UnregisterLidWatch();
-        RestoreBrightnessAfterLid();
+        RestoreBrightnessAfterLid(wait: true);
         if (!_lidApplied)
         {
             return;
@@ -914,32 +916,69 @@ internal sealed class KeepAwakeService : IKeepAwakeService, IDisposable
         if (closed)
         {
             // Save the built-in panel level (never 0: 0 means it is already asleep) and dim it to zero.
-            var rows = Wmi.Query(@"root\WMI", "SELECT CurrentBrightness FROM WmiMonitorBrightness WHERE Active=TRUE", "CurrentBrightness");
-            var level = rows.Count > 0 ? Wmi.ToInt(rows[0]["CurrentBrightness"], -1) : -1;
-            if (level > 0)
+            QueueLidWork(() =>
             {
-                _savedBrightness = level;
-                _ctx.App.Set("dimmedDisplaySavedBrightness", level);
-                Wmi.ForEach(@"root\WMI", "SELECT * FROM WmiMonitorBrightnessMethods WHERE Active=TRUE", o => Wmi.Invoke(o, "WmiSetBrightness", 1, 0));
-            }
+                var rows = Wmi.Query(@"root\WMI", "SELECT CurrentBrightness FROM WmiMonitorBrightness WHERE Active=TRUE", "CurrentBrightness");
+                var level = rows.Count > 0 ? Wmi.ToInt(rows[0]["CurrentBrightness"], -1) : -1;
+                if (level > 0)
+                {
+                    _savedBrightness = level;
+                    _ctx.App.Set("dimmedDisplaySavedBrightness", level);
+                    BrightnessWrites.MarkOwn();
+                    Wmi.ForEach(@"root\WMI", "SELECT * FROM WmiMonitorBrightnessMethods WHERE Active=TRUE", o => Wmi.Invoke(o, "WmiSetBrightness", 1, 0));
+                    BrightnessWrites.MarkOwn();
+                }
+            });
         }
         else
         {
-            RestoreBrightnessAfterLid();
+            RestoreBrightnessAfterLid(wait: false);
         }
     }
 
-    private void RestoreBrightnessAfterLid()
+    /// <summary>Runs a lid-dimming WMI call off the UI thread; the calls run one after the other, in the order the lid moved.</summary>
+    private Task QueueLidWork(Action work)
     {
-        var level = _savedBrightness > 0 ? _savedBrightness : _ctx.App.Get<int>("dimmedDisplaySavedBrightness", 0);
-        if (level <= 0)
+        lock (_lidGate)
         {
-            return;
+            _lidWork = _lidWork.ContinueWith(
+                _ =>
+                {
+                    try
+                    {
+                        work();
+                    }
+                    catch (Exception ex)
+                    {
+                        _ctx.Log.Error("Lid brightness change failed", ex);
+                    }
+                },
+                TaskScheduler.Default);
+            return _lidWork;
         }
+    }
 
-        _savedBrightness = -1;
-        _ctx.App.Set("dimmedDisplaySavedBrightness", 0);
-        Wmi.ForEach(@"root\WMI", "SELECT * FROM WmiMonitorBrightnessMethods WHERE Active=TRUE", o => Wmi.Invoke(o, "WmiSetBrightness", 1, level));
+    /// <summary><paramref name="wait"/>: hold the caller (briefly) until the level is back, for shutdown and switching the feature off.</summary>
+    private void RestoreBrightnessAfterLid(bool wait)
+    {
+        var task = QueueLidWork(() =>
+        {
+            var level = _savedBrightness > 0 ? _savedBrightness : _ctx.App.Get<int>("dimmedDisplaySavedBrightness", 0);
+            if (level <= 0)
+            {
+                return;
+            }
+
+            _savedBrightness = -1;
+            _ctx.App.Set("dimmedDisplaySavedBrightness", 0);
+            BrightnessWrites.MarkOwn();
+            Wmi.ForEach(@"root\WMI", "SELECT * FROM WmiMonitorBrightnessMethods WHERE Active=TRUE", o => Wmi.Invoke(o, "WmiSetBrightness", 1, level));
+            BrightnessWrites.MarkOwn();
+        });
+        if (wait)
+        {
+            task.Wait(2000);
+        }
     }
 
     // ------------------------------------------------------------------------------------------------ native

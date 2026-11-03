@@ -99,6 +99,12 @@ internal sealed class RadialNowPlayingService
                 _pendingAnchor = null;
                 ShowCard(anchor);
             }
+            else if (snapshot is null && _pendingAnchor is not null)
+            {
+                // the slice was chosen while the session was still being read, and nothing plays
+                _pendingAnchor = null;
+                IslandMusicAction(_ctx)?.Invoke();
+            }
         });
     }
 
@@ -218,7 +224,32 @@ internal sealed class RadialNowPlayingService
             case RadialNowPlayingState.Loading:
                 _pendingAnchor = anchorPhysical;
                 break;
+            case RadialNowPlayingState.NothingPlaying:
+                // nothing to show a card for: the island's music page is where to start something
+                IslandMusicAction(_ctx)?.Invoke();
+                break;
         }
+    }
+
+    /// <summary>The Dynamic Island's "open the music page" action, when the island is running.</summary>
+    internal static Action? IslandMusicAction(IContributionServices ctx)
+    {
+        try
+        {
+            foreach (var (feature, action) in ctx.Actions.All)
+            {
+                if (feature.Id == "island" && action.Id == "open-music")
+                {
+                    return action.Invoke;
+                }
+            }
+        }
+        catch
+        {
+            // no island: the caller falls back
+        }
+
+        return null;
     }
 
     private void ShowCard(Point anchor)
@@ -355,7 +386,9 @@ internal sealed class RadialNowPlayingService
                 open.Children.Add(new Image { Source = small, Width = 14, Height = 14, Margin = new Thickness(0, 0, 5, 0) });
             }
 
-            open.Children.Add(UiKit.Text("Open " + appName, 9.5, FontWeights.Medium, ThemeKeys.TextSecondary));
+            // Apple Music is never opened from here (its window would show): its card leads to the island's own music page
+            var viaIsland = _appId.Contains("AppleMusic", StringComparison.OrdinalIgnoreCase) && IslandMusicAction(ctx) is not null;
+            open.Children.Add(UiKit.Text(viaIsland ? Loc.T("Open in Dynamic Island") : "Open " + appName, 9.5, FontWeights.Medium, ThemeKeys.TextSecondary));
             var arrow = UiKit.Icon("", 8.5, ThemeKeys.TextSecondary, FontWeights.SemiBold);
             arrow.Margin = new Thickness(4, 0, 0, 0);
             open.Children.Add(arrow);
@@ -366,7 +399,15 @@ internal sealed class RadialNowPlayingService
             Cursor = Cursors.Hand;
             MouseLeftButtonUp += (_, _) =>
             {
-                OpenApp(_appId);
+                if (viaIsland && IslandMusicAction(ctx) is { } openIsland)
+                {
+                    openIsland();
+                }
+                else
+                {
+                    OpenApp(_appId);
+                }
+
                 Close();
             };
             _outside = new OutsideClickMonitor(ctx.Hooks, ctx.Ui, () => PhysicalFrame(), () => Close());

@@ -54,7 +54,7 @@ internal sealed class NoticeSources : IDisposable
         SystemEvents.PowerModeChanged += OnPower;
         try
         {
-            _brightness = new BrightnessWatcher(OnBrightness);
+            _brightness = new BrightnessWatcher(OnBrightness, () => BrightnessService.Read() is { } level ? (int)Math.Round(level * 100) : null);
         }
         catch (Exception ex)
         {
@@ -91,12 +91,15 @@ internal sealed class NoticeSources : IDisposable
         });
     }
 
-    /// <summary>Brightness keys, Windows quick settings or the island slider changed the panel: keep sliders in step and show the level.</summary>
-    private void OnBrightness(int percent)
+    /// <summary>
+    /// Brightness keys, Windows quick settings or a WinKnife slider changed the panel: keep sliders in step and show the level.
+    /// <paramref name="showNotice"/> is false while the display is off or dimmed by Windows (idle, battery saver) and just after it wakes.
+    /// </summary>
+    private void OnBrightness(int percent, bool showNotice)
     {
         var level = percent / 100.0;
         BrightnessService.Announce(level);
-        if (DateTime.UtcNow - BrightnessService.LastOwnWrite < TimeSpan.FromSeconds(1.5) || !_core.Ctx.Runtime.IsAvailable("brightness"))
+        if (!showNotice || BrightnessWrites.WroteWithin(TimeSpan.FromSeconds(1.5)) || !_core.Ctx.Runtime.IsAvailable("brightness"))
         {
             return;
         }

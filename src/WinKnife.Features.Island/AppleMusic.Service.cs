@@ -43,6 +43,7 @@ internal sealed class AppleMusicService : IDisposable
     private readonly Lazy<AppleMusicDriver> _driver;
     private readonly DispatcherTimer _noteTimer;
     private int _seq;
+    private int _busySeq;
     private bool _disposed;
     private DateTime _availableAt = DateTime.MinValue;
     private bool _available;
@@ -50,6 +51,7 @@ internal sealed class AppleMusicService : IDisposable
     private AmCommand? _lastCommand;
     private ClosedSnapshot? _snapshot;
     private CancellationTokenSource? _resume;
+    private TaskCompletionSource? _expedite;
 
     public AppleMusicService(IslandCore core)
     {
@@ -80,6 +82,12 @@ internal sealed class AppleMusicService : IDisposable
 
     /// <summary>The running request is "Shuffle" of a playlist.</summary>
     public bool BusyShuffle { get; private set; }
+
+    /// <summary>What the running request does (also set for the transport buttons, which have no <see cref="BusyPid"/>); null = nothing runs.</summary>
+    public AmAction? BusyAction { get; private set; }
+
+    /// <summary>Apple Music is being started or driven for a request of the island, or is being started again after it was closed.</summary>
+    public bool Busy => BusyAction is not null || Resuming;
 
     public IReadOnlyList<AmQueueItem>? Queue { get; private set; }
 
@@ -228,6 +236,11 @@ internal sealed class AppleMusicService : IDisposable
             return;
         }
 
+        if (action != AmAction.AddToQueue)
+        {
+            CancelResume();
+        }
+
         _ = RunAsync(new AmCommand
         {
             Action = action,
@@ -246,6 +259,7 @@ internal sealed class AppleMusicService : IDisposable
             return;
         }
 
+        CancelResume();
         _ = RunAsync(new AmCommand
         {
             Action = shuffle ? AmAction.ShufflePlaylist : AmAction.PlayPlaylist,
@@ -266,15 +280,44 @@ internal sealed class AppleMusicService : IDisposable
             return;
         }
 
-        if (action == AmAction.PlayPause && _snapshot is { } closed && DateTime.UtcNow - closed.At < TimeSpan.FromMinutes(30) && !Resuming
-            && !AppleMusicKeeper.IsRunning() && _core.Playback.AppleMusicNow() is not { IsPlaying: true })
+        if (action == AmAction.PlayPause)
         {
+            if (Resuming)
+            {
+                // the press joins the resume that is already under way (one job, no second start): it just stops waiting for the library agent
+                _core.Ctx.Log.Info("AppleMusic: play pressed while resuming; the resume goes ahead now");
+                _expedite?.TrySetResult();
+                return;
+            }
+
             // Apple Music was closed while it played: "play" continues that song instead of failing for lack of anything loaded
-            _ = ResumeAfterQuit(closed, false);
-            return;
+            // (whether or not Apple Music runs again by now: a restarted one has nothing loaded either)
+            if (_snapshot is { } closed && DateTime.UtcNow - closed.At < TimeSpan.FromMinutes(30)
+                && _core.Playback.AppleMusicNow() is var now && now is not { IsPlaying: true } && (now is null || string.IsNullOrEmpty(now.Title)))
+            {
+                _ = ResumeAfterQuit(closed, false);
+                return;
+            }
+        }
+        else
+        {
+            // skipping is the person's own choice of what happens next
+            CancelResume();
         }
 
         _ = RunAsync(new AmCommand { Action = action }, 0);
+    }
+
+    /// <summary>The person asked for something else while Apple Music was being started again: the resume is dropped.</summary>
+    private void CancelResume()
+    {
+        if (_resume is null && _snapshot is null)
+        {
+            return;
+        }
+
+        _resume?.Cancel();
+        _snapshot = null;
     }
 
     /// <summary>Sets Apple Music's position (its media session ignores the request).</summary>
@@ -298,13 +341,33 @@ internal sealed class AppleMusicService : IDisposable
 
     private async Task RunAsync(AmCommand command, ulong pid)
     {
+        if (_disposed)
+        {
+            return;
+        }
+
+        // pressing again what is already starting must not cancel its own (cold) start
+        if (BusyAction == command.Action && BusyPid is { } running && running == pid)
+        {
+            _core.Ctx.Log.Info($"AppleMusic {command.Action}: already running; the repeated request is ignored");
+            return;
+        }
+
         if (command.Action is AmAction.Play or AmAction.PlayPlaylist or AmAction.ShufflePlaylist)
         {
             _lastCommand = command;
         }
 
+        if (command.Action is AmAction.Play or AmAction.PlayPlaylist or AmAction.ShufflePlaylist or AmAction.PlayPause or AmAction.SkipForward or AmAction.SkipBack)
+        {
+            // the island plays again: Apple Music's window is the driver's to manage (a window the person has open is still worked on in place)
+            Keeper.ClearUserOwned();
+        }
+
         var seq = ++_seq;
+        _busySeq = seq;
         BusyPid = pid;
+        BusyAction = command.Action;
         BusyShuffle = command.Action == AmAction.ShufflePlaylist;
         SetNote(null);
         Changed?.Invoke();
@@ -318,12 +381,31 @@ internal sealed class AppleMusicService : IDisposable
             result = AmResult.Fail(AmFailure.Failed, ex.Message);
         }
 
-        if (_disposed || seq != _seq)
+        if (_disposed)
         {
             return;
         }
 
-        BusyPid = null;
+        // a failure is always on record, also when a newer request has taken over the island's state in the meantime
+        if (!result.Ok && result.Failure != AmFailure.Cancelled)
+        {
+            _core.Ctx.Log.Warn($"Apple Music {command.Action} failed: {result.Failure} {result.Detail}");
+        }
+
+        if (_busySeq == seq)
+        {
+            // the request that set the busy state ends it, whatever the result
+            BusyPid = null;
+            BusyAction = null;
+            BusyShuffle = false;
+        }
+
+        if (seq != _seq)
+        {
+            Changed?.Invoke();
+            return;
+        }
+
         if (result.Ok)
         {
             if (command.Action is AmAction.Play or AmAction.PlayPlaylist or AmAction.ShufflePlaylist or AmAction.PlayPause)
@@ -340,7 +422,6 @@ internal sealed class AppleMusicService : IDisposable
         }
         else if (result.Failure != AmFailure.Cancelled)
         {
-            _core.Ctx.Log.Warn($"Apple Music {command.Action} failed: {result.Failure} {result.Detail}");
             SetNote(new LibraryNote(Message(command.Action, result.Failure), true));
         }
 
@@ -441,12 +522,15 @@ internal sealed class AppleMusicService : IDisposable
 
     /// <summary>
     /// Starts Apple Music again in the background and plays the song that was playing when it was closed, from the same position.
-    /// Waits until Apple Music's library agent (which actually plays the audio) has ended: starting while it lives leaves orphan audio nobody can stop.
+    /// Gives Apple Music's library agent (which actually plays the audio) a moment to end first: starting while it lives can leave orphan
+    /// audio nobody can stop, but any start of Apple Music keeps the agent alive, so the wait is short and never a reason to give up.
+    /// A press of Play meanwhile (<see cref="_expedite"/>) ends the wait at once.
     /// </summary>
     private async Task ResumeAfterQuit(ClosedSnapshot snapshot, bool announce)
     {
         _resume?.Cancel();
         var cts = _resume = new CancellationTokenSource();
+        var expedite = _expedite = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         Resuming = true;
         Changed?.Invoke();
         if (announce)
@@ -470,36 +554,41 @@ internal sealed class AppleMusicService : IDisposable
                 await Task.Delay(100);
             }
 
-            var gone = await Task.Run(() =>
+            // up to 5 s (1.5 s when the person asked for it) for the agent to end, or for Apple Music to be running again, or for a press of Play
+            var agentMs = announce ? 5000 : 1500;
+            var agentGone = await Task.Run(() =>
             {
                 var watch = Stopwatch.StartNew();
-                while (!cts.IsCancellationRequested && watch.ElapsedMilliseconds < 25000)
+                while (!cts.IsCancellationRequested && !expedite.Task.IsCompleted && watch.ElapsedMilliseconds < agentMs)
                 {
                     if (CountProcesses("AMPLibraryAgent") == 0)
                     {
                         return true;
                     }
 
-                    Thread.Sleep(200);
+                    if (AppleMusicKeeper.IsRunning())
+                    {
+                        break;
+                    }
+
+                    Thread.Sleep(100);
                 }
 
-                return false;
+                return CountProcesses("AMPLibraryAgent") == 0;
             });
             if (cts.IsCancellationRequested || _disposed)
             {
                 return;
             }
 
-            if (!gone)
+            if (!agentGone)
             {
-                _core.Ctx.Log.Warn("Apple Music's library agent did not end; not starting it again");
-                SetNote(new LibraryNote(LibStrings.NotStarted, true));
-                return;
+                _core.Ctx.Log.Info("Apple Music resume: the library agent is still running; continuing");
             }
 
-            if (AppleMusicKeeper.IsRunning() || _core.Playback.AppleMusicNow() is { IsPlaying: true })
+            if (_core.Playback.AppleMusicNow() is { IsPlaying: true })
             {
-                // the person started Apple Music again themselves
+                // the person (or a restarted Apple Music) is playing already
                 _snapshot = null;
                 return;
             }
@@ -536,6 +625,7 @@ internal sealed class AppleMusicService : IDisposable
             {
                 Resuming = false;
                 _resume = null;
+                _expedite = null;
                 if (!_disposed)
                 {
                     Changed?.Invoke();

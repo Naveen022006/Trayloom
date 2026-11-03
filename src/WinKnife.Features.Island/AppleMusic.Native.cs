@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // WinKnife — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
 
+using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -22,6 +23,9 @@ internal static class AmNative
     internal const uint SwpNoZOrder = 0x0004;
     internal const uint SwpNoActivate = 0x0010;
     internal const uint SwpNoOwnerZOrder = 0x0200;
+    internal const uint SwpAsyncWindowPos = 0x4000;
+    internal const uint SmtoAbortIfHung = 0x0002;
+    internal const uint SmtoErrorOnExit = 0x0020;
     internal const int GwlExStyle = -20;
     internal const long WsExLayered = 0x80000;
     internal const long WsExTransparent = 0x20;
@@ -38,6 +42,15 @@ internal static class AmNative
     internal const uint EventObjectHide = 0x8003;
     internal const uint GaRoot = 2;
     internal const uint WmQuit = 0x0012;
+    internal const string MainWindowClass = "WinUIDesktopWin32WindowClass";
+    internal const string PopupWindowClass = "Microsoft.UI.Content.PopupWindowSiteBridge";
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct LastInputInfo
+    {
+        public uint Size;
+        public uint Time;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     internal struct Rect
@@ -164,6 +177,18 @@ internal static class AmNative
     internal static extern bool ShowWindow(nint hwnd, int command);
 
     [DllImport("user32.dll")]
+    internal static extern bool ShowWindowAsync(nint hwnd, int command);
+
+    [DllImport("user32.dll")]
+    internal static extern bool IsHungAppWindow(nint hwnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetLastInputInfo(ref LastInputInfo info);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern nint SendMessageTimeout(nint hwnd, uint message, nint wParam, nint lParam, uint flags, uint timeout, out nint result);
+
+    [DllImport("user32.dll")]
     internal static extern bool GetWindowRect(nint hwnd, out Rect rect);
 
     [DllImport("user32.dll")]
@@ -204,6 +229,320 @@ internal static class AmNative
 
     [DllImport("kernel32.dll")]
     internal static extern bool CloseHandle(nint handle);
+
+    /// <summary>
+    /// Runs a cross-process window call (style, placement, show / hide) that must never be able to stall the caller: a window of a hung
+    /// or not-yet-pumping Apple Music turns these into synchronous waits of unbounded length. The window must answer a WM_NULL within 200 ms,
+    /// then <paramref name="call"/> runs on its own thread and is waited for at most <paramref name="ms"/>; on a timeout the call is left to
+    /// finish by itself (several calls that must stay in order belong in one <paramref name="call"/>). False = it did not (or could not) run to the end.
+    /// </summary>
+    internal static bool Bounded(nint hwnd, Func<bool> call, int ms, string what, Action<string>? say = null) => Bounded(hwnd, call, ms, what, say, out _);
+
+    /// <summary>
+    /// As <see cref="Bounded(nint, Func{bool}, int, string, Action{string}?)"/>; <paramref name="running"/> is the call's task when it was started
+    /// and had not ended in time (it is still inside Apple Music and may complete later, which a restore of the same window has to wait for).
+    /// </summary>
+    internal static bool Bounded(nint hwnd, Func<bool> call, int ms, string what, Action<string>? say, out Task<bool>? running)
+    {
+        running = null;
+        if (hwnd == 0 || !IsWindow(hwnd))
+        {
+            return false;
+        }
+
+        if (IsHungAppWindow(hwnd))
+        {
+            say?.Invoke($"{what}: Apple Music is not responding; skipped");
+            return false;
+        }
+
+        if (SendMessageTimeout(hwnd, 0, 0, 0, SmtoAbortIfHung | SmtoErrorOnExit, 200, out _) == 0)
+        {
+            say?.Invoke($"{what}: Apple Music did not answer in 200 ms; skipped");
+            return false;
+        }
+
+        var task = Task.Factory.StartNew(call, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        try
+        {
+            if (task.Wait(ms))
+            {
+                return task.Result;
+            }
+        }
+        catch (AggregateException)
+        {
+            // the window vanished under the call
+            return false;
+        }
+
+        say?.Invoke($"{what}: Apple Music did not answer in {ms} ms; skipped");
+        _ = task.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+        running = task;
+        return false;
+    }
+
+    // ---------------------------------------------------------------- what the driver does to Apple Music's windows, and giving it back
+
+    /// <summary>
+    /// The true extended style (the one from before the driver made the window transparent) of every window the driver has ghosted and not
+    /// yet given back, process-wide. Whoever ghosts a window first records it; every later capture and every restore reads it instead of the
+    /// window's live style, which may be a ghost left behind by an earlier job (or by an abandoned job that is still running).
+    /// </summary>
+    private static readonly ConcurrentDictionary<nint, long> OriginalStyles = new();
+
+    /// <summary>Where the person had the same windows (restore rectangle): the place a parked window goes back to.</summary>
+    private static readonly ConcurrentDictionary<nint, Rect> Homes = new();
+
+    private sealed record RestoreJob(Func<bool> Attempt, string What, long Until);
+
+    private static readonly ConcurrentDictionary<nint, RestoreJob> Restores = new();
+
+    /// <summary>Records the true extended style of a window about to be ghosted (the first record wins) and returns it.</summary>
+    internal static long RememberStyle(nint hwnd)
+    {
+        if (OriginalStyles.TryGetValue(hwnd, out var known))
+        {
+            return known;
+        }
+
+        var live = (long)GetWindowLongPtr(hwnd, GwlExStyle);
+        return OriginalStyles.GetOrAdd(hwnd, IsGhost(hwnd) ? Deghost(live, ClassOf(hwnd)) : live);
+    }
+
+    /// <summary>Records where the person has the window (ignored when the rectangle is off-screen: that is a parked window's, not theirs).</summary>
+    internal static void RememberHome(nint hwnd, Rect home)
+    {
+        if (OnAnyScreen(home))
+        {
+            if (Homes.Count > 64)
+            {
+                Homes.Clear();
+            }
+
+            Homes[hwnd] = home;
+        }
+    }
+
+    /// <summary>The style of a ghost without the ghost: the best guess when nobody recorded the real one (a previous run of WinKnife was cut off).</summary>
+    private static long Deghost(long ex, string cls)
+    {
+        ex &= ~(WsExLayered | WsExTransparent);
+        if (cls == MainWindowClass)
+        {
+            ex &= ~WsExToolWindow;
+        }
+
+        return ex;
+    }
+
+    /// <summary>The primary screen's centre: where a window goes that has no place of its own to go back to.</summary>
+    internal static Rect Centered()
+    {
+        var w = GetSystemMetrics(0);
+        var h = GetSystemMetrics(1);
+        var left = Math.Max(0, (w - 1200) / 2);
+        var top = Math.Max(0, (h - 800) / 2);
+        return new Rect { Left = left, Top = top, Right = left + 1200, Bottom = top + 800 };
+    }
+
+    /// <summary>
+    /// Puts the window's own extended style back (and full opacity, should it stay layered) and forgets the record. A synchronous
+    /// cross-process call: run it inside <see cref="Bounded(nint, Func{bool}, int, string, Action{string}?)"/>.
+    /// </summary>
+    internal static void RestoreStyleNow(nint hwnd)
+    {
+        long ex;
+        if (!OriginalStyles.TryGetValue(hwnd, out ex))
+        {
+            ex = (long)GetWindowLongPtr(hwnd, GwlExStyle);
+            if (IsGhost(hwnd))
+            {
+                ex = Deghost(ex, ClassOf(hwnd));
+            }
+        }
+
+        SetWindowLongPtr(hwnd, GwlExStyle, (nint)ex);
+        if ((ex & WsExLayered) != 0)
+        {
+            SetLayeredWindowAttributes(hwnd, 0, 255, LwaAlpha);
+        }
+
+        OriginalStyles.TryRemove(hwnd, out _);
+    }
+
+    /// <summary>A window parked far off-screen goes back to where the person had it (or to the screen's centre). Inside <see cref="Bounded(nint, Func{bool}, int, string, Action{string}?)"/>.</summary>
+    internal static void Unpark(nint hwnd)
+    {
+        if (IsIconic(hwnd) || !GetWindowRect(hwnd, out var r) || r.Left > -10000)
+        {
+            return;
+        }
+
+        var home = Homes.TryGetValue(hwnd, out var known) && OnAnyScreen(known) ? known : Centered();
+        SetWindowPos(hwnd, 0, home.Left, home.Top, home.Right - home.Left, home.Bottom - home.Top, SwpNoZOrder | SwpNoActivate | SwpNoOwnerZOrder);
+    }
+
+    /// <summary>Gives the window its style back, bounded; when Apple Music does not answer the restore is retried in the background.</summary>
+    internal static void RestoreStyle(nint hwnd, Action<string>? say = null)
+    {
+        Func<bool> restore = () =>
+        {
+            RestoreStyleNow(hwnd);
+            return true;
+        };
+        if (!Bounded(hwnd, restore, 400, "restoring the window style", say))
+        {
+            RetryRestore(hwnd, restore, "restoring the window style", say);
+        }
+    }
+
+    /// <summary>
+    /// A restore that did not get through (Apple Music was busy, which right after "UI ready" or the start of a song is common) is never
+    /// dropped: <paramref name="attempt"/> is run again every 250 ms for up to 10 s (a later request heals what is still wrong after that).
+    /// A newer retry for the same window replaces the older one; <paramref name="attempt"/> must be safe to repeat.
+    /// </summary>
+    internal static void RetryRestore(nint hwnd, Func<bool> attempt, string what, Action<string>? say)
+    {
+        if (!IsWindow(hwnd))
+        {
+            OriginalStyles.TryRemove(hwnd, out _);
+            return;
+        }
+
+        var job = new RestoreJob(attempt, what, Environment.TickCount64 + 10000);
+        while (true)
+        {
+            if (Restores.TryAdd(hwnd, job))
+            {
+                _ = Task.Run(() => RetryLoop(hwnd, say));
+                return;
+            }
+
+            if (Restores.TryGetValue(hwnd, out var old) && Restores.TryUpdate(hwnd, job, old))
+            {
+                return;
+            }
+        }
+    }
+
+    /// <summary>A job is about to use the window again: restores still waiting for it would take it out from under the job.</summary>
+    internal static void CancelRetry(nint hwnd) => Restores.TryRemove(hwnd, out _);
+
+    private static async Task RetryLoop(nint hwnd, Action<string>? say)
+    {
+        while (Restores.TryGetValue(hwnd, out var job))
+        {
+            await Task.Delay(250).ConfigureAwait(false);
+            if (!Restores.TryGetValue(hwnd, out job))
+            {
+                return;
+            }
+
+            var done = false;
+            if (!IsWindow(hwnd))
+            {
+                OriginalStyles.TryRemove(hwnd, out _);
+                done = true;
+            }
+            else if (Environment.TickCount64 > job.Until)
+            {
+                say?.Invoke($"{job.What}: Apple Music did not take it in 10 s; the next request tries again");
+                done = true;
+            }
+            else if (Bounded(hwnd, job.Attempt, 1500, job.What, null))
+            {
+                done = true;
+            }
+
+            if (done)
+            {
+                // a newer retry may have replaced this one meanwhile: then it goes on
+                ((ICollection<KeyValuePair<nint, RestoreJob>>)Restores).Remove(new KeyValuePair<nint, RestoreJob>(hwnd, job));
+            }
+        }
+    }
+
+    /// <summary>
+    /// The safety net behind every restore: any Apple Music window that is still transparent (or whose real style is still on record), or
+    /// that is visible and parked far off-screen, is given back, whoever left it so. Run when a request starts and when WinKnife starts, i.e.
+    /// when no job of this process is meant to be using the windows. A parked window that was on screen is minimised (it was meant to be out
+    /// of sight) unless the person has opened Apple Music.
+    /// </summary>
+    internal static void Heal(Action<string>? say = null)
+    {
+        foreach (var h in OriginalStyles.Keys)
+        {
+            if (!IsWindow(h))
+            {
+                OriginalStyles.TryRemove(h, out _);
+            }
+        }
+
+        foreach (var h in Homes.Keys)
+        {
+            if (!IsWindow(h))
+            {
+                Homes.TryRemove(h, out _);
+            }
+        }
+
+        var windows = new List<(nint Hwnd, bool Main)>();
+        EnumWindows((h, _) =>
+        {
+            var cls = ClassOf(h);
+            if ((cls == MainWindowClass || cls == PopupWindowClass) && IsAppleMusic(ProcessOf(h)))
+            {
+                windows.Add((h, cls == MainWindowClass));
+            }
+
+            return true;
+        }, 0);
+        foreach (var (hwnd, main) in windows)
+        {
+            var ghost = IsGhost(hwnd);
+            var parked = main && IsWindowVisible(hwnd) && !IsIconic(hwnd) && GetWindowRect(hwnd, out var rect) && rect.Left <= -10000;
+            if (!ghost && !parked && !OriginalStyles.ContainsKey(hwnd))
+            {
+                continue;
+            }
+
+            var window = hwnd;
+            say?.Invoke("healing a window left behind: " + Describe(window) + (ghost ? " (transparent)" : "") + (parked ? " (parked off-screen)" : ""));
+            Func<bool> fix = () =>
+            {
+                // still transparent while it is moved and minimised: nothing flashes on screen
+                if (main)
+                {
+                    Unpark(window);
+                    if (parked && AppleMusicKeeper.Instance is not { UserOwned: true })
+                    {
+                        ShowWindow(window, SwShowMinNoActive);
+                    }
+                }
+
+                RestoreStyleNow(window);
+                return true;
+            };
+            if (!Bounded(window, fix, 1500, "healing the window", say))
+            {
+                RetryRestore(window, fix, "healing the window", say);
+            }
+        }
+    }
+
+    /// <summary>The person has used mouse or keyboard after <paramref name="tick"/> (an <see cref="Environment.TickCount64"/> value).</summary>
+    internal static bool UserInputSince(long tick)
+    {
+        var info = new LastInputInfo { Size = (uint)Marshal.SizeOf<LastInputInfo>() };
+        if (!GetLastInputInfo(ref info))
+        {
+            // cannot tell: not a reason to reject the sample
+            return true;
+        }
+
+        return unchecked((int)(info.Time - (uint)tick)) > 0;
+    }
 
     /// <summary>The rectangle (virtual screen) shows at least a little of the desktop.</summary>
     internal static bool OnAnyScreen(Rect r)
@@ -440,43 +779,70 @@ internal sealed class AmEventHook : IDisposable
 /// Keeps Apple Music from taking the activation while WinKnife drives it in the background. A system-wide foreground WinEvent hook
 /// (on its own message-loop thread) watches for any Apple Music window becoming the foreground window; when that happens while no
 /// Apple Music window is visible to the user, the foreground goes back to the window the user was working in and Apple Music's main
-/// window is minimised again without activation. Armed at the start of a job and kept for <see cref="GraceMs"/> after <see cref="Dispose"/>.
-/// No input is ever synthesised.
+/// window is minimised again without activation. Armed at the start of a job and kept for <see cref="GraceMs"/> after <see cref="Dispose"/>
+/// (and never longer than the lifetime it was armed with). It stands down for good as soon as the person opens Apple Music themselves
+/// (the foreground came from the Start menu, the taskbar, a jump list or Alt+Tab). No input is ever synthesised.
 /// </summary>
 internal sealed class ForegroundGuard : IDisposable
 {
     internal const int GraceMs = 1500;
 
+    private static readonly string[] ShellSurfaceClasses =
+    [
+        "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "Windows.UI.Core.CoreWindow", "XamlExplorerHostIslandWindow", "MultitaskingViewFrame",
+        "TopLevelWindowForOverflowXamlIsland", "NotifyIconOverflowWindow",
+    ];
+
+    private static readonly string[] ShellSurfaceProcesses = ["ShellExperienceHost", "StartMenuExperienceHost", "SearchHost", "SearchApp", "SearchUI", "explorer"];
+
+    /// <summary>The last foreground window that was not Apple Music's, when it took the foreground.</summary>
+    private sealed record Sample(string Class, string Process, long Tick);
+
     private readonly Action<string> _say;
-    private readonly bool _enforce;
+    private volatile bool _enforce;
     private readonly uint _ownPid = (uint)Environment.ProcessId;
     private readonly object _gate = new();
+    private readonly HashSet<nint> _visibleAtArm = [];
     private nint _target;
     private int _reclaims;
+    private long _focusedAt;
+    private long _actedAt;
+    private volatile Sample? _lastNonAm;
     private AmEventHook? _hook;
+    private Timer? _lifetime;
 
-    private ForegroundGuard(nint previous, Action<string>? say)
+    private ForegroundGuard(nint previous, Action<string>? say, int maxMs)
     {
         _say = say ?? (_ => { });
 
-        // When the user has Apple Music open on screen it is none of our business who has the foreground.
+        // When the user has Apple Music open on screen it is none of our business who has the foreground (and that window is never touched).
+        foreach (var h in AmNative.MainWindows())
+        {
+            if (AmNative.IsWindowVisible(h) && !AmNative.IsIconic(h) && !AmNative.IsGhost(h) && AmNative.GetWindowRect(h, out var r) && AmNative.OnAnyScreen(r))
+            {
+                _visibleAtArm.Add(h);
+            }
+        }
+
         _enforce = AmNative.MainWindowsHidden();
         _target = PickTarget(previous);
         if (_enforce)
         {
-            _hook = new AmEventHook(AmNative.EventSystemForeground, AmNative.EventSystemForeground, 0, (_, hwnd) =>
-            {
-                var pid = AmNative.ProcessOf(hwnd);
-                if (pid != _ownPid && AmNative.IsAppleMusic(pid))
-                {
-                    Reclaim("Apple Music took the foreground (" + AmNative.Describe(hwnd) + ")", true);
-                }
-            });
+            _hook = new AmEventHook(AmNative.EventSystemForeground, AmNative.EventSystemForeground, 0, (_, hwnd) => OnForeground(hwnd));
+        }
+
+        if (maxMs > 0)
+        {
+            // hard limit: the hook never outlives its job, whatever happens to the code that should dispose it
+            _lifetime = new Timer(_ => DisposeNow(), null, maxMs, Timeout.Infinite);
         }
     }
 
-    /// <summary>Starts guarding. <paramref name="previous"/> is the foreground window of the moment (it is only used as the target when it is neither WinKnife's nor Apple Music's).</summary>
-    public static ForegroundGuard Arm(nint previous, Action<string>? say = null) => new(previous, say);
+    /// <summary>
+    /// Starts guarding. <paramref name="previous"/> is the foreground window of the moment (it is only used as the target when it is neither WinKnife's
+    /// nor Apple Music's). The hook is dropped after <paramref name="maxMs"/> at the latest, even when <see cref="Dispose"/> is never called.
+    /// </summary>
+    public static ForegroundGuard Arm(nint previous, Action<string>? say = null, int maxMs = 60000) => new(previous, say, maxMs);
 
     /// <summary>Gives the foreground back now when Apple Music (or nothing) has it.</summary>
     public void Restore() => Reclaim("restore", false);
@@ -488,6 +854,79 @@ internal sealed class ForegroundGuard : IDisposable
         {
             _ = Task.Delay(GraceMs).ContinueWith(_ => hook.Dispose(), TaskScheduler.Default);
         }
+    }
+
+    /// <summary>Drops the hook now, without the grace period (the job it served was abandoned).</summary>
+    public void DisposeNow()
+    {
+        Interlocked.Exchange(ref _lifetime, null)?.Dispose();
+        _enforce = false;
+        Interlocked.Exchange(ref _hook, null)?.Dispose();
+    }
+
+    private static string ProcessName(uint pid)
+    {
+        try
+        {
+            using var p = System.Diagnostics.Process.GetProcessById((int)pid);
+            return p.ProcessName;
+        }
+        catch
+        {
+            return "";
+        }
+    }
+
+    private static bool IsShellSurface(Sample s)
+    {
+        // the desktop itself (explorer's) is what Windows activates when a window goes away: not a way into Apple Music
+        if (s.Class is "Progman" or "WorkerW")
+        {
+            return false;
+        }
+
+        if (Array.IndexOf(ShellSurfaceClasses, s.Class) >= 0 || s.Class.StartsWith("Shell_", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        // File Explorer windows belong to explorer.exe too, but they are an application the person works in, not a way into Apple Music
+        return Array.Exists(ShellSurfaceProcesses, n => n.Equals(s.Process, StringComparison.OrdinalIgnoreCase)) && s.Class is not ("CabinetWClass" or "ExploreWClass");
+    }
+
+    /// <summary>Every foreground change (runs on the hook thread): what had the foreground before Apple Music decides whether the person opened it.</summary>
+    private void OnForeground(nint hwnd)
+    {
+        var pid = AmNative.ProcessOf(hwnd);
+        if (pid == 0)
+        {
+            return;
+        }
+
+        var now = Environment.TickCount64;
+        if (pid == _ownPid || !AmNative.IsAppleMusic(pid))
+        {
+            // The foreground WinKnife handed back itself says nothing about the person; nor does what Windows activates because of the
+            // minimise that the reclaim posted (the posted minimise is carried out a moment later, with no user input anywhere near it).
+            if (now - Interlocked.Read(ref _focusedAt) > 600 && now - Interlocked.Read(ref _actedAt) > 1500)
+            {
+                _lastNonAm = new Sample(AmNative.ClassOf(hwnd), pid == _ownPid ? "WinKnife" : ProcessName(pid), now);
+            }
+
+            return;
+        }
+
+        // a shell surface alone is not enough: the person has to have used mouse or keyboard since it took the foreground (clicked the tile)
+        if (_lastNonAm is { } last && now - last.Tick < 5000 && IsShellSurface(last) && AmNative.UserInputSince(last.Tick))
+        {
+            var from = $"{last.Process}/{last.Class}";
+            _say($"Apple Music took the foreground from {from}: opened by the user; the guard stands down");
+            _enforce = false;
+            AppleMusicKeeper.Instance?.MarkUserOwned("activated from " + from);
+            return;
+        }
+
+        Reclaim("Apple Music took the foreground (" + AmNative.Describe(hwnd) + ")", true);
     }
 
     private bool Usable(nint hwnd) =>
@@ -532,7 +971,8 @@ internal sealed class ForegroundGuard : IDisposable
 
     private void Reclaim(string why, bool counted)
     {
-        if (!_enforce || AppleMusicKeeper.Instance?.JustShown == true)
+        // the person opened Apple Music (or the keeper just showed it): nothing here may move it or the foreground
+        if (!_enforce || AppleMusicKeeper.Instance is { UserOwned: true } or { JustShown: true })
         {
             return;
         }
@@ -558,23 +998,29 @@ internal sealed class ForegroundGuard : IDisposable
 
             if (_target != 0 && now != _target)
             {
+                Interlocked.Exchange(ref _focusedAt, Environment.TickCount64);
                 var ok = Focus(_target);
+                Interlocked.Exchange(ref _focusedAt, Environment.TickCount64);
+                Interlocked.Exchange(ref _actedAt, Environment.TickCount64);
                 _say($"{why}; foreground back to {AmNative.Describe(_target)} => {ok}; foreground now {AmNative.Describe(AmNative.GetForegroundWindow())}");
             }
 
             foreach (var h in AmNative.MainWindows())
             {
-                if (AmNative.IsWindowVisible(h) && !AmNative.IsIconic(h) && !AmNative.IsGhost(h))
+                // a window that was on screen for the person when the job began is theirs: never touched
+                if (AmNative.IsWindowVisible(h) && !AmNative.IsIconic(h) && !AmNative.IsGhost(h) && !_visibleAtArm.Contains(h))
                 {
+                    // posted, not sent: a stuck Apple Music must not be able to stall the thread that reclaims the foreground
+                    Interlocked.Exchange(ref _actedAt, Environment.TickCount64);
                     if (AppleMusicKeeper.Instance?.IsKept(h) == true)
                     {
                         // a window the keeper hides has no taskbar button to go back to: it is hidden again
-                        AmNative.ShowWindow(h, AmNative.SwHide);
+                        AmNative.ShowWindowAsync(h, AmNative.SwHide);
                         _say("Apple Music main window had been shown; hidden again");
                     }
                     else
                     {
-                        AmNative.ShowWindow(h, AmNative.SwShowMinNoActive);
+                        AmNative.ShowWindowAsync(h, AmNative.SwShowMinNoActive);
                         _say("Apple Music main window had been restored; minimised again without activation");
                     }
                 }

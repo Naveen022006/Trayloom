@@ -47,9 +47,19 @@ internal static class MusicUi
         if (openApp is not null)
         {
             var tip = IdleLabel(core, openApp);
-            row.Children.Add(Btn(G.Previous, side, IdleAction(core, openApp, AmAction.SkipBack), tip: tip));
-            row.Children.Add(Btn(G.Play, play, IdleAction(core, openApp, AmAction.PlayPause), tip: tip));
-            row.Children.Add(Btn(G.Next, side, IdleAction(core, openApp, AmAction.SkipForward), tip: tip));
+            var working = HiddenApple(core, openApp) && core.AppleMusic.Busy;
+            row.Children.Add(Btn(G.Previous, side, IdleAction(core, openApp, AmAction.SkipBack), !working, tip));
+            var idlePlay = Btn(G.Play, play, IdleAction(core, openApp, AmAction.PlayPause), !working, tip);
+            if (working)
+            {
+                var spinner = PageUi.Spinner(play);
+                spinner.HorizontalAlignment = HorizontalAlignment.Center;
+                spinner.VerticalAlignment = VerticalAlignment.Center;
+                idlePlay.Child = spinner;
+            }
+
+            row.Children.Add(idlePlay);
+            row.Children.Add(Btn(G.Next, side, IdleAction(core, openApp, AmAction.SkipForward), !working, tip));
             return row;
         }
 
@@ -252,11 +262,27 @@ internal sealed class MusicPage : IslandPage
         }
     });
 
+    // what the idle page shows of Apple Music's work (the spinner and the failure line); only an idle page shows it
+    private bool _idle;
+    private bool _amBusy;
+    private LibraryNote? _amNote;
+
+    /// <summary>The island's Apple Music requests started, ended or failed: the idle page shows it (a page that plays something does not).</summary>
+    private void OnAppleMusic() => _view.Dispatcher.BeginInvoke(() =>
+    {
+        var svc = Core.AppleMusic;
+        if (_idle && (svc.Busy != _amBusy || !ReferenceEquals(svc.Note, _amNote)))
+        {
+            Reopen();
+        }
+    });
+
     public override void Shown()
     {
         Core.Playback.Changed += OnChanged;
         Core.Lyrics.Changed += OnLyrics;
         Core.AppleMusic.Keeper.Changed += OnKeeper;
+        Core.AppleMusic.Changed += OnAppleMusic;
         _poll.Start();
         Core.Levels.ForgetSilence();
     }
@@ -266,6 +292,7 @@ internal sealed class MusicPage : IslandPage
         Core.Playback.Changed -= OnChanged;
         Core.Lyrics.Changed -= OnLyrics;
         Core.AppleMusic.Keeper.Changed -= OnKeeper;
+        Core.AppleMusic.Changed -= OnAppleMusic;
         _poll.Stop();
     }
 
@@ -378,6 +405,9 @@ internal sealed class MusicPage : IslandPage
         _cover = null;
         _bars = null;
         var idle = !p.HasTrack;
+        _idle = idle;
+        _amBusy = Core.AppleMusic.Busy;
+        _amNote = Core.AppleMusic.Note;
         var awaiting = idle && Core.Playback.AwaitingPlayback;
         var preferred = PlaybackService.ResolvePreferredPlayer(Core.App.Get<string>(K.PreferredPlayer), Core.Playback);
         var stack = new StackPanel { Width = _width, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top };
@@ -457,7 +487,22 @@ internal sealed class MusicPage : IslandPage
         else if (idle)
         {
             titles.Children.Add(D.T(Strings.MediaNothingPlaying, 14, FontWeights.SemiBold, D.Text, false, TextTrimming.CharacterEllipsis));
-            if (preferred is not null || MusicUi.HiddenApple(Core, preferred))
+            if (MusicUi.HiddenApple(Core, preferred) && Core.AppleMusic.Busy)
+            {
+                // the island's request is starting Apple Music or working in it: the person sees that something is happening
+                var working = new StackPanel { Orientation = Orientation.Horizontal };
+                var spinner = PageUi.Spinner(12);
+                spinner.Margin = new Thickness(0, 0, 7, 0);
+                spinner.VerticalAlignment = VerticalAlignment.Center;
+                working.Children.Add(spinner);
+                working.Children.Add(D.T(Core.AppleMusic.Resuming ? LibStrings.Resuming : LibStrings.StartingApple, 13, null, D.Secondary, false, TextTrimming.CharacterEllipsis));
+                titles.Children.Add(working);
+            }
+            else if (MusicUi.HiddenApple(Core, preferred) && Core.AppleMusic.Note is { Error: true } failed)
+            {
+                titles.Children.Add(D.T(failed.Text, 13, null, D.Orange, false, TextTrimming.CharacterEllipsis));
+            }
+            else if (preferred is not null || MusicUi.HiddenApple(Core, preferred))
             {
                 titles.Children.Add(D.T(MusicUi.IdleLabel(Core, preferred), 13, null, D.Secondary, false, TextTrimming.CharacterEllipsis));
             }
@@ -611,9 +656,18 @@ internal sealed class MusicPage : IslandPage
             if (preferred is not null || MusicUi.HiddenApple(Core, preferred))
             {
                 var tip = MusicUi.IdleLabel(Core, preferred);
-                Btn(1, G.Previous, 19, MusicUi.IdleAction(Core, preferred, AmAction.SkipBack), tip: tip);
-                Btn(2, G.Play, 28, MusicUi.IdleAction(Core, preferred, AmAction.PlayPause), tip: tip);
-                Btn(3, G.Next, 19, MusicUi.IdleAction(Core, preferred, AmAction.SkipForward), tip: tip);
+                // while the island's request works in Apple Music the buttons wait (a second press would only restart it) and Play shows a spinner
+                var working = MusicUi.HiddenApple(Core, preferred) && Core.AppleMusic.Busy;
+                Btn(1, G.Previous, 19, MusicUi.IdleAction(Core, preferred, AmAction.SkipBack), !working, tip);
+                var idlePlay = Btn(2, G.Play, 28, MusicUi.IdleAction(Core, preferred, AmAction.PlayPause), !working, tip);
+                Btn(3, G.Next, 19, MusicUi.IdleAction(Core, preferred, AmAction.SkipForward), !working, tip);
+                if (working)
+                {
+                    var spinner = PageUi.Spinner(22);
+                    spinner.HorizontalAlignment = HorizontalAlignment.Center;
+                    spinner.VerticalAlignment = VerticalAlignment.Center;
+                    idlePlay.Child = spinner;
+                }
             }
             else
             {

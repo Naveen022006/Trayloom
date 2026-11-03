@@ -548,6 +548,7 @@ internal sealed partial class IslandWindow
         var wasOpen = Expanded;
         var origin = HistoryOrigin();
         _core.Notices.Clear();
+        _core.Timer.StopAlarm();
         _picker = false;
         _placeholder = false;
         _mode = IslandMode.Open;
@@ -1189,6 +1190,7 @@ internal sealed partial class IslandWindow
             return;
         }
 
+        _core.Timer.StopAlarm();
         var n = _shownNotice;
         if (n is not null)
         {

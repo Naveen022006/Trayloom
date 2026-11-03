@@ -64,6 +64,8 @@ internal sealed class DisplayService : IDisposable
     private int _worker;
     private Osd? _osd;
     private bool _disposed;
+    private BrightnessWatcher? _watcher;
+    private long _lastWriteTicks;
 
     public DisplayService(IFeatureContext ctx)
     {
@@ -83,6 +85,67 @@ internal sealed class DisplayService : IDisposable
     {
         Instance = this;
         _ = ItemsAsync(rescan: true);
+        if (_ctx.Ui.CheckAccess())
+        {
+            WatchPanel();
+        }
+        else
+        {
+            _ctx.Ui.BeginInvoke(WatchPanel);
+        }
+    }
+
+    /// <summary>Starts hearing brightness changes made elsewhere (brightness keys, quick settings, the island) so the sliders and key steps stay true.</summary>
+    private void WatchPanel()
+    {
+        if (_disposed || _watcher is not null)
+        {
+            return;
+        }
+
+        try
+        {
+            _watcher = new BrightnessWatcher((percent, _) => OnPanelBrightness(percent));
+        }
+        catch (Exception ex)
+        {
+            _ctx.Log.Error("Could not watch display brightness", ex);
+        }
+    }
+
+    /// <summary>The built-in panel's level changed (UI thread): adopt it unless this service is changing the level itself.</summary>
+    private void OnPanelBrightness(int percent)
+    {
+        var changed = false;
+        foreach (var item in _items)
+        {
+            if (item.Device is WmiDisplay device && AdoptLevel(item, device, percent))
+            {
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            Changed?.Invoke();
+        }
+    }
+
+    /// <summary>True when the level of a built-in panel was taken over from outside; false while a write of ours is queued, running or just done.</summary>
+    private bool AdoptLevel(DisplayItem item, WmiDisplay device, int percent)
+    {
+        if (item.Pending || _pending.ContainsKey(item.Key) || DateTime.UtcNow.Ticks - Interlocked.Read(ref _lastWriteTicks) < TimeSpan.FromSeconds(1).Ticks)
+        {
+            return false;
+        }
+
+        if (device.Percent == percent)
+        {
+            return false;
+        }
+
+        device.Observe(percent);
+        return true;
     }
 
     public void Stop()
@@ -105,6 +168,8 @@ internal sealed class DisplayService : IDisposable
         _disposed = true;
         SystemEvents.DisplaySettingsChanged -= OnTopology;
         SystemEvents.PowerModeChanged -= OnPower;
+        _watcher?.Dispose();
+        _watcher = null;
         foreach (var overlay in _overlays.Values)
         {
             overlay.Close();
@@ -294,7 +359,9 @@ internal sealed class DisplayService : IDisposable
                         }
 
                         var target = _items.FirstOrDefault(i => i.Key == key);
+                        Interlocked.Exchange(ref _lastWriteTicks, DateTime.UtcNow.Ticks);
                         var ok = target?.Device?.Write(percent) ?? false;
+                        Interlocked.Exchange(ref _lastWriteTicks, DateTime.UtcNow.Ticks);
                         if (target is not null)
                         {
                             target.Pending = _pending.ContainsKey(key);
@@ -335,6 +402,16 @@ internal sealed class DisplayService : IDisposable
             }
 
             target ??= active.FirstOrDefault(i => i.IsBuiltIn) ?? active[0];
+            if (target.Device is WmiDisplay panel && !target.SoftwareChosen)
+            {
+                // the level may have been changed elsewhere (island, brightness keys) since this service last wrote it: start from the true one
+                var current = await Task.Run(ReadPanelLevel);
+                if (current >= 0 && !_disposed)
+                {
+                    AdoptLevel(target, panel, current);
+                }
+            }
+
             var baseStep = _ctx.App.Get<string>("brightnessKeyStep") switch { "half" => 5.0, "quarter" => 2.5, _ => 10.0 };
             var step = Math.Max(1, (int)Math.Round(baseStep));
             var next = Math.Clamp(target.Level + (direction * step), 0, 100);
@@ -344,6 +421,13 @@ internal sealed class DisplayService : IDisposable
         {
             _ctx.Log.Error("Brightness shortcut failed", ex);
         }
+    }
+
+    /// <summary>The built-in panel's current level (0..100) read from WMI; -1 when it cannot be read. Off the UI thread.</summary>
+    private static int ReadPanelLevel()
+    {
+        var rows = Wmi.Query(@"root\WMI", "SELECT CurrentBrightness FROM WmiMonitorBrightness WHERE Active=TRUE", "CurrentBrightness");
+        return rows.Count > 0 ? Wmi.ToInt(rows[0]["CurrentBrightness"], -1) : -1;
     }
 
     private void ShowOsd(DisplayItem item, int percent)
