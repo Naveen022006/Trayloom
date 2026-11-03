@@ -16,6 +16,11 @@ internal enum AmAction
     PlayPlaylist,
     ShufflePlaylist,
     ReadQueue,
+
+    /// <summary>Apple Music's own Play/Pause button (resumes what it had loaded; starts the app hidden when it is closed).</summary>
+    PlayPause,
+    SkipForward,
+    SkipBack,
 }
 
 internal enum AmFailure
@@ -256,6 +261,7 @@ internal sealed class AppleMusicDriver : IDisposable
             {
                 AmAction.PlayPlaylist or AmAction.ShufflePlaylist => PlayPlaylist(am, cmd, ct),
                 AmAction.ReadQueue => ReadQueue(am, ct),
+                AmAction.PlayPause or AmAction.SkipForward or AmAction.SkipBack => PressTransport(am, cmd.Action, launched ? 10000 : 4000, ct),
                 _ => PlaySong(am, cmd, launched ? 10000 : 4500, ct),
             };
 
@@ -297,6 +303,28 @@ internal sealed class AppleMusicDriver : IDisposable
             AmNative.SwitchToThisWindow(previous, true);
             Say($"SwitchToThisWindow(previous); foreground now {AmNative.Describe(AmNative.GetForegroundWindow())}");
         }
+    }
+
+    // ---------------------------------------------------------------- transport
+
+    /// <summary>Presses Apple Music's own transport button (used while Windows has no media session for it, e.g. right after a hidden start).</summary>
+    private AmResult PressTransport(AmUia am, AmAction action, int wait, CancellationToken ct)
+    {
+        var id = action switch
+        {
+            AmAction.SkipForward => "TransportControl_SkipForward",
+            AmAction.SkipBack => "TransportControl_SkipBack",
+            _ => "TransportControl_PlayPauseStop",
+        };
+        var button = am.WaitFor(() => am.ById(id) is { Current.IsEnabled: true } b ? b : null, wait, ct);
+        if (button is null || !am.Invoke(button))
+        {
+            return AmResult.Fail(AmFailure.NoMenu, id);
+        }
+
+        Say("pressed " + id);
+        Thread.Sleep(250);
+        return AmResult.Success();
     }
 
     // ---------------------------------------------------------------- songs

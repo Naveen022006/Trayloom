@@ -12,7 +12,19 @@ namespace WinKnife.Features.Island;
 
 internal static class MusicUi
 {
-    /// <summary>Compact transport (previous, play/pause, next) used by the Controls card; the idle form opens the preferred player.</summary>
+    /// <summary>Nothing is playing and the player to use is Apple Music: drive it in the background (started hidden when closed).</summary>
+    public static bool HiddenApple(IslandCore core, string? preferred) =>
+        core.AppleMusic.Available && (preferred is null || preferred.Contains("AppleMusic", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>What an idle transport button does: Apple Music's own button without showing its window, or open the preferred player.</summary>
+    public static Action IdleAction(IslandCore core, string? preferred, AmAction action) =>
+        HiddenApple(core, preferred) ? () => core.AppleMusic.Transport(action) : () => PlaybackService.OpenPlayer(preferred);
+
+    /// <summary>The idle subtitle / tooltip: "Play Apple Music" when it is driven in the background, else "Open &lt;player&gt;".</summary>
+    public static string IdleLabel(IslandCore core, string? preferred) =>
+        HiddenApple(core, preferred) ? Loc.T("Play Apple Music") : "Open " + PlaybackService.NameOf(preferred ?? "");
+
+    /// <summary>Compact transport (previous, play/pause, next) used by the Controls card; the idle form plays Apple Music in the background or opens the preferred player.</summary>
     public static FrameworkElement Transport(IslandCore core, double side, double play, double height, double spacing, string? openApp)
     {
         var p = core.Playback.Current;
@@ -34,10 +46,10 @@ internal static class MusicUi
 
         if (openApp is not null)
         {
-            Action open = () => PlaybackService.OpenPlayer(openApp);
-            row.Children.Add(Btn(G.Previous, side, open));
-            row.Children.Add(Btn(G.Play, play, open));
-            row.Children.Add(Btn(G.Next, side, open));
+            var tip = IdleLabel(core, openApp);
+            row.Children.Add(Btn(G.Previous, side, IdleAction(core, openApp, AmAction.SkipBack), tip: tip));
+            row.Children.Add(Btn(G.Play, play, IdleAction(core, openApp, AmAction.PlayPause), tip: tip));
+            row.Children.Add(Btn(G.Next, side, IdleAction(core, openApp, AmAction.SkipForward), tip: tip));
             return row;
         }
 
@@ -340,12 +352,12 @@ internal sealed class MusicPage : IslandPage
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var icon = Core.Playback.Sources.FirstOrDefault(s => s.Aumid == p.Aumid)?.Icon;
-        var coverBtn = new HoverButton(() => { if (idle) { PlaybackService.OpenPlayer(preferred); } else { PlaybackService.OpenPlayer(p.Aumid); } }) { Width = 56, Height = 56, CornerRadius = new CornerRadius(10.64), Lifts = false, IsEnabled = !idle || preferred is not null };
+        var coverBtn = new HoverButton(() => { if (idle) { MusicUi.IdleAction(Core, preferred, AmAction.PlayPause)(); } else { PlaybackService.OpenPlayer(p.Aumid); } }) { Width = 56, Height = 56, CornerRadius = new CornerRadius(10.64), Lifts = false, IsEnabled = !idle || preferred is not null || MusicUi.HiddenApple(Core, preferred) };
         var cover = Cover.For(p, 56, false, icon);
         cover.RenderTransformOrigin = new Point(0.5, 0.5);
         cover.RenderTransform = new ScaleTransform(p.IsPlaying || idle ? 1 : 0.94, p.IsPlaying || idle ? 1 : 0.94);
         coverBtn.Child = cover;
-        D.Tip(coverBtn, idle && preferred is not null ? "Open " + PlaybackService.NameOf(preferred) : Strings.MediaNowPlaying);
+        D.Tip(coverBtn, idle && (preferred is not null || MusicUi.HiddenApple(Core, preferred)) ? MusicUi.IdleLabel(Core, preferred) : Strings.MediaNowPlaying);
         head.Children.Add(coverBtn);
 
         var titles = new StackPanel { Margin = new Thickness(14, 0, 8, 0), VerticalAlignment = VerticalAlignment.Bottom, Height = 38 };
@@ -356,9 +368,9 @@ internal sealed class MusicPage : IslandPage
         else if (idle)
         {
             titles.Children.Add(D.T(Strings.MediaNothingPlaying, 14, FontWeights.SemiBold, D.Text, false, TextTrimming.CharacterEllipsis));
-            if (preferred is not null)
+            if (preferred is not null || MusicUi.HiddenApple(Core, preferred))
             {
-                titles.Children.Add(D.T("Open " + PlaybackService.NameOf(preferred), 13, null, D.Secondary, false, TextTrimming.CharacterEllipsis));
+                titles.Children.Add(D.T(MusicUi.IdleLabel(Core, preferred), 13, null, D.Secondary, false, TextTrimming.CharacterEllipsis));
             }
         }
         else
@@ -482,13 +494,12 @@ internal sealed class MusicPage : IslandPage
 
         if (idle)
         {
-            if (preferred is not null)
+            if (preferred is not null || MusicUi.HiddenApple(Core, preferred))
             {
-                Action open = () => PlaybackService.OpenPlayer(preferred);
-                var tip = "Open " + PlaybackService.NameOf(preferred);
-                Btn(1, G.Previous, 19, open, tip: tip);
-                Btn(2, G.Play, 28, open, tip: tip);
-                Btn(3, G.Next, 19, open, tip: tip);
+                var tip = MusicUi.IdleLabel(Core, preferred);
+                Btn(1, G.Previous, 19, MusicUi.IdleAction(Core, preferred, AmAction.SkipBack), tip: tip);
+                Btn(2, G.Play, 28, MusicUi.IdleAction(Core, preferred, AmAction.PlayPause), tip: tip);
+                Btn(3, G.Next, 19, MusicUi.IdleAction(Core, preferred, AmAction.SkipForward), tip: tip);
             }
             else
             {

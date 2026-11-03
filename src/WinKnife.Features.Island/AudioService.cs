@@ -606,6 +606,14 @@ internal static class BrightnessService
     /// <summary>Raised (on a worker thread) when the background check changes the answer.</summary>
     public static event Action? AvailabilityChanged;
 
+    /// <summary>The panel level changed (0..1), whoever changed it; raised on the UI thread by the island's brightness watcher.</summary>
+    public static event Action<double>? LevelChanged;
+
+    /// <summary>When the island itself last set the level (its own changes show no notice).</summary>
+    public static DateTime LastOwnWrite { get; private set; } = DateTime.MinValue;
+
+    public static void Announce(double level) => LevelChanged?.Invoke(level);
+
     public static void Probe()
     {
         if (Interlocked.Exchange(ref _probing, 1) == 1)
@@ -655,6 +663,7 @@ internal static class BrightnessService
     /// <summary>Sets the level off the UI thread; while a write runs, only the newest requested level is kept (dragging stays smooth).</summary>
     public static void Write(double value)
     {
+        LastOwnWrite = DateTime.UtcNow;
         lock (Gate)
         {
             _pending = value;

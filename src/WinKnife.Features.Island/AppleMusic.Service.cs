@@ -242,6 +242,20 @@ internal sealed class AppleMusicService : IDisposable
         }, playlist.Pid);
     }
 
+    /// <summary>
+    /// Play/pause, next or previous for Apple Music when Windows has no media session for it (the app is closed or idle):
+    /// it is started hidden if needed and its own button is pressed, so its window never shows.
+    /// </summary>
+    public void Transport(AmAction action)
+    {
+        if (!Available)
+        {
+            return;
+        }
+
+        _ = RunAsync(new AmCommand { Action = action }, 0);
+    }
+
     private async Task RunAsync(AmCommand command, ulong pid)
     {
         var seq = ++_seq;
@@ -287,6 +301,7 @@ internal sealed class AppleMusicService : IDisposable
     {
         AmFailure.Unavailable => LibStrings.NotStarted,
         AmFailure.NotFound => LibStrings.NotFound,
+        AmFailure.NoMenu when action is AmAction.PlayPause or AmAction.SkipForward or AmAction.SkipBack => LibStrings.NothingToResume,
         AmFailure.NoMenu => LibStrings.NoResponse,
         AmFailure.NotConfirmed => action is AmAction.PlayPlaylist or AmAction.ShufflePlaylist ? LibStrings.PlaylistNotStarted : LibStrings.SongNotStarted,
         _ => LibStrings.NoResponse,

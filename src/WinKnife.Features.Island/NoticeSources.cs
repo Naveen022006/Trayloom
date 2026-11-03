@@ -22,6 +22,7 @@ internal sealed class NoticeSources : IDisposable
     private bool _started;
     private DispatcherTimer? _trackTimer;
     private Playback? _pendingTrack;
+    private BrightnessWatcher? _brightness;
 
     public NoticeSources(IslandCore core)
     {
@@ -50,6 +51,15 @@ internal sealed class NoticeSources : IDisposable
         _core.Session.Unlocked += OnUnlock;
         _core.Session.Locking += OnLock;
         SystemEvents.PowerModeChanged += OnPower;
+        try
+        {
+            _brightness = new BrightnessWatcher(OnBrightness);
+        }
+        catch (Exception ex)
+        {
+            _core.Ctx.Log.Error("Could not watch display brightness", ex);
+        }
+
         _poll.Start();
         _volume = _core.Audio.Volume ?? 0;
         _muted = _core.Audio.Muted;
@@ -77,6 +87,26 @@ internal sealed class NoticeSources : IDisposable
             Title = Loc.T("Volume"),
             Level = m ? 0 : v,
             Detail = $"{(int)Math.Round((m ? 0 : v) * 100)}%",
+        });
+    }
+
+    /// <summary>Brightness keys, Windows quick settings or the island slider changed the panel: keep sliders in step and show the level.</summary>
+    private void OnBrightness(int percent)
+    {
+        var level = percent / 100.0;
+        BrightnessService.Announce(level);
+        if (DateTime.UtcNow - BrightnessService.LastOwnWrite < TimeSpan.FromSeconds(1.5) || !_core.Ctx.Runtime.IsAvailable("brightness"))
+        {
+            return;
+        }
+
+        _core.ShowNotice(new Notice
+        {
+            Event = NoticeEvents.Brightness,
+            Glyph = G.Brightness,
+            Title = Loc.T("Brightness"),
+            Level = level,
+            Detail = $"{percent}%",
         });
     }
 
@@ -253,6 +283,8 @@ internal sealed class NoticeSources : IDisposable
             return;
         }
 
+        _brightness?.Dispose();
+        _brightness = null;
         _core.Audio.VolumeChanged -= OnVolume;
         _core.Audio.MicChanged -= OnMic;
         _core.Playback.TrackChanged -= OnTrack;

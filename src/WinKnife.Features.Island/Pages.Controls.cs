@@ -101,6 +101,16 @@ internal sealed class BrightnessLevel : Grid
         Grid.SetColumn(_slider, 1);
         Children.Add(_slider);
         _slider.ValueChanged += v => BrightnessService.Write(v);
+        Action<double> follow = level => Dispatcher.BeginInvoke(() =>
+        {
+            if (!_slider.IsDragging && DateTime.UtcNow - BrightnessService.LastOwnWrite > TimeSpan.FromSeconds(1))
+            {
+                _slider.IsEnabled = true;
+                _slider.Value = level;
+            }
+        });
+        Loaded += (_, _) => BrightnessService.LevelChanged += follow;
+        Unloaded += (_, _) => BrightnessService.LevelChanged -= follow;
         Loaded += (_, _) => _ = Task.Run(() =>
         {
             var v = BrightnessService.Read();
@@ -154,7 +164,7 @@ internal sealed class MusicCard : Border
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var cover = new HoverButton(() => { if (idle && preferred is not null) { PlaybackService.OpenPlayer(preferred); } else { _win?.ShowModule("music"); } }) { Width = side, Height = side, CornerRadius = new CornerRadius(side * 0.19), Lifts = false };
+        var cover = new HoverButton(() => { if (idle && (preferred is not null || MusicUi.HiddenApple(_core, preferred))) { MusicUi.IdleAction(_core, preferred, AmAction.PlayPause)(); } else { _win?.ShowModule("music"); } }) { Width = side, Height = side, CornerRadius = new CornerRadius(side * 0.19), Lifts = false };
         cover.Child = Cover.For(p, side, false, _core.Playback.Sources.FirstOrDefault(s => s.Aumid == p.Aumid)?.Icon);
         grid.Children.Add(cover);
         var titles = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 8, 0) };
@@ -167,10 +177,10 @@ internal sealed class MusicCard : Border
         var titleButton = new HoverButton(() => _win?.ShowModule("music")) { Child = titles, CornerRadius = new CornerRadius(8), Lifts = false, VerticalAlignment = VerticalAlignment.Stretch };
         Grid.SetColumn(titleButton, 1);
         grid.Children.Add(titleButton);
-        var transport = MusicUi.Transport(_core, 16, 22, 36, 12, idle ? preferred : null);
+        var transport = MusicUi.Transport(_core, 16, 22, 36, 12, idle ? (preferred ?? (MusicUi.HiddenApple(_core, null) ? "AppleMusic" : null)) : null);
         transport.VerticalAlignment = VerticalAlignment.Center;
         Grid.SetColumn(transport, 2);
-        if (!(idle && preferred is null))
+        if (!(idle && preferred is null && !MusicUi.HiddenApple(_core, null)))
         {
             grid.Children.Add(transport);
         }

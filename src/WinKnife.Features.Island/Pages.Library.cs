@@ -27,6 +27,7 @@ internal static class LibStrings
     public static string NotStarted => Loc.T("Apple Music didn't start");
     public static string NotFound => Loc.T("Couldn't find it in Apple Music");
     public static string NoResponse => Loc.T("Apple Music didn't respond");
+    public static string NothingToResume => Loc.T("Apple Music has nothing to resume - pick a song in Library");
     public static string SongNotStarted => Loc.T("Apple Music didn't start this song");
     public static string PlaylistNotStarted => Loc.T("Apple Music didn't start this playlist");
     public static string Missing => Loc.T("Apple Music library not found");
