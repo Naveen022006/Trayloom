@@ -27,6 +27,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Trayloom.Features.Files", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Trayloom.Features.Maintenance", "src\Trayloom.Features.Maintenance\Trayloom.Features.Maintenance.csproj", "{3A3E68EB-5CD8-4E1F-A349-AA2F6D993B38}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Trayloom.Features.GitHub", "src\Trayloom.Features.GitHub\Trayloom.Features.GitHub.csproj", "{FEF301F0-1436-4E05-8765-221C494E1BA2}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -169,6 +171,18 @@ Global
 		{3A3E68EB-5CD8-4E1F-A349-AA2F6D993B38}.Release|x64.Build.0 = Release|Any CPU
 		{3A3E68EB-5CD8-4E1F-A349-AA2F6D993B38}.Release|x86.ActiveCfg = Release|Any CPU
 		{3A3E68EB-5CD8-4E1F-A349-AA2F6D993B38}.Release|x86.Build.0 = Release|Any CPU
+		{FEF301F0-1436-4E05-8765-221C494E1BA2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FEF301F0-1436-4E05-8765-221C494E1BA2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FEF301F0-1436-4E05-8765-221C494E1BA2}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{FEF301F0-1436-4E05-8765-221C494E1BA2}.Debug|x64.Build.0 = Debug|Any CPU
+		{FEF301F0-1436-4E05-8765-221C494E1BA2}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{FEF301F0-1436-4E05-8765-221C494E1BA2}.Debug|x86.Build.0 = Debug|Any CPU
+		{FEF301F0-1436-4E05-8765-221C494E1BA2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FEF301F0-1436-4E05-8765-221C494E1BA2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FEF301F0-1436-4E05-8765-221C494E1BA2}.Release|x64.ActiveCfg = Release|Any CPU
+		{FEF301F0-1436-4E05-8765-221C494E1BA2}.Release|x64.Build.0 = Release|Any CPU
+		{FEF301F0-1436-4E05-8765-221C494E1BA2}.Release|x86.ActiveCfg = Release|Any CPU
+		{FEF301F0-1436-4E05-8765-221C494E1BA2}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -185,5 +199,6 @@ Global
 		{806A0428-3CBD-452C-A26E-4EA04EF0F396} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{C509A493-832E-400C-81DC-28DB4395B939} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{3A3E68EB-5CD8-4E1F-A349-AA2F6D993B38} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{FEF301F0-1436-4E05-8765-221C494E1BA2} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

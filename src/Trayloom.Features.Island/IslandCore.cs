@@ -369,7 +369,7 @@ internal sealed class IslandCore : IDisposable
             return false;
         }
 
-        return id != "agents" || External("agents") is not null;
+        return !IslandCatalog.IsContributed(id) || External(id) is not null;
     }
 
     public bool IsModuleEnabledKey(string id)
@@ -579,7 +579,16 @@ internal sealed class IslandCore : IDisposable
             }
 
             _lastExternalNotice = DateTime.UtcNow;
-            ShowNotice(new Notice { Event = NoticeEvents.Agents, Element = el, Glyph = G.Claude, Title = "" });
+            // AI Agents keeps its own event (its switch and page); any other "<owner>.notice" opens the owner's page when the island has one.
+            var owner = s.Id[..^".notice".Length];
+            if (owner == "agents")
+            {
+                ShowNotice(new Notice { Event = NoticeEvents.Agents, Element = el, Glyph = G.Claude, Title = "" });
+            }
+            else
+            {
+                ShowNotice(new Notice { Event = NoticeEvents.External, Element = el, Glyph = G.Bell, Title = "", Detail = s.Id + ":" + Environment.TickCount64, OpensModule = IslandCatalog.Get(owner) is not null || External(owner) is not null ? owner : null });
+            }
         }
     }
 

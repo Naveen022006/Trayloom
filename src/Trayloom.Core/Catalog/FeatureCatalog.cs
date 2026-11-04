@@ -144,6 +144,7 @@ public static class FeatureCatalog
         list.Add(Def("notch-live-equalizer", I, Loc.T("Bars follow the music"), Loc.T("Move the Dynamic Island bars with the sound your player makes."), "", Per, "C", true, "island", []));
         list.Add(Def("notch-downloads", I, Loc.T("Downloads"), Loc.T("See files arriving in a folder you choose, directly in the Dynamic Island."), "", Idle, "F", true, "island", [], legacy: "island-downloads"));
         list.Add(Def("notch-agents", I, Loc.T("AI Agents"), Loc.T("Follow plan limits, tokens, API value and the work in progress of Claude, Codex, OpenCode and GitHub Copilot in the Dynamic Island."), "", Per, "", true, "island", ["notchAgentsEnabled"]));
+        list.Add(Def("notch-github", I, Loc.T("GitHub"), Loc.T("Your unread notifications, pull requests, reviews and failing checks in the Dynamic Island. Uses the GitHub CLI you are signed in to, or a token you paste. Off until you connect."), "\uE943", Per, "", false, "island#github", [], legacy: "github"));
         list.Add(Def("notch-watch", I, Loc.T("Watch"), Loc.T("Turn any part of any window into a live activity in the Dynamic Island, with an alert when it changes, finishes or shows what you are waiting for."), "", Idle, "S,N", true, "island", []));
         list.Add(Def("notch-mascot", I, Loc.T("Companion"), Loc.T("A little friend in the Dynamic Island who says hello now and then and reacts to what happens on your PC."), "", Per, "", false, "island#companion", ["notchMascotEnabled"]));
 

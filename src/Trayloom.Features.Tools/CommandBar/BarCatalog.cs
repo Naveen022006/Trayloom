@@ -412,6 +412,16 @@ internal static class BarCatalog
 
         Tool("action.quickLauncher", "quickLauncher", Loc.T("Quick panel"), 0xE80A, "quick-launcher", "quickLauncher");
 
+        if (Has("notch-github") && Exact(ctx, "notch-github", "refresh") is { } githubRefresh)
+        {
+            rows.Add(Simple("action.githubRefresh", githubRefresh.Title, Loc.T("GitHub"), 0xE72C, githubRefresh.Invoke, 100, Loc.T("GitHub pull requests checks notifications")));
+        }
+
+        if (Has("notch-github") && Exact(ctx, "notch-github", "open-notifications") is { } githubNotifications)
+        {
+            rows.Add(Simple("action.githubNotifications", githubNotifications.Title, Loc.T("GitHub"), 0xE7ED, githubNotifications.Invoke, 100, Loc.T("GitHub notifications inbox")));
+        }
+
         rows.Add(new BarEntry
         {
             Id = "emoji.browse",

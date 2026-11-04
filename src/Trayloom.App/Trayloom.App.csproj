@@ -30,6 +30,7 @@
     <ProjectReference Include="..\Trayloom.Features.Island\Trayloom.Features.Island.csproj" />
     <ProjectReference Include="..\Trayloom.Features.Capture\Trayloom.Features.Capture.csproj" />
     <ProjectReference Include="..\Trayloom.Features.Agents\Trayloom.Features.Agents.csproj" />
+    <ProjectReference Include="..\Trayloom.Features.GitHub\Trayloom.Features.GitHub.csproj" />
     <ProjectReference Include="..\Trayloom.Features.Files\Trayloom.Features.Files.csproj" />
     <ProjectReference Include="..\Trayloom.Features.Maintenance\Trayloom.Features.Maintenance.csproj" />
   </ItemGroup>

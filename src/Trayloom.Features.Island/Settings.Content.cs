@@ -52,7 +52,7 @@ internal sealed class ContentEditor : Grid
 
     private IEnumerable<ModuleDef> Defs => _order.Select(IslandCatalog.Get).Where(m => m is not null).Select(m => m!);
 
-    private bool Available(ModuleDef m) => IslandCatalog.FeatureAvailable(_c.Runtime, m) && (m.Id != "agents" || (_core?.External("agents") is not null));
+    private bool Available(ModuleDef m) => IslandCatalog.FeatureAvailable(_c.Runtime, m) && (!IslandCatalog.IsContributed(m.Id) || (_core?.External(m.Id) is not null));
 
     private bool Shown(ModuleDef m)
     {

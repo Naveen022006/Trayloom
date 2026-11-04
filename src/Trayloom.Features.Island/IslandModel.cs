@@ -48,6 +48,7 @@ internal static class IslandCatalog
         new("downloads", Loc.T("Downloads"), G.Download, 'd', C("#0A84FF"), false, Loc.T("Downloads in progress and just finished."), ["notch-downloads"], null, true),
         new("scratchpad", Loc.T("Scratchpad"), G.Note, 'p', C("#FFD60A"), true, Loc.T("Quick notes that save by themselves."), ["scratchpad"], null, true),
         new("agents", Loc.T("AI Agents"), G.Claude, 'g', C("#D97757"), false, Loc.T("Claude Code, Codex, OpenCode and GitHub Copilot usage, limits and costs."), ["notch-agents"], K.AgentsEnabled, true),
+        new("github", Loc.T("GitHub"), G.Code, 'h', C("#8250DF"), false, Loc.T("Notifications, pull requests and checks of your GitHub account."), ["notch-github"], null, true),
         new("watch", Loc.T("Watch"), G.Eye, 'o', C("#BF5AF2"), false, Loc.T("Any part of a window, read live, with an alert when it changes."), ["notch-watch"], K.WatchEnabled, true),
     ]);
 
@@ -74,6 +75,12 @@ internal static class IslandCatalog
     public static ModuleDef? Get(string id) => Modules.FirstOrDefault(m => m.Id == id);
 
     public static ControlDef? Control(string id) => Controls.FirstOrDefault(c => c.Id == id);
+
+    /// <summary>
+    /// Sections whose page is contributed by another project (an <see cref="IIslandSection"/>): they count as installed only while that
+    /// project provides the page, not merely while their feature is installed.
+    /// </summary>
+    public static bool IsContributed(string id) => id is "agents" or "screenTime" or "github" or "wifi";
 
     /// <summary>Stored order followed by the remaining modules in default order (spec 02d 3.4).</summary>
     public static List<string> OrderedIds(IAppSettings app, IEnumerable<string>? extra = null)
@@ -199,6 +206,9 @@ internal static class NoticeEvents
     public static readonly NoticeEvent Track = new("track", K.TrackChange, 0, 3, "music");
     public static readonly NoticeEvent AppleMusic = new("appleMusic", K.AppleMusicKeepHidden, 1, 4, "music");
     public static readonly NoticeEvent Unlock = new("unlock", K.LockScreen, 2, 1.4, "controls");
+
+    /// <summary>A notice contributed by another project (a "&lt;owner&gt;.notice" strip other than AI Agents); its owner gates it with its own setting.</summary>
+    public static readonly NoticeEvent External = new("external", K.Enabled, 1, 5, "controls");
 }
 
 /// <summary>A notice shown on the closed island (wings + optional level meter, banner or companion reaction).</summary>

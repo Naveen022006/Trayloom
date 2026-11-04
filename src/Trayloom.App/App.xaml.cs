@@ -37,6 +37,7 @@ public partial class App : Application
         "Trayloom.Features.Island",
         "Trayloom.Features.Capture",
         "Trayloom.Features.Agents",
+        "Trayloom.Features.GitHub",
         "Trayloom.Features.Files",
         "Trayloom.Features.Maintenance",
     ];
