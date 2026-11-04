@@ -355,6 +355,21 @@ internal static class BarCatalog
             });
         }
 
+        if (Has("notch-wifi") && Exact(ctx, "notch-wifi", "toggle-radio") is { } wifiRadio)
+        {
+            rows.Add(Simple("action.wifiRadio", wifiRadio.Title, Loc.T("Wi-Fi"), 0xE701, wifiRadio.Invoke, 100, Loc.T("Wi-Fi wireless radio on off")));
+        }
+
+        if (Has("notch-wifi") && Exact(ctx, "notch-wifi", "disconnect") is { } wifiDisconnect)
+        {
+            rows.Add(Simple("action.wifiDisconnect", wifiDisconnect.Title, Loc.T("Wi-Fi"), 0xE701, wifiDisconnect.Invoke, 100, Loc.T("Wi-Fi network disconnect")));
+        }
+
+        if (Has("notch-wifi") && Exact(ctx, "notch-wifi", "settings") is { } wifiSettings)
+        {
+            rows.Add(Simple("action.wifiSettings", wifiSettings.Title, Loc.T("Wi-Fi"), 0xE701, wifiSettings.Invoke, 100, Loc.T("Wi-Fi network settings")));
+        }
+
         if (Has("url-cleaner") && Exact(ctx, "url-cleaner", "clean-clipboard") is { } clean)
         {
             rows.Add(Simple("action.cleanURL", Loc.T("Clean the copied link"), Loc.T("Clean URL"), 0xE71B, clean.Invoke, 100, Loc.T("Clean URL")));

@@ -322,6 +322,7 @@ internal sealed class ControlsPage : IslandPage
             "mixer" => Core.ModuleVisible("mixer"),
             "timer" => Core.ModuleVisible("timer"),
             "calendar" => Core.ModuleVisible("calendar"),
+            "wifi" => Core.ModuleVisible("wifi"),
             "speedTest" => Core.ModuleVisible("system") && rt.IsAvailable("monitor-network"),
             "brightness" => BrightnessVisible(rt),
             "keyboardLight" => false,

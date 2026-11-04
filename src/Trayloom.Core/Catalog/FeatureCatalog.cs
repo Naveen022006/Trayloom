@@ -147,6 +147,7 @@ public static class FeatureCatalog
         list.Add(Def("notch-github", I, Loc.T("GitHub"), Loc.T("Your unread notifications, pull requests, reviews and failing checks in the Dynamic Island. Uses the GitHub CLI you are signed in to, or a token you paste. Off until you connect."), "\uE943", Per, "", false, "island#github", [], legacy: "github"));
         list.Add(Def("notch-watch", I, Loc.T("Watch"), Loc.T("Turn any part of any window into a live activity in the Dynamic Island, with an alert when it changes, finishes or shows what you are waiting for."), "", Idle, "S,N", true, "island", []));
         list.Add(Def("notch-mascot", I, Loc.T("Companion"), Loc.T("A little friend in the Dynamic Island who says hello now and then and reacts to what happens on your PC."), "", Per, "", false, "island#companion", ["notchMascotEnabled"]));
+        list.Add(Def("notch-wifi", I, Loc.T("Wi-Fi"), Loc.T("See your network and its signal, turn Wi-Fi on or off and join nearby networks from the Dynamic Island."), "", Idle, "", false, "island#wifi", [], legacy: "wifi"));
 
         // ---- System monitor ------------------------------------------------------------------------------------
         list.Add(Def("monitor-cpu", Mon, Loc.T("CPU"), Loc.T("Processor usage and temperature"), "", Per, "N", true, "monitor", [], legacy: "monitor-cpu"));

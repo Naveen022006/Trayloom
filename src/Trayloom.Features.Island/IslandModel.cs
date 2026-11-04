@@ -39,6 +39,7 @@ internal static class IslandCatalog
         new("captures", Loc.T("Recent captures"), G.Camera, 's', C("#5E5CE6"), false, Loc.T("Your latest screenshots and recordings."), ["screenshot", "screen-recorder", "screen-ocr", "color-picker"], null, true),
         new("files", Loc.T("Files"), G.Files, 'f', C("#64D2FF"), false, Loc.T("A shelf for the files you drop on the island."), ["shelf"], null, true),
         new("system", Loc.T("System"), G.System, 'i', C("#30D158"), false, Loc.T("CPU, memory, disk, network and battery at a glance."), ["monitor-cpu", "monitor-gpu", "monitor-memory", "monitor-network", "monitor-disk", "monitor-power", "connected-devices"], null, false),
+        new("wifi", Loc.T("Wi-Fi"), "", 'l', C("#32ADE6"), false, Loc.T("Your network, its signal and the networks nearby."), ["notch-wifi"], null, true),
         new("tools", Loc.T("Tools"), G.Tools, 't', C("#98989D"), false, Loc.T("Tools and utilities, one click away."), ["quick-launcher"], null, true),
         new("calendar", Loc.T("Calendar"), G.Calendar, 'a', C("#FF453A"), false, Loc.T("Today's events and the month ahead."), ["notch-calendar"], K.CalendarEnabled, true),
         new("notifications", Loc.T("Notifications"), G.Bell, 'n', C("#FF9F0A"), false, Loc.T("Your PC's notifications, kept in the island."), ["notch-notifications"], K.NotificationsEnabled, true),
@@ -70,6 +71,7 @@ internal static class IslandCatalog
         new("panel", Loc.T("Open app panel"), G.Panel, false, []),
         new("commandBar", Loc.T("Command Bar"), G.Command, false, ["command-bar"]),
         new("scratchpad", Loc.T("Scratchpad"), G.Note, false, ["scratchpad"]),
+        new("wifi", Loc.T("Wi-Fi"), "", false, ["notch-wifi"]),
     ]);
 
     public static ModuleDef? Get(string id) => Modules.FirstOrDefault(m => m.Id == id);
