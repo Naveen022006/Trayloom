@@ -237,7 +237,7 @@ internal sealed class DisplayService : IDisposable
         var items = new List<DisplayItem>();
         foreach (var info in topology)
         {
-            var device = hardware.FirstOrDefault(h => !string.IsNullOrEmpty(info.GdiName) && h.Id.StartsWith(info.GdiName, StringComparison.OrdinalIgnoreCase));
+            var device = hardware.FirstOrDefault(h => DisplayMath.IsDeviceOf(h.Id, info.GdiName));
             items.Add(new DisplayItem
             {
                 Info = info,
@@ -412,8 +412,7 @@ internal sealed class DisplayService : IDisposable
                 }
             }
 
-            var baseStep = _ctx.App.Get<string>("brightnessKeyStep") switch { "half" => 5.0, "quarter" => 2.5, _ => 10.0 };
-            var step = Math.Max(1, (int)Math.Round(baseStep));
+            var step = DisplayMath.KeyStep(_ctx.App.Get<string>("brightnessKeyStep"));
             var next = Math.Clamp(target.Level + (direction * step), 0, 100);
             SetLevel(target, next);
         }

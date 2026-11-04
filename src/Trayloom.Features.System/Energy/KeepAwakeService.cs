@@ -862,6 +862,13 @@ internal sealed class KeepAwakeService : IKeepAwakeService, IDisposable
         {
             RestoreFromJournal();
         }
+
+        // A crash while the lid was closed with lid dimming on leaves the panel at 0 %, and no lid watch exists yet to undo it
+        // on opening. Nothing is dimmed at start, so any saved level is stale and is put back now.
+        if (_ctx.App.Get<int>("dimmedDisplaySavedBrightness", 0) > 0)
+        {
+            RestoreBrightnessAfterLid(wait: false);
+        }
     }
 
     private void RegisterLidWatch()

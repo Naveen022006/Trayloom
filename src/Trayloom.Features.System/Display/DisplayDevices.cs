@@ -217,9 +217,9 @@ internal static class DisplayNative
             var friendly = string.IsNullOrWhiteSpace(target.Name)
                 ? (isInternal ? Loc.T("Built-in display") : device.TrimStart('\\', '.'))
                 : target.Name;
-            if (config.Count == 0 && internalBrightness.Count > 0 && !internalAssigned)
+            if (DisplayMath.AssumeInternalWithoutTopology(config.Count, monitors.Count, internalBrightness.Count, internalAssigned))
             {
-                // Display topology unavailable: assume the first monitor is the laptop panel.
+                // Display topology unavailable: a lone monitor is the laptop panel; with several, guessing could credit WMI writes to an external screen.
                 isInternal = true;
             }
 

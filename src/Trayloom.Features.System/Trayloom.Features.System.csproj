@@ -9,4 +9,8 @@
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- the console harness under tests/ exercises the pure decisions of the display feature -->
+    <InternalsVisibleTo Include="Trayloom.System.Harness" />
+  </ItemGroup>
 </Project>
