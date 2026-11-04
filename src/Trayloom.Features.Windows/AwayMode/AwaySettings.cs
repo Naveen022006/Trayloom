@@ -24,7 +24,7 @@ public sealed class AwaySettingsSection : ISettingsSection
 
     public string? Title => AwayStrings.Title;
 
-    public IReadOnlyList<string> Keywords => ["privacy", "idle", "face", "camera", "minimize", "lock", "presence"];
+    public IReadOnlyList<string> Keywords => ["privacy", "idle", "face", "camera", "minimize", "lock", "presence", "close", "browser", "tabs", "reopen"];
 
     public int Order => 90;
 
@@ -37,6 +37,11 @@ public sealed class AwaySettingsSection : ISettingsSection
         var faceOn = app.Get<bool>(AwayKeys.Face);
         var faceSupported = AwayFaceWatcher.IsSupported;
         var card = new SettingsCard(AwayStrings.Title);
+
+        if (controller is { RecoveryCount: > 0 } recovering && !controller.IsAway)
+        {
+            card.Add(RecoveryCard(recovering, c.RequestRebuild));
+        }
 
         card.Add(Switch("", AwayStrings.Title, AwayStrings.Description, AwayKeys.Enabled, "AwayMode.Enabled", app));
 
@@ -99,6 +104,8 @@ public sealed class AwaySettingsSection : ISettingsSection
             }
         }
 
+        AddCloseBlock(card, c, controller);
+
         card.AddDivider();
         card.Add(UiKit.Text(AwayStrings.StayHereWhen, 12, FontWeights.SemiBold));
         card.Add(Inset(Switch(null, AwayStrings.SkipMedia, null, AwayKeys.SkipMedia, "AwayMode.SkipMedia", app)));
@@ -137,17 +144,204 @@ public sealed class AwaySettingsSection : ISettingsSection
         AutomationProperties.SetAutomationId(now, "AwayMode.Now");
         AutomationProperties.SetName(now, now.Content as string ?? AwayStrings.GoAwayNow);
         card.Add(now);
-        card.AddCaption(faceOn && !lockOn ? AwayStrings.NowCaptionFace : AwayStrings.NowCaption);
+        var closing = app.Get<bool>(AwayKeys.CloseApps) && app.Get<int>(AwayKeys.CloseAfterMinutes) == 0 && !(controller?.Elevated ?? false);
+        var lookingNow = faceOn && !lockOn;
+        card.AddCaption(closing
+            ? (lookingNow ? AwayStrings.NowCaptionCloseFace : AwayStrings.NowCaptionClose)
+            : (lookingNow ? AwayStrings.NowCaptionFace : AwayStrings.NowCaption));
 
-        Wire(card, controller, status, now);
+        Wire(card, controller, status, now, c.RequestRebuild);
         return card;
     }
 
-    /// <summary>The card reports "in use" to the idle check while it is loaded in an active window (the person is configuring).</summary>
-    private static void Wire(SettingsCard card, AwayController? controller, TextBlock status, Button now)
+    /// <summary>The "Close apps while I’m away" switch, the delay, the list of apps and what happened last time (spec 07 section 9.1).</summary>
+    private static void AddCloseBlock(SettingsCard card, ISettingsContext c, AwayController? controller)
     {
+        var app = c.App;
+        var elevated = controller?.Elevated ?? AppIdentity.IsAdmin();
+        var closeOn = app.Get<bool>(AwayKeys.CloseApps) && !elevated;
+
+        card.AddDivider();
+        var toggle = new MacSwitch(closeOn, SwitchSize.Regular, on =>
+        {
+            if (on)
+            {
+                SeedCloseList(app);
+            }
+
+            app.Set(AwayKeys.CloseApps, on);
+            c.RequestRebuild();
+        });
+        AutomationProperties.SetAutomationId(toggle, "AwayMode.CloseApps");
+        AutomationProperties.SetName(toggle, AwayStrings.CloseApps);
+        var row = new SettingsRow("", AwayStrings.CloseApps, elevated ? AwayStrings.CloseAppsElevated : AwayStrings.CloseAppsCaption, toggle)
+        {
+            IsEnabled = !elevated,
+        };
+        card.Add(row);
+        if (!closeOn)
+        {
+            AddLastTime(card, controller);
+            return;
+        }
+
+        var after = new PickerRow<int>(null, AwayStrings.CloseThem, null,
+        [
+            (0, AwayStrings.CloseNow), (5, AwayStrings.CloseAfter5), (15, AwayStrings.CloseAfter15),
+            (30, AwayStrings.CloseAfter30), (60, AwayStrings.CloseAfter60),
+        ], app.Get<int>(AwayKeys.CloseAfterMinutes), value =>
+        {
+            app.Set(AwayKeys.CloseAfterMinutes, value);
+            c.RequestRebuild();
+        }, 230);
+        Identify(after, "AwayMode.CloseAfter", AwayStrings.CloseThem);
+        after.Margin = new Thickness(SettingsRow.TextInset, 0, 0, 0);
+        card.Add(after);
+
+        var list = new AppBundleList(AwayStrings.CloseListTitle, AwayStrings.CloseListCaption,
+            () => [.. app.Get<List<string>>(AwayKeys.CloseList)],
+            items => app.Set(AwayKeys.CloseList, items),
+            AwayStrings.CloseListAdd,
+            accessory: Accessory);
+        var landmark = new Landmark { Content = list, Focusable = false, IsTabStop = false, Margin = new Thickness(SettingsRow.TextInset, 8, 0, 0) };
+        AutomationProperties.SetAutomationId(landmark, "AwayMode.CloseList");
+        AutomationProperties.SetName(landmark, AwayStrings.CloseListTitle);
+        card.Add(landmark);
+
+        var note = UiKit.Text(AwayStrings.CloseNote, 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+        note.Margin = new Thickness(SettingsRow.TextInset, 0, 0, 0);
+        card.Add(note);
+        AddLastTime(card, controller);
+    }
+
+    /// <summary>What will happen to a listed app, as a small caption at the end of its row.</summary>
+    private static UIElement? Accessory(string path)
+    {
+        var kind = AwayApps.CaptionKind(path);
+        var text = kind switch
+        {
+            "browser" => AwayStrings.AccessoryBrowser,
+            "browser-min" => AwayStrings.AccessoryBrowserMin,
+            "never" => AwayStrings.AccessoryNever,
+            _ => AwayStrings.AccessoryApp,
+        };
+        var block = UiKit.Text(text, 11, FontWeights.Normal, kind == "never" ? ThemeKeys.Orange : ThemeKeys.TextSecondary, wrap: true);
+        block.MaxWidth = 190;
+        block.TextAlignment = TextAlignment.Right;
+        return block;
+    }
+
+    /// <summary>The first time the switch is turned on, the installed browsers Trayloom can reopen with their tabs are added once.</summary>
+    private static void SeedCloseList(IAppSettings app)
+    {
+        if (app.Get<bool>(AwayKeys.CloseListSeeded))
+        {
+            return;
+        }
+
+        var list = app.Get<List<string>>(AwayKeys.CloseList);
+        foreach (var browser in AwayApps.InstalledClosableBrowsers())
+        {
+            if (!list.Contains(browser))
+            {
+                list.Add(browser);
+            }
+        }
+
+        app.Set(AwayKeys.CloseList, list);
+        app.Set(AwayKeys.CloseListSeeded, true);
+    }
+
+    /// <summary>"Last time you were away": apps that stayed open or did not open again, with the reason.</summary>
+    private static void AddLastTime(SettingsCard card, AwayController? controller)
+    {
+        if (controller is null || controller.IsAway || controller.LastResult.Count == 0)
+        {
+            return;
+        }
+
+        var stack = new StackPanel { Margin = new Thickness(SettingsRow.TextInset, 8, 0, 0) };
+        var title = UiKit.Text(AwayStrings.LastTime, 12, FontWeights.SemiBold);
+        stack.Children.Add(title);
+        foreach (var (name, reason) in controller.LastResult)
+        {
+            var line = UiKit.Text(AwayStrings.LastLine(name, AwayStrings.Reason(reason)), 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+            line.Margin = new Thickness(0, 3, 0, 0);
+            stack.Children.Add(line);
+        }
+
+        var landmark = new Landmark { Content = stack, Focusable = false, IsTabStop = false };
+        AutomationProperties.SetAutomationId(landmark, "AwayMode.LastTime");
+        AutomationProperties.SetName(landmark, AwayStrings.LastTime);
+        card.Add(landmark);
+    }
+
+    /// <summary>The card that offers apps closed by an earlier run (or that did not open at the last return): open them or forget them.</summary>
+    private static FrameworkElement RecoveryCard(AwayController controller, Action rebuild)
+    {
+        var stack = new StackPanel();
+        var head = new StackPanel { Orientation = Orientation.Horizontal };
+        head.Children.Add(UiKit.Icon("", 14, ThemeKeys.Orange));
+        var title = UiKit.Text(AwayStrings.RecoveryTitle, 12.5, FontWeights.SemiBold);
+        title.Margin = new Thickness(8, 0, 0, 0);
+        head.Children.Add(title);
+        stack.Children.Add(head);
+
+        var count = controller.RecoveryCount;
+        var text = controller.RecoveryFailedAtReturn
+            ? AwayStrings.RecoveryFailed(count)
+            : AwayStrings.RecoveryText(count, controller.RecoverySince.ToString("g"));
+        var body = UiKit.Text(text, 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+        body.Margin = new Thickness(0, 6, 0, 0);
+        stack.Children.Add(body);
+        foreach (var name in controller.RecoveryNames)
+        {
+            var line = UiKit.Text(name, 11.5, FontWeights.Normal, ThemeKeys.TextPrimary);
+            line.Margin = new Thickness(0, 3, 0, 0);
+            stack.Children.Add(line);
+        }
+
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 0) };
+        var reopen = UiKit.Button(AwayStrings.OpenThemAgain, ButtonKind.Prominent, 12, onClick: () =>
+        {
+            controller.ReopenRecovery();
+            rebuild();
+        });
+        AutomationProperties.SetAutomationId(reopen, "AwayMode.Reopen");
+        AutomationProperties.SetName(reopen, AwayStrings.OpenThemAgain);
+        var forget = UiKit.Button(AwayStrings.ForgetThem, ButtonKind.Bordered, 12, onClick: () =>
+        {
+            controller.ForgetRecovery();
+            rebuild();
+        });
+        forget.Margin = new Thickness(8, 0, 0, 0);
+        AutomationProperties.SetAutomationId(forget, "AwayMode.Forget");
+        AutomationProperties.SetName(forget, AwayStrings.ForgetThem);
+        buttons.Children.Add(reopen);
+        buttons.Children.Add(forget);
+        stack.Children.Add(buttons);
+
+        var box = new Border { BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8), Padding = new Thickness(12), Margin = new Thickness(0, 0, 0, 12), Child = stack };
+        box.Themed(Border.BorderBrushProperty, ThemeKeys.Orange);
+        return box;
+    }
+
+    /// <summary>The card reports "in use" to the idle check while it is loaded in an active window (the person is configuring).</summary>
+    private static void Wire(SettingsCard card, AwayController? controller, TextBlock status, Button now, Action rebuild)
+    {
+        // The recovery card and the "Last time" lines are part of the layout: when they change, the card is built again.
+        var shown = (controller?.RecoveryCount ?? 0, controller?.LastResult.Count ?? 0, controller?.IsAway ?? false);
+
         void Refresh()
         {
+            var current = (controller?.RecoveryCount ?? 0, controller?.LastResult.Count ?? 0, controller?.IsAway ?? false);
+            if (current != shown)
+            {
+                shown = current;
+                rebuild();
+                return;
+            }
+
             status.Text = StatusText(controller);
             var label = controller?.IsAway == true ? AwayStrings.RestoreWindows : AwayStrings.GoAwayNow;
             now.Content = label;
@@ -188,9 +382,27 @@ public sealed class AwaySettingsSection : ISettingsSection
             return AwayStrings.Here;
         }
 
+        if (controller.ReopeningCount > 0)
+        {
+            return AwayStrings.Opening(controller.ReopeningCount);
+        }
+
         if (controller.IsAway)
         {
-            return AwayStrings.AwaySince(controller.Since.ToString("t"), controller.WindowCount);
+            var time = controller.Since.ToString("t");
+            if (controller.CloseJobState == AwayCloseJobState.Closing)
+            {
+                return AwayStrings.Closing;
+            }
+
+            if (controller.ClosedAppCount > 0)
+            {
+                return AwayStrings.AwaySinceClosed(time, controller.WindowCount, controller.ClosedAppCount);
+            }
+
+            return controller.CloseJobState == AwayCloseJobState.Waiting
+                ? AwayStrings.AwaySinceWaiting(time, controller.WindowCount, controller.CloseAt.ToString("t"))
+                : AwayStrings.AwaySince(time, controller.WindowCount);
         }
 
         return controller.Suppression == AwaySuppression.None ? AwayStrings.Here : AwayStrings.Waiting(AwayPresence.Describe(controller.Suppression));

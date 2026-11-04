@@ -9,7 +9,7 @@ namespace Trayloom.Features.WindowTools.AwayMode;
 internal static class AwayStrings
 {
     public static string Title => Loc.T("Away mode");
-    public static string Description => Loc.T("Minimizes your windows when you leave the PC and brings them back, in the same order, when you return. Nothing is closed, so nothing you were doing is lost.");
+    public static string Description => Loc.T("Minimizes your windows when you leave the PC and brings them back, in the same order, when you return. Nothing is closed unless you choose apps to close below.");
     public static string GoAwayNow => Loc.T("Go away now");
     public static string RestoreWindows => Loc.T("Restore windows");
     public static string Off => Loc.T("Off");
@@ -62,12 +62,80 @@ internal static class AwayStrings
     public static string NowCaption => Loc.T("Your windows are minimized at once. Move the mouse to bring them back.");
     public static string NowCaptionFace => Loc.T("Your windows are minimized at once. Look at the camera to bring them back.");
 
+    public static string NowCaptionClose => Loc.T("Your windows are minimized and the chosen apps are closed at once. Move the mouse to bring everything back.");
+    public static string NowCaptionCloseFace => Loc.T("Your windows are minimized and the chosen apps are closed at once. Look at the camera to bring everything back.");
+
+    // Closing apps (spec 07 section 9).
+    public static string CloseApps => Loc.T("Close apps while I’m away");
+    public static string CloseAppsCaption => Loc.T("Chosen apps are closed when you leave and opened again when you’re back. Chrome and Edge come back with the same windows and tabs. An app that asks to save something is left open and minimized, so nothing is lost.");
+    public static string CloseAppsElevated => Loc.T("Not available while Trayloom runs as administrator: the apps would open again as administrator.");
+    public static string CloseThem => Loc.T("Close them");
+    public static string CloseNow => Loc.T("When I leave");
+    public static string CloseAfter5 => Loc.T("After 5 minutes away");
+    public static string CloseAfter15 => Loc.T("After 15 minutes away");
+    public static string CloseAfter30 => Loc.T("After 30 minutes away");
+    public static string CloseAfter60 => Loc.T("After 1 hour away");
+    public static string CloseListTitle => Loc.T("Apps to close");
+    public static string CloseListAdd => Loc.T("Add an app…");
+    public static string CloseListCaption => Loc.T("Only these apps are closed. The rest are minimized as usual.");
+    public static string AccessoryBrowser => Loc.T("Windows and tabs come back");
+    public static string AccessoryBrowserMin => Loc.T("Only minimized: Trayloom can’t reopen its tabs yet");
+    public static string AccessoryApp => Loc.T("Opens again when you’re back");
+    public static string AccessoryNever => Loc.T("Can’t be closed by Trayloom");
+    public static string CloseNote => Loc.T("Private and incognito windows can’t be reopened, so a browser with one open, or with a download running, is only minimized. Browsers close the way they do when Windows restarts for an update. A page that asks “Leave site?” may not get to ask.");
+    public static string LastTime => Loc.T("Last time you were away");
+    public static string LastLine(string app, string reason) => Loc.F("{0}: {1}", app, reason);
+
+    public static string Reason(AwayKeepReason reason) => reason switch
+    {
+        AwayKeepReason.Private => Loc.T("a private window was open, so it was only minimized"),
+        AwayKeepReason.Download => Loc.T("a download was running, so it was only minimized"),
+        AwayKeepReason.OtherDesktop => Loc.T("it has windows on another desktop, so it was only minimized"),
+        AwayKeepReason.Unsupported => Loc.T("Trayloom can’t reopen its tabs yet, so it was only minimized"),
+        AwayKeepReason.Prompt => Loc.T("it asked to save something, so it was left open"),
+        AwayKeepReason.Timeout => Loc.T("it didn’t close in time, so it was left open"),
+        AwayKeepReason.NotResponding => Loc.T("it wasn’t responding, so it was left open"),
+        AwayKeepReason.Refused => Loc.T("it refused to close, so it was left open"),
+        AwayKeepReason.Elevated => Loc.T("it runs as administrator, so Trayloom can’t close it"),
+        AwayKeepReason.OtherUser => Loc.T("it runs as another user, so Trayloom can’t close it"),
+        AwayKeepReason.Cancelled => Loc.T("you came back before it closed"),
+        AwayKeepReason.Limit => Loc.T("too many apps to close at once, so it was only minimized"),
+        AwayKeepReason.Failed => Loc.T("it didn’t open again"),
+        AwayKeepReason.Partial => Loc.T("it opened again with fewer windows"),
+        _ => string.Empty,
+    };
+
+    public static string AwaySinceClosed(string time, int windows, int apps) => Loc.F("Away since {0} · {1} windows · {2} apps closed", time, windows, apps);
+    public static string AwaySinceWaiting(string time, int windows, string closeTime) => Loc.F("Away since {0} · {1} windows · apps close at {2}", time, windows, closeTime);
+    public static string Closing => Loc.T("Closing apps…");
+    public static string Opening(int apps) => Loc.F("Opening {0} apps…", apps);
+
+    // The tray card.
+    public static string PanelAndOpens(int apps) => Loc.F("And opens {0} closed apps again", apps);
+    public static string PanelOpenClosed(int apps) => Loc.F("Open {0} closed apps again", apps);
+    public static string PanelClosedWhileAway => Loc.T("Closed while you were away");
+    public static string ReopenAction => Loc.T("Open closed apps again");
+
+    // The recovery card (spec 07 section 9.4).
+    public static string RecoveryTitle => Loc.T("Apps closed while you were away");
+    public static string RecoveryText(int apps, string time) => Loc.F("Trayloom closed {0} apps when you left at {1}, and they were not opened again because Trayloom or Windows stopped first.", apps, time);
+    public static string RecoveryFailed(int apps) => Loc.F("{0} apps did not open again when you came back.", apps);
+    public static string OpenThemAgain => Loc.T("Open them again");
+    public static string ForgetThem => Loc.T("Forget them");
+
+    // Notifications (counts only: the notifier logs them).
+    public static string NotificationRecovery(int apps) => Loc.F("{0} apps were closed while you were away. Open them again from the tray icon or from Settings.", apps);
+    public static string NotificationFailed(int apps) => Loc.F("{0} apps did not open again. Settings > Away mode can try again.", apps);
+
     // The cover.
     public static string CoverAway => Loc.T("Away");
     public static string CoverSince(string time) => Loc.F("Since {0}", time);
     public static string CoverLooking => Loc.T("Looking for you with the camera");
     public static string CoverNotRecognised => Loc.T("Not recognised? Press I’m back to bring your windows back.");
     public static string ImBack => Loc.T("I’m back");
+    public static string CoverClosing => Loc.T("Closing your apps…");
+    public static string CoverClosed(int apps) => Loc.F("{0} apps closed. They open again when you’re back.", apps);
+    public static string CoverKept(int apps) => Loc.F("{0} apps were only minimized.", apps);
 }
 
 /// <summary>Fire-and-forget that cannot end in an unobserved exception: whatever the work throws is logged.</summary>

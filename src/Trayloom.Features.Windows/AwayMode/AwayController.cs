@@ -36,6 +36,7 @@ internal sealed class AwayController
     private readonly IAppSettings _app;
     private readonly ILog _log;
     private readonly AwaySession _session;
+    private readonly AwayClosedStore _store;
     private readonly AwayPresence _presence;
     private readonly AwayFaceWatcher _watcher;
     private readonly string _directory;
@@ -64,6 +65,15 @@ internal sealed class AwayController
     private long _faceStarted;
     private uint _consumedInput;
     private AwaySuppression _suppression;
+    private AwayCloseJob? _closeJob;
+    private AwayReopenJob? _reopenJob;
+    private ClosedAppsFile? _recovery;
+    private bool _recoveryFailedAtReturn;
+    private bool _closeStarted;
+    private bool _closeCoverShown;
+    private bool _sessionEnding;
+    private List<(string Name, AwayKeepReason Reason)> _lastResult = [];
+    private readonly bool _elevated = AppIdentity.IsAdmin();
 
     public AwayController(IFeatureContext ctx, string directory)
     {
@@ -72,6 +82,7 @@ internal sealed class AwayController
         _log = ctx.Log;
         _directory = directory;
         _session = new AwaySession(directory, ctx.Log);
+        _store = new AwayClosedStore(directory, ctx.Log);
         _presence = new AwayPresence(ctx);
         _watcher = new AwayFaceWatcher(ctx.Log);
         _timer = new DispatcherTimer(DispatcherPriority.Background, ctx.Ui) { Interval = TimeSpan.FromMilliseconds(PresentTickMs) };
@@ -94,6 +105,46 @@ internal sealed class AwayController
 
     public AwaySuppression Suppression => _suppression;
 
+    /// <summary>True when Trayloom runs as administrator: closing is unavailable then (the apps would open again elevated).</summary>
+    public bool Elevated => _elevated;
+
+    /// <summary>Apps closed in the current away period (and not yet opened again).</summary>
+    public int ClosedAppCount => _closeJob?.ClosedCount ?? 0;
+
+    public AwayCloseJobState CloseJobState
+    {
+        get
+        {
+            if (_closeJob is { } job)
+            {
+                return job.State;
+            }
+
+            return State == AwayState.Away && !_closeStarted && CloseWanted ? AwayCloseJobState.Waiting : AwayCloseJobState.None;
+        }
+    }
+
+    /// <summary>Local time closing starts when it waits for a delay.</summary>
+    public DateTime CloseAt => _awaySince.AddMinutes(_app.Get<int>(AwayKeys.CloseAfterMinutes));
+
+    /// <summary>Apps being opened again right now (0 when none).</summary>
+    public int ReopeningCount => _reopenJob is { Running: true } job ? job.Count : 0;
+
+    /// <summary>Apps waiting to be opened again after a restart, a crash or a failed return.</summary>
+    public int RecoveryCount => _recovery?.Apps.Count ?? 0;
+
+    /// <summary>True when the apps in <see cref="RecoveryCount"/> did not open when the person came back (not a restart).</summary>
+    public bool RecoveryFailedAtReturn => _recoveryFailedAtReturn;
+
+    public DateTime RecoverySince => _recovery?.Since.ToLocalTime() ?? default;
+
+    public IReadOnlyList<string> RecoveryNames => _recovery?.Apps.Select(a => a.Name).Distinct().OrderBy(n => n, StringComparer.CurrentCultureIgnoreCase).ToList() ?? [];
+
+    /// <summary>Apps that stayed open or did not open again after the last return, with the reason (names only, in memory).</summary>
+    public IReadOnlyList<(string Name, AwayKeepReason Reason)> LastResult => _lastResult;
+
+    private bool CloseWanted => !_elevated && _app.Get<bool>(AwayKeys.CloseApps) && _app.Get<List<string>>(AwayKeys.CloseList).Count > 0;
+
     /// <summary>True from the first minimize until the restore finished.</summary>
     public bool IsAway => State is AwayState.GoingAway or AwayState.Away;
 
@@ -105,6 +156,7 @@ internal sealed class AwayController
         _app.Changed += OnSettingChanged;
         SystemEvents.SessionSwitch += OnSession;
         SystemEvents.PowerModeChanged += OnPower;
+        SystemEvents.SessionEnding += OnSessionEnding;
         _watcher.Sample += positive => _ctx.Ui.BeginInvoke(() => Safe(() => OnSample(positive)));
         _watcher.Failed += reason => _ctx.Ui.BeginInvoke(() => Safe(() => OnCameraFailed(reason)));
         AwayGuard.FireAndLog(_presence.InitializeAsync, _log, "media sessions");
@@ -120,6 +172,7 @@ internal sealed class AwayController
         _app.Changed -= OnSettingChanged;
         SystemEvents.SessionSwitch -= OnSession;
         SystemEvents.PowerModeChanged -= OnPower;
+        SystemEvents.SessionEnding -= OnSessionEnding;
 
         try
         {
@@ -131,6 +184,10 @@ internal sealed class AwayController
             if (State == AwayState.Away)
             {
                 Return("stop");
+            }
+            else
+            {
+                _closeJob?.Cancel();
             }
 
             _restoreThread?.Join(3000);
@@ -157,7 +214,7 @@ internal sealed class AwayController
             return false;
         }
 
-        var only = AwayWindows.DevOnlyProcesses();
+        var only = AwayDevFilter.Load();
         var ignored = _app.Get<List<string>>("awayModeIgnoredApps").Select(p => p.ToLowerInvariant()).ToHashSet();
         _records = AwayWindows.Snapshot(ignored, only, out _active);
         _trigger = trigger;
@@ -169,6 +226,9 @@ internal sealed class AwayController
         _consumedInput = AwayNative.LastInputTick();
         _returnPending = false;
         _hits = 0;
+        _closeJob = null;
+        _closeStarted = false;
+        _closeCoverShown = false;
         State = AwayState.GoingAway;
         _faceWanted = false;
 
@@ -209,7 +269,7 @@ internal sealed class AwayController
         var skipped = before - _records.Count;
         WriteSession();
 
-        var devRestricted = AwayWindows.DevOnlyProcesses() is not null;
+        var devRestricted = AwayDevFilter.Load() is not null;
         var lockPc = _app.Get<bool>("awayModeLockPc") && !devRestricted;
         var cover = !lockPc && _app.Get<bool>("awayModeCover");
         var face = !lockPc && _app.Get<bool>("awayModeFace");
@@ -326,6 +386,9 @@ internal sealed class AwayController
             EndQuickLook();
         }
 
+        MaybeStartClose(now, force: false);
+        ShowCloseOnCover();
+
         if (now - _lastSweep >= SweepMs)
         {
             _lastSweep = now;
@@ -379,7 +442,7 @@ internal sealed class AwayController
 
     private void Sweep()
     {
-        var only = AwayWindows.DevOnlyProcesses();
+        var only = AwayDevFilter.Load();
         var ignored = _app.Get<List<string>>("awayModeIgnoredApps").Select(p => p.ToLowerInvariant()).ToHashSet();
         var added = AwayWindows.Sweep(_records, ignored, only);
         if (added > 0)
@@ -513,6 +576,7 @@ internal sealed class AwayController
         var records = _records.ToList();
         var active = _active;
         var since = _awayTick;
+        _closeJob?.Cancel();
         var worker = new Thread(() => RestoreWorker(records, active, trigger, since)) { IsBackground = true, Name = "Away restore" };
         _restoreThread = worker;
         Changed?.Invoke();
@@ -524,15 +588,68 @@ internal sealed class AwayController
         try
         {
             _watcher.Stop(trigger is "stop" ? "stop" : "return");
-            var result = AwayWindows.Restore(records, active, focusActive: true);
+
+            // Apps that were asked to close get a few seconds to answer before the return goes on (spec 07 section 5.3).
+            var job = _closeJob;
+            job?.WaitFinished(3500);
+            var closed = job?.ClosedApps() ?? [];
+            var late = job?.LateCandidates() ?? [];
+            var all = job?.AllApps() ?? [];
+            var keepForNextStart = _sessionEnding && closed.Count > 0;
+            AwayReopenJob? reopen = null;
+            if (keepForNextStart)
+            {
+                _log.Info($"[away] session ending: {closed.Count} closed apps kept for the next start");
+            }
+            else if (job is not null && closed.Count + late.Count > 0)
+            {
+                var file = new ClosedAppsFile
+                {
+                    OwnerPid = Environment.ProcessId,
+                    OwnerStart = AwaySession.CurrentProcessStart(),
+                    Since = _awaySince.ToUniversalTime(),
+                    ClosedAt = DateTime.UtcNow,
+                    Apps = all,
+                };
+                reopen = new AwayReopenJob(_log, _store, file, closed, late);
+                _reopenJob = reopen;
+                _ctx.Ui.BeginInvoke(() => Safe(() => Changed?.Invoke()));
+                reopen.Start();
+            }
+            else if (job is not null && all.Count > 0)
+            {
+                // Only apps that stayed open: nothing to open again, so nothing to remember.
+                _store.Delete();
+            }
+
+            var immediate = reopen is { HasImmediate: true };
+            var result = AwayWindows.Restore(records, active, focusActive: !immediate);
             if (result.Verified || !_stopping)
             {
                 _session.Delete();
             }
 
+            // With apps to open again the order and the focus are decided after they are back, so the verdict is read then.
+            AwayReopenSummary? summary = null;
+            var zOk = result.ZOrderOk;
+            var focusOk = result.FocusOk;
+            if (reopen is not null && !immediate)
+            {
+                // Only apps that may still be on their way out: they are opened if they exit within a few seconds, without holding up the return.
+                AwayGuard.FireAndLog(() => Task.Run(() => reopen.Finish(null, 0)), _log, "late reopen");
+            }
+            else if (reopen is not null)
+            {
+                summary = reopen.Finish(records, active, out var stack);
+                var focusTarget = reopen.Replaced.TryGetValue(active, out var moved) ? moved : active;
+                (zOk, focusOk) = AwayWindows.Check(stack, focusTarget);
+            }
+
             var seconds = (Environment.TickCount64 - awayStart) / 1000;
             var after = seconds >= 60 ? $"{seconds / 60} min" : $"{seconds} s";
-            _log.Info($"[away] back ({trigger}) after {after}: restored {result.Restored}/{result.Total}, late {result.Late}, closed {result.Closed}, z-order {(result.ZOrderOk ? "ok" : "differs")}, focus {(result.FocusOk ? "ok" : "not given")}");
+            _log.Info($"[away] back ({trigger}) after {after}: restored {result.Restored}/{result.Total}, late {result.Late}, closed {result.Closed}, z-order {(zOk ? "ok" : "differs")}, focus {(focusOk ? "ok" : "not given")}");
+
+            RememberResult(all, reopen, summary);
         }
         catch (Exception ex)
         {
@@ -546,9 +663,207 @@ internal sealed class AwayController
                 _records = [];
                 _presentSince = Environment.TickCount64;
                 _timer.Interval = TimeSpan.FromMilliseconds(PresentTickMs);
+                _reopenJob = null;
                 Changed?.Invoke();
             }));
         }
+    }
+
+    /// <summary>Keeps the "Last time you were away" lines and, for apps that did not open again, the recovery card and a notification.</summary>
+    private void RememberResult(List<ClosedApp> all, AwayReopenJob? reopen, AwayReopenSummary? summary)
+    {
+        var lines = new List<(string, AwayKeepReason)>();
+        foreach (var app in all)
+        {
+            if (app.State == AwayAppState.Kept)
+            {
+                lines.Add((app.Name, app.Reason));
+            }
+            else if (app.State == AwayAppState.Failed)
+            {
+                lines.Add((app.Name, AwayKeepReason.Failed));
+            }
+            else if (app.Reason == AwayKeepReason.Partial)
+            {
+                lines.Add((app.Name, AwayKeepReason.Partial));
+            }
+        }
+
+        _lastResult = lines;
+        if (summary is { Failed: > 0 } && reopen is not null)
+        {
+            var failed = all.Where(a => a.State == AwayAppState.Failed).ToList();
+            _recovery = new ClosedAppsFile
+            {
+                OwnerPid = Environment.ProcessId,
+                OwnerStart = AwaySession.CurrentProcessStart(),
+                Since = _awaySince.ToUniversalTime(),
+                ClosedAt = DateTime.UtcNow,
+                Apps = failed,
+            };
+            _recoveryFailedAtReturn = true;
+            _ctx.Notifier.Show(AwayStrings.Title, AwayStrings.NotificationFailed(failed.Count), NotificationLevel.Warning);
+        }
+    }
+
+    // ------------------------------------------------------------------------------------------ closing apps
+
+    /// <summary>Starts the close job once per away period, when the apps on the list are due (spec 07 section 5.1).</summary>
+    private void MaybeStartClose(long now, bool force)
+    {
+        if (_closeStarted || !_app.Get<bool>(AwayKeys.CloseApps) || _app.Get<List<string>>(AwayKeys.CloseList).Count == 0)
+        {
+            return;
+        }
+
+        var delay = _app.Get<int>(AwayKeys.CloseAfterMinutes) * 60_000L;
+        if (!force && now - _awayTick < delay)
+        {
+            return;
+        }
+
+        _closeStarted = true;
+        if (_elevated)
+        {
+            _log.Info("[away] close: skipped (elevated Trayloom)");
+            return;
+        }
+
+        if (System.Windows.Forms.SystemInformation.TerminalServerSession)
+        {
+            _log.Info("[away] close: skipped (remote session)");
+            return;
+        }
+
+        var filter = AwayDevFilter.Load();
+        if (_simulated && filter is null)
+        {
+            _log.Info("[away] close: skipped (dev filter)");
+            return;
+        }
+
+        var ignored = _app.Get<List<string>>(AwayKeys.IgnoredApps);
+        var job = new AwayCloseJob(_log, _store, _app.Get<List<string>>(AwayKeys.CloseList), ignored, filter, _records, _active, _awaySince);
+        job.Changed += () => _ctx.Ui.BeginInvoke(() => Safe(() =>
+        {
+            ShowCloseOnCover();
+            Changed?.Invoke();
+        }));
+        _closeJob = job;
+        job.Start();
+        foreach (var cover in _covers)
+        {
+            cover.SetCloseStatus(AwayStrings.CoverClosing, null);
+        }
+
+        Changed?.Invoke();
+    }
+
+    /// <summary>Developer action <c>dev-close-now</c>: starts the close job now, whatever the delay (needs the dev filter).</summary>
+    public void DevCloseNow()
+    {
+        if (State != AwayState.Away || AwayDevFilter.Load() is null)
+        {
+            _log.Info("[away] dev-close-now ignored: not away, or no away-mode-only.txt");
+            return;
+        }
+
+        MaybeStartClose(Environment.TickCount64, force: true);
+    }
+
+    /// <summary>Shows how many apps were closed on the cover once the pass is over.</summary>
+    private void ShowCloseOnCover()
+    {
+        if (_closeJob is not { State: AwayCloseJobState.Done } job || _closeCoverShown)
+        {
+            return;
+        }
+
+        _closeCoverShown = true;
+        var closed = job.ClosedCount;
+        var kept = job.KeptCount;
+        foreach (var cover in _covers)
+        {
+            cover.SetCloseStatus(closed > 0 ? AwayStrings.CoverClosed(closed) : null, kept > 0 ? AwayStrings.CoverKept(kept) : null);
+        }
+    }
+
+    private void OnSessionEnding(object sender, SessionEndingEventArgs e) => _sessionEnding = true;
+
+    /// <summary>Developer action <c>simulate-session-end</c>: behaves as if the session were ending, without stopping the feature.</summary>
+    public void SimulateSessionEnd()
+    {
+        if (State != AwayState.Away)
+        {
+            _log.Info("[away] simulate-session-end ignored: not away");
+            return;
+        }
+
+        _sessionEnding = true;
+        Return("simulated");
+    }
+
+    // ------------------------------------------------------------------------------------------ recovery
+
+    /// <summary>Hands the apps an earlier run left closed to the cards (never opens them by itself).</summary>
+    public void OfferRecovery(ClosedAppsFile file)
+    {
+        _recovery = file;
+        _recoveryFailedAtReturn = false;
+        Changed?.Invoke();
+    }
+
+    /// <summary>"Open them again": starts the apps of the recovery card, puts their windows back, changes neither the stacking nor the focus.</summary>
+    public void ReopenRecovery()
+    {
+        var file = _recovery;
+        if (file is null || _reopenJob is { Running: true } || IsAway)
+        {
+            return;
+        }
+
+        var job = new AwayReopenJob(_log, _store, file, file.Apps, []);
+        _reopenJob = job;
+        Changed?.Invoke();
+        Task.Run(() =>
+        {
+            try
+            {
+                job.Start();
+                job.Finish(null, 0);
+            }
+            catch (Exception ex)
+            {
+                _log.Error("[away] reopen failed", ex);
+            }
+            finally
+            {
+                _ctx.Ui.BeginInvoke(() => Safe(() =>
+                {
+                    _reopenJob = null;
+                    if (file.Apps.Count == 0)
+                    {
+                        _recovery = null;
+                    }
+                    else
+                    {
+                        _recoveryFailedAtReturn = true;
+                    }
+
+                    Changed?.Invoke();
+                }));
+            }
+        });
+    }
+
+    /// <summary>"Forget them": the record is deleted and the apps stay closed.</summary>
+    public void ForgetRecovery()
+    {
+        var count = RecoveryCount;
+        _store.Delete();
+        _recovery = null;
+        _log.Info($"[away] closed apps: forgotten {count}");
+        Changed?.Invoke();
     }
 
     // ------------------------------------------------------------------------------------------ events
@@ -636,6 +951,9 @@ internal sealed class AwayController
             idleSeconds = AwayNative.IdleMilliseconds() / 1000,
             armed,
             records,
+            closeJob = CloseJobState.ToString().ToLowerInvariant(),
+            apps = (_closeJob?.AllApps() ?? []).Select(a => new { kind = a.Kind.ToString().ToLowerInvariant(), how = a.How, state = a.State.ToString().ToLowerInvariant(), reason = a.Reason.ToString().ToLowerInvariant(), windows = a.Windows.Count }).ToList(),
+            recovery = RecoveryCount,
             camera = new { running = _watcher.IsRunning, supported = AwayFaceWatcher.IsSupported, access = AwayFaceWatcher.Access.ToString(), failed = _app.Get<bool>("awayModeCameraFailed") },
         };
         try

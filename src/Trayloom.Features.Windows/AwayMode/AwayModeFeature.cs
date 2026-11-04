@@ -24,6 +24,12 @@ internal static class AwayKeys
     /// <summary>Not in the spec table: remembers that the camera failed last time so the card can say so until the next success.</summary>
     public const string CameraFailed = "awayModeCameraFailed";
 
+    /// <summary>Spec 07 section 1: close the apps on <see cref="CloseList"/> while away and open them again on return.</summary>
+    public const string CloseApps = "awayModeCloseApps";
+    public const string CloseList = "awayModeCloseList";
+    public const string CloseListSeeded = "awayModeCloseListSeeded";
+    public const string CloseAfterMinutes = "awayModeCloseAfterMinutes";
+
     public static void Register(IAppSettings app)
     {
         app.Register(Enabled, true);
@@ -38,12 +44,17 @@ internal static class AwayKeys
         app.Register(SkipFullScreen, true);
         app.Register(IgnoredApps, new List<string>());
         app.Register(CameraFailed, false);
+        app.Register(CloseApps, false);
+        app.Register(CloseList, new List<string>());
+        app.Register(CloseListSeeded, false);
+        app.Register(CloseAfterMinutes, 0);
     }
 }
 
 /// <summary>
 /// Away mode: minimizes every window when the person leaves the PC and brings them back, in the same order, when they return
-/// (spec 06 section 4). Nothing is closed, hidden or moved off-screen, so the window guardian has nothing to track.
+/// (spec 06 section 4), and, when the person chose apps to close, closes those and opens them again (spec 07). Nothing is hidden or
+/// moved off-screen, so the window guardian has nothing to track.
 /// </summary>
 public sealed class AwayModeFeature : IFeature
 {
@@ -72,12 +83,19 @@ public sealed class AwayModeFeature : IFeature
                 list.Add(new FeatureAction("away-now", AwayStrings.GoAwayNow, () => controller.GoAway("manual"), ""));
             }
 
+            if (!controller.IsAway && controller.RecoveryCount > 0)
+            {
+                list.Add(new FeatureAction("reopen", AwayStrings.ReopenAction, controller.ReopenRecovery, ""));
+            }
+
             if (Environment.GetEnvironmentVariable("TRAYLOOM_DEV") == "1")
             {
                 list.Add(new FeatureAction("simulate-away", "Away mode: simulate away (needs away-mode-only.txt)", () => SimulateAway(controller, _context?.Log)));
                 list.Add(new FeatureAction("simulate-return", "Away mode: simulate return", () => controller.Return("simulated")));
                 list.Add(new FeatureAction("simulate-face", "Away mode: simulate a face sample", controller.SimulateFace));
                 list.Add(new FeatureAction("dump", "Away mode: dump state", controller.Dump));
+                list.Add(new FeatureAction("dev-close-now", "Away mode: close the listed apps now (needs away-mode-only.txt)", controller.DevCloseNow));
+                list.Add(new FeatureAction("simulate-session-end", "Away mode: simulate a session end while away", controller.SimulateSessionEnd));
             }
 
             return list;
@@ -90,10 +108,19 @@ public sealed class AwayModeFeature : IFeature
         AwayKeys.Register(context.App);
         var session = new AwaySession(context.DataDirectory, context.Log);
         RecoverEarlierRun(context, session);
+        var offered = RecoverClosedApps(context);
 
         var controller = new AwayController(context, context.DataDirectory);
         _controller = controller;
         controller.Start();
+        if (offered is not null)
+        {
+            // Asked, never reopened by itself: at sign-in the person may not be at the PC, or Windows may have started the apps already.
+            controller.OfferRecovery(offered);
+            context.Log.Info($"[away] closed apps from an earlier run: {offered.Apps.Count} offered");
+            context.Notifier.Show(AwayStrings.Title, AwayStrings.NotificationRecovery(offered.Apps.Count));
+        }
+
         context.Services.Provide(controller);
     }
 
@@ -118,6 +145,13 @@ public sealed class AwayModeFeature : IFeature
             try
             {
                 File.Delete(Path.Combine(context.DataDirectory, "dump.json"));
+
+                // Apps the person still wants back are never dropped silently: the record goes only when nothing is waiting in it.
+                var store = new AwayClosedStore(context.DataDirectory, context.Log);
+                if (store.Read() is not { } record || !record.Apps.Any(a => a.State == AwayAppState.Closed))
+                {
+                    store.Delete();
+                }
             }
             catch (Exception)
             {
@@ -128,7 +162,7 @@ public sealed class AwayModeFeature : IFeature
 
     private static void SimulateAway(AwayController controller, ILog? log)
     {
-        if (AwayWindows.DevOnlyProcesses() is null)
+        if (AwayDevFilter.Load() is null)
         {
             log?.Info("[away] simulate-away refused: no away-mode-only.txt");
             return;
@@ -183,6 +217,21 @@ public sealed class AwayModeFeature : IFeature
         })
         { IsBackground = true, Name = "Away recovery" };
         worker.Start();
+    }
+
+    /// <summary>What an earlier run left closed (spec 07 section 7.3); null when there is nothing to offer.</summary>
+    private static ClosedAppsFile? RecoverClosedApps(IFeatureContext context)
+    {
+        try
+        {
+            var store = new AwayClosedStore(context.DataDirectory, context.Log);
+            return store.Recover(AwayReopenJob.IsOpen);
+        }
+        catch (Exception ex)
+        {
+            context.Log.Error("[away] closed apps recovery failed", ex);
+            return null;
+        }
     }
 
     private static bool OwnerAlive(AwaySessionFile file)

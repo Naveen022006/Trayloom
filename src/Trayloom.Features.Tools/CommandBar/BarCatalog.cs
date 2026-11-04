@@ -161,6 +161,11 @@ internal static class BarCatalog
             rows.Add(Simple("action.awayRestore", Loc.T("Restore windows"), Loc.T("Away mode"), 0xE777, awayRestore.Invoke, 100, Loc.T("Away mode back")));
         }
 
+        if (Has("away-mode") && Exact(ctx, "away-mode", "reopen") is { } awayReopen)
+        {
+            rows.Add(Simple("action.awayReopen", awayReopen.Title, Loc.T("Away mode"), 0xE8A7, awayReopen.Invoke, 150, Loc.T("Away mode reopen closed apps browser tabs")));
+        }
+
         // keep awake
         if (Has("keep-awake"))
         {

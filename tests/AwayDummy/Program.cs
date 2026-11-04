@@ -13,6 +13,12 @@ namespace AwayDummy;
 /// "Away dummy 1..N" (window 2 maximized, window 1 in front, distinct positions and sizes) and prints one line per window:
 /// <c>hwnd=&lt;hex&gt; z=&lt;n&gt; state=&lt;normal|max|min&gt; rect=l,t,r,b fg=&lt;0|1&gt;</c>. With <c>--report &lt;file&gt;</c> the same lines are
 /// rewritten every 500 ms until the process is killed. It reads nothing from Trayloom.
+/// <para>
+/// Spec 07 section 11.3 adds stand-ins for apps that are closed while away: <c>--mode closable|asks|refuses|slow|tray</c> (how a
+/// window answers <c>WM_CLOSE</c>), <c>--slow-ms &lt;n&gt;</c> (the delay of the slow mode) and <c>--tag &lt;text&gt;</c> (any text, so a
+/// relaunch with the same arguments is visible in the report). The report starts with
+/// <c>pid=&lt;n&gt; start=&lt;filetime&gt; args=&lt;all args&gt; mode=&lt;mode&gt;</c>. With none of these flags the old behaviour is unchanged.
+/// </para>
 /// </summary>
 public static class Program
 {
@@ -50,6 +56,8 @@ public static class Program
     {
         var count = 3;
         string? report = null;
+        string? mode = null;
+        var slowMs = 15000;
         for (var i = 0; i < args.Length; i++)
         {
             if (args[i] == "--windows" && i + 1 < args.Length)
@@ -60,7 +68,24 @@ public static class Program
             {
                 report = args[++i];
             }
+            else if (args[i] == "--mode" && i + 1 < args.Length)
+            {
+                mode = args[++i].ToLowerInvariant();
+            }
+            else if (args[i] == "--slow-ms" && i + 1 < args.Length)
+            {
+                slowMs = Math.Clamp(int.Parse(args[++i], CultureInfo.InvariantCulture), 100, 600000);
+            }
+            else if (args[i] == "--tag" && i + 1 < args.Length)
+            {
+                i++;
+                mode ??= "closable";
+            }
         }
+
+        // mode == null keeps the old behaviour (exit when window 1 closes, windows close without questions).
+        var header = $"pid={Environment.ProcessId} start={ProcessStart()} args={string.Join(' ', args)} mode={mode ?? "legacy"}\n";
+        var allowClose = mode is null or "closable";
 
         Application.EnableVisualStyles();
         var forms = new List<Form>();
@@ -84,6 +109,19 @@ public static class Program
                 form.Bounds = new System.Drawing.Rectangle(120 + (n * 70), 110 + (n * 45), 520 + (n * 30), 360 + (n * 15));
             }
 
+            if (mode is not null)
+            {
+                form.FormClosing += (_, e) => OnClosing(form, e, mode, slowMs, ref allowClose);
+                form.FormClosed += (_, _) =>
+                {
+                    forms.Remove(form);
+                    if (forms.Count == 0)
+                    {
+                        Application.Exit();
+                    }
+                };
+            }
+
             form.Show();
             forms.Add(form);
         }
@@ -104,14 +142,63 @@ public static class Program
         }
 
         var timer = new System.Windows.Forms.Timer { Interval = 500 };
-        timer.Tick += (_, _) => Report(forms, report);
+        timer.Tick += (_, _) => Report(forms, report, header);
         timer.Start();
-        Report(forms, report);
-        Application.Run(new ApplicationContext(first));
+        Report(forms, report, header);
+        Application.Run(mode is null ? new ApplicationContext(first) : new ApplicationContext());
         return 0;
     }
 
-    private static void Report(List<Form> forms, string? file)
+    private static string ProcessStart()
+    {
+        try
+        {
+            return System.Diagnostics.Process.GetCurrentProcess().StartTime.ToFileTimeUtc().ToString(CultureInfo.InvariantCulture);
+        }
+        catch (InvalidOperationException)
+        {
+            return "0";
+        }
+    }
+
+    /// <summary>How a window answers a close request in each mode (spec 07 section 11.3).</summary>
+    private static void OnClosing(Form form, FormClosingEventArgs e, string mode, int slowMs, ref bool allowClose)
+    {
+        if (allowClose || e.CloseReason == CloseReason.ApplicationExitCall)
+        {
+            return;
+        }
+
+        switch (mode)
+        {
+            case "asks":
+                if (MessageBox.Show("Save changes to Away dummy?", "Away dummy", MessageBoxButtons.YesNoCancel) == DialogResult.Cancel)
+                {
+                    e.Cancel = true;
+                }
+
+                break;
+            case "refuses":
+                e.Cancel = true;
+                break;
+            case "slow":
+                e.Cancel = true;
+                var delay = new System.Windows.Forms.Timer { Interval = slowMs };
+                delay.Tick += (_, _) =>
+                {
+                    delay.Stop();
+                    Application.Exit();
+                };
+                delay.Start();
+                break;
+            case "tray":
+                e.Cancel = true;
+                form.Hide();
+                break;
+        }
+    }
+
+    private static void Report(List<Form> forms, string? file, string header)
     {
         var mine = forms.Where(f => f.IsHandleCreated).ToDictionary(f => f.Handle, f => f.Text);
         var order = new List<nint>();
@@ -126,7 +213,7 @@ public static class Program
         }, 0);
 
         var foreground = GetForegroundWindow();
-        var text = new StringBuilder();
+        var text = new StringBuilder(header);
         foreach (var hwnd in order)
         {
             GetWindowRect(hwnd, out var r);

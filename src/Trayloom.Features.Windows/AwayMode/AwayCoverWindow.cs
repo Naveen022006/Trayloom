@@ -28,6 +28,8 @@ internal sealed class AwayCoverWindow : Window
 
     private readonly RECT _bounds;
     private readonly TextBlock? _notice;
+    private readonly TextBlock? _closeLine1;
+    private readonly TextBlock? _closeLine2;
 
     /// <param name="bounds">The monitor's rectangle in physical pixels.</param>
     /// <param name="primary">The primary display's cover carries the text and the button; the others are plain.</param>
@@ -52,6 +54,14 @@ internal sealed class AwayCoverWindow : Window
             var stack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, MaxWidth = 460 };
             stack.Children.Add(Label(AwayStrings.CoverAway, 34, FontWeights.SemiBold, White));
             stack.Children.Add(Label(AwayStrings.CoverSince(since.ToString("t")), 14, FontWeights.Normal, White60, 6));
+            _closeLine1 = Label(string.Empty, 12, FontWeights.Normal, White60, 10);
+            _closeLine1.TextWrapping = TextWrapping.Wrap;
+            _closeLine1.Visibility = Visibility.Collapsed;
+            stack.Children.Add(_closeLine1);
+            _closeLine2 = Label(string.Empty, 12, FontWeights.Normal, White60, 2);
+            _closeLine2.TextWrapping = TextWrapping.Wrap;
+            _closeLine2.Visibility = Visibility.Collapsed;
+            stack.Children.Add(_closeLine2);
             if (looking)
             {
                 var line = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 18, 0, 0) };
@@ -82,6 +92,24 @@ internal sealed class AwayCoverWindow : Window
         }
 
         Content = root;
+    }
+
+    /// <summary>Shows what happened to the apps that are closed while away (primary display only; null hides a line).</summary>
+    public void SetCloseStatus(string? line1, string? line2)
+    {
+        Apply(_closeLine1, line1);
+        Apply(_closeLine2, line2);
+    }
+
+    private static void Apply(TextBlock? block, string? text)
+    {
+        if (block is null)
+        {
+            return;
+        }
+
+        block.Text = text ?? string.Empty;
+        block.Visibility = string.IsNullOrEmpty(text) ? Visibility.Collapsed : Visibility.Visible;
     }
 
     /// <summary>Shows the amber "Not recognised?" line after an unsuccessful quick look.</summary>

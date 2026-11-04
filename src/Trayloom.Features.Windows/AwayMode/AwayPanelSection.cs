@@ -28,25 +28,44 @@ public sealed class AwayPanelSection : IPanelSection
         var toggle = new PanelToggleRow("", AwayStrings.Title, caption, enabled, on => app.Set(AwayKeys.Enabled, on), showCaption: true);
 
         var away = controller?.IsAway == true;
-        var title = away ? AwayStrings.RestoreWindows : AwayStrings.GoAwayNow;
-        var action = new PanelActionRow(away ? "" : "", title, null, () => context.InvokeAfterClose(() =>
+        var reopening = controller?.ReopeningCount ?? 0;
+        var title = reopening > 0 ? AwayStrings.Opening(reopening) : away ? AwayStrings.RestoreWindows : AwayStrings.GoAwayNow;
+        var closedCount = controller?.ClosedAppCount ?? 0;
+        var rowCaption = away && closedCount > 0 ? AwayStrings.PanelAndOpens(closedCount) : null;
+        var action = new PanelActionRow(away ? "" : "", title, rowCaption, () =>
         {
-            if (controller is null)
+            if (reopening > 0)
             {
                 return;
             }
 
-            if (controller.IsAway)
+            context.InvokeAfterClose(() =>
             {
-                controller.Return("manual");
-            }
-            else
-            {
-                controller.GoAway("manual");
-            }
-        }, 200));
+                if (controller is null)
+                {
+                    return;
+                }
 
-        return new PanelRowGroup().Add(Landmark(toggle, "AwayMode.PanelToggle", AwayStrings.Title)).Add(Landmark(action, "AwayMode.PanelNow", title));
+                if (controller.IsAway)
+                {
+                    controller.Return("manual");
+                }
+                else
+                {
+                    controller.GoAway("manual");
+                }
+            }, 200);
+        }, showCaption: rowCaption is not null);
+
+        var group = new PanelRowGroup().Add(Landmark(toggle, "AwayMode.PanelToggle", AwayStrings.Title)).Add(Landmark(action, "AwayMode.PanelNow", title));
+        if (controller is { RecoveryCount: > 0 } && !away && reopening == 0)
+        {
+            var open = new PanelActionRow("", AwayStrings.PanelOpenClosed(controller.RecoveryCount), AwayStrings.PanelClosedWhileAway,
+                () => context.InvokeAfterClose(controller.ReopenRecovery, 200), showCaption: true);
+            group.Add(Landmark(open, "AwayMode.PanelReopen", AwayStrings.PanelOpenClosed(controller.RecoveryCount)));
+        }
+
+        return group;
     }
 
     /// <summary>Row borders are not part of the UI Automation tree, so each row sits in a landmark that carries its id and name.</summary>

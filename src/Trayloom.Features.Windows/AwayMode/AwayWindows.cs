@@ -24,35 +24,8 @@ internal static class AwayWindows
     private const int ShowMaximized = 3;
     private const int ShowRestore = 9;
 
-    /// <summary>
-    /// Developer aid (TRAYLOOM_DEV=1 only): process names (lower-case, no extension) listed in <c>away-mode-only.txt</c>. When the file
-    /// exists, only windows of those processes are ever touched. Null when the restriction is not active.
-    /// </summary>
-    public static string[]? DevOnlyProcesses()
-    {
-        if (Environment.GetEnvironmentVariable("TRAYLOOM_DEV") != "1")
-        {
-            return null;
-        }
-
-        try
-        {
-            var path = Path.Combine(AppPaths.Root, "away-mode-only.txt");
-            if (!File.Exists(path))
-            {
-                return null;
-            }
-
-            return [.. File.ReadAllLines(path).Select(l => l.Trim().ToLowerInvariant()).Where(l => l.Length > 0)];
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
-
     /// <summary>The windows that would be recorded now, top-down (not yet recorded, not iconic).</summary>
-    private static List<nint> Candidates(ISet<string> ignored, string[]? only)
+    private static List<nint> Candidates(ISet<string> ignored, AwayDevFilter? only)
     {
         var all = new List<nint>();
         WinApi.EnumWindows((hwnd, _) =>
@@ -79,7 +52,7 @@ internal static class AwayWindows
                 continue;
             }
 
-            if (only is not null && !only.Contains(owner.Name))
+            if (only is not null && !only.Allows(owner.Pid, owner.Name))
             {
                 continue;
             }
@@ -119,7 +92,7 @@ internal static class AwayWindows
     }
 
     /// <summary>Records every switchable window (top-down) that Away mode may touch. Does not change any window.</summary>
-    public static List<AwayRecord> Snapshot(ISet<string> ignored, string[]? only, out nint active)
+    public static List<AwayRecord> Snapshot(ISet<string> ignored, AwayDevFilter? only, out nint active)
     {
         var list = new List<AwayRecord>();
         foreach (var hwnd in Candidates(ignored, only))
@@ -179,7 +152,7 @@ internal static class AwayWindows
     /// Minimizes windows that appeared while away (a chat app opening a window must not undo the privacy screen) and records them above
     /// the existing ones. Returns the number added.
     /// </summary>
-    public static int Sweep(List<AwayRecord> records, ISet<string> ignored, string[]? only)
+    public static int Sweep(List<AwayRecord> records, ISet<string> ignored, AwayDevFilter? only)
     {
         if (records.Count >= MaxWindows)
         {
@@ -265,25 +238,8 @@ internal static class AwayWindows
             }
         }
 
-        // 2. Re-stack in the recorded order without activating: the first on top, each next one directly below the one before.
-        var stack = valid.Where(r => WinApi.IsWindow(r.Handle) && !WinApi.IsIconic(r.Handle)).OrderBy(r => r.Z).ToList();
-        const uint flags = NativeConstants.SWP_NOMOVE | NativeConstants.SWP_NOSIZE | NativeConstants.SWP_NOACTIVATE | WinApi.SWP_ASYNCWINDOWPOS;
-        for (var i = 0; i < stack.Count; i++)
-        {
-            NativeMethods.SetWindowPos(stack[i].Handle, i == 0 ? 0 : stack[i - 1].Handle, 0, 0, 0, 0, flags);
-        }
-
-        // 3. A display may have been unplugged while away: never leave a window off-screen.
-        foreach (var record in stack.Where(r => !r.Max))
-        {
-            Sanitize(record.Handle);
-        }
-
-        // 4. The window the person was working in gets the focus again (AttachThreadInput path; no input is synthesized).
-        if (focusActive && active != 0 && WinApi.IsWindow(active) && !WinApi.IsIconic(active))
-        {
-            WinUtil.ForceForeground(active);
-        }
+        // 2-4. Re-stack in the recorded order, keep every window on a screen, and focus the one the person was working in.
+        var stack = Restack(valid, new Dictionary<long, nint>(), active, focusActive);
 
         // 5. Let the windows settle, then check.
         Thread.Sleep(1500);
@@ -293,6 +249,57 @@ internal static class AwayWindows
         var foregroundRoot = foreground == 0 ? 0 : WinApi.GetAncestor(foreground, WinApi.GA_ROOTOWNER);
         var focusOk = !focusActive || active == 0 || foregroundRoot == active;
         return new AwayRestoreResult(restored, total, late, closed, zOk, focusOk, restored == valid.Count);
+    }
+
+    /// <summary>
+    /// Puts the recorded windows in their recorded order without activating them (the first on top, each next one directly below the one
+    /// before), makes sure none is off-screen, and optionally gives the focus back to <paramref name="active"/> (steps 2 to 4 of spec 06
+    /// section 4.5). <paramref name="replaced"/> maps the handle of a window of an app that was closed and opened again to its new
+    /// window. Returns the windows in the order they were stacked.
+    /// </summary>
+    public static List<AwayRecord> Restack(IEnumerable<AwayRecord> records, IReadOnlyDictionary<long, nint> replaced, nint active, bool focus)
+    {
+        var stack = new List<AwayRecord>();
+        foreach (var record in records.OrderBy(r => r.Z))
+        {
+            var handle = replaced.TryGetValue(record.Hwnd, out var now) ? now : record.Handle;
+            if (!WinApi.IsWindow(handle) || WinApi.IsIconic(handle) || (handle == record.Handle && !StillMatches(record)))
+            {
+                continue;
+            }
+
+            stack.Add(new AwayRecord { Hwnd = handle, Pid = record.Pid, Process = record.Process, Cls = record.Cls, Z = record.Z, Max = record.Max, Normal = record.Normal });
+        }
+
+        const uint flags = NativeConstants.SWP_NOMOVE | NativeConstants.SWP_NOSIZE | NativeConstants.SWP_NOACTIVATE | WinApi.SWP_ASYNCWINDOWPOS;
+        for (var i = 0; i < stack.Count; i++)
+        {
+            NativeMethods.SetWindowPos(stack[i].Handle, i == 0 ? 0 : stack[i - 1].Handle, 0, 0, 0, 0, flags);
+        }
+
+        // A display may have been unplugged while away: never leave a window off-screen.
+        foreach (var record in stack.Where(r => !r.Max))
+        {
+            Sanitize(record.Handle);
+        }
+
+        // The window the person was working in gets the focus again (AttachThreadInput path; no input is synthesized).
+        var target = replaced.TryGetValue(active, out var moved) ? moved : active;
+        if (focus && target != 0 && WinApi.IsWindow(target) && !WinApi.IsIconic(target))
+        {
+            WinUtil.ForceForeground(target);
+        }
+
+        return stack;
+    }
+
+    /// <summary>Whether the windows are stacked in the given order (top first) and the focus is on <paramref name="focus"/>.</summary>
+    public static (bool ZOrderOk, bool FocusOk) Check(IReadOnlyList<AwayRecord> stack, nint focus)
+    {
+        Thread.Sleep(300);
+        var foreground = NativeMethods.GetForegroundWindow();
+        var root = foreground == 0 ? 0 : WinApi.GetAncestor(foreground, WinApi.GA_ROOTOWNER);
+        return (ZOrderMatches(stack), focus == 0 || root == focus);
     }
 
     private static void Sanitize(nint hwnd)

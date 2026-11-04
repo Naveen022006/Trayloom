@@ -116,7 +116,7 @@ public static class FeatureCatalog
         list.Add(Def("color-picker", T, Loc.T("Color picker"), Loc.T("Pick any color on screen"), "", Idle, "", true, "screen-capture#colorPicker", [], legacy: "color-picker"));
         list.Add(Def("screen-ocr", T, Loc.T("Copy text from screen"), Loc.T("Copy text or QR codes from anything on screen"), "", Idle, "S", true, "screen-capture#screenOCR", [], legacy: "screen-ocr"));
         list.Add(Def("cleaning-mode", T, Loc.T("Cleaning Mode"), Loc.T("Lock keyboard and screen for cleaning"), "", Idle, "A", true, "quick-tools#cleaningMode", [], legacy: "cleaning-mode"));
-        list.Add(Def("away-mode", T, Loc.T("Away mode"), Loc.T("Minimizes your windows when you leave the PC and brings them back in the same order when you return, when the camera sees you if you like. Nothing is closed."), "", Per, "A,Ca", false, "quick-tools#awayMode", ["awayModeEnabled"]));
+        list.Add(Def("away-mode", T, Loc.T("Away mode"), Loc.T("Minimizes your windows when you leave the PC and brings them back in the same order when you return, when the camera sees you if you like. Can also close the apps you choose and open them again, browsers with their tabs."), "", Per, "A,Ca", false, "quick-tools#awayMode", ["awayModeEnabled"]));
         list.Add(Def("media-tools", T, Loc.T("Media"), Loc.T("Compress videos, images and GIFs"), "", Idle, "", true, "media", [], legacy: "media-tools"));
         list.Add(Def("cleaner", T, Loc.T("Cleaner"), Loc.T("Clear caches and junk files"), "", Idle, "D,F,N", true, "cleaner", [], legacy: "cleaner"));
         list.Add(Def("uninstaller", T, Loc.T("Uninstaller"), Loc.T("Remove apps and their leftovers"), "", Idle, "D,AF", true, "uninstaller", [], legacy: "uninstaller"));
