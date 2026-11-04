@@ -1,207 +1,380 @@
+<div align="center">
+
 # Trayloom
 
-Formerly WinKnife.
+### Dozens of small Windows tools, woven into one tray icon.
 
-Trayloom is a Windows 10/11 tray utility (.NET 9, WPF) that bundles many small system tweaks and tools into one
-"install what you need" app. It is a Windows replica of the macOS utility [Vorssaint](https://vorssaint.com): the same
-tray panel, Settings window, Features hub, Dynamic Island, Command Bar and feature catalog (79 entries, of which
-73 are installable on Windows and 6 are marked unavailable because Windows has no equivalent), rebuilt for Windows. Features are installed or uninstalled one by one from the **Features hub**; whatever is
-uninstalled disappears from the whole app and loads nothing.
+**Install only the threads you need. Everything you leave out never loads.**
 
-Trayloom is licensed under the same terms as Vorssaint, **GPL-3.0-or-later** (see `LICENSE`). It is an independent
-project and is **not affiliated with or endorsed by Vorssaint**; the Vorssaint name, logo and icon are not used.
+[![Windows 10 / 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square&logo=windows&logoColor=white)](#requirements)
+[![.NET 9](https://img.shields.io/badge/.NET-9-512BD4?style=flat-square&logo=dotnet&logoColor=white)](#build-from-source)
+[![Features](https://img.shields.io/badge/features-73-2ea44f?style=flat-square)](#everything-trayloom-can-do)
+[![Local first](https://img.shields.io/badge/data-stays%20on%20your%20PC-444?style=flat-square)](#privacy)
+[![License GPL-3.0](https://img.shields.io/badge/license-GPL--3.0--or--later-blue?style=flat-square)](LICENSE)
 
-* Languages: 15 (System default, English and the 13 other Vorssaint languages), switched live in Settings > General > Language;
-  see `specs/L10N_TODO.md` for coverage. The first-run guide, the install / uninstall windows and the Settings pages General, About and Advanced are translated into all 15 languages; some captions of the feature pages are still English.
-* Settings: `%APPDATA%\Trayloom\settings.json` (override the folder with the `TRAYLOOM_DATA` environment variable).
-* Log: `<settings folder>\logs\trayloom.log`.
-* Upgrading from the previous name: the first start closes a still-running old copy, moves the old settings folder and local data
-  to the Trayloom names and re-registers Start with Windows (on/off state kept); installing Trayloom also removes the old Start menu
-  shortcut and Apps & features entry. The old program folder is left in place for you to delete.
-* First run: onboarding, then only the **Essentials** bundle (Volume mixer, System monitor, Keep awake) is installed.
-  Everything else is one click away in the Features hub (Install all, bundles, or one by one).
-* Every feature undoes its side effects when uninstalled or when Trayloom quits (mouse acceleration, hooks, hotkeys,
-  wake locks, windows). Uninstalling *Mute microphone* while muted unmutes the microphone.
-* `Trayloom.exe --quit` asks the running instance to shut down gracefully; a second launch (the Start menu shortcut) brings
-  Settings forward on the page you used last.
+[Why Trayloom](#why-trayloom) · [Screenshots](#a-quick-look) · [Features](#everything-trayloom-can-do) ·
+[Use cases](#who-it-is-for) · [Install](#install) · [Shortcuts](#keyboard-shortcuts) · [Performance](#how-light-is-it) ·
+[Build](#build-from-source)
 
-## What is in it
+<br />
 
-Catalog groups, as in the Features hub (Windows availability noted where it differs from the Mac).
+<img src="docs/images/settings-features.png" alt="The Trayloom Features hub, where every tool is installed or uninstalled with one click" width="760" />
 
-| Group | Features |
+</div>
+
+---
+
+## Why Trayloom
+
+Most Windows power users end up with a tray full of single-purpose apps: one for the clipboard, one for window snapping, one
+for keeping the PC awake, one for screenshots, one for per-app volume, another for system stats. Each one starts with Windows,
+each one has its own settings, update channel and memory footprint.
+
+**Trayloom replaces that pile with one app.** It ships 73 tools in one place: window management, input tweaks, clipboard
+and file helpers, sound controls, screen capture, system monitoring, app maintenance and a Dynamic Island at the top of your
+screen. Three ideas shape it:
+
+| | |
 | --- | --- |
-| Windows and taskbar | Window switcher (Alt+Tab replacement with previews), Taskbar Preview, Taskbar clicks (minimize / hide / cycle), Window layout (41 placements, edge snap, move/resize by dragging), Quit on close. *Unavailable on Windows:* Maximize windows, Keep Spaces in a fixed order. |
-| Mouse and keyboard | Invert mouse scrolling, Scroll sideways while holding a key, Zoom, Focus follows mouse, Smooth scrolling, Linear scrolling, Disable mouse acceleration, Side buttons, Mouse button shortcuts, Extra click filter, Debounce, Text snippets, Super key, Quit & close protection. *Unavailable:* Touchpad middle click (the precision touchpad owns its gestures). |
-| Clipboard and files | Clipboard history, Paste as plain text, Cut & paste and the F2 rename shortcut for File Explorer, Shelf, Clean URL. *Unavailable:* Disk image installer. |
-| Sound | Volume mixer (per-app volume and output), Output switcher, Audio device priority, Mute microphone, Music app blocker. |
-| Energy and display | Keep awake (timers, rules, lid closed), Displays (brightness, DDC/CI), Bluetooth sleep. *Unavailable:* Extra brightness. |
-| Tools | Quick panel, Quick toggles, Quit apps, Color picker, Copy text from screen, Cleaning Mode, Media, Cleaner, Uninstaller, Packages (winget), App updates, Screenshot (editor, scrolling capture, pins), Screen recording (Windows.Graphics.Capture + Media Foundation), Camera preview, Radial menu, Scratchpad, Command Bar, Wallpaper, Kill Process, Port Manager. |
-| Dynamic Island | The island itself plus Calendar, Notifications, Gestures, Timer, Accessory alerts, Lyrics (online lookup is **off** by default), Up next, Bars follow the music, Downloads, **AI Agents** (Claude Code, Codex, OpenCode, Copilot usage and limits, read locally), Watch, Companion. Installing the island switches it on. |
-| Monitor | CPU, GPU, Memory, Network, Disks, Power, Connected devices, shown in the tray panel and as a strip next to the tray icon. *Unavailable:* Fan control. |
+| **Install what you use** | Every tool is installed or uninstalled on its own from the **Features hub**. An uninstalled tool is gone from the panel, Settings, the Command Bar and memory. Nothing runs in the background "just in case". |
+| **Leave no trace** | Every tool undoes what it changed when you turn it off, uninstall it or quit Trayloom: mouse acceleration comes back, hooks and hotkeys are released, wake locks end, windows return to where they were. |
+| **Stay local** | Your clipboard, notes, screenshots, AI-agent usage and system stats are read and stored on your PC. Trayloom has no account, no telemetry and no cloud service. |
 
-## AI Agents (Dynamic Island)
+## A quick look
 
-Install **AI Agents** (it needs the Dynamic Island) to follow Claude Code, Codex, OpenCode and GitHub Copilot from the island.
-Everything is read **locally**; nothing is sent anywhere and no account password is read.
+<table>
+  <tr>
+    <td align="center" width="25%"><img src="docs/images/panel-system.png" alt="Tray panel showing CPU and GPU temperatures, usage graphs and memory pressure" /><br /><sub><b>System monitor</b><br />Temperatures, usage, memory pressure</sub></td>
+    <td align="center" width="25%"><img src="docs/images/panel-controls.png" alt="Tray panel with on/off switches for window, mouse and file features" /><br /><sub><b>Controls</b><br />Every switch, one click away</sub></td>
+    <td align="center" width="25%"><img src="docs/images/panel-utilities.png" alt="Tray panel listing utilities such as Screenshot, Cleaner, Packages and Color picker" /><br /><sub><b>Utilities</b><br />Tools you launch when you need them</sub></td>
+    <td align="center" width="25%"><img src="docs/images/panel-keepAwake.png" alt="Keep awake tab with timer chips from 15 minutes to forever" /><br /><sub><b>Keep awake</b><br />Timers, rules, lid closed</sub></td>
+  </tr>
+</table>
 
-* **Limits** show the session and weekly windows with where the number came from and how old it is ("From Claude Code, 2 minutes
-  ago"). Claude's usage comes from what Claude Code reports; Codex asks the local Codex app-server and falls back to its session log
-  (older readings are labelled as possibly out of date). If a source is missing the card says so instead of showing a guess.
-* **Now** lists live sessions (the one you are typing in, background agents) and what each is doing.
-* **Spending** is the *API-equivalent value* of your tokens from the local logs (models, projects, trend). It is what the usage
-  would cost at API prices, **not what you pay** on a subscription.
-* **Permission alerts**: when a Claude Code session asks for a permission, the island pops out to say which session needs you (you still answer in Claude Code). This uses
-  a small hook in Claude's `settings.json` that only reports the event and never changes what Claude decides; Trayloom adds it
-  only when you install it from the AI Agents settings (after a backup) and removes it when you remove it there.
-* With a very large history (several GB of logs) the first scan can take a moment and the feature keeps a few hundred MB.
+<table>
+  <tr>
+    <td align="center" width="50%"><img src="docs/images/command-bar.png" alt="The Command Bar with suggestions, filters and example queries" /><br /><sub><b>Command Bar</b>: one field that finds and runs everything (Ctrl+Alt+Space)</sub></td>
+    <td align="center" width="50%"><img src="docs/images/settings-switcher.png" alt="Window switcher settings with three layouts: window previews, large icons and simple list" /><br /><sub><b>Window switcher</b>: an Alt+Tab with previews, large icons or a simple list</sub></td>
+  </tr>
+  <tr>
+    <td align="center" width="50%"><img src="docs/images/settings-window-layout.png" alt="Window layout settings with a map of the screen edges windows can snap to" /><br /><sub><b>Window layout</b>: snap zones, gaps and drag-to-move</sub></td>
+    <td align="center" width="50%"><img src="docs/images/settings-screen-capture.png" alt="Screen capture settings with Screenshot, Screen recording, Copy text from screen and Color picker tabs" /><br /><sub><b>Screen capture</b>: screenshots, recordings, text and colour picking</sub></td>
+  </tr>
+</table>
 
-## Install and first start
+## Everything Trayloom can do
 
-Trayloom is a tray app: after it starts you will find its icon **next to the clock** (Windows often hides new tray icons
-behind the **^** arrow). There is no installer program; the installer is `Trayloom.exe` itself.
+The tools are grouped the same way as in the Features hub. Each line says what the tool does and when it helps.
 
-1. Unzip `Trayloom-win-x64.zip` anywhere (or use `dist\Trayloom`) and double-click `Trayloom.exe`
-   (or `Trayloom-Setup.cmd`, which starts the same thing).
-2. Trayloom offers **Install Trayloom** (or **Update Trayloom** when an older copy is installed):
-   * **Install** copies the app to `%LOCALAPPDATA%\Programs\Trayloom` for your account only (no administrator password),
-     adds a Start menu shortcut, an optional Desktop shortcut and an optional "start when I sign in" entry, and registers
-     an entry in **Settings > Apps > Installed apps** whose Uninstall runs `Trayloom.exe --uninstall`. It then starts the
-     installed copy and you can delete the download.
-   * **Just run it** runs from where it is (tick "Don't ask again" to stop the offer). **Install Trayloom...** stays in the
-     tray menu and in Settings > General > Getting started.
-3. On a fresh profile a short introduction opens: what Trayloom is, a bundle (**Essentials** is preselected, or
-   Windows / Battery and quiet, or pick features one by one), Launch at login, and a picture of where the tray icon is.
-   A toast says "Trayloom is running" once.
-4. Windows does not let apps pin their own icon. To keep it visible: Settings > Personalization > Taskbar > **Other system
-   tray icons** > switch Trayloom on (the introduction and Settings > General have a button that opens that page,
-   `ms-settings:taskbar`), or drag the icon out of the **^** overflow next to the clock.
-5. Start it again from the Start menu while it runs: Settings opens on the page you used last, so you can always get back in.
-6. Uninstall: Settings > Apps > Installed apps > Trayloom > Uninstall (or `Trayloom.exe --uninstall`). It quits Trayloom,
-   removes the files, shortcuts, the Apps & features entry and the start-at-sign-in entry, and asks whether to delete your
-   settings too.
+### Windows and taskbar
 
-If something does not start, right-click the tray icon > **Report a problem...** opens the folder with the log. A start
-that takes longer than 2 s shows a "Starting Trayloom..." toast (the first start after copying new DLLs can take ~10 s).
-If Windows **Smart App Control** blocks a file, Trayloom shows one dialog that explains it in plain words and lists the
-options (below); it only reads that setting, it never changes it.
+| Tool | What it does |
+| --- | --- |
+| **Window switcher** | A full Alt+Tab replacement with window previews, large icons or a simple list. Includes minimized windows, lets you jump between windows of one app (Alt+\`), close (W) or quit (Q) from the switcher. |
+| **Taskbar Preview** | Hover an app in the taskbar to preview and peek at its windows. |
+| **Taskbar clicks** | Click the active app's taskbar icon to minimize it, hide it, or cycle through its windows. |
+| **Window layout** | 41 placements (halves, thirds, two-thirds, corners, centre, next display) from the keyboard, a directional ring, edge snapping with a visual zone map, configurable gaps, and move or resize any window by holding Ctrl+Alt and dragging anywhere inside it. |
+| **Quit on close** | Closing an app's last window also quits the app. |
 
-`scripts\package.ps1` publishes the self-contained build, adds `Trayloom-Setup.cmd` and writes `dist\Trayloom-win-x64.zip`.
-(A self-extracting `Setup.exe` built with Windows IExpress was tried and is silently blocked on a Smart App Control PC, so
-`Trayloom-Setup.cmd` is the Setup equivalent.)
+### Mouse and keyboard
 
-Testing the install flow without touching your real Start menu or registry: set `TRAYLOOM_INSTALL_ROOT`,
-`TRAYLOOM_STARTMENU_DIR`, `TRAYLOOM_DESKTOP_DIR`, `TRAYLOOM_UNINSTALL_KEY` (an HKCU sub key) and `TRAYLOOM_RUN_KEY`
-(an HKCU sub key) to scratch locations, plus `TRAYLOOM_DATA` for the settings. `TRAYLOOM_NO_INSTALL_PROMPT=1` hides the
-install offer; builds run from `bin\Debug` / `bin\Release` never show it.
+| Tool | What it does |
+| --- | --- |
+| **Invert mouse scrolling** | Flip the wheel direction, vertically and horizontally, for mice only. |
+| **Scroll sideways while holding a key** | Hold a modifier you pick and the normal wheel scrolls horizontally. Great for timelines and wide spreadsheets. |
+| **Zoom** | Pinch-style zoom with the wheel and a modifier. |
+| **Focus follows mouse** | The window under the pointer gets focus without clicking. |
+| **Smooth scrolling** | Animated, eased wheel scrolling everywhere. |
+| **Linear scrolling** | Every wheel notch scrolls the same distance, however fast it spins. The touchpad is not affected. |
+| **Disable mouse acceleration** | Raw, predictable pointer movement for connected mice; your old setting returns when you turn it off. |
+| **Side buttons** | Mouse side buttons go back and forward, even in apps that ignore them. |
+| **Mouse button shortcuts** | Map extra buttons and side-wheel directions to any key combination. |
+| **Extra click filter** | Ignores the phantom double clicks of a worn mouse button without slowing normal clicks. |
+| **Debounce** | Ignores accidental double key presses from a chattering keyboard. |
+| **Text snippets** | Short triggers expand into full text, with a snippet library and date placeholders. |
+| **Super key** | Turn one key into a modifier combination you choose, such as Ctrl+Alt+Win. |
+| **Quit & close protection** | Alt+F4 and Ctrl+W ask you to hold them, so a slip never closes your work. |
 
-## Hotkeys
+### Clipboard and files
 
-macOS ⌘ becomes **Win** in multi-modifier global shortcuts (⌃⌥⌘ = Ctrl+Alt+Win, ⌃⌘ = Ctrl+Win); ⌃ is Ctrl, ⌥ is Alt.
-Shortcuts that act inside the front app use Windows conventions. All of them are editable in *Keyboard shortcuts*;
-every default is unique (checked by `Trayloom.exe --dump-info <file>`). A shortcut only registers while its feature is
-installed **and** its own switch is on, so a fresh install grabs nothing except the ones listed as "always".
+| Tool | What it does |
+| --- | --- |
+| **Clipboard** | A searchable local history of what you copy, with cards, list and pile views. |
+| **Paste as plain text** | Paste without fonts, colours or formatting. |
+| **Cut & paste** | Real cut and paste of files in File Explorer, plus pasting a copied image straight in as a file. |
+| **Rename shortcut** | Rename the selected file or folder with a shortcut you choose. |
+| **Shelf** | Drop files on the screen edge to hold them while you find where they go. |
+| **Clean URL** | Copied links lose their tracking parameters automatically. |
+| **Media** | Compress videos, images, GIFs and PDFs without opening an editor. |
 
-| Role | Default | Notes |
-| --- | --- | --- |
-| Command Bar | Ctrl+Alt+Space | Alt+Space stays with the Windows window menu |
-| Window switcher: apps / windows of the app / all windows | Alt+Tab / Alt+` / Ctrl+Alt+Tab | hook based; Alt+Tab replacement is a setting |
-| Window layout (per action) | Ctrl+Alt+Left / Right / Up / Down (halves), D F G (thirds), E T (two thirds), U I J K (corners), Enter (maximize), C (center), R (restore) | Ctrl+Alt+Win+Right = next display |
-| Move pointer to next display | Ctrl+Alt+Win+Z | |
-| Directional ring (window layout) | Ctrl+Alt+Shift+Space | hold + direction |
-| Move / resize by dragging | hold Ctrl+Alt (add Shift to resize) | was Ctrl+Win in the first port: that chord collides with the Windows desktop switcher |
-| Quick panel | Ctrl+Win+V | falls back to Ctrl+Alt+V when Windows or another app owns it (shown under the recorder) |
-| Clipboard history / Paste as plain text | Ctrl+Alt+Win+V / Alt+Shift+Win+V | |
-| Shelf, Quick snippet menu | Ctrl+Alt+Win+D, Ctrl+Alt+Win+L | |
-| Rename shortcut (File Explorer) | F2 | bare key, hook based |
-| Output switcher, Mute microphone, Keep awake | Ctrl+Alt+Win+S, +M, +K | |
-| Display brightness down / up | Shift+Win+- / Shift+Win+= | only with the brightness control on |
-| Scratchpad, Camera preview | Ctrl+Alt+Win+N, +W | |
-| Quit all apps / all except the front one | Ctrl+Alt+Win+Q / +O | |
-| Radial menu | Ctrl+Alt+Win+Space | |
-| Screenshot, whole screen, recent, edit latest, edit clipboard, upload | Ctrl+Alt+Win+4, +3, +H, +E, +P, +U | |
-| Screen recording, Copy text from screen, Color picker | Ctrl+Alt+Win+5, +T, +C | |
-| Dynamic Island | Ctrl+Alt+Win+I | |
+### Sound
 
-If Windows reserves a combination or another program owns it, Trayloom falls back (Win replaced by Shift; Ctrl+Win
-replaced by Ctrl+Alt so it never becomes Ctrl+Shift+key), says so in the settings row, and the rest of the feature keeps
-working. Ctrl+Alt+Arrow is also used by some Intel graphics drivers for screen rotation.
+| Tool | What it does |
+| --- | --- |
+| **Volume mixer** | Per-app volume and per-app output device, with pinning and your own order. |
+| **Output switcher** | Cycle speakers, headphones and other outputs with one shortcut. |
+| **Audio device priority** | Automatically switch to your preferred output and microphone when they connect. |
+| **Mute microphone** | Mute the mic from anywhere with a shortcut; the tray icon shows when it is muted. |
+| **Music app blocker** | Stops media keys from launching a music app you did not ask for. |
 
-## Differences from Vorssaint on Windows
+### Energy and display
 
-* "Menu bar" is the notification area: the tray icon opens the panel, right-click gives the menu, live metrics are drawn
-  as a strip next to the tray. The icon can step aside while metrics are shown (`menuBarHideIconWithMetrics`), unless
-  keep awake is active or the microphone is muted. Keep awake changes the icon (Trayloom mark, coffee, eye, moon, bulb),
-  tint and can print the remaining minutes in the icon.
-* The Dock features become taskbar features (thumbnails, minimize / hide / cycle on click); Spaces and the green
-  maximize button do not exist. Windows Snap stays available next to Window layout.
-* Permissions are Windows ones: *Accessibility* (global hooks, window management; limited when not elevated),
-  *Screen recording*, microphone, camera, notifications. Administrator rights are only needed for the system-wide
-  Cleaner paths and for controlling elevated windows.
-* Trash becomes the Recycle Bin, Finder becomes File Explorer (no restart needed), Homebrew becomes winget, Spotlight
-  settings become Windows Settings pages.
-* Nothing talks to Vorssaint servers: share links are hidden, feedback opens a GitHub issue, the agent price list is
-  bundled, lyrics lookup is opt-in.
-* Per-app output routing uses an undocumented Windows interface. The first use on each Windows build runs a self-test (Trayloom
-  routes its own silent stream to the default output and reads it back); if that does not round-trip, the route picker is hidden for
-  that build and the reason is logged. Extra brightness is unavailable.
+| Tool | What it does |
+| --- | --- |
+| **Keep awake** | Keep the PC awake for 15 minutes, a few hours, until a time, or forever, with rules and an option for when the lid is closed. The tray icon can show the minutes left. |
+| **Displays** | Brightness and power for every display, including external monitors over DDC/CI. |
+| **Bluetooth on sleep** | Bluetooth turns off while the PC sleeps, so headphones in your bag stop connecting to it. |
 
-## Build, run, publish
+### Tools
 
-Requires the .NET 9 SDK on Windows 10 (19041) or newer.
+| Tool | What it does |
+| --- | --- |
+| **Command Bar** | One search field that runs any Trayloom action, opens apps, windows and Settings pages, converts units and does maths (`100 km to mi`, `2+2*3`, `brightness 40`). |
+| **Quick panel** | A floating grid of your favourite tools, opened with a shortcut. |
+| **Quick toggles** | One-click actions such as switching dark mode or emptying the Recycle Bin. |
+| **Radial menu** | A wheel of your favourite actions that opens around the pointer. |
+| **Screenshot** | Capture an area, a window or the whole screen, annotate it in the editor, take scrolling captures and pin shots on screen. |
+| **Screen recording** | Record an area, window or screen with system audio and microphone, then trim, zoom, blur and export to video or GIF. |
+| **Copy text from screen** | Select any part of the screen to copy its text, or read a QR code. |
+| **Color picker** | Pick any colour on screen and copy it in the format you need. |
+| **Camera preview** | A floating mirror of your webcam before a call. |
+| **Scratchpad** | Floating pads for short-lived notes, with tabs and formatting. |
+| **Cleaning Mode** | Locks the keyboard and blanks the screen so you can wipe them. |
+| **Quit apps** | Quit open apps one by one, all at once, or all but the one in front, always after showing the list. |
+| **Wallpaper** | Pick a still wallpaper without opening Windows Settings. |
+| **Cleaner** | Find and clear caches and junk files, with a review before anything is removed. |
+| **Uninstaller** | Remove apps together with the leftovers they leave behind. |
+| **Packages** | Keep your `winget` packages up to date from the panel. |
+| **App updates** | Find and install updates for the apps you already have. |
+| **Kill Process** *(beta)* | Search running processes and force quit, restart or end a whole process tree. |
+| **Port Manager** | See which processes listen on which ports, and end them (with Kill Process installed). |
 
-```
-dotnet build Trayloom.sln -c Debug
+### Dynamic Island
+
+An optional, always-there capsule at the top of your screen (or any edge, on any display) that grows into a panel when you
+need it. Its layout, size, buttons and pages are all yours to arrange.
+
+| Extension | What it does |
+| --- | --- |
+| **Dynamic Island** | Music, volume, brightness and your everyday tools in one place at the top of the screen. |
+| **Calendar** | Browse the month and your upcoming appointments. |
+| **Notifications** | New system notifications appear in the island. |
+| **Gestures** | Open and close the island by scrolling; swipe to change tracks. |
+| **Timer** | Timers, a stopwatch and focused work sessions. |
+| **Accessory alerts** | See connected accessories and get one warning when a battery drops to 20%. |
+| **Lyrics** | Follow the lyrics of the current song (online lookup is **off** until you turn it on). |
+| **Up next** | The real upcoming songs your player shares. |
+| **Bars follow the music** | The island's bars move with the sound your player makes. |
+| **Downloads** | Watch files arrive in a folder you choose. |
+| **Watch** | Turn any part of any window into a live activity, with an alert when it changes, finishes or shows what you are waiting for. |
+| **AI Agents** | Plan limits, tokens, API value and live sessions of Claude, Codex, OpenCode and GitHub Copilot (see below). |
+| **Companion** | A small friend in the island who says hello now and then and reacts to what happens on your PC. |
+
+### System monitor
+
+CPU, GPU, Memory, Network, Disks, Power and Connected devices, with usage, temperatures, graphs and memory pressure. Show
+them in the tray panel or as a live strip next to the tray icon.
+
+### AI Agents, in detail
+
+For people who work with coding agents all day, **AI Agents** keeps their limits and activity in view without opening a
+browser tab.
+
+* **Limits:** session and weekly windows, with where each number came from and how fresh it is ("From Claude Code, 2
+  minutes ago"). When a source is missing the card says so instead of guessing.
+* **Now:** the live sessions, including background agents, and what each one is doing.
+* **Spending:** the *API-equivalent value* of your tokens by model and project. It is what the usage would cost at API
+  prices, **not what you pay** on a subscription.
+* **Permission alerts:** when a Claude Code session waits for your permission, the island pops out to tell you which one.
+  This uses a small, optional hook that only reports the event; it is added only when you switch it on (after a backup of
+  your settings) and removed when you switch it off.
+* Everything is read from local files and local services. No passwords or login tokens are read.
+
+## Who it is for
+
+* **Developers.** The Command Bar, Port Manager, Kill Process, AI Agents limits, Window layout for an editor-plus-terminal
+  split, Text snippets for boilerplate, and Keep awake for long builds.
+* **Designers and content creators.** Screenshot with annotations, screen recording with zoom and blur, Color picker, Copy
+  text from screen, Media compression and the Shelf for dragging assets between folders.
+* **Laptop users.** Keep awake with the lid closed, Bluetooth on sleep, battery and power in the monitor, Accessory alerts,
+  and the lean *Battery and quiet* bundle that never listens to input.
+* **People with many apps open.** The Window switcher, Taskbar clicks, Quit on close, Quit apps and Focus follows mouse.
+* **Anyone with a worn mouse or keyboard.** Extra click filter and Debounce fix double clicks and double letters without
+  new hardware.
+* **Music listeners.** The Dynamic Island with music controls, lyrics, Up next, per-app volume and the Music app blocker.
+* **Anyone who keeps their PC tidy.** Cleaner, Uninstaller with leftovers, Packages and App updates, all in one place.
+
+## Install
+
+1. Get `Trayloom-win-x64.zip` from the [Releases](https://github.com/Naveen022006/Trayloom/releases) page (or
+   [build it yourself](#build-from-source)), unzip it anywhere and run `Trayloom.exe`.
+2. Choose **Install Trayloom**. It installs for your account only, so no administrator password is needed:
+   * the app goes to `%LOCALAPPDATA%\Programs\Trayloom`,
+   * a Start menu shortcut is added, plus an optional Desktop shortcut and an optional *start when I sign in* entry,
+   * Trayloom appears in **Settings > Apps > Installed apps** so it can be uninstalled like any other app.
+
+   Prefer a portable copy? Choose **Just run it** instead.
+3. A short introduction lets you pick a starting bundle:
+   * **Essentials** *(default)*: Volume mixer, System monitor and Keep awake.
+   * **Windows**: Window switcher, Window layout and the taskbar tools.
+   * **Battery and quiet**: a lean monitor with battery, memory and processor. Nothing listens to input.
+   * Or pick tools one by one. Everything else is one click away in the Features hub.
+4. Find the icon **next to the clock**. Windows hides new tray icons behind the **^** arrow; to keep Trayloom visible, open
+   Settings > Personalization > Taskbar > **Other system tray icons** and switch it on (the introduction has a button for
+   this).
+
+**Daily use:** click the tray icon for the panel, right-click it for the menu, and press **Ctrl+Alt+Space** for the Command
+Bar. Starting Trayloom again from the Start menu while it runs opens Settings on the page you used last.
+
+**Uninstall:** Settings > Apps > Installed apps > Trayloom > Uninstall. Trayloom quits, removes its files, shortcuts and
+start-up entry, and asks whether to keep your settings.
+
+## Keyboard shortcuts
+
+Every shortcut is editable in **Settings > Keyboard shortcuts**, and every default is unique. A shortcut is only registered
+while its tool is installed **and** switched on, so a fresh install takes almost no key combinations. If Windows or another
+program already owns a combination, Trayloom picks a fallback, shows it in the settings row and keeps the rest of the tool
+working.
+
+| Action | Default |
+| --- | --- |
+| Command Bar | Ctrl+Alt+Space |
+| Window switcher: apps / windows of one app / all windows | Alt+Tab / Alt+\` / Ctrl+Alt+Tab |
+| Window layout: halves | Ctrl+Alt+Left / Right / Up / Down |
+| Window layout: thirds, two thirds, corners | Ctrl+Alt+D F G, E T, U I J K |
+| Window layout: maximize / centre / restore / next display | Ctrl+Alt+Enter / C / R, Ctrl+Alt+Win+Right |
+| Directional ring | Ctrl+Alt+Shift+Space (hold, then pick a direction) |
+| Move / resize any window by dragging | Hold Ctrl+Alt (add Shift to resize) |
+| Move pointer to next display | Ctrl+Alt+Win+Z |
+| Quick panel | Ctrl+Win+V (or Ctrl+Alt+V when taken) |
+| Clipboard history / Paste as plain text | Ctrl+Alt+Win+V / Alt+Shift+Win+V |
+| Shelf / Snippet menu | Ctrl+Alt+Win+D / Ctrl+Alt+Win+L |
+| Rename in File Explorer | F2 |
+| Output switcher / Mute microphone / Keep awake | Ctrl+Alt+Win+S / M / K |
+| Display brightness down / up | Shift+Win+- / Shift+Win+= |
+| Scratchpad / Camera preview | Ctrl+Alt+Win+N / W |
+| Quit all apps / all but the front one | Ctrl+Alt+Win+Q / O |
+| Radial menu | Ctrl+Alt+Win+Space |
+| Screenshot / whole screen / recent / edit latest / edit clipboard | Ctrl+Alt+Win+4 / 3 / H / E / P |
+| Screen recording / Copy text from screen / Color picker | Ctrl+Alt+Win+5 / T / C |
+| Dynamic Island | Ctrl+Alt+Win+I |
+
+> Some Intel graphics drivers use Ctrl+Alt+Arrow to rotate the screen. If yours does, turn that off in the Intel control
+> panel or change the Window layout shortcuts.
+
+## How light is it?
+
+Measured on an Intel Core i7-14700HX laptop (28 threads, 16 GB RAM, RTX 4050) with **all 73 tools installed** and the Dynamic
+Island showing, sampled once a second for a minute while idle:
+
+| Resource | Idle, everything installed |
+| --- | --- |
+| CPU | **~0.2%** of the whole processor (peaks under 1%) |
+| GPU | **~0.8%** (drawing the always-visible island) |
+| Memory | **~650–700 MB** |
+| Disk | ~190 MB installed (self-contained, the .NET runtime included) |
+
+What to expect:
+
+* **Fewer tools means less memory.** With just the default *Essentials* bundle, Trayloom needs a fraction of that, since
+  uninstalled tools never load. The AI Agents extension alone can keep a few hundred MB when you have a very large agent
+  history.
+* **Short bursts while you use something.** Opening the panel or Settings, smooth scrolling and window dragging use a few
+  percent of the CPU for a moment.
+* **Screen recording is the heaviest tool.** It uses noticeably more CPU and GPU while recording, and exporting a 15-second clip
+  takes about 15 seconds and up to 1–2 GB of memory for a moment.
+
+## Privacy
+
+* No account, no sign-in, no telemetry, no ads.
+* Clipboard history, snippets, scratchpads, captures and settings are stored in `%APPDATA%\Trayloom` on your PC.
+* The only online features are ones you switch on yourself: lyrics lookup, app and package updates, and links you choose to
+  open. Feedback opens a GitHub issue in your browser.
+* Tools that need a Windows permission (screen capture, microphone, camera, calendar, notifications) list it on the
+  **Permissions** tab of the Features hub before you install them.
+
+## Requirements
+
+* Windows 10 version 2004 (build 19041) or newer, or Windows 11, 64-bit.
+* No separate .NET install is needed; the release is self-contained.
+* Optional: `winget` for Packages and App updates, a DDC/CI monitor for external brightness, and Windows GPU counters for the GPU
+  monitor.
+
+## Good to know
+
+* **Unsigned builds and Smart App Control.** Trayloom is not code-signed yet. On Windows 11 with Smart App Control in
+  *Enforce* mode, Windows may block it. Trayloom detects this and explains your options in plain words; it never changes or
+  works around that setting. You can sign the files yourself, use a PC where Smart App Control is off or in evaluation mode,
+  or build Trayloom on that PC.
+* **Elevated windows.** Tools that work with input (smooth scrolling, focus follows mouse, Super key, snippets, protection,
+  the switcher) cannot affect windows running as administrator unless Trayloom also runs as administrator.
+* **First start.** The first start after a fresh copy can take around 10 seconds while Windows scans the new files. Later
+  starts take about a second.
+* **Something not working?** Right-click the tray icon > **Report a problem...** opens the folder with the log
+  (`%APPDATA%\Trayloom\logs\trayloom.log`).
+* **Languages.** Trayloom speaks 15 languages and switches live in Settings > General > Language. A few captions on feature
+  pages are still English only.
+
+## Build from source
+
+You need the [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) on Windows 10 (19041) or newer.
+
+```powershell
+git clone https://github.com/Naveen022006/Trayloom.git
+cd Trayloom
+dotnet build Trayloom.sln -c Release
 dotnet run --project src/Trayloom.App
-
-dotnet publish src/Trayloom.App/Trayloom.App.csproj -c Release -r win-x64 --self-contained true -o dist/Trayloom
 ```
 
-The publish output (`dist\Trayloom\Trayloom.exe`, about 175 MB unpacked, 70 MB zipped) is a self-contained folder: feature
-discovery loads the `Trayloom.Features.*.dll` assemblies next to the exe, and NAudio, ZXing.Net and the SQLite natives
-ship beside them, so keep the folder together. The first start after a fresh copy can take ~10 s (Windows scans the new
-DLLs); later starts take about a second.
+Create the self-contained release folder, zip and setup script in `dist\`:
 
-Developer flags (a second launch hands them to the running copy): `--open-settings <page#anchor>`,
-`--open-panel [tab]`, `--open-menu`, `--search <text>`, `--action <feature> <action>`, `--dev-install <id>`,
-`--dev-uninstall <id>`, `--close-panel`, `--dump-info <file>` (features, actions, panel utilities, shortcut defaults,
-duplicate checks), `--open-onboarding [step]`, `--open-install`, `--show-toast`, `--simulate-problem sac|crash`,
-`--dev-key escape` (raises a key event inside the app), `--slow-start <ms>`, `--shot <png> [window title]` (saves a
-picture of one of Trayloom's own windows), `--install`, `--uninstall [--quiet]`, `--no-onboarding`. With `TRAYLOOM_DEV=1` the island also exposes one action per page. Island placement: `--action island move` enters "Move island" mode and `--action island reset-position` puts the island back at the top center; with `TRAYLOOM_DEV=1` also `--action island dev-place-top-left`, `dev-place-top-right`, `dev-place-bottom-left`, `dev-place-bottom-center`, `dev-place-bottom-right`, `dev-place-float`, `dev-place-next-display` (cycles "Choose a display" through the connected displays) and `dev-place-reset`.
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\package.ps1
+```
 
-`ARCHITECTURE_V2.md` and `specs/CONTRACTS.md` describe the solution layout and the contracts feature projects code
-against; `specs/R3_NOTES.md` is the integration checklist this release worked through.
+Keep the published folder together: Trayloom discovers its tools from the `Trayloom.Features.*.dll` files next to
+`Trayloom.exe`.
 
-## Smart App Control and unsigned builds
+### Project layout
 
-Trayloom builds are **not code-signed**. On Windows 11 with **Smart App Control** (SAC) in *Enforce* mode, unsigned and
-unknown binaries (the exe and the feature DLLs it loads) can be blocked, which shows up as a failed start, a "blocked"
-message or a feature assembly that cannot be loaded. Your options, your choice:
+| Folder | Contents |
+| --- | --- |
+| `src/Trayloom.App` | `Trayloom.exe`: start-up, tray icon, panel, Settings window, install and uninstall. |
+| `src/Trayloom.Core` | Shared contracts, settings store, hooks and hotkeys, the feature catalog, localisation and shared UI. |
+| `src/Trayloom.Features.*` | One project per area: Input, Windows, System, Tools, Island, Capture, Agents, Files, Maintenance. |
+| `tests/` | Small console harnesses for the parts that need a real window. |
+| `specs/` | Screen-by-screen specifications of every page, string and default. |
 
-1. Sign the executables and DLLs with a code-signing certificate that Windows trusts.
-2. Turn Smart App Control off (Windows Security, App and browser control). Windows does not allow turning it back on
-   without resetting the PC.
-3. Run on a machine without SAC (or in Evaluation mode), or build locally on that machine.
+Each tool implements `IFeature` with `Start` and `Stop`, and `Stop` must undo everything `Start` changed. UI is added through
+contributions (settings sections, panel sections, island pages), which are discovered automatically. See
+[ARCHITECTURE_V2.md](ARCHITECTURE_V2.md) and [specs/CONTRACTS.md](specs/CONTRACTS.md) for details, and
+[TESTING.md](TESTING.md) for what needs a person to verify.
 
-Trayloom never tries to bypass SAC or SmartScreen.
+### Useful flags
 
-## Known limitations
+Run a second `Trayloom.exe` with these to drive the running copy:
 
-* Not yet done (tracked in `specs/R3_NOTES.md`): the shared app picker / app list lives in three projects (Input,
-  Windows, Files) instead of Core.
-* The screenshot editor and recorder editor windows are hidden from screen capture on purpose, so screenshot tools show them blank.
-* Exporting a recording renders every frame on the CPU: a 15 second clip takes about 15 s and briefly uses 1 to 2 GB.
-* `TESTING.md` lists what needs a real person to verify (Alt+Tab takeover, taskbar previews, edge snapping, real clicks in
-  recordings, the permission alert, and so on).
-* Features that hook input (smooth scrolling, focus follows mouse, super key, snippets, protection, the switcher) cannot
-  see or change input in elevated windows unless Trayloom runs elevated.
-* GPU monitor needs the Windows GPU engine counters; external brightness needs DDC/CI; Packages and App updates need
-  `winget`.
-* With a very large AI-agent history (several GB of Claude Code logs) the Agents extension alone keeps ~200 MB resident;
-  turn it off in the Dynamic Island settings if that matters. Idle cost with everything installed is about 3 to 4 % of one
-  core (0.1 % of a 28-thread CPU) and 0.6 to 0.9 GB of memory, most of it the AI-agent history.
+| Flag | Effect |
+| --- | --- |
+| `--open-settings <page>` | Open Settings on a page, for example `features` or `window-layout`. |
+| `--open-panel [tab]` | Open the tray panel, optionally on a tab such as `system` or `mixer`. |
+| `--action <tool> <action>` | Run one action of a tool. |
+| `--shot <file.png> [window]` | Save a picture of one of Trayloom's own windows. |
+| `--dump-info <file>` | Write every tool, action and default shortcut to a file. |
+| `--quit` | Quit the running copy gracefully. |
+| `--uninstall` | Uninstall Trayloom. |
+
+Settings live in `%APPDATA%\Trayloom\settings.json`; set `TRAYLOOM_DATA` to use a different folder for experiments.
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) has the full list of flags and test switches.
+
+## Contributing
+
+Issues and pull requests are welcome. Before larger changes, read [ARCHITECTURE_V2.md](ARCHITECTURE_V2.md) and the relevant
+file in `specs/`. Every tool must clean up after itself in `Stop()`, every visible string goes through the localisation
+helper, and nothing personal (screenshots, logs, settings) belongs in a commit.
 
 ## License
 
-GPL-3.0-or-later, see `LICENSE`. Vorssaint is a trademark of its owners; Trayloom only follows its public source code
-under the GPL and has no relationship with the project.
+Trayloom is free software under the **GNU General Public License v3.0 or later**; see [LICENSE](LICENSE). It builds on the
+open-source, GPL-licensed [Vorssaint](https://github.com/vorssaint/vorssaint-utils) project and is not affiliated with or
+endorsed by it.

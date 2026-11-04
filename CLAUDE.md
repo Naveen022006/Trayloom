@@ -15,7 +15,7 @@ structure, a feature's own spec on behaviour).
   copying a new build over it, then start the installed exe again.
 - Isolate experiments: `TRAYLOOM_DATA` (settings + logs root), `TRAYLOOM_NO_INSTALL_PROMPT=1`; install tests also
   `TRAYLOOM_INSTALL_ROOT`, `TRAYLOOM_STARTMENU_DIR`, `TRAYLOOM_DESKTOP_DIR`, `TRAYLOOM_UNINSTALL_KEY`, `TRAYLOOM_RUN_KEY`.
-- Dev flags (README "Build, run, publish"): `--open-settings <page#anchor>`, `--open-panel [tab]`, `--action <feature> <action>`,
+- Dev flags (`docs/DEVELOPMENT.md`): `--open-settings <page#anchor>`, `--open-panel [tab]`, `--action <feature> <action>`,
   `--dump-info <file>`, `--shot <png> [title]`, `--dev-key escape` (in-process key event), `--set-language`, … A second
   launch hands them to the running copy. `TRAYLOOM_DEV=1` adds one island action per page.
 - `Trayloom.exe --window-guardian*` runs the small window guardian (no WPF); see "Foreign windows" below.
