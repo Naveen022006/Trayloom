@@ -228,6 +228,12 @@ internal sealed class ContentEditor : Grid
         if (available && any)
         {
             _detail.Children.Add(card);
+            if (m.Id == "music")
+            {
+                var services = MusicServicesCard.Create(_c, _core);
+                services.Margin = new Thickness(0, 14, 0, 0);
+                _detail.Children.Add(services);
+            }
         }
         else if (available)
         {

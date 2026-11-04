@@ -170,6 +170,10 @@ need it. Its layout, size, buttons and pages are all yours to arrange.
 | **AI Agents** | Plan limits, tokens, API value and live sessions of Claude, Codex, OpenCode and GitHub Copilot (see below). |
 | **Companion** | A small friend in the island who says hello now and then and reacts to what happens on your PC. |
 
+The island's music page can also browse Spotify and YouTube Music in its Library, next to Apple Music: turn each one on, with
+its own Spotify Client ID or YouTube Data API key, in Settings › Dynamic Island › Content › Now Playing. Both are off until
+you do (see [Privacy](#privacy); setup steps are in [docs/INSTALL.md](docs/INSTALL.md#spotify-and-youtube-music-optional)).
+
 ### System monitor
 
 CPU, GPU, Memory, Network, Disks, Power and Connected devices, with usage, temperatures, graphs and memory pressure. Show
@@ -289,10 +293,11 @@ What to expect:
 
 * No account, no sign-in, no telemetry, no ads.
 * Clipboard history, snippets, scratchpads, captures and settings are stored in `%APPDATA%\Trayloom` on your PC.
-* The only online features are ones you switch on yourself: lyrics lookup, app and package updates, and links you choose to
-  open. Feedback opens a GitHub issue in your browser.
+* The only online features are ones you switch on yourself: lyrics lookup, Spotify and YouTube Music search, app and package
+  updates, and links you choose to open. Feedback opens a GitHub issue in your browser.
 * Tools that need a Windows permission (screen capture, microphone, camera, calendar, notifications) list it on the
   **Permissions** tab of the Features hub before you install them.
+* **Spotify and YouTube Music (optional).** Nothing is sent until you set a service up in Settings › Dynamic Island › Content › Now Playing. Spotify sign-in happens on Spotify’s own page in your browser (Trayloom never sees your password); Trayloom asks only to read your playlists, liked and recently played songs and what’s playing, and to control playback, and never changes your library or playlists. The sign-in is stored encrypted for your Windows account in `%APPDATA%\Trayloom\music`; Disconnect deletes it, and spotify.com/account/apps removes access. YouTube Music works without an account: searches open in your browser, or, with your own YouTube Data API key (stored encrypted the same way), go directly to Google’s YouTube Data API. YouTube’s Terms of Service and Google’s Privacy Policy apply to those searches. Results are kept in memory only.
 
 ## Requirements
 

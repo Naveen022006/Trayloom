@@ -112,6 +112,7 @@ internal sealed class IslandCore : IDisposable
         Mascot = new MascotService(this);
         Lyrics = new LyricsService(this);
         AppleMusic = new AppleMusicService(this);
+        Music = new MusicServices(this);
         MicUse = new MicUseService(Ui, ctx.Log);
         Sources = new NoticeSources(this);
         Current = this;
@@ -154,6 +155,9 @@ internal sealed class IslandCore : IDisposable
     public LyricsService Lyrics { get; }
 
     public AppleMusicService AppleMusic { get; }
+
+    /// <summary>Spotify and YouTube Music (off until the user turns them on and sets them up in Settings).</summary>
+    public MusicServices Music { get; }
 
     public NoticeSources Sources { get; }
 
@@ -679,6 +683,7 @@ internal sealed class IslandCore : IDisposable
         Levels.Dispose();
         Playback.Dispose();
         AppleMusic.Dispose();
+        Music.Dispose();
         Audio.Dispose();
         Timer.Dispose();
         Calendar.Dispose();

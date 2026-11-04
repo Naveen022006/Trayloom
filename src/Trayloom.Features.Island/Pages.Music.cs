@@ -199,7 +199,7 @@ internal sealed class MusicPage : IslandPage
     private readonly StackPanel _trailing = new() { Orientation = Orientation.Horizontal };
     private readonly DispatcherTimer _poll = new(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(250) };
     private LyricsView? _lyrics;
-    private LibraryPanel? _library;
+    private IMusicBrowserPanel? _library;
     private double _extraHeight = 216;
 
     // The page is rebuilt whenever the track changes: the Apple Music library panel is carried over to the new instance.
@@ -208,7 +208,7 @@ internal sealed class MusicPage : IslandPage
     public MusicPage(IslandCore core, IslandWindow? window)
         : base(core, window)
     {
-        if (s_carry is { Extra: MusicExtra.Library } carry && (DateTime.UtcNow - carry.At).TotalSeconds < 3 && Core.AppleMusic.Available)
+        if (s_carry is { Extra: MusicExtra.Library } carry && (DateTime.UtcNow - carry.At).TotalSeconds < 3 && MusicSources.Any(Core))
         {
             _extra = MusicExtra.Library;
         }
@@ -225,8 +225,8 @@ internal sealed class MusicPage : IslandPage
     // The Library search box asks the island for the keyboard itself, and only while it is focused.
     public override bool WantsKeyboard => false;
 
-    /// <summary>The magnifier: opens the Apple Music Library with the search box focused (only where the island can drive Apple Music).</summary>
-    public override FrameworkElement? Leading => HasWindow && !IsPreview && Core.AppleMusic.Available ? _leading ??= BuildSearchButton() : null;
+    /// <summary>The magnifier: opens the Library with the search box focused (where the island can drive Apple Music, or Spotify / YouTube Music is turned on).</summary>
+    public override FrameworkElement? Leading => HasWindow && !IsPreview && MusicSources.Any(Core) ? _leading ??= BuildSearchButton() : null;
 
     public override FrameworkElement? Trailing => null;
 
@@ -234,7 +234,7 @@ internal sealed class MusicPage : IslandPage
 
     private StackPanel BuildSearchButton()
     {
-        var search = D.IconButton(G.Search, LibStrings.SearchTip, OpenSearch, _extra == MusicExtra.Library, size: 28, glyphSize: 12);
+        var search = D.IconButton(G.Search, MusicSources.SearchTip(Core), OpenSearch, _extra == MusicExtra.Library, size: 28, glyphSize: 12);
         System.Windows.Automation.AutomationProperties.SetAutomationId(search, "Island.Music.SearchButton");
         return new StackPanel { Orientation = Orientation.Horizontal, Children = { search } };
     }
@@ -245,7 +245,7 @@ internal sealed class MusicPage : IslandPage
     /// </summary>
     private void OpenSearch()
     {
-        if (!HasWindow || !Core.AppleMusic.Available)
+        if (!HasWindow || !MusicSources.Any(Core))
         {
             return;
         }
@@ -264,7 +264,7 @@ internal sealed class MusicPage : IslandPage
 
     public override bool HandleKey(KeyEventArgs e)
     {
-        if (!HasWindow || IsPreview || !Core.AppleMusic.Available)
+        if (!HasWindow || IsPreview || !MusicSources.Any(Core))
         {
             return false;
         }
@@ -323,7 +323,8 @@ internal sealed class MusicPage : IslandPage
             h += 38;
         }
 
-        _extraHeight = _extra == MusicExtra.Library ? Math.Clamp(budget - h - 10, 200, 330) : 216;
+        // the source switcher (24 + 6) takes its room from the list, so the Library may be that much taller
+        _extraHeight = _extra == MusicExtra.Library ? Math.Clamp(budget - h - 10, 200, 330 + (SwitcherShown ? 30 : 0)) : 216;
         if (_extra != MusicExtra.None)
         {
             h += 10 + _extraHeight;
@@ -443,7 +444,7 @@ internal sealed class MusicPage : IslandPage
     /// <summary>Shows the Apple Music library on the Music page (opens the island on it when it is closed or on another page).</summary>
     public static void OpenLibrary(IslandCore core)
     {
-        if (!core.AppleMusic.Available)
+        if (!MusicSources.Any(core))
         {
             return;
         }
@@ -618,7 +619,7 @@ internal sealed class MusicPage : IslandPage
             _extraView = _extra switch
             {
                 MusicExtra.Lyrics => _lyrics = new LyricsView(Core, () => HasWindow ? Window.HoldOpen() : null),
-                MusicExtra.Library => _library = new LibraryPanel(Core, HasWindow ? Window : null),
+                MusicExtra.Library => BuildBrowser(),
                 _ => BuildQueue(preferred),
             };
             var holder = new Grid { Height = _extraHeight, ClipToBounds = true, Margin = new Thickness(0, 10, 0, 0) };
@@ -627,6 +628,85 @@ internal sealed class MusicPage : IslandPage
         }
 
         _view.Children.Add(stack);
+    }
+
+    /// <summary>Two or more sources are on offer: a switcher shows above the browser.</summary>
+    private bool SwitcherShown => MusicSources.Available(Core).Count >= 2;
+
+    /// <summary>
+    /// The Library area: the Apple Music <see cref="LibraryPanel"/> or a <see cref="StreamPanel"/> for the source shown, under a 24 px source
+    /// switcher when there is more than one source. Apple Music alone looks and behaves exactly as before.
+    /// </summary>
+    private FrameworkElement BuildBrowser()
+    {
+        var sources = MusicSources.Available(Core);
+        var current = MusicSources.Current(Core) ?? MusicSource.Apple;
+        var window = HasWindow ? Window : null;
+        FrameworkElement panel;
+        switch (current)
+        {
+            case MusicSource.Spotify:
+                var spotify = new StreamPanel(Core, window, Core.Music.Spotify);
+                _library = spotify;
+                panel = spotify;
+                break;
+            case MusicSource.YouTube:
+                var youTube = new StreamPanel(Core, window, Core.Music.YouTube);
+                _library = youTube;
+                panel = youTube;
+                break;
+            default:
+                var apple = new LibraryPanel(Core, window);
+                _library = apple;
+                panel = apple;
+                break;
+        }
+
+        if (sources.Count < 2)
+        {
+            return panel;
+        }
+
+        var grid = new Grid();
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        var plate = new Border { CornerRadius = new CornerRadius(9), Background = D.White(0.065), Padding = new Thickness(2), Height = 24, Margin = new Thickness(0, 0, 0, 6) };
+        var row = new Grid();
+        for (var i = 0; i < sources.Count; i++)
+        {
+            var source = sources[i];
+            var selected = source == current;
+            var segment = new HoverButton(() => ChooseSource(source, current)) { CornerRadius = new CornerRadius(7), Lifts = false, Selected = selected };
+            var label = D.T(MusicSources.Brand(source), 11, selected ? FontWeights.SemiBold : FontWeights.Medium, selected ? D.Text : D.White(0.6), false, TextTrimming.CharacterEllipsis);
+            label.HorizontalAlignment = HorizontalAlignment.Center;
+            label.VerticalAlignment = VerticalAlignment.Center;
+            label.Margin = new Thickness(4, 0, 4, 0);
+            segment.Child = label;
+            System.Windows.Automation.AutomationProperties.SetAutomationId(segment, "Island.Music.Source." + source);
+            System.Windows.Automation.AutomationProperties.SetName(segment, MusicSources.Brand(source));
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            Grid.SetColumn(segment, i);
+            row.Children.Add(segment);
+        }
+
+        plate.Child = row;
+        grid.Children.Add(plate);
+        Grid.SetRow(panel, 1);
+        grid.Children.Add(panel);
+        return grid;
+    }
+
+    /// <summary>The switcher: hands the keyboard back, remembers the choice and rebuilds the page around the other source.</summary>
+    private void ChooseSource(MusicSource source, MusicSource current)
+    {
+        if (source == current)
+        {
+            return;
+        }
+
+        _library?.ReleaseNow();
+        MusicSources.Choose(Core, source);
+        Reopen();
     }
 
     private FrameworkElement BuildHead(Playback p, bool idle, bool awaiting, string? preferred)
@@ -649,6 +729,8 @@ internal sealed class MusicPage : IslandPage
             {
                 if (_extra != MusicExtra.Library)
                 {
+                    // the cover of an Apple Music song opens the Apple Music Library, even when the switcher was left on another source
+                    MusicSources.Choose(Core, MusicSource.Apple);
                     SetExtra(MusicExtra.Library);
                 }
             }
@@ -717,9 +799,9 @@ internal sealed class MusicPage : IslandPage
             top.Children.Add(b);
         }
 
-        if (Core.AppleMusic.Available)
+        if (MusicSources.Any(Core))
         {
-            Toggle(G.MusicLibrary, LibStrings.Library, MusicExtra.Library);
+            Toggle(G.MusicLibrary, MusicSources.ToggleTitle(Core), MusicExtra.Library);
         }
 
         if (LyricsOn)
@@ -910,6 +992,11 @@ internal sealed class MusicPage : IslandPage
         if (Core.AppleMusic.Available && Core.Playback.Current.Aumid.Contains("AppleMusic", StringComparison.OrdinalIgnoreCase))
         {
             return new AppleQueueView(Core);
+        }
+
+        if (Core.Music.Spotify.Connection == StreamConnection.Connected && Core.Playback.Current.Aumid.Contains("spotify", StringComparison.OrdinalIgnoreCase))
+        {
+            return new SpotifyQueueView(Core);
         }
 
         var grid = new Grid { Margin = new Thickness(0, 6, 0, 0) };

@@ -800,7 +800,7 @@ internal sealed class VirtualList : Grid
 /// (songs, albums, artists, playlists; scope chips; Enter plays the highlighted result). Playing goes through <see cref="AppleMusicService"/>
 /// (the Apple Music window is never shown).
 /// </summary>
-internal sealed class LibraryPanel : Grid
+internal sealed class LibraryPanel : Grid, IMusicBrowserPanel
 {
     private const double TileSize = 32;
     private static bool s_loggedKeyboard;

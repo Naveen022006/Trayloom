@@ -83,6 +83,40 @@ Each Windows account on a PC that signs in and wants Trayloom installs it for it
 Some keyboard shortcuts may already be used by that laptop (for example Intel graphics drivers use Ctrl+Alt+Arrow to rotate
 the screen). Trayloom picks a fallback and shows it in Settings > Keyboard shortcuts, where every shortcut can be changed.
 
+## Spotify and YouTube Music (optional)
+
+The Dynamic Island's music page can search and browse Spotify and YouTube Music in its Library. Both are off until you set
+them up, and nothing is sent before that. Open **Settings > Dynamic Island > Content > Now Playing** and find the
+**Music services** card.
+
+**Spotify.** Spotify lets an app in only through a Client ID that belongs to a Spotify app you create:
+
+1. Open [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) (the card has an **Open Spotify Dashboard**
+   button) and sign in. Creating an app needs **Spotify Premium** on that account.
+2. **Create app**. Give it any name and description. Under *Redirect URIs* add exactly
+   `http://127.0.0.1:43118/callback` (the card shows it with a **Copy** button; it must be that address, not `localhost`).
+   Under *Which API/SDKs are you planning to use?* tick **Web API**. Save.
+3. Open the app's **Settings** and copy its **Client ID**. There is no secret to copy.
+4. Paste the Client ID into the card's **Client ID** box, press Enter, then click **Connect**. Your browser opens Spotify's own
+   page; allow access, and the tab says it is connected. The island's Library now has a **Spotify** tab.
+5. A new Spotify app is in *development mode*: it only works for accounts you add under the app's **User Management** (up to
+   five), so add a friend's Spotify email there before they connect. **Disconnect** in the card deletes the sign-in from this
+   PC; **Manage apps** opens spotify.com/account/apps to remove Trayloom from the account as well.
+
+Playing, queueing and seeking from the island need **Spotify Premium**. Without Premium, searching and browsing still work and
+songs open in the Spotify app instead.
+
+**YouTube Music.** It works without any setup: searches open YouTube Music in your browser. To see results inside the island:
+
+1. Open [Google Cloud Console](https://console.cloud.google.com/) (the card has an **Open Google Cloud Console** button), create
+   a project, and **enable YouTube Data API v3** for it.
+2. **Credentials > Create credentials > API key**. Copy the key.
+3. Paste it into the card's **API key** box and click **Save**. Trayloom checks it with one cheap request and stores it
+   encrypted for your Windows account; the box never shows it again.
+
+The free daily allowance is about 100 searches. YouTube Music has no official playback API, so a song opens in your browser
+(or the YouTube Music app) and the island's controls then follow that player.
+
 ## Updating
 
 Download the new zip, unzip it and run `Trayloom.exe`. The installer sees the installed copy and offers **Update**, which

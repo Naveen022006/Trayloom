@@ -6,7 +6,7 @@ using Trayloom.Core;
 namespace Trayloom.Features.Island;
 
 /// <summary>Flat <see cref="IAppSettings"/> key names of the Dynamic Island (Vorssaint <c>DefaultsKey</c> names).</summary>
-internal static class K
+internal static partial class K
 {
     public const string Enabled = "notchEnabled";
     public const string Size = "notchSize";
@@ -277,6 +277,7 @@ internal static class K
             [ScreenshotDefaultAction] = "",
             [PanelControlNotch] = true,
         });
+        RegisterMusicDefaults(app);
     }
 
     /// <summary>Splits a comma separated list (empty entries dropped).</summary>

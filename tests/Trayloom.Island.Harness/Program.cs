@@ -36,6 +36,10 @@ internal static class Program
         LibrarySearchChecks.Run(Check);
         IslandUiChecks.Run(Check);
         SeekChecks.Run(Check);
+        MusicCoreChecks.Run(Check);
+        SpotifyChecks.Run(Check);
+        YouTubeChecks.Run(Check);
+        StreamListChecks.Run(Check);
         Console.WriteLine($"{s_checks - s_failed}/{s_checks} checks passed");
         return s_failed == 0 ? 0 : 1;
     }
