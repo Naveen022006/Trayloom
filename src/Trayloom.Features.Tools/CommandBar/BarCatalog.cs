@@ -138,6 +138,10 @@ internal static class BarCatalog
         }
 
         Tool("action.scratchpad", "scratchpad", Loc.T("Scratchpad"), 0xE70B, "scratchpad", "scratchpad");
+        if (Has("notch-screen-time") && Exact(ctx, "notch-screen-time", "today") is { } screenTime)
+        {
+            rows.Add(Simple("action.screenTimeToday", screenTime.Title, Area("notch-screen-time", Loc.T("Screen time")), 0xE916, screenTime.Invoke, 100, Loc.T("Screen time usage today apps")));
+        }
         Tool("action.cameraPreview", "cameraPreview", Loc.T("Camera preview"), 0xE722, "camera-preview", "cameraPreview");
         Tool("action.shelf", "shelf", Loc.T("Shelf"), 0xE7B8, "shelf", "shelf");
         if (Has("paste-plain") && Exact(ctx, "paste-plain", "paste-plain") is { } plain)

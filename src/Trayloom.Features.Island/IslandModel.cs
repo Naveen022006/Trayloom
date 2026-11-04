@@ -43,6 +43,7 @@ internal static class IslandCatalog
         new("calendar", Loc.T("Calendar"), G.Calendar, 'a', C("#FF453A"), false, Loc.T("Today's events and the month ahead."), ["notch-calendar"], K.CalendarEnabled, true),
         new("notifications", Loc.T("Notifications"), G.Bell, 'n', C("#FF9F0A"), false, Loc.T("Your PC's notifications, kept in the island."), ["notch-notifications"], K.NotificationsEnabled, true),
         new("timer", Loc.T("Timer"), G.Timer, 'r', C("#63E6E2"), false, Loc.T("Timer, Pomodoro and stopwatch."), ["notch-timer"], K.TimerEnabled, true),
+        new("screenTime", Loc.T("Screen time"), G.Clock, 'u', C("#30B0C7"), false, Loc.T("How long you used the PC today, and in which apps."), ["notch-screen-time"], null, true),
         new("camera", Loc.T("Camera mirror"), G.Video, 'w', C("#40C8E0"), false, Loc.T("A mirror to check yourself before a call."), ["camera-preview"], K.CameraEnabled, true),
         new("downloads", Loc.T("Downloads"), G.Download, 'd', C("#0A84FF"), false, Loc.T("Downloads in progress and just finished."), ["notch-downloads"], null, true),
         new("scratchpad", Loc.T("Scratchpad"), G.Note, 'p', C("#FFD60A"), true, Loc.T("Quick notes that save by themselves."), ["scratchpad"], null, true),

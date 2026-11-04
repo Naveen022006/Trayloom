@@ -275,6 +275,11 @@ internal static class SettingsTabs
             choices.Add(RestChoice(Loc.T("AI limits"), G.Claude, "agents", marked == "agents", current == "agents", core is not null && !core.ModuleVisible("agents") ? Loc.T("Show “AI Agents” on the Content tab.") : null, () => Pick("agents")));
         }
 
+        if (core?.ModuleVisible("screenTime") == true || current == "screenTime")
+        {
+            choices.Add(RestChoice(Loc.T("Screen time"), G.Clock, "screenTime", marked == "screenTime", current == "screenTime", core is not null && !core.ModuleVisible("screenTime") ? Loc.T("Show “Screen time” on the Content tab.") : null, () => Pick("screenTime")));
+        }
+
         var grid = new UniformGrid { Columns = choices.Count };
         foreach (var ch in choices)
         {
@@ -390,6 +395,7 @@ internal static class SettingsTabs
             {
                 "battery" => D.T("76%", 9, FontWeights.Medium),
                 "agents" => D.T("62%", 9, FontWeights.Medium),
+                "screenTime" => D.T("3h 12m", 9, FontWeights.Medium),
                 _ => (FrameworkElement)D.I("", 9, Brushes.White),
             });
         }

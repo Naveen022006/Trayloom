@@ -93,6 +93,17 @@ internal static class ClosedViews
                 break;
             }
 
+            case "screenTime":
+            {
+                var strip = core.TakeStrip("screenTime.resting");
+                if (strip is not null)
+                {
+                    middle = strip;
+                }
+
+                break;
+            }
+
             case "agents":
             {
                 var strip = core.TakeStrip("agents.resting");

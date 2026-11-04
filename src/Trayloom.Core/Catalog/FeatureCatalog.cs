@@ -137,6 +137,7 @@ public static class FeatureCatalog
         list.Add(Def("notch-notifications", I, Loc.T("Notifications"), Loc.T("New system notifications in the Dynamic Island."), "", Idle, "A", true, "island", [], support: WindowsSupport.Adapted));
         list.Add(Def("notch-gestures", I, Loc.T("Dynamic Island Gestures"), Loc.T("Open and close the Dynamic Island with scrolling, and swipe to change tracks."), "", Idle, "", true, "island", [], legacy: "island-gestures"));
         list.Add(Def("notch-timer", I, Loc.T("Timer"), Loc.T("Timers, a stopwatch and focused work sessions in the Dynamic Island."), "", Idle, "", true, "island", [], legacy: "island-timer"));
+        list.Add(Def("notch-screen-time", I, Loc.T("Screen time"), Loc.T("See how long you used the PC today, and in which apps, in the Dynamic Island. App names and times stay on this PC."), "\uE916", Per, "A", false, "island#screenTime", ["notchScreenTimeEnabled"], legacy: "screen-time"));
         list.Add(Def("notch-accessories", I, Loc.T("Accessory alerts"), Loc.T("Show connected accessories and warn once when their battery falls to 20%."), "", Per, "", true, "island", []));
         list.Add(Def("notch-lyrics", I, Loc.T("Lyrics"), Loc.T("Follow the lyrics of the current song in the Dynamic Island."), "", Per, "", true, "island", []));
         list.Add(Def("notch-queue", I, Loc.T("Up next"), Loc.T("See the actual upcoming songs shared by your player."), "", Idle, "", true, "island", []));
