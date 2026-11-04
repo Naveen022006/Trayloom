@@ -140,7 +140,7 @@ The tools are grouped the same way as in the Features hub. Each line says what t
 | **Camera preview** | A floating mirror of your webcam before a call. |
 | **Scratchpad** | Floating pads for short-lived notes, with tabs and formatting. |
 | **Cleaning Mode** | Locks the keyboard and blanks the screen so you can wipe them. |
-| **Away mode** | Minimizes your windows when you leave and brings them back in the same order when you return, by mouse, unlock or (optionally) when the camera sees you. Nothing is closed. |
+| **Away mode** | Minimizes your windows when you leave and brings them back in the same order when you return, by mouse, unlock or (optionally) when the camera sees you. Optionally closes the apps you choose and opens them again, browsers with their tabs. |
 | **Quit apps** | Quit open apps one by one, all at once, or all but the one in front, always after showing the list. |
 | **Wallpaper** | Pick a still wallpaper without opening Windows Settings. |
 | **Cleaner** | Find and clear caches and junk files, with a review before anything is removed. |
@@ -181,9 +181,11 @@ key and no account (your own YouTube Data API key is an optional alternative). B
 
 ### Away mode and GitHub, in detail
 
-* **Away mode** only minimizes your windows and restores them in the same order; nothing is closed or moved. Face
-  detection is detection, not recognition: any face counts, so it cannot tell you from a colleague. For real protection,
-  switch on **Lock the PC too**.
+* **Away mode** minimizes your windows and restores them in the same order. Closing apps is off until you turn on **Close apps
+  while I’m away** and choose apps; Chrome and Edge then close the way they do for a Windows update restart and reopen with the
+  same windows and tabs. Private windows can’t be reopened, so a browser with one open is only minimized, and so is an app that
+  asks to save something. What was closed is remembered on your PC only until it is open again. Face detection is detection,
+  not recognition: any face counts, so it cannot tell you from a colleague. For real protection, switch on **Lock the PC too**.
 * **GitHub** is offline until you connect it. It then uses the GitHub CLI you are already signed in to, or a token you paste
   that is stored encrypted with Windows DPAPI for your account. It is read-only: Trayloom never writes to GitHub.
 

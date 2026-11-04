@@ -36,6 +36,10 @@ Feature dev actions (most only with `TRAYLOOM_DEV=1`): `--action screen-time dum
 `toggle-radio` or `disconnect` in automation: they cut the machine's network), and `--action away-mode
 simulate-away|simulate-return|simulate-face|dump`. Away mode's `simulate-away` only touches windows of the processes listed in
 `away-mode-only.txt` in its data folder (the `tests\AwayDummy` test process); `TRAYLOOM_AWAY_NO_CAMERA=1` keeps the camera off.
+Closing apps (0.4.0): `--action away-mode dev-close-now|simulate-session-end|reopen`; with `away-mode-only.txt` a browser name
+(`chrome`, `msedge`, ...) only matches a browser started with `--user-data-dir` under `TRAYLOOM_DATA` or the temp folder, so
+the isolated browser test of spec 07 section 11.4 can never touch your own browser. `tests\AwayDummy --mode
+closable|asks|refuses|slow|tray` stands in for other apps.
 
 With `TRAYLOOM_DEV=1` the island also exposes one action per page. Island placement: `--action island move` enters
 "Move island" mode and `--action island reset-position` puts the island back at the top centre; with `TRAYLOOM_DEV=1` also

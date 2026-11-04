@@ -152,7 +152,8 @@ internal static class WhatsNewPage
             Loc.T("Screen time: how long you used the PC today, and in which apps, in the Dynamic Island. Everything stays on your PC."),
             Loc.T("GitHub: unread notifications, your pull requests, reviews waiting for you and failing checks in the Dynamic Island. Off until you connect, through the GitHub CLI or an encrypted token."),
             Loc.T("Wi-Fi: see your network and its signal, turn Wi-Fi on or off and join nearby networks from the Dynamic Island and the tray."),
-            Loc.T("Away mode: your windows are minimized when you leave the PC and come back in the same order when you return, optionally when the camera sees you. Nothing is closed."),
+            Loc.T("Away mode: your windows are minimized when you leave the PC and come back in the same order when you return, optionally when the camera sees you."),
+            Loc.T("Away mode can also close the apps you choose when you leave and open them again when you’re back. Chrome and Edge come back with the same windows and tabs; an app that asks to save something is left open, so nothing is lost."),
         ]),
         new("Changed",
         [
@@ -170,7 +171,7 @@ internal static class WhatsNewPage
     {
         var stack = new StackPanel { Margin = new Thickness(2, 2, 2, 0) };
         stack.Children.Add(UiKit.Text(Loc.T("What’s new in this version"), 18, FontWeights.Bold, ThemeKeys.TextPrimary));
-        var version = UiKit.Text($"v{AppInfo.Version} · 2026-11-04", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary);
+        var version = UiKit.Text($"v{AppInfo.Version} · 2026-11-05", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary);
         version.Margin = new Thickness(0, 4, 0, 0);
         stack.Children.Add(version);
         foreach (var section in Notes)
