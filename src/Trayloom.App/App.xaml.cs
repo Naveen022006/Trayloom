@@ -14,9 +14,18 @@ namespace Trayloom.App;
 /// <summary>Application entry: single instance, service composition, startup guard and the shells.</summary>
 public partial class App : Application
 {
-    private const string MutexName = @"Local\Trayloom.SingleInstance";
-    private const string ActivateEventName = @"Local\Trayloom.Activate";
-    private const string QuitEventName = @"Local\Trayloom.Quit";
+    /// <summary>
+    /// Developer aid: with TRAYLOOM_DATA and TRAYLOOM_INSTANCE both set, the single-instance names get a suffix so a development copy can
+    /// run beside the installed one (each with its own settings, logs and dev command file under its TRAYLOOM_DATA).
+    /// </summary>
+    private static readonly string InstanceSuffix =
+        Environment.GetEnvironmentVariable("TRAYLOOM_DATA") is { Length: > 0 } && Environment.GetEnvironmentVariable("TRAYLOOM_INSTANCE") is { Length: > 0 } name
+            ? "." + string.Concat(name.Where(char.IsLetterOrDigit))
+            : "";
+
+    private static readonly string MutexName = @"Local\Trayloom.SingleInstance" + InstanceSuffix;
+    private static readonly string ActivateEventName = @"Local\Trayloom.Activate" + InstanceSuffix;
+    private static readonly string QuitEventName = @"Local\Trayloom.Quit" + InstanceSuffix;
 
     /// <summary>Feature assemblies referenced by the app; loaded explicitly so reflection discovery finds them.</summary>
     private static readonly string[] FeatureAssemblies =

@@ -40,6 +40,8 @@ displays) and `dev-place-reset`.
 ## Isolating experiments
 
 * `TRAYLOOM_DATA` moves the settings and logs folder (default `%APPDATA%\Trayloom`).
+* `TRAYLOOM_INSTANCE=<name>` (with `TRAYLOOM_DATA`) lets a development copy run beside the installed one; flags and `--quit` go to
+  the copy with the same name.
 * `TRAYLOOM_NO_INSTALL_PROMPT=1` hides the install offer; builds run from `bin\Debug` / `bin\Release` never show it.
 * To test the install flow without touching your real Start menu or registry, point `TRAYLOOM_INSTALL_ROOT`,
   `TRAYLOOM_STARTMENU_DIR`, `TRAYLOOM_DESKTOP_DIR`, `TRAYLOOM_UNINSTALL_KEY` (an HKCU sub key) and `TRAYLOOM_RUN_KEY` (an HKCU
