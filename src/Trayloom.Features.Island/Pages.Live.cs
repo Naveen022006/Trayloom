@@ -830,6 +830,17 @@ internal sealed class CapturesPage : IslandPage
             }
 
             D.Tip(b, f.Name);
+            IslandFileDrag.Attach(b, () => [path], () => HasWindow ? Window.HoldOpen() : null);
+            b.MouseRightButtonUp += (_, e) =>
+            {
+                IslandMenu.Show(b,
+                [
+                    new IslandMenu.Item(Loc.T("Open"), () => DownloadsPage.OpenPath(path)),
+                    new IslandMenu.Item(Loc.T("Show in folder"), () => DownloadsPage.Reveal(path)),
+                    new IslandMenu.Item(Loc.T("Copy"), () => IslandFileDrag.CopyToClipboard([path])),
+                ], () => HasWindow ? Window.HoldOpen() : null);
+                e.Handled = true;
+            };
             wrap.Children.Add(b);
         }
 

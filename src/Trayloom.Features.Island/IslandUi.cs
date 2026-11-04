@@ -433,6 +433,14 @@ internal sealed class HoverButton : Border
         Opacity = IsEnabled ? (_down ? 0.8 : 1) : 0.4;
     }
 
+    /// <summary>Drops the pressed state and mouse capture without clicking, for when a drag took over the press.</summary>
+    internal void CancelPress()
+    {
+        _down = false;
+        ReleaseMouseCapture();
+        Refresh();
+    }
+
     /// <summary>Does what a click does (UI Automation's Invoke); nothing when the button is disabled.</summary>
     internal void Click()
     {

@@ -206,24 +206,16 @@ internal sealed class FilesPage : IslandPage
         stack.Children.Add(name);
         tile.Child = stack;
         D.Tip(tile, path);
-        Point? start = null;
-        tile.PreviewMouseLeftButtonDown += (_, e) => start = e.GetPosition(tile);
-        tile.PreviewMouseMove += (_, e) =>
-        {
-            if (e.LeftButton == MouseButtonState.Pressed && start is { } s && (e.GetPosition(tile) - s).Length > 8)
-            {
-                start = null;
-                using var hold = HasWindow ? Window.HoldOpen() : null;
-                var data = new DataObject(DataFormats.FileDrop, new[] { path });
-                DragDrop.DoDragDrop(tile, data, DragDropEffects.Copy | DragDropEffects.Move);
-            }
-        };
+        // A selected tile drags the whole selection; an unselected one drags only itself.
+        IReadOnlyList<string> Targets() => _selected.Contains(path) ? IslandShelf.Items.Where(_selected.Contains).ToList() : [path];
+        IslandFileDrag.Attach(tile, Targets, () => HasWindow ? Window.HoldOpen() : null);
         tile.MouseRightButtonUp += (_, e) =>
         {
             IslandMenu.Show(tile,
             [
                 new IslandMenu.Item(Loc.T("Open"), () => DownloadsPage.OpenPath(path)),
                 new IslandMenu.Item(Loc.T("Show in folder"), () => DownloadsPage.Reveal(path)),
+                new IslandMenu.Item(Loc.T("Copy"), () => IslandFileDrag.CopyToClipboard(Targets())),
                 new IslandMenu.Item(Loc.T("Remove selected"), () => IslandShelf.Remove([path])),
             ], () => HasWindow ? Window.HoldOpen() : null);
             e.Handled = true;

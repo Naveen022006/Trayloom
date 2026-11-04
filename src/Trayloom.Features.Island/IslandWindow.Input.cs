@@ -1216,7 +1216,7 @@ internal sealed partial class IslandWindow
     private void OnDragEnter(object sender, DragEventArgs e)
     {
         _dragOver = true;
-        e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) && !IslandFileDrag.IsOwn(e.Data) ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
         if (_placeholder)
         {
@@ -1226,7 +1226,7 @@ internal sealed partial class IslandWindow
 
     private void OnDragOver(object sender, DragEventArgs e)
     {
-        e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) && !IslandFileDrag.IsOwn(e.Data) ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
     }
 
@@ -1234,7 +1234,8 @@ internal sealed partial class IslandWindow
     {
         _dragOver = false;
         _placeholder = false;
-        if (e.Data.GetData(DataFormats.FileDrop) is string[] files && files.Length > 0)
+        // A drag that began on one of our own tiles and came back here must not park its files a second time.
+        if (!IslandFileDrag.IsOwn(e.Data) && e.Data.GetData(DataFormats.FileDrop) is string[] files && files.Length > 0)
         {
             IslandShelf.Add(files);
             _core.Mascot.React("celebrate");

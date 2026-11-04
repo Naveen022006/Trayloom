@@ -180,6 +180,18 @@ internal sealed class DownloadsPage : IslandPage
         {
             var b = new HoverButton(() => OpenPath(item.Path)) { MinHeight = 28, CornerRadius = new CornerRadius(6), Child = nameRow, Padding = new Thickness(4, 0, 4, 0), Lifts = false, HorizontalAlignment = HorizontalAlignment.Left };
             D.Tip(b, Loc.T("Open"));
+            var itemPath = item.Path;
+            IslandFileDrag.Attach(b, () => [itemPath], () => HasWindow ? Window.HoldOpen() : null);
+            card.MouseRightButtonUp += (_, e) =>
+            {
+                IslandMenu.Show(card,
+                [
+                    new IslandMenu.Item(Loc.T("Open"), () => OpenPath(itemPath)),
+                    new IslandMenu.Item(Loc.T("Show in folder"), () => Reveal(itemPath)),
+                    new IslandMenu.Item(Loc.T("Copy"), () => IslandFileDrag.CopyToClipboard([itemPath])),
+                ], () => HasWindow ? Window.HoldOpen() : null);
+                e.Handled = true;
+            };
             row.Children.Add(b);
             var actions = new StackPanel { Orientation = Orientation.Horizontal };
             actions.Children.Add(D.IconButton(G.Folder, Loc.T("Show in folder"), () => Reveal(item.Path), size: 26));
