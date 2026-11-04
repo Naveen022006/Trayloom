@@ -1449,7 +1449,7 @@ public sealed class AgentUsageService : IDisposable
     {
         var weekly = reading?.Windows.FirstOrDefault(w => w.Kind == LimitKind.Weekly && w.Scope is null);
         var percent = weekly is null ? "-" : weekly.UsedPercent.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
-        var key = string.Join('|', _claudeAppFolder, _claudeAppSamples.Count, percent, _claudeMatchedCode, _claudeOrgMismatch, reading is null);
+        var key = string.Join('|', _claudeAppFolder, _claudeAppSamples.Count, percent, _claudeMatchedCode, _claudeOrgMismatch, reading is null, _claudeIdentity?.Person is null);
         if (key == _claudeSummary)
         {
             return;
@@ -1460,7 +1460,8 @@ public sealed class AgentUsageService : IDisposable
         var text = "Claude app: " + (_claudeAppFolder.Length == 0 ? "no data folder found" : "folder " + _claudeAppFolder) + ", " + _claudeAppSamples.Count + " samples"
                    + (newest is { } n ? ", newest " + Math.Max(0, (int)(now - n).TotalMinutes) + " min old" : "")
                    + (weekly is null ? ", no weekly figure" : ", weekly " + percent + "%")
-                   + ", account matches Claude Code: " + (_claudeMatchedCode ? "yes" : "no");
+                   + ", account matches Claude Code: " + (_claudeMatchedCode ? "yes" : "no")
+                   + ", name known: " + (_claudeIdentity?.Person is null ? "no" : "yes");
         if (_claudeOrgMismatch)
         {
             text += ", newest sample belongs to another account";

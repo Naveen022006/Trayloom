@@ -274,7 +274,7 @@ internal sealed class AgentsSettingsView
 
     private sealed record ProfileEntry(ClaudeAccountProfile Profile, ClaudeAccountProfile.Identity? Identity, bool Available)
     {
-        public string Label => Profile.Name(AgentStrings.DefaultAccount) + (Identity?.Email is { } e ? " · " + e : "");
+        public string Label => Profile.Name(AgentStrings.DefaultAccount) + (Identity?.Person is { } p ? " · " + p : "") + (Identity?.Email is { } e ? " · " + e : "");
     }
 
     private FrameworkElement ClaudeAccountGroup()

@@ -207,7 +207,32 @@ internal static class AgentCardViews
             var who = AU.Text(accountName, 9, null, AgentColors.Tertiary, TextTrimming.CharacterEllipsis);
             who.Margin = new Thickness(23, 1, 0, 0);
             var elsewhere = provider == AgentProvider.Claude && tile.AccountId is null && c.Runtime.Service.Status.ClaudeCodeOtherAccount;
-            AU.Tip(who, provider.DisplayName() + " · " + accountName + (elsewhere ? Environment.NewLine + Loc.T("Claude Code in your terminal is signed in to another account. This card follows the Claude app.") : ""));
+            var detail = provider.DisplayName() + " · " + accountName;
+            if (provider == AgentProvider.Claude && c.Runtime.Service.Status.ClaudeAccountIdentity is { } identity)
+            {
+                var lines = new List<string>();
+                if (identity.Person is not null)
+                {
+                    lines.Add(Loc.T("Name") + ": " + identity.Person);
+                }
+
+                if (identity.Email is not null)
+                {
+                    lines.Add(Loc.T("Email") + ": " + identity.Email);
+                }
+
+                if (owner.Plan is not null)
+                {
+                    lines.Add(Loc.T("Plan") + ": " + owner.Plan.Name);
+                }
+
+                if (lines.Count > 0)
+                {
+                    detail = string.Join(Environment.NewLine, lines);
+                }
+            }
+
+            AU.Tip(who, detail + (elsewhere ? Environment.NewLine + Loc.T("Claude Code in your terminal is signed in to another account. This card follows the Claude app.") : ""));
             body.Children.Add(who);
         }
 
@@ -296,20 +321,57 @@ internal static class AgentCardViews
     };
 
     /// <summary>With Claude Code left out, "Claude" is the Claude app: the line says so, with the email the plan belongs to when it is known.</summary>
-    public static string ClaudeAppName(AgentServiceStatus status) =>
-        Loc.T("Claude app") + (status.ClaudeAccountIdentity?.Email is { } email ? " · " + email : "");
+    public static string ClaudeAppName(AgentServiceStatus status)
+    {
+        var identity = status.ClaudeAccountIdentity;
+        // With the person's name the line names the account; the tooltip still says it is the Claude app.
+        var parts = new List<string>();
+        if (identity?.Person is { } person)
+        {
+            parts.Add(person);
+        }
+        else
+        {
+            parts.Add(Loc.T("Claude app"));
+        }
+
+        if (identity?.Email is { } email)
+        {
+            parts.Add(email);
+        }
+
+        return string.Join(" · ", parts);
+    }
 
     /// <summary>The Claude account's name: the profile's name and, when known, its email; the default account shows just the email.</summary>
     public static string ClaudeName(AgentServiceStatus status, bool cardOnly = false)
     {
         var name = status.ClaudeProfile.Name(AgentStrings.DefaultAccount);
+        var person = status.ClaudeAccountIdentity?.Person;
         var email = status.ClaudeAccountIdentity?.Email;
-        if (email is null)
+        if (person is null && email is null)
         {
             return name;
         }
 
-        return status.ClaudeProfile.IsDefault ? email : name + " · " + email;
+        // A chosen profile is named first; the default one is just the person and their email.
+        var parts = new List<string>();
+        if (!status.ClaudeProfile.IsDefault)
+        {
+            parts.Add(name);
+        }
+
+        if (person is not null)
+        {
+            parts.Add(person);
+        }
+
+        if (email is not null)
+        {
+            parts.Add(email);
+        }
+
+        return string.Join(" · ", parts);
     }
 
     private static FrameworkElement Meters(List<LimitRowModel> rows, bool stale)

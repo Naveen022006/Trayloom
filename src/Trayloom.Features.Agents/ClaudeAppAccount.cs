@@ -348,7 +348,7 @@ internal sealed record ClaudeAppAccount(string Folder, string? HistoryFile, stri
                              || ((org is null || mismatch) && app.AccountOrganizations.Contains(id.Organization, StringComparer.OrdinalIgnoreCase));
             if (compatible)
             {
-                return (new ClaudeAccountProfile.Identity(app.AccountUuid ?? id.Account, id.Email, org ?? id.Organization), reading.Plan, org, mismatch, true);
+                return (new ClaudeAccountProfile.Identity(app.AccountUuid ?? id.Account, id.Email, org ?? id.Organization, id.Person), reading.Plan, org, mismatch, true);
             }
         }
 

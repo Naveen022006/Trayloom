@@ -14,7 +14,8 @@ namespace Trayloom.Features.Agents;
 /// </summary>
 public sealed class ClaudeAccountProfile : IEquatable<ClaudeAccountProfile>
 {
-    public sealed record Identity(string? Account, string? Email, string? Organization);
+    /// <summary>Who is signed in. <c>Person</c> is the account holder's own name (display only; never logged).</summary>
+    public sealed record Identity(string? Account, string? Email, string? Organization, string? Person = null);
 
     public sealed class Reading
     {
@@ -192,7 +193,8 @@ public sealed class ClaudeAccountProfile : IEquatable<ClaudeAccountProfile>
             var root = doc.RootElement;
             if (root.Prop("oauthAccount") is { ValueKind: JsonValueKind.Object } account)
             {
-                reading.Identity = new Identity(Text(account.Str("accountUuid")), Text(account.Str("emailAddress")), Text(account.Str("organizationUuid")));
+                reading.Identity = new Identity(Text(account.Str("accountUuid")), Text(account.Str("emailAddress")), Text(account.Str("organizationUuid")),
+                    PersonName(Text(account.Str("fullName")) ?? Text(account.Str("displayName")), Text(account.Str("emailAddress"))));
                 reading.Plan = AgentPlans.Claude(account.Str("organizationType"), account.Str("organizationRateLimitTier") ?? account.Str("userRateLimitTier"));
             }
 
@@ -248,6 +250,17 @@ public sealed class ClaudeAccountProfile : IEquatable<ClaudeAccountProfile>
 
         candidates.Add(Path.Combine(home, ".config", "claude"));
         return candidates.OrderBy(c => c, StringComparer.OrdinalIgnoreCase).Take(32).Select(c => new ClaudeAccountProfile(c)).Where(p => p.IsAvailable(home)).ToList();
+    }
+
+    /// <summary>The name shown next to the plan: short, and not just the email again.</summary>
+    private static string? PersonName(string? name, string? email)
+    {
+        if (name is null || string.Equals(name, email, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return name.Length > 60 ? name[..60] : name;
     }
 
     private static string? Text(string? value)
