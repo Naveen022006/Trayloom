@@ -51,7 +51,7 @@ public static class PanelTabs
             "finder-cut-paste", "auto-quit", "shelf", "window-maximizer", "dock-preview", "keyboard-debounce", "dock-click", "spaces-order",
             "middle-click", "text-snippets", "super-key", "radial-menu", "mouse-click-debounce", "notch",
         ], true),
-        new(Toggles, Loc.T("Quick toggles"), "", Loc.T("One-click actions like dark mode and muting the mic."), ["quick-toggles", "mic-mute", "quit-apps"], true),
+        new(Toggles, Loc.T("Quick toggles"), "", Loc.T("One-click actions like dark mode and muting the mic."), ["quick-toggles", "mic-mute", "quit-apps", "away-mode"], true),
         new(Wallpaper, Loc.T("Wallpaper"), "", Loc.T("Pick a still wallpaper without opening Settings."), ["wallpaper"], false),
     ]);
 
