@@ -8,7 +8,7 @@
 
 [![Windows 10 / 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square&logo=windows&logoColor=white)](#requirements)
 [![.NET 9](https://img.shields.io/badge/.NET-9-512BD4?style=flat-square&logo=dotnet&logoColor=white)](#build-from-source)
-[![Features](https://img.shields.io/badge/features-73-2ea44f?style=flat-square)](#everything-trayloom-can-do)
+[![Features](https://img.shields.io/badge/features-77-2ea44f?style=flat-square)](#everything-trayloom-can-do)
 [![Local first](https://img.shields.io/badge/data-stays%20on%20your%20PC-444?style=flat-square)](#privacy)
 [![License GPL-3.0](https://img.shields.io/badge/license-GPL--3.0--or--later-blue?style=flat-square)](LICENSE)
 
@@ -30,7 +30,7 @@ Most Windows power users end up with a tray full of single-purpose apps: one for
 for keeping the PC awake, one for screenshots, one for per-app volume, another for system stats. Each one starts with Windows,
 each one has its own settings, update channel and memory footprint.
 
-**Trayloom replaces that pile with one app.** It ships 73 tools in one place: window management, input tweaks, clipboard
+**Trayloom replaces that pile with one app.** It ships 77 tools in one place: window management, input tweaks, clipboard
 and file helpers, sound controls, screen capture, system monitoring, app maintenance and a Dynamic Island at the top of your
 screen. Three ideas shape it:
 
@@ -140,6 +140,7 @@ The tools are grouped the same way as in the Features hub. Each line says what t
 | **Camera preview** | A floating mirror of your webcam before a call. |
 | **Scratchpad** | Floating pads for short-lived notes, with tabs and formatting. |
 | **Cleaning Mode** | Locks the keyboard and blanks the screen so you can wipe them. |
+| **Away mode** | Minimizes your windows when you leave and brings them back in the same order when you return, by mouse, unlock or (optionally) when the camera sees you. Nothing is closed. |
 | **Quit apps** | Quit open apps one by one, all at once, or all but the one in front, always after showing the list. |
 | **Wallpaper** | Pick a still wallpaper without opening Windows Settings. |
 | **Cleaner** | Find and clear caches and junk files, with a review before anything is removed. |
@@ -161,6 +162,7 @@ need it. Its layout, size, buttons and pages are all yours to arrange.
 | **Notifications** | New system notifications appear in the island. |
 | **Gestures** | Open and close the island by scrolling; swipe to change tracks. |
 | **Timer** | Timers, a stopwatch and focused work sessions. |
+| **Screen time** | How long you used the PC today and which apps, with an hour-by-hour chart. App names and times stay on your PC. |
 | **Accessory alerts** | See connected accessories and get one warning when a battery drops to 20%. |
 | **Lyrics** | Follow the lyrics of the current song (online lookup is **off** until you turn it on). |
 | **Up next** | The real upcoming songs your player shares. |
@@ -168,11 +170,21 @@ need it. Its layout, size, buttons and pages are all yours to arrange.
 | **Downloads** | Watch files arrive in a folder you choose. |
 | **Watch** | Turn any part of any window into a live activity, with an alert when it changes, finishes or shows what you are waiting for. |
 | **AI Agents** | Plan limits, tokens, API value and live sessions of Claude, Codex, OpenCode and GitHub Copilot (see below). |
+| **GitHub** | Unread notifications, your pull requests, reviews waiting for you, failing checks and latest releases (online only after you connect, through the GitHub CLI or an encrypted token). |
+| **Wi-Fi** | Your network and signal, the Wi-Fi switch, nearby networks with join and disconnect. |
 | **Companion** | A small friend in the island who says hello now and then and reacts to what happens on your PC. |
 
 The island's music page can also browse Spotify and YouTube Music in its Library, next to Apple Music: turn each one on, with
 its own Spotify Client ID or YouTube Data API key, in Settings › Dynamic Island › Content › Now Playing. Both are off until
 you do (see [Privacy](#privacy); setup steps are in [docs/INSTALL.md](docs/INSTALL.md#spotify-and-youtube-music-optional)).
+
+### Away mode and GitHub, in detail
+
+* **Away mode** only minimizes your windows and restores them in the same order; nothing is closed or moved. Face
+  detection is detection, not recognition: any face counts, so it cannot tell you from a colleague. For real protection,
+  switch on **Lock the PC too**.
+* **GitHub** is offline until you connect it. It then uses the GitHub CLI you are already signed in to, or a token you paste
+  that is stored encrypted with Windows DPAPI for your account. It is read-only: Trayloom never writes to GitHub.
 
 ### System monitor
 
@@ -269,7 +281,7 @@ working.
 
 ## How light is it?
 
-Measured on an Intel Core i7-14700HX laptop (28 threads, 16 GB RAM, RTX 4050) with **all 73 tools installed** and the Dynamic
+Measured on an Intel Core i7-14700HX laptop (28 threads, 16 GB RAM, RTX 4050) with **all 77 tools installed** and the Dynamic
 Island showing, sampled once a second for a minute while idle:
 
 | Resource | Idle, everything installed |
@@ -293,8 +305,8 @@ What to expect:
 
 * No account, no sign-in, no telemetry, no ads.
 * Clipboard history, snippets, scratchpads, captures and settings are stored in `%APPDATA%\Trayloom` on your PC.
-* The only online features are ones you switch on yourself: lyrics lookup, Spotify and YouTube Music search, app and package
-  updates, and links you choose to open. Feedback opens a GitHub issue in your browser.
+* The only online features are ones you switch on yourself: lyrics lookup, Spotify and YouTube Music search, GitHub status
+  (after you connect), app and package updates, and links you choose to open. Feedback opens a GitHub issue in your browser.
 * Tools that need a Windows permission (screen capture, microphone, camera, calendar, notifications) list it on the
   **Permissions** tab of the Features hub before you install them.
 * **Spotify and YouTube Music (optional).** Nothing is sent until you set a service up in Settings › Dynamic Island › Content › Now Playing. Spotify sign-in happens on Spotify’s own page in your browser (Trayloom never sees your password); Trayloom asks only to read your playlists, liked and recently played songs and what’s playing, and to control playback, and never changes your library or playlists. The sign-in is stored encrypted for your Windows account in `%APPDATA%\Trayloom\music`; Disconnect deletes it, and spotify.com/account/apps removes access. YouTube Music works without an account: searches open in your browser, or, with your own YouTube Data API key (stored encrypted the same way), go directly to Google’s YouTube Data API. YouTube’s Terms of Service and Google’s Privacy Policy apply to those searches. Results are kept in memory only.

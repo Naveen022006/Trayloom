@@ -31,6 +31,12 @@ shortcut defaults, duplicate checks), `--open-onboarding [step]`, `--open-instal
 `--shot-full <png>` (the whole Settings page), `--set-language <code|system>`, `--set-appearance <system|light|dark>`,
 `--install`, `--uninstall [--quiet]`, `--no-onboarding`, `--quit`.
 
+Feature dev actions (most only with `TRAYLOOM_DEV=1`): `--action screen-time dump|flush|dev-add-minute|today`,
+`--action github refresh|open-notifications|dump|connect-cli|simulate-notice`, `--action wifi scan|state|dump` (never
+`toggle-radio` or `disconnect` in automation: they cut the machine's network), and `--action away-mode
+simulate-away|simulate-return|simulate-face|dump`. Away mode's `simulate-away` only touches windows of the processes listed in
+`away-mode-only.txt` in its data folder (the `tests\AwayDummy` test process); `TRAYLOOM_AWAY_NO_CAMERA=1` keeps the camera off.
+
 With `TRAYLOOM_DEV=1` the island also exposes one action per page. Island placement: `--action island move` enters
 "Move island" mode and `--action island reset-position` puts the island back at the top centre; with `TRAYLOOM_DEV=1` also
 `--action island dev-place-top-left`, `dev-place-top-right`, `dev-place-bottom-left`, `dev-place-bottom-center`,

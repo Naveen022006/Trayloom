@@ -13,7 +13,7 @@ reference only Core. Contributions are discovered by reflection in assemblies na
 
 ## 1. Catalog and ids
 
-`FeatureCatalog.All` is the single source of truth (79 entries; 73 installable on Windows). Each entry
+`FeatureCatalog.All` is the single source of truth (83 entries; 77 installable on Windows). Each entry
 (`FeatureCatalogEntry`) has: `Id` (kebab, e.g. `scroll-inverter`), `RawId` (Vorssaint camelCase, e.g. `scrollInverter`),
 `Group`, `Title`, `Description`, `Glyph`, `Energy`, `Permissions`, `DefaultInstalled`, `Destination` (`page#anchor`),
 `EnabledKeys`, `InitialEnableKeys`, `IsBeta`, `IsExperimental`, `Support` (Supported / Adapted / Unavailable),

@@ -30,7 +30,7 @@ for behaviour. When the README screenshots and the Swift code disagree, the code
   `DefaultsKey` names and defaults from the specs, persisted in `%APPDATA%\Trayloom\settings.json`
   (`TRAYLOOM_DATA` override stays). Old per-feature scoped settings remain readable but new code uses
   the flat keys so pages that span several features work.
-- **Catalog**: Core holds the complete 73-entry feature catalog (ids, group, title, description,
+- **Catalog**: Core holds the complete 83-entry feature catalog (ids, group, title, description,
   glyph, energy badge, permissions, default-installed, settings destination `page#anchor`, Windows
   availability: supported / adapted / unavailable-with-reason). `IFeature` implementations bind to a
   catalog id. Hub/sidebar/tabs order comes from the catalog, never from reflection order.
