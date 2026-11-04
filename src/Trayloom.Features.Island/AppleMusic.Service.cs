@@ -566,6 +566,7 @@ internal sealed class AppleMusicService : IDisposable
                     DbId = db.DbId,
                     PlaylistAutomationId = step.Playlist is null ? "" : db.PlaylistAutomationId(step.Playlist.Pid),
                     ResumeAt = step.ResumeAt,
+                    SeekDuration = step.Track is { } resumed ? resumed.DurationMs / 1000.0 : 0,
                 };
             _core.Ctx.Log.Info($"AppleMusic {action} with nothing loaded: {step.Why} ({step.Track?.Title ?? step.Playlist?.Name}{(step.ResumeAt is { } at ? $" from {at:0} s" : "")})");
             var before = _seq;
@@ -707,20 +708,41 @@ internal sealed class AppleMusicService : IDisposable
     }
 
     /// <summary>Sets Apple Music's position (its media session ignores the request).</summary>
-    public bool Seek(double seconds)
+    public bool Seek(double seconds, double duration)
     {
         if (!Available || _disposed)
         {
             return false;
         }
 
+        // UI thread: the song the seek is for (a seek that ends after the song has changed must not move the new one)
+        var identity = _core.Playback.Current.Identity;
         Guarded.FireAndLog(() => Task.Run(async () =>
         {
-            var result = await Driver.RunAsync(new AmCommand { Action = AmAction.Seek, SeekTo = seconds });
-            if (!result.Ok && result.Failure != AmFailure.Cancelled)
+            var result = await Driver.RunAsync(new AmCommand { Action = AmAction.Seek, SeekTo = seconds, SeekDuration = duration });
+            if (!result.Ok && result.Failure == AmFailure.Cancelled && result.Detail != "timeout")
             {
-                _core.Ctx.Log.Warn($"Apple Music seek failed: {result.Failure} {result.Detail}");
+                // replaced by a newer seek (or cancelled by another request): that one decides how the position looks
+                return;
             }
+
+            _ = _core.Ui.BeginInvoke(new Action(() =>
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                if (result.Ok)
+                {
+                    _core.Playback.NoteSeek(seconds, identity);
+                    return;
+                }
+
+                _core.Ctx.Log.Warn($"Apple Music seek failed: {result.Failure} {result.Detail}");
+                _core.Playback.NoteSeekFailed();
+                Toast(LibStrings.SeekFailed);
+            }));
         }), _core.Ctx.Log, "Apple Music seek");
         return true;
     }
@@ -993,6 +1015,7 @@ internal sealed class AppleMusicService : IDisposable
                 DbId = db.DbId,
                 PlaylistAutomationId = context is null ? "" : db.PlaylistAutomationId(context.Pid),
                 ResumeAt = snapshot.Position,
+                SeekDuration = snapshot.Duration > 0 ? snapshot.Duration : track.DurationMs / 1000.0,
             }, track.Pid);
         }
         finally

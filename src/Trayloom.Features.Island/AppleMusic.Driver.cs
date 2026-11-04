@@ -80,6 +80,9 @@ internal sealed class AmCommand
 
     /// <summary>The position (seconds) of <see cref="AmAction.Seek"/>.</summary>
     public double SeekTo { get; init; }
+
+    /// <summary>The song's length (seconds, from the media session; 0 when unknown) of <see cref="AmAction.Seek"/> / <see cref="ResumeAt"/>: tells the scrubber's unit.</summary>
+    public double SeekDuration { get; init; }
 }
 
 internal sealed record AmQueueItem(string Title, string Subtitle, string Duration, bool Current);
@@ -518,7 +521,7 @@ internal sealed class AppleMusicDriver : IDisposable
                     AmAction.PlayPlaylist or AmAction.ShufflePlaylist => PlayPlaylist(am, cmd, launched, ct),
                     AmAction.ReadQueue => ReadQueue(am, ct),
                     AmAction.PlayPause or AmAction.SkipForward or AmAction.SkipBack => launched ? TransportAfterStart(am, cmd.Action, ct) : PressTransport(am, cmd.Action, 4000, ct),
-                    AmAction.Seek => SeekScrubber(am, cmd.SeekTo, ct),
+                    AmAction.Seek => SeekScrubber(am, cmd.SeekTo, cmd.SeekDuration, ct),
                     // a cold start gets three tries of 4 s instead of one wait of 10 s
                     _ => PlaySong(am, cmd, launched, launched ? 4000 : 4500, ct),
                 };
@@ -526,7 +529,7 @@ internal sealed class AppleMusicDriver : IDisposable
                 if (result.Ok && cmd.ResumeAt is { } resumeAt && cmd.Action is AmAction.Play or AmAction.PlayPlaylist or AmAction.ShufflePlaylist)
                 {
                     // continue where a closed Apple Music stopped (a failed seek still leaves the song playing)
-                    var seek = SeekScrubber(am, resumeAt, ct);
+                    var seek = SeekScrubber(am, resumeAt, cmd.SeekDuration, ct);
                     Say(seek.Ok ? $"resumed at {resumeAt:0.#} s" : "could not seek to the old position: " + seek.Detail);
                 }
             }
@@ -845,7 +848,7 @@ internal sealed class AppleMusicDriver : IDisposable
     }
 
     /// <summary>Sets the position of the playing song through the LCD scrubber's range value (Apple Music ignores the media session's seek).</summary>
-    private AmResult SeekScrubber(AmUia am, double seconds, CancellationToken ct)
+    private AmResult SeekScrubber(AmUia am, double seconds, double duration, CancellationToken ct)
     {
         var scrubber = am.WaitFor(() => am.ById("LCDScrubber"), 4000, ct);
         if (scrubber is null || !scrubber.TryGetCurrentPattern(RangeValuePattern.Pattern, out var pattern))
@@ -868,10 +871,62 @@ internal sealed class AppleMusicDriver : IDisposable
         }
 
         var min = range.Current.Minimum;
-        range.SetValue(Math.Clamp(seconds, min, Math.Max(min, max - 1)));
-        Say($"scrubbed to {seconds:0.#} s (of {max:0.#})");
-        Thread.Sleep(150);
-        return AmResult.Success();
+        if (range.Current.IsReadOnly)
+        {
+            return AmResult.Fail(AmFailure.Failed, "the scrubber is read-only");
+        }
+
+        // The range is the song's length in seconds, or (when it is not) the same fraction of whatever unit it counts in.
+        var before = range.Current.Value;
+        var target = SeekRules.ScrubberTarget(seconds, duration, min, max);
+        try
+        {
+            range.SetValue(target);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return AmResult.Fail(AmFailure.Failed, "the scrubber refused the value: " + ex.Message);
+        }
+
+        // Apple Music takes a moment to apply the value: read it back (for up to a second) to know that the position really moved.
+        var after = before;
+        var reached = false;
+        var settle = Stopwatch.StartNew();
+        while (!reached && settle.ElapsedMilliseconds < 1000)
+        {
+            Thread.Sleep(settle.ElapsedMilliseconds == 0 ? 150 : 100);
+            ct.ThrowIfCancellationRequested();
+            after = range.Current.Value;
+            reached = SeekRules.ScrubberReached(after, target, duration, min, max);
+        }
+
+        Say(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"scrubber min={min:0.##} max={max:0.##} before={before:0.##} set={target:0.##} after={after:0.##} in {settle.ElapsedMilliseconds} ms; media session at {SessionPosition():0.#} s"));
+        return reached ? AmResult.Success() : AmResult.Fail(AmFailure.Failed, "scrubber did not move");
+    }
+
+    /// <summary>Where Windows' media session says Apple Music is (seconds, extrapolated while playing); -1 when unknown. For the log only.</summary>
+    private static double SessionPosition()
+    {
+        try
+        {
+            if (FindSession() is not { } session)
+            {
+                return -1;
+            }
+
+            var tl = session.GetTimelineProperties();
+            var pos = (tl.Position - tl.StartTime).TotalSeconds;
+            if (session.GetPlaybackInfo().PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing && tl.LastUpdatedTime.Year >= 2000)
+            {
+                pos += Math.Max(0, (DateTimeOffset.Now - tl.LastUpdatedTime).TotalSeconds);
+            }
+
+            return pos;
+        }
+        catch
+        {
+            return -1;
+        }
     }
 
     // ---------------------------------------------------------------- songs

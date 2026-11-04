@@ -576,6 +576,9 @@ internal sealed class LevelSlider : FrameworkElement
     private double _drawn;
     private bool _dragging;
     private DispatcherTimerLite? _ease;
+    private DispatcherTimerLite? _grow;
+    private bool _hover;
+    private double _thick;
 
     public LevelSlider(bool vertical, double min = 0, double max = 1, double thickness = 8, Brush? tint = null)
     {
@@ -583,6 +586,7 @@ internal sealed class LevelSlider : FrameworkElement
         Minimum = min;
         Maximum = max;
         Thickness = thickness;
+        _thick = thickness;
         Tint = tint ?? D.White(0.92);
         Cursor = Cursors.Arrow;
         Focusable = false;
@@ -602,6 +606,9 @@ internal sealed class LevelSlider : FrameworkElement
     public double Maximum { get; }
 
     public double Thickness { get; set; }
+
+    /// <summary>Opt-in: the bar eases from <see cref="Thickness"/> to this while the pointer is over it or it is dragged (about 120 ms).</summary>
+    public double? HoverThickness { get; set; }
 
     public Brush Tint { get; set; }
 
@@ -677,7 +684,7 @@ internal sealed class LevelSlider : FrameworkElement
         var w = ActualWidth;
         var h = ActualHeight;
         dc.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, w, h));
-        var t = Thickness;
+        var t = HoverThickness is null ? Thickness : _thick;
         if (_vertical)
         {
             var x = (w - t) / 2;
@@ -712,11 +719,58 @@ internal sealed class LevelSlider : FrameworkElement
         }
     }
 
+    protected override void OnMouseEnter(MouseEventArgs e)
+    {
+        base.OnMouseEnter(e);
+        _hover = true;
+        GrowTo();
+    }
+
+    protected override void OnMouseLeave(MouseEventArgs e)
+    {
+        base.OnMouseLeave(e);
+        _hover = false;
+        GrowTo();
+    }
+
+    /// <summary>Eases the drawn thickness to <see cref="HoverThickness"/> (pointer over the bar or a drag) or back to <see cref="Thickness"/>.</summary>
+    private void GrowTo()
+    {
+        if (HoverThickness is not { } big)
+        {
+            return;
+        }
+
+        var target = _hover || _dragging ? big : Thickness;
+        _grow?.Stop();
+        if (D.ReduceMotion || !IsVisible || Math.Abs(target - _thick) < 0.01)
+        {
+            _thick = target;
+            InvalidateVisual();
+            return;
+        }
+
+        var from = _thick;
+        var start = DateTime.UtcNow;
+        _grow = new DispatcherTimerLite(16, () =>
+        {
+            var p = Math.Clamp((DateTime.UtcNow - start).TotalSeconds / 0.12, 0, 1);
+            _thick = from + ((target - from) * (1 - Math.Pow(1 - p, 3)));
+            InvalidateVisual();
+            if (p >= 1)
+            {
+                _grow?.Stop();
+            }
+        });
+        _grow.Start();
+    }
+
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
         _dragging = true;
         CaptureMouse();
         Apply(e.GetPosition(this));
+        GrowTo();
         e.Handled = true;
     }
 
@@ -734,6 +788,8 @@ internal sealed class LevelSlider : FrameworkElement
         {
             _dragging = false;
             ReleaseMouseCapture();
+            _hover = IsMouseOver;
+            GrowTo();
             ValueCommitted?.Invoke(_value);
         }
 
@@ -747,9 +803,24 @@ internal sealed class LevelSlider : FrameworkElement
         if (_dragging)
         {
             _dragging = false;
+            _hover = IsMouseOver;
+            GrowTo();
             ValueCommitted?.Invoke(_value);
         }
     }
+
+    /// <summary>Sets the value and commits it, as a person's drag does (UI Automation's RangeValue SetValue).</summary>
+    internal void SetByAutomation(double v)
+    {
+        v = Math.Clamp(v, Minimum, Maximum);
+        _value = v;
+        _drawn = Normalised(v);
+        InvalidateVisual();
+        ValueChanged?.Invoke(v);
+        ValueCommitted?.Invoke(v);
+    }
+
+    protected override AutomationPeer OnCreateAutomationPeer() => new LevelSliderPeer(this);
 
     protected override void OnMouseWheel(MouseWheelEventArgs e)
     {
@@ -778,6 +849,74 @@ internal sealed class LevelSlider : FrameworkElement
         _drawn = f;
         InvalidateVisual();
         ValueChanged?.Invoke(v);
+    }
+}
+
+/// <summary>
+/// What UI Automation sees of a <see cref="LevelSlider"/>: a Slider with a range (minimum, maximum, value) whose SetValue does what a drag does.
+/// The name is the automation name, else the tooltip.
+/// </summary>
+internal sealed class LevelSliderPeer : FrameworkElementAutomationPeer, IRangeValueProvider
+{
+    public LevelSliderPeer(LevelSlider owner)
+        : base(owner)
+    {
+    }
+
+    private LevelSlider Slider => (LevelSlider)Owner;
+
+    protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.Slider;
+
+    protected override string GetClassNameCore() => nameof(LevelSlider);
+
+    protected override bool IsControlElementCore() => true;
+
+    protected override bool IsContentElementCore() => true;
+
+    public override object? GetPattern(PatternInterface patternInterface) =>
+        patternInterface == PatternInterface.RangeValue ? this : base.GetPattern(patternInterface);
+
+    protected override string GetNameCore()
+    {
+        var name = base.GetNameCore();
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            return name;
+        }
+
+        return Slider.ToolTip switch
+        {
+            string s => s,
+            ToolTip { Content: string c } => c,
+            _ => "",
+        };
+    }
+
+    public double Value => Slider.Value;
+
+    public bool IsReadOnly => false;
+
+    public double Maximum => Slider.Maximum;
+
+    public double Minimum => Slider.Minimum;
+
+    public double LargeChange => (Slider.Maximum - Slider.Minimum) / 10;
+
+    public double SmallChange => (Slider.Maximum - Slider.Minimum) / 100;
+
+    public void SetValue(double value)
+    {
+        if (!IsEnabled())
+        {
+            throw new ElementNotEnabledException();
+        }
+
+        if (double.IsNaN(value) || value < Slider.Minimum || value > Slider.Maximum)
+        {
+            throw new ArgumentOutOfRangeException(nameof(value));
+        }
+
+        Slider.SetByAutomation(value);
     }
 }
 

@@ -81,6 +81,7 @@ internal sealed class MusicTimeline : Grid
     private readonly DispatcherTimer _tick = new(DispatcherPriority.Normal) { Interval = TimeSpan.FromSeconds(1) };
     private double? _released;
     private DateTime _releasedAt;
+    private readonly bool _appleMusic;
     private Brush _accent;
 
     public MusicTimeline(IslandCore core, Playback p)
@@ -101,7 +102,10 @@ internal sealed class MusicTimeline : Grid
         Children.Add(_left);
         Grid.SetColumn(_right, 2);
         Children.Add(_right);
-        _slider = new LevelSlider(false, 0, Math.Max(1, p.Duration), 8, _accent) { Height = 10, Scrollable = false };
+        // the slider is as high as the row, so a click a little above or below the thin bar still lands; the bar grows under the pointer
+        _slider = new LevelSlider(false, 0, Math.Max(1, p.Duration), 5, _accent) { Height = 14, Scrollable = false, HoverThickness = 8, Cursor = Cursors.Hand };
+        System.Windows.Automation.AutomationProperties.SetAutomationId(_slider, "Island.Music.Timeline");
+        _appleMusic = PlaybackService.IsAppleMusicId(p.Aumid);
         _meter.Tint = _accent;
         _meter.VerticalAlignment = VerticalAlignment.Center;
         if (p.CanSeek)
@@ -126,10 +130,22 @@ internal sealed class MusicTimeline : Grid
         _tick.Tick += (_, _) => Update();
         Loaded += (_, _) =>
         {
+            _core.Playback.SeekFailed += OnSeekFailed;
             Update();
             _tick.Start();
         };
-        Unloaded += (_, _) => _tick.Stop();
+        Unloaded += (_, _) =>
+        {
+            _core.Playback.SeekFailed -= OnSeekFailed;
+            _tick.Stop();
+        };
+    }
+
+    /// <summary>The seek did not happen: the thumb goes back to where the player is instead of waiting for the hold to run out.</summary>
+    private void OnSeekFailed()
+    {
+        _released = null;
+        Update();
     }
 
     private static double MeasureWidth(string text, double size)
@@ -149,7 +165,7 @@ internal sealed class MusicTimeline : Grid
         var pos = p.Position;
         if (_released is { } r)
         {
-            if ((DateTime.UtcNow - _releasedAt).TotalSeconds > 1 || Math.Abs(pos - r) < 2)
+            if (SeekRules.HoldEnds((DateTime.UtcNow - _releasedAt).TotalSeconds, _appleMusic, pos, r))
             {
                 _released = null;
             }

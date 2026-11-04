@@ -110,6 +110,10 @@ internal sealed class PlaybackService : IDisposable
         public DateTime Stamp = DateTime.UtcNow;
         public double Rate = 1;
         public bool CanSeek, CanPrev, CanNext, CanPlay, CanShuffle;
+
+        // a position the island set (Apple Music's scrubber), used until the session delivers a timeline updated after it
+        public double SeekPos;
+        public DateTime? SeekAt;
         public bool? Shuffle;
         public long StartTicks;
         public bool Paused;
@@ -232,7 +236,7 @@ internal sealed class PlaybackService : IDisposable
             if (IsAppleMusic(e) && AppleMusicSeek is { } appleSeek)
             {
                 // Apple Music accepts the media session's seek request and ignores it: its own scrubber is set instead
-                appleSeek(seconds);
+                appleSeek(seconds, e.Duration);
                 return;
             }
 
@@ -254,12 +258,39 @@ internal sealed class PlaybackService : IDisposable
         }
     }
 
-    private static bool IsAppleMusic(Entry e) => e.Aumid.Contains("AppleMusic", StringComparison.OrdinalIgnoreCase);
+    private static bool IsAppleMusic(Entry e) => IsAppleMusicId(e.Aumid);
+
+    /// <summary>The application id belongs to Apple Music for Windows.</summary>
+    internal static bool IsAppleMusicId(string aumid) => aumid.Contains("AppleMusic", StringComparison.OrdinalIgnoreCase);
 
     private DateTime _appleStoppedAt = DateTime.MinValue;
 
     /// <summary>Seeks Apple Music through its own scrubber (set by the Apple Music service).</summary>
-    public Func<double, bool>? AppleMusicSeek { get; set; }
+    public Func<double, double, bool>? AppleMusicSeek { get; set; }
+
+    /// <summary>Raised when an Apple Music seek failed for real (not when a newer one replaced it): the timeline drops the position it holds.</summary>
+    public event Action? SeekFailed;
+
+    /// <summary>
+    /// Apple Music moved to <paramref name="seconds"/> (UI thread). Its session may not push a new timeline right away, so the island's
+    /// reading stands until the session reports one updated after now. Ignored when the song has changed since (<paramref name="identity"/>).
+    /// </summary>
+    public void NoteSeek(double seconds, string identity)
+    {
+        if (CurrentEntry() is not { } e || !IsAppleMusic(e) || _current.Identity != identity)
+        {
+            return;
+        }
+
+        e.SeekPos = Math.Clamp(seconds, 0, e.Duration > 0 ? e.Duration : double.MaxValue);
+        e.SeekAt = DateTime.UtcNow;
+        e.BasePos = e.SeekPos;
+        e.Stamp = e.SeekAt.Value;
+        Recompute();
+    }
+
+    /// <summary>An Apple Music seek failed (UI thread): nothing is overridden and the timeline stops holding the released position.</summary>
+    public void NoteSeekFailed() => SeekFailed?.Invoke();
 
     /// <summary>Apple Music's own media session whether or not it is the selected source (null without one).</summary>
     public Playback? AppleMusicNow()
@@ -432,6 +463,7 @@ internal sealed class PlaybackService : IDisposable
                 e.ArtKey = key;
                 e.Art = null;
                 e.Tint = null;
+                e.SeekAt = null;
             }
 
             var wasPlaying = e.Playing;
@@ -480,6 +512,18 @@ internal sealed class PlaybackService : IDisposable
             e.BasePos = Math.Max(0, (tl.Position - tl.StartTime).TotalSeconds);
             var stamp = tl.LastUpdatedTime.UtcDateTime;
             e.Stamp = stamp.Year < 2000 ? DateTime.UtcNow : stamp;
+            if (e.SeekAt is { } seekAt)
+            {
+                if (SeekRules.OverrideHolds(seekAt, stamp.Year < 2000 ? null : stamp))
+                {
+                    e.BasePos = e.SeekPos;
+                    e.Stamp = seekAt;
+                }
+                else
+                {
+                    e.SeekAt = null;
+                }
+            }
         }
         catch
         {
@@ -559,7 +603,7 @@ internal sealed class PlaybackService : IDisposable
                     Tint = e.Tint,
                     Aumid = e.Aumid,
                     Duration = e.Duration,
-                    CanSeek = e.CanSeek,
+                    CanSeek = SeekRules.CanSeek(IsAppleMusic(e), e.CanSeek, e.Duration, AppleMusicSeek is not null),
                     CanPrevious = e.CanPrev,
                     CanNext = e.CanNext,
                     CanPlayPause = e.CanPlay,

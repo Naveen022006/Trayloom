@@ -35,6 +35,7 @@ internal static class Program
         AmServiceChecks.Run(Check);
         LibrarySearchChecks.Run(Check);
         IslandUiChecks.Run(Check);
+        SeekChecks.Run(Check);
         Console.WriteLine($"{s_checks - s_failed}/{s_checks} checks passed");
         return s_failed == 0 ? 0 : 1;
     }
