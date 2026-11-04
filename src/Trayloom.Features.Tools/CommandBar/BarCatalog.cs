@@ -151,6 +151,16 @@ internal static class BarCatalog
 
         Tool("action.cleaningMode", "cleaningMode", Loc.T("Cleaning Mode"), 0xE765, "cleaning-mode", null, 100);
 
+        if (Has("away-mode") && Exact(ctx, "away-mode", "away-now") is { } awayNow)
+        {
+            rows.Add(Simple("action.awayNow", Loc.T("Go away now"), Loc.T("Away mode"), 0xE7E8, awayNow.Invoke, 200, Loc.T("Away mode privacy minimize windows")));
+        }
+
+        if (Has("away-mode") && Exact(ctx, "away-mode", "restore") is { } awayRestore)
+        {
+            rows.Add(Simple("action.awayRestore", Loc.T("Restore windows"), Loc.T("Away mode"), 0xE777, awayRestore.Invoke, 100, Loc.T("Away mode back")));
+        }
+
         // keep awake
         if (Has("keep-awake"))
         {

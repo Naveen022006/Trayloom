@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Stand-in application windows for the Away mode tests (AwayDummy.exe). Not part of Trayloom.sln; reads nothing from Trayloom. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>AwayDummy</RootNamespace>
+    <AssemblyName>AwayDummy</AssemblyName>
+    <UseWPF>false</UseWPF>
+  </PropertyGroup>
+</Project>
