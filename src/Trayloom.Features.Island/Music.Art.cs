@@ -34,7 +34,10 @@ internal static class StreamArt
         return host.EndsWith(".scdn.co", StringComparison.Ordinal)
             || host.EndsWith(".spotifycdn.com", StringComparison.Ordinal)
             || host == "i.ytimg.com"
-            || host.EndsWith(".ggpht.com", StringComparison.Ordinal);
+            || host.EndsWith(".ggpht.com", StringComparison.Ordinal)
+            // YouTube Music cover art; the search answers use yt3, older and album art addresses use lh3.
+            || host == "lh3.googleusercontent.com"
+            || host == "yt3.googleusercontent.com";
     }
 
     /// <summary>

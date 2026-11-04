@@ -85,8 +85,8 @@ the screen). Trayloom picks a fallback and shows it in Settings > Keyboard short
 
 ## Spotify and YouTube Music (optional)
 
-The Dynamic Island's music page can search and browse Spotify and YouTube Music in its Library. Both are off until you set
-them up, and nothing is sent before that. Open **Settings > Dynamic Island > Content > Now Playing** and find the
+The Dynamic Island's music page can search and browse Spotify and YouTube Music in its Library. Both are off until you turn
+them on, and nothing is sent before that. Spotify needs a Client ID (below); YouTube Music needs no setup. Open **Settings > Dynamic Island > Content > Now Playing** and find the
 **Music services** card.
 
 **Spotify.** Spotify lets an app in only through a Client ID that belongs to a Spotify app you create:
@@ -106,15 +106,21 @@ them up, and nothing is sent before that. Open **Settings > Dynamic Island > Con
 Playing, queueing and seeking from the island need **Spotify Premium**. Without Premium, searching and browsing still work and
 songs open in the Spotify app instead.
 
-**YouTube Music.** It works without any setup: searches open YouTube Music in your browser. To see results inside the island:
+**YouTube Music.** No setup is needed: turn on **Show YouTube Music in the island**, open the Library, type a search and press
+Enter. Trayloom asks the same web service music.youtube.com uses (no account, no key, no cookies). That service is not an
+official API, so it may stop working if YouTube changes it.
+
+*Optional: the official API.* If the built-in search stops working, you can use Google's official YouTube Data API with your own
+key instead:
 
 1. Open [Google Cloud Console](https://console.cloud.google.com/) (the card has an **Open Google Cloud Console** button), create
    a project, and **enable YouTube Data API v3** for it.
 2. **Credentials > Create credentials > API key**. Copy the key.
-3. Paste it into the card's **API key** box and click **Save**. Trayloom checks it with one cheap request and stores it
-   encrypted for your Windows account; the box never shows it again.
+3. Paste it into the card's **API key** box (under *Official API (optional)*) and click **Save**. Trayloom checks it with one
+   cheap request and stores it encrypted for your Windows account; the box never shows it again. **Remove** goes back to the
+   built-in search.
 
-The free daily allowance is about 100 searches. YouTube Music has no official playback API, so a song opens in your browser
+With a key, the free daily allowance is about 100 searches. YouTube Music has no official playback API, so a song opens in your browser
 (or the YouTube Music app) and the island's controls then follow that player.
 
 ## Updating

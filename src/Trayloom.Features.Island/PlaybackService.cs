@@ -47,6 +47,12 @@ internal sealed class Playback
 
     public double Duration { get; init; }
 
+    /// <summary>The length the media session itself reports (0 when it has none); <see cref="Duration"/> differs only when the Web API filled it in.</summary>
+    public double SessionDuration { get; init; }
+
+    /// <summary>Duration, position and seeking come from the Web API because the media session has no timeline.</summary>
+    public bool TimelineFromWebApi { get; init; }
+
     public bool CanSeek { get; init; }
 
     public bool CanPrevious { get; init; }
@@ -68,6 +74,9 @@ internal sealed class Playback
     public double Rate { get; init; } = 1;
 
     public string Identity => $"{Aumid}|{Title}|{Artist}|{Album}|{(int)Duration}";
+
+    /// <summary>The song as the media session knows it: <see cref="Identity"/> without a length the Web API added later, so that does not count as a new song.</summary>
+    public string SongKey => $"{Aumid}|{Title}|{Artist}|{Album}|{(int)SessionDuration}";
 
     public double Position
     {
@@ -240,6 +249,14 @@ internal sealed class PlaybackService : IDisposable
                 return;
             }
 
+            // A session without a timeline of its own (Spotify): the Web API moves the song and its reading follows at once, so the
+            // timeline's hold (SeekRules) is all the display needs. The session has no position to set, so a refused request ends here too.
+            if (_current.TimelineFromWebApi && _current.Aumid == e.Aumid)
+            {
+                _ = ExternalSeek?.Invoke(e.Aumid, seconds);
+                return;
+            }
+
             Command(s => s.TryChangePlaybackPositionAsync(TimeSpan.FromSeconds(seconds).Ticks + e.StartTicks));
         }
     }
@@ -267,6 +284,15 @@ internal sealed class PlaybackService : IDisposable
 
     /// <summary>Seeks Apple Music through its own scrubber (set by the Apple Music service).</summary>
     public Func<double, double, bool>? AppleMusicSeek { get; set; }
+
+    /// <summary>
+    /// The position of the song a player's media session reports without a timeline, read from elsewhere (the player's AUMID in, null out for none).
+    /// Used only while the session's length is 0 or less and the song matches; a timeline the session reports itself is never overridden.
+    /// </summary>
+    public Func<string, ExternalTimeline?>? TimelineFor { get; set; }
+
+    /// <summary>Seeks such a song (the player's AUMID, seconds in); false when it could not be asked. Set only while seeking is on offer: it also decides <see cref="Playback.CanSeek"/>.</summary>
+    public Func<string, double, bool>? ExternalSeek { get; set; }
 
     /// <summary>Raised when an Apple Music seek failed for real (not when a newer one replaced it): the timeline drops the position it holds.</summary>
     public event Action? SeekFailed;
@@ -310,6 +336,7 @@ internal sealed class PlaybackService : IDisposable
             IsPlaying = e.Playing,
             Aumid = e.Aumid,
             Duration = e.Duration,
+            SessionDuration = e.Duration,
             HasPosition = e.Duration > 0,
             BasePosition = e.BasePos,
             BaseStamp = e.Stamp,
@@ -592,6 +619,10 @@ internal sealed class PlaybackService : IDisposable
 
             if (e.Playing || !string.IsNullOrEmpty(e.Title) || !string.IsNullOrEmpty(e.Artist))
             {
+                // The Web API fills in only a session that reports no length, and only for the song it reports (see TimelineMerge).
+                var fill = e.Duration <= 0 && TimelineFor is { } timelineFor
+                    ? TimelineMerge.Decide(e.Duration, e.Title, e.Artist, timelineFor(e.Aumid), ExternalSeek is not null)
+                    : null;
                 next = new Playback
                 {
                     HasTrack = !string.IsNullOrEmpty(e.Title) || !string.IsNullOrEmpty(e.Artist) || e.Playing,
@@ -602,17 +633,19 @@ internal sealed class PlaybackService : IDisposable
                     Artwork = e.Art,
                     Tint = e.Tint,
                     Aumid = e.Aumid,
-                    Duration = e.Duration,
-                    CanSeek = SeekRules.CanSeek(IsAppleMusic(e), e.CanSeek, e.Duration, AppleMusicSeek is not null),
+                    Duration = fill?.Duration ?? e.Duration,
+                    SessionDuration = e.Duration,
+                    TimelineFromWebApi = fill is not null,
+                    CanSeek = fill?.CanSeek ?? SeekRules.CanSeek(IsAppleMusic(e), e.CanSeek, e.Duration, AppleMusicSeek is not null),
                     CanPrevious = e.CanPrev,
                     CanNext = e.CanNext,
                     CanPlayPause = e.CanPlay,
                     Shuffle = e.Shuffle,
                     CanShuffle = e.CanShuffle && e.Shuffle is not null,
-                    HasPosition = e.Duration > 0,
-                    BasePosition = e.BasePos,
-                    BaseStamp = e.Stamp,
-                    Rate = e.Rate,
+                    HasPosition = (fill?.Duration ?? e.Duration) > 0,
+                    BasePosition = fill?.BasePosition ?? e.BasePos,
+                    BaseStamp = fill?.BaseStamp ?? e.Stamp,
+                    Rate = fill is not null ? 1 : e.Rate,
                 };
             }
         }
@@ -652,7 +685,8 @@ internal sealed class PlaybackService : IDisposable
 
         _grace?.Stop();
         _grace = null;
-        var identity = next.Identity;
+        // a length that only arrives from the Web API a moment later is not a new song, so it must not announce one again
+        var identity = next.SongKey;
         if (next.IsPlaying && identity != _lastIdentityForEvent && !string.IsNullOrEmpty(next.Title))
         {
             var firstForPlayer = string.IsNullOrEmpty(_lastIdentityForEvent) || !_lastIdentityForEvent.StartsWith(next.Aumid, StringComparison.Ordinal);

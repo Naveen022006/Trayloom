@@ -19,6 +19,16 @@ internal static class SpotifyAuth
     /// <summary>The permissions asked for: read what is playing, the user's playlists, liked and recent songs, and control playback. Nothing that edits a library.</summary>
     public const string Scopes = "user-read-playback-state user-modify-playback-state user-read-currently-playing user-library-read playlist-read-private playlist-read-collaborative user-read-recently-played";
 
+    /// <summary>The length of a Client ID from the Spotify Dashboard.</summary>
+    public const int ClientIdLength = 32;
+
+    /// <summary>
+    /// A Spotify Client ID is 32 hexadecimal characters. A wrong one only shows an error page on Spotify's side and the sign-in would wait
+    /// for the browser until it times out, so it is refused before anything starts.
+    /// </summary>
+    public static bool IsClientIdFormat(string? value) =>
+        value is { Length: ClientIdLength } && value.All(Uri.IsHexDigit);
+
     /// <summary>The page the user approves Trayloom on, with the redirect, scopes, state and S256 challenge escaped into it.</summary>
     public static string AuthorizeUrl(string clientId, string challenge, string state) =>
         "https://accounts.spotify.com/authorize?response_type=code"
@@ -160,6 +170,13 @@ internal sealed partial class SpotifyService : IMusicService
             return StreamStatus.NotConfigured;
         }
 
+        if (!SpotifyAuth.IsClientIdFormat(clientId))
+        {
+            // Before the listener starts and the browser opens: nothing to cancel, nothing sent.
+            _log.Info("[island] Spotify: sign-in -> " + StreamStatus.InvalidClient + " (Client ID format)");
+            return StreamStatus.InvalidClient;
+        }
+
         var cts = CancellationTokenSource.CreateLinkedTokenSource(ct, _disposeCts.Token);
         var previous = _flow;
         _connectCts?.Cancel();
@@ -216,6 +233,12 @@ internal sealed partial class SpotifyService : IMusicService
             {
                 _connectCts = null;
                 _connecting = false;
+                if (ManualSignInUrl is not null)
+                {
+                    // The "copy this link" line belongs to the wait that just ended.
+                    ClearNote();
+                }
+
                 ManualSignInUrl = null;
             }
 
@@ -509,6 +532,7 @@ internal sealed partial class SpotifyService : IMusicService
         _failed.Clear();
         _note = null;
         _busyKey = null;
+        SetTimeline(null);
     }
 
     private void OnSettingChanged(string key)

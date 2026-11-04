@@ -202,6 +202,7 @@ internal sealed class IslandCore : IDisposable
         EqBars.LiveSource = () => Levels.Levels;
         Playback.Changed += SyncLevels;
         SyncLevels();
+        StartSpotifyTimeline();
         var dir = Ctx.DataDirectory;
         _ = dir;
     }
@@ -326,6 +327,63 @@ internal sealed class IslandCore : IDisposable
         else if (Levels.IsRunning)
         {
             Levels.Stop();
+        }
+    }
+
+    // ---------------------------------------------------------------- Spotify timeline
+
+    private bool _watchingSpotify;
+
+    /// <summary>Hooks the Web API timeline into the media session's reading. Spotify's own session often has no length or seeking.</summary>
+    private void StartSpotifyTimeline()
+    {
+        Playback.TimelineFor = SpotifyTimelineFor;
+        Playback.Changed += SyncSpotifyTimeline;
+        Music.Changed += SyncSpotifyTimeline;
+        Music.Spotify.TimelineChanged += OnSpotifyTimeline;
+        SyncSpotifyTimeline();
+    }
+
+    private ExternalTimeline? SpotifyTimelineFor(string aumid) =>
+        MusicSources.FromPlayer(aumid) == MusicSource.Spotify && Music.Spotify.Connection == StreamConnection.Connected ? Music.Spotify.Timeline : null;
+
+    private bool SpotifySeek(string aumid, double seconds) =>
+        MusicSources.FromPlayer(aumid) == MusicSource.Spotify && Music.Spotify.TrySeek(seconds);
+
+    private void OnSpotifyTimeline()
+    {
+        if (!_disposed)
+        {
+            Playback.Reevaluate();
+        }
+    }
+
+    /// <summary>
+    /// Polls the Web API only while it is needed: the island is open, the player is Spotify, Spotify is connected and the session reports no
+    /// length. Anything else (closing, another player, disconnecting, a session with its own timeline) stops the polling at once. Also decides
+    /// whether seeking through the Web API is on offer (not for an account known to be free).
+    /// </summary>
+    public void SyncSpotifyTimeline()
+    {
+        var spotify = Music.Spotify;
+        var current = Playback.Current;
+        var connected = !_disposed && spotify.Connection == StreamConnection.Connected;
+        var want = connected
+            && Window is { Expanded: true }
+            && current.HasTrack
+            && MusicSources.FromPlayer(current.Aumid) == MusicSource.Spotify
+            && current.SessionDuration <= 0;
+        if (want != _watchingSpotify)
+        {
+            _watchingSpotify = want;
+            spotify.WatchTimeline(want);
+        }
+
+        Func<string, double, bool>? seek = connected && spotify.CanPlayHere != false ? SpotifySeek : null;
+        if ((seek is null) != (Playback.ExternalSeek is null))
+        {
+            Playback.ExternalSeek = seek;
+            Playback.Reevaluate();
         }
     }
 
@@ -683,6 +741,13 @@ internal sealed class IslandCore : IDisposable
     public void Dispose()
     {
         _disposed = true;
+        Playback.Changed -= SyncSpotifyTimeline;
+        Music.Changed -= SyncSpotifyTimeline;
+        Music.Spotify.TimelineChanged -= OnSpotifyTimeline;
+        Playback.TimelineFor = null;
+        Playback.ExternalSeek = null;
+        _watchingSpotify = false;
+        Music.Spotify.WatchTimeline(false);
         Ctx.Runtime.Changed -= OnRuntime;
         Ctx.Island.Changed -= OnRuntime;
         Ctx.Services.Changed -= OnServices;

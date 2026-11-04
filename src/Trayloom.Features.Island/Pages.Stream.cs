@@ -546,8 +546,8 @@ internal sealed class StreamPanel : Grid, IMusicBrowserPanel
     }
 
     /// <summary>
-    /// Enter: inside a list or on Spotify it acts on the highlighted row; on YouTube the first Enter searches (with no API key that opens
-    /// the search in the browser), and an Enter on the results acts on the highlighted row.
+    /// Enter: inside a list or on Spotify it acts on the highlighted row; on YouTube the first Enter on new text searches (in the island,
+    /// with no key needed), and an Enter on the results acts on the highlighted row.
     /// </summary>
     private void OnEnter(bool shift, bool ctrl)
     {
@@ -954,10 +954,6 @@ internal sealed class StreamPanel : Grid, IMusicBrowserPanel
         {
             _headerHost.Child = Searching ? Chips() : Tabs();
         }
-        else if (!_svc.CanBrowse)
-        {
-            _headerHost.Child = LinkPills();
-        }
         else if (_search.Text.Trim().Length > 0 && _search.Text.Trim() != _nav.Query)
         {
             _headerHost.Child = HintLine();
@@ -1101,7 +1097,7 @@ internal sealed class StreamPanel : Grid, IMusicBrowserPanel
         {
             _model = null;
             AutomationProperties.SetItemStatus(_search, "");
-            return Spotify ? ConnectView() : NoKeyView();
+            return ConnectView();
         }
 
         if (gathered.Request is null)
@@ -1258,14 +1254,6 @@ internal sealed class StreamPanel : Grid, IMusicBrowserPanel
         AutomationProperties.SetAutomationId(external, "Island.Stream.SearchExternal");
         _externalSearch = external;
         return D.EmptyView(G.Music, message, connect, external);
-    }
-
-    /// <summary>YouTube without an API key: Enter searches in the browser; a key in Settings shows the results here.</summary>
-    private FrameworkElement NoKeyView()
-    {
-        var settings = D.PillButton(Strings.SettingsEllipsis, OpenSettings, true);
-        AutomationProperties.SetAutomationId(settings, "Island.Stream.Connect");
-        return D.EmptyView(G.Search, StreamStrings.PressEnterToSearchYouTube + "\n" + StreamStrings.AddApiKey, settings);
     }
 
     private void OpenSettings()
@@ -1681,7 +1669,10 @@ internal sealed class SpotifyQueueView : Grid
         }
         else if (load.State == StreamLoadState.Error)
         {
-            body = D.EmptyView(G.Warning, load.Message.Length > 0 ? load.Message : StreamUiStrings.SomethingWentWrong);
+            // Spotify was disconnected while this was open: that has no message of its own, and is not a fault
+            body = load.Status == StreamStatus.NotConnected
+                ? D.EmptyView(G.List, Strings.QueueUnavailable)
+                : D.EmptyView(G.Warning, load.Message.Length > 0 ? load.Message : StreamUiStrings.SomethingWentWrong);
         }
         else
         {

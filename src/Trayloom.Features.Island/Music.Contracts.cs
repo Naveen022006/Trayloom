@@ -153,7 +153,7 @@ internal interface IMusicService : IDisposable
     /// <summary>Whether the service is set up and signed in.</summary>
     StreamConnection Connection { get; }
 
-    /// <summary>Whether lists can be fetched (Spotify: connected; YouTube: an API key is saved).</summary>
+    /// <summary>Whether lists can be fetched (Spotify: connected; YouTube Music: always, through its web service or the optional API key).</summary>
     bool CanBrowse { get; }
 
     /// <summary>Whether the user turned the service on for the island.</summary>
@@ -234,8 +234,6 @@ internal static class StreamStrings
     public static string NotAvailableInCountry => Loc.T("Not available in your country");
     public static string LocalFile => Loc.T("Local file");
     public static string ConnectSpotifyToSearch => Loc.T("Connect Spotify to search and play from here.");
-    public static string PressEnterToSearchYouTube => Loc.T("Press Enter to search YouTube Music in your browser.");
-    public static string AddApiKey => Loc.T("Add an API key in Settings to see results here.");
     public static string AddedToQueue => Loc.T("Added to the queue");
     public static string StartingSpotify => Loc.T("Starting Spotify…");
     public static string OwnedPlaylistsOnly => Loc.T("Spotify lists songs only for playlists you own or collaborate on.");
@@ -250,7 +248,7 @@ internal static class StreamStrings
     /// <param name="retryIn">For <see cref="StreamStatus.RateLimited"/>: how long until the next try.</param>
     public static string Message(StreamStatus status, StreamKind kind, TimeSpan? retryIn = null)
     {
-        var name = kind == StreamKind.Spotify ? "Spotify" : "YouTube";
+        var name = kind == StreamKind.Spotify ? "Spotify" : "YouTube Music";
         switch (status)
         {
             case StreamStatus.NotConfigured:

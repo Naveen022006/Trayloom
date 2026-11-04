@@ -14,7 +14,7 @@ namespace Trayloom.Features.Island;
 
 /// <summary>
 /// Settings > Dynamic Island > Content > Now Playing: the "Music services" card. Sets up Spotify (Client ID, redirect URI, sign-in) and
-/// YouTube Music (API key) for the island's Library, and says what each service can and cannot do. Nothing is sent until a service is
+/// YouTube Music (no setup; an optional API key) for the island's Library, and says what each service can and cannot do. Nothing is sent until a service is
 /// set up here. The card follows <see cref="MusicServices.Changed"/> while it is shown.
 /// </summary>
 internal sealed class MusicServicesCard
@@ -41,6 +41,7 @@ internal sealed class MusicServicesCard
     private MacSwitch? _spotifySwitch;
     private TextBox? _clientId;
     private TextBlock? _clientNote;
+    private TextBlock? _clientFormat;
     private StreamStatus? _spotifyStatus;
     private bool _clientChanged;
 
@@ -138,6 +139,8 @@ internal sealed class MusicServicesCard
         _card.Add(Field(Loc.T("Client ID"), _clientId, 300));
         _clientNote = UiKit.Text(Loc.T("Changing the Client ID disconnects Spotify."), 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, true);
         _card.Add(_clientNote);
+        _clientFormat = UiKit.Text(Loc.T("This doesn’t look like a Spotify Client ID. It has 32 letters and numbers, from your app’s page in the Spotify Dashboard."), 11.5, FontWeights.Normal, ThemeKeys.Orange, true);
+        _card.Add(_clientFormat);
 
         _card.AddCaption(Loc.T("Spotify only lets apps like Trayloom in through a Client ID. Create one at developer.spotify.com: Dashboard › Create app, pick Web API, and add the redirect URI below. Then paste the app’s Client ID here. Creating an app needs Spotify Premium."));
         if (SpotifyAuth.BuiltInClientId.Length > 0)
@@ -203,6 +206,9 @@ internal sealed class MusicServicesCard
         }
 
         var wasSignedIn = spotify.Connection is StreamConnection.Connected or StreamConnection.NeedsReconnect;
+
+        // a sign-in that is waiting for the browser belongs to the old ID: it would end signed in with an ID that is no longer set
+        spotify.CancelConnect();
         App.Set(K.SpotifyClientId, value);
         if (wasSignedIn)
         {
@@ -272,6 +278,13 @@ internal sealed class MusicServicesCard
         {
             _clientNote.Visibility = connection == StreamConnection.Connected || _clientChanged ? Visibility.Visible : Visibility.Collapsed;
         }
+
+        if (_clientFormat is not null)
+        {
+            // judged on the saved value, so it appears once the box is committed, not while typing
+            var saved = (App.Get<string>(K.SpotifyClientId) ?? string.Empty).Trim();
+            _clientFormat.Visibility = saved.Length > 0 && !SpotifyAuth.IsClientIdFormat(saved) ? Visibility.Visible : Visibility.Collapsed;
+        }
     }
 
     // ---------------------------------------------------------------- YouTube
@@ -281,7 +294,14 @@ internal sealed class MusicServicesCard
         _card.Add(new SettingsRow(null, "YouTube Music", null));
         _youTubeSwitch = new MacSwitch(App.Get<bool>(K.MusicYouTube), SwitchSize.Regular, on => App.Set(K.MusicYouTube, on));
         _card.Add(new SettingsRow(null, Loc.T("Show YouTube Music in the island"), null, _youTubeSwitch));
-        _card.AddCaption(Loc.T("Without setup, searches open YouTube Music in your browser. Add your own YouTube Data API key to see results in the island."));
+        _card.AddCaption(Loc.T("Search YouTube Music right in the island. No account or key needed: Trayloom uses the same web service as music.youtube.com. It isn’t an official API, so it may stop working if YouTube changes it."));
+
+        var openIn = new List<(string Value, string Label)> { ("music", "YouTube Music"), ("youtube", "YouTube") };
+        var saved = string.Equals(App.Get<string>(K.YouTubeOpenIn), "youtube", StringComparison.OrdinalIgnoreCase) ? "youtube" : "music";
+        _card.Add(new PickerRow<string>(null, Loc.T("Open songs in"), null, openIn, saved, v => App.Set(K.YouTubeOpenIn, v), 160));
+
+        _card.Add(new SettingsRow(null, Loc.T("Official API (optional)"), null));
+        _card.AddCaption(Loc.T("If the built-in search stops working, add your own YouTube Data API key to use Google’s official API instead (about 100 searches a day)."));
 
         _apiKey = MakePasswordBox(280);
         AutomationProperties.SetAutomationId(_apiKey, "Island.Settings.YouTube.Key");
@@ -315,11 +335,7 @@ internal sealed class MusicServicesCard
         _card.AddCaption(Loc.T("In Google Cloud Console create a project, enable YouTube Data API v3, then open Credentials › Create credentials › API key. The free daily limit allows about 100 searches."));
         _card.Add(LinkButton(Loc.T("Open Google Cloud Console"), CloudConsoleUrl));
 
-        var openIn = new List<(string Value, string Label)> { ("music", "YouTube Music"), ("youtube", "YouTube") };
-        var saved = string.Equals(App.Get<string>(K.YouTubeOpenIn), "youtube", StringComparison.OrdinalIgnoreCase) ? "youtube" : "music";
-        _card.Add(new PickerRow<string>(null, Loc.T("Open songs in"), null, openIn, saved, v => App.Set(K.YouTubeOpenIn, v), 160));
-
-        _card.AddCaption(Loc.T("Search results come from YouTube API Services. YouTube’s Terms of Service and Google’s Privacy Policy apply."));
+        _card.AddCaption(Loc.T("Search results come from YouTube Music, or from YouTube API Services when you add your own key. YouTube’s Terms of Service and Google’s Privacy Policy apply."));
         var legal = new WrapPanel();
         // Right and bottom gaps only, so a button that wraps to the next line stays aligned with the one above it.
         var terms = LinkButton(Loc.T("YouTube Terms"), YouTubeTermsUrl);

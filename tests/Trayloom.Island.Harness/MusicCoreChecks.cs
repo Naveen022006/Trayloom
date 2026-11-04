@@ -370,6 +370,9 @@ internal static class MusicCoreChecks
         Check(StreamArt.Allowed("https://image-cdn-ak.spotifycdn.com/image/abc"), "art: *.spotifycdn.com");
         Check(StreamArt.Allowed("https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg"), "art: i.ytimg.com");
         Check(StreamArt.Allowed("https://yt3.ggpht.com/abc=s88"), "art: *.ggpht.com");
+        Check(StreamArt.Allowed("https://lh3.googleusercontent.com/abc=w60-h60-l90-rj"), "art: lh3.googleusercontent.com");
+        Check(StreamArt.Allowed("https://yt3.googleusercontent.com/abc=w60-h60-l90-rj"), "art: yt3.googleusercontent.com");
+        Check(!StreamArt.Allowed("https://evil.googleusercontent.com/abc") && !StreamArt.Allowed("https://googleusercontent.com/abc") && !StreamArt.Allowed("https://lh3.googleusercontent.com.evil.com/x") && !StreamArt.Allowed("https://u:p@lh3.googleusercontent.com/x") && !StreamArt.Allowed("http://lh3.googleusercontent.com/x"), "art: only the two googleusercontent hosts, https, no userinfo");
         Check(!StreamArt.Allowed("http://i.scdn.co/image/abc"), "art: plain http is refused");
         Check(!StreamArt.Allowed("https://scdn.co/image/abc"), "art: the bare domain is not a subdomain");
         Check(!StreamArt.Allowed("https://evil-scdn.co/image/abc") && !StreamArt.Allowed("https://i.scdn.co.evil.com/x"), "art: look-alike hosts are refused");

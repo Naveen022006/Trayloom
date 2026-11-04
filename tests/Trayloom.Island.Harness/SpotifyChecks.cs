@@ -30,6 +30,9 @@ internal static class SpotifyChecks
         SameSongs();
         AuthorizeUrl();
         Timeline();
+        ClientIds();
+        TimelineMerges();
+        Extrapolation();
     }
 
     private static void Check(bool ok, string what) => _check(ok, "spotify: " + what);
@@ -321,5 +324,55 @@ internal static class SpotifyChecks
         Check(paused is { Playing: false, Artist: "" }, "timeline: paused");
         Check(SpotifyService.ReadTimeline("""{"is_playing":true,"item":{"type":"episode","name":"Pod"}}""", stamp) is null, "timeline: an episode is not a song");
         Check(SpotifyService.ReadTimeline("", stamp) is null && SpotifyService.ReadTimeline(null, stamp) is null && SpotifyService.ReadTimeline("{}", stamp) is null && SpotifyService.ReadTimeline("{nope", stamp) is null && SpotifyService.ReadTimeline("""{"item":null}""", stamp) is null, "timeline: nothing playing and bad answers give none");
+    }
+
+    private static void ClientIds()
+    {
+        const string Good = "0123456789abcdef0123456789ABCDEF";
+        Check(SpotifyAuth.IsClientIdFormat(Good), "client id: 32 hexadecimal characters, either case");
+        Check(!SpotifyAuth.IsClientIdFormat(Good[..31]) && !SpotifyAuth.IsClientIdFormat(Good + "0"), "client id: 31 or 33 characters are refused");
+        Check(!SpotifyAuth.IsClientIdFormat("0123456789abcdef0123456789abcdeg"), "client id: a non-hexadecimal letter is refused");
+        Check(!SpotifyAuth.IsClientIdFormat("0123456789abcdef 123456789abcdef") && !SpotifyAuth.IsClientIdFormat(" " + Good[..31]), "client id: spaces are refused");
+        Check(!SpotifyAuth.IsClientIdFormat("0123456789abcdef0123456789abcdé0"), "client id: a non-ASCII character is refused");
+        Check(!SpotifyAuth.IsClientIdFormat("") && !SpotifyAuth.IsClientIdFormat(null), "client id: empty or missing is refused");
+    }
+
+    private static void TimelineMerges()
+    {
+        var stamp = new DateTime(2026, 11, 4, 12, 0, 0, DateTimeKind.Utc);
+        var web = new ExternalTimeline("Song One", "Ann, Bob", 61.5, 200, true, stamp);
+
+        // the session has no length and the Web API plays the same song: the Web API fills in
+        var fill = TimelineMerge.Decide(0, "Song One", "Ann", web, canSeek: true);
+        Check(fill is { Duration: 200, BasePosition: 61.5, CanSeek: true } f && f.BaseStamp == stamp, "merge: no session length and the same song uses the Web API reading");
+        Check(TimelineMerge.Decide(0, "Song One", "Ann", web, canSeek: false) is { CanSeek: false }, "merge: seeking follows what is on offer");
+        Check(TimelineMerge.Decide(-1, "song one", "Bob", web, canSeek: true) is not null, "merge: a negative length counts as none, case does not matter");
+
+        // a real session timeline is never overridden
+        Check(TimelineMerge.Decide(215, "Song One", "Ann", web, canSeek: true) is null, "merge: a session length stands");
+        Check(TimelineMerge.Decide(0.5, "Song One", "Ann", web, canSeek: true) is null, "merge: even a short session length stands");
+
+        // another song, or nothing to use
+        Check(TimelineMerge.Decide(0, "Other Song", "Ann", web, canSeek: true) is null, "merge: another title is not filled");
+        Check(TimelineMerge.Decide(0, "Song One", "Carl", web, canSeek: true) is null, "merge: another artist is not filled");
+        Check(TimelineMerge.Decide(0, "Song One", "Ann", null, canSeek: true) is null, "merge: no Web API reading, nothing to fill");
+        Check(TimelineMerge.Decide(0, "Song One", "Ann", web with { Duration = 0 }, canSeek: true) is null, "merge: a Web API reading without a length is not used");
+        Check(TimelineMerge.Decide(0, "", "Ann", web with { Title = "" }, canSeek: true) is null, "merge: no title never matches");
+
+        // the position stays inside the song
+        Check(TimelineMerge.Decide(0, "Song One", "Ann", web with { Position = 999 }, canSeek: true) is { BasePosition: 200 }, "merge: a position past the end is held at the end");
+        Check(TimelineMerge.Decide(0, "Song One", "Ann", web with { Position = -5 }, canSeek: true) is { BasePosition: 0 }, "merge: a negative position is held at the start");
+    }
+
+    private static void Extrapolation()
+    {
+        var stamp = new DateTime(2026, 11, 4, 12, 0, 0, DateTimeKind.Utc);
+        var playing = new ExternalTimeline("Song", "Ann", 60, 200, true, stamp);
+        Check(Math.Abs(TimelineMerge.PositionAt(playing, stamp) - 60) < 1e-9, "extrapolation: at the stamp it is the reading");
+        Check(Math.Abs(TimelineMerge.PositionAt(playing, stamp.AddSeconds(2.5)) - 62.5) < 1e-9, "extrapolation: while playing it moves with the clock");
+        Check(Math.Abs(TimelineMerge.PositionAt(playing, stamp.AddSeconds(500)) - 200) < 1e-9, "extrapolation: it stops at the end of the song");
+        Check(Math.Abs(TimelineMerge.PositionAt(playing, stamp.AddSeconds(-3)) - 60) < 1e-9, "extrapolation: a clock before the stamp does not move it back");
+        Check(Math.Abs(TimelineMerge.PositionAt(playing with { Playing = false }, stamp.AddSeconds(30)) - 60) < 1e-9, "extrapolation: paused it stands still");
+        Check(Math.Abs(TimelineMerge.PositionAt(playing with { Duration = 0 }, stamp.AddSeconds(30)) - 90) < 1e-9, "extrapolation: with no length it is not capped");
     }
 }

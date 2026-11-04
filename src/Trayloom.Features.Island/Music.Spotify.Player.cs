@@ -17,12 +17,53 @@ namespace Trayloom.Features.Island;
 /// <param name="StampUtc">When <paramref name="Position"/> was true (the middle of the request, to halve the network delay).</param>
 internal sealed record ExternalTimeline(string Title, string Artist, double Position, double Duration, bool Playing, DateTime StampUtc);
 
+/// <summary>What the Web API adds to a media session reading that has no timeline of its own.</summary>
+/// <param name="Duration">Length in seconds (greater than 0).</param>
+/// <param name="BasePosition">Seconds into the song at <paramref name="BaseStamp"/>.</param>
+/// <param name="BaseStamp">When <paramref name="BasePosition"/> was true.</param>
+/// <param name="CanSeek">The island may offer a draggable timeline (seeking goes through the Web API).</param>
+internal readonly record struct TimelineFill(double Duration, double BasePosition, DateTime BaseStamp, bool CanSeek);
+
+/// <summary>
+/// The pure decisions of using the Web API's position where the media session has none (kept apart from the network and WPF so the harness can
+/// check them). The Web API never replaces a real session timeline and never decides which song is playing: it only fills in a song the session
+/// already reports.
+/// </summary>
+internal static class TimelineMerge
+{
+    /// <summary>The session reports no length (0 or less) and the Web API is playing the same song, with a length.</summary>
+    public static bool Applies(double sessionDuration, string? title, string? artist, ExternalTimeline? external) =>
+        sessionDuration <= 0 && external is { Duration: > 0 } && SpotifyMap.SameSong(title, artist, external.Title, external.Artist);
+
+    /// <summary>The fill for a session reading, or null when the session's own timeline stands.</summary>
+    public static TimelineFill? Decide(double sessionDuration, string? title, string? artist, ExternalTimeline? external, bool canSeek) =>
+        Applies(sessionDuration, title, artist, external)
+            ? new TimelineFill(external!.Duration, Math.Clamp(external.Position, 0, external.Duration), external.StampUtc, canSeek)
+            : null;
+
+    /// <summary>Where the song is at <paramref name="nowUtc"/>: the reading's position plus the time since it was taken, while playing.</summary>
+    public static double PositionAt(ExternalTimeline timeline, DateTime nowUtc)
+    {
+        var elapsed = timeline.Playing ? Math.Max(0, (nowUtc - timeline.StampUtc).TotalSeconds) : 0;
+        return Math.Clamp(timeline.Position + elapsed, 0, timeline.Duration > 0 ? timeline.Duration : double.MaxValue);
+    }
+}
+
 /// <summary>Playback commands of the Spotify service: play, queue, shuffle, the timeline poll and seeking.</summary>
 internal sealed partial class SpotifyService
 {
     private static readonly TimeSpan TimelinePoll = TimeSpan.FromSeconds(5);
 
+    /// <summary>A reading that fails to arrive is kept this long (extrapolated) before the timeline is dropped, so one dropped request does not flicker the display.</summary>
+    private static readonly TimeSpan TimelineGrace = TimeSpan.FromSeconds(20);
+
     private CancellationTokenSource? _timelineCts;
+
+    /// <summary>Seek requests not answered yet; no reading counts while there are any (it would show the old position).</summary>
+    private int _seeksInFlight;
+
+    /// <summary>Readings requested before this moment are ignored: they may predate the last seek.</summary>
+    private DateTime _ignorePollsBefore = DateTime.MinValue;
 
     /// <summary>The playback position while <see cref="WatchTimeline"/> is on and something plays on this account; otherwise null.</summary>
     public ExternalTimeline? Timeline { get; private set; }
@@ -89,6 +130,7 @@ internal sealed partial class SpotifyService
         if (reply.Ok)
         {
             SetPremium(true);
+            InvalidateQueue();
             await NoteActiveDeviceAsync(ct);
             return true;
         }
@@ -159,6 +201,7 @@ internal sealed partial class SpotifyService
         if (reply.Ok)
         {
             SetPremium(true);
+            InvalidateQueue();
             SetNote(StreamStrings.PlayingOn(choice.DeviceName ?? "Spotify"), error: false);
             return true;
         }
@@ -236,7 +279,7 @@ internal sealed partial class SpotifyService
             {
                 case StreamStatus.Ok:
                     SetPremium(true);
-                    _queueCache.Remove(QueueRequest);
+                    InvalidateQueue();
                     SetNote(StreamStrings.AddedToQueue, error: false);
                     break;
                 case StreamStatus.NoDevice:
@@ -327,6 +370,13 @@ internal sealed partial class SpotifyService
     /// <summary>The "Up next" list (<c>GET me/player/queue</c>), cached for 30 s; <c>Retry(QueueRequest)</c> refreshes it.</summary>
     public StreamLoad GetQueue() => Get(QueueRequest);
 
+    /// <summary>Forgets the cached "Up next" list (and a failed attempt at it) so the next view asks again; raises nothing.</summary>
+    public void InvalidateQueue()
+    {
+        _queueCache.Remove(QueueRequest);
+        _failed.Remove(QueueRequest);
+    }
+
     // ------------------------------------------------------------------ timeline
 
     /// <summary>Starts or stops polling what is playing (every 5 s). Off, <see cref="Timeline"/> is null and nothing is requested.</summary>
@@ -345,7 +395,7 @@ internal sealed partial class SpotifyService
 
         var cts = CancellationTokenSource.CreateLinkedTokenSource(_disposeCts.Token);
         _timelineCts = cts;
-        Guarded.FireAndLog(() => TimelineLoopAsync(cts.Token), _log, "Spotify timeline");
+        Guarded.FireAndLog(() => TimelineLoopAsync(cts), _log, "Spotify timeline");
     }
 
     private void StopTimeline()
@@ -356,20 +406,34 @@ internal sealed partial class SpotifyService
         SetTimeline(null);
     }
 
-    private async Task TimelineLoopAsync(CancellationToken ct)
+    private async Task TimelineLoopAsync(CancellationTokenSource cts)
     {
-        while (!ct.IsCancellationRequested)
+        var ct = cts.Token;
+        try
         {
-            if (Connection == StreamConnection.Connected && !IsBlocked(out _))
+            while (!ct.IsCancellationRequested)
             {
-                await PollTimelineAsync(ct);
+                if (Connection == StreamConnection.Connected && !IsBlocked(out _))
+                {
+                    await PollTimelineAsync(ct);
+                }
+                else
+                {
+                    SetTimeline(null);
+                }
+
+                await Task.Delay(TimelinePoll, ct);
             }
-            else
+        }
+        finally
+        {
+            // Whatever ended the loop, the next WatchTimeline(true) must be able to start a new one.
+            if (ReferenceEquals(_timelineCts, cts))
             {
-                SetTimeline(null);
+                _timelineCts = null;
             }
 
-            await Task.Delay(TimelinePoll, ct);
+            cts.Dispose();
         }
     }
 
@@ -378,13 +442,24 @@ internal sealed partial class SpotifyService
         var before = DateTime.UtcNow;
         var reply = await GetAsync("me/player/currently-playing", "me/player/currently-playing?additional_types=track", ct, quiet: true);
         var after = DateTime.UtcNow;
-        if (ct.IsCancellationRequested)
+        if (ct.IsCancellationRequested || _seeksInFlight > 0 || before < _ignorePollsBefore)
         {
             return;
         }
 
+        if (!reply.Ok)
+        {
+            // A request that failed says nothing about the song: the last reading stays (and moves on its own) for a while.
+            if (Timeline is { } last && DateTime.UtcNow - last.StampUtc > TimelineGrace)
+            {
+                SetTimeline(null);
+            }
+
+            return;
+        }
+
         // 204 (nothing playing) comes back as success with no body.
-        SetTimeline(reply.Ok ? ReadTimeline(reply.Body, before + (after - before) / 2) : null);
+        SetTimeline(ReadTimeline(reply.Body, before + (after - before) / 2));
     }
 
     /// <summary>Reads a <c>currently-playing</c> answer; null when nothing plays, an episode or an unreadable answer.</summary>
@@ -442,7 +517,7 @@ internal sealed partial class SpotifyService
         var moved = old is null || next is null
             || old.Title != next.Title || old.Artist != next.Artist || old.Playing != next.Playing
             || Math.Abs(old.Duration - next.Duration) > 0.5
-            || Math.Abs(old.Position + (old.Playing ? (next.StampUtc - old.StampUtc).TotalSeconds : 0) - next.Position) > 1.5;
+            || Math.Abs(TimelineMerge.PositionAt(old, next.StampUtc) - next.Position) > 1.5;
         if (moved)
         {
             RaiseTimelineChanged();
@@ -483,13 +558,24 @@ internal sealed partial class SpotifyService
         Timeline = timeline with { Position = target, StampUtc = DateTime.UtcNow };
         RaiseTimelineChanged();
         var milliseconds = (long)Math.Round(target * 1000);
+
+        // A reading asked for before Spotify has moved would put the thumb back: none counts until the seek is answered.
+        _seeksInFlight++;
         Guarded.FireAndLog(
             async () =>
             {
-                var reply = await SendWriteAsync(HttpMethod.Put, "me/player/seek", $"me/player/seek?position_ms={milliseconds}", null, _disposeCts.Token);
-                if (reply.Status == StreamStatus.PremiumRequired)
+                try
                 {
-                    SetPremium(false);
+                    var reply = await SendWriteAsync(HttpMethod.Put, "me/player/seek", $"me/player/seek?position_ms={milliseconds}", null, _disposeCts.Token);
+                    if (reply.Status == StreamStatus.PremiumRequired)
+                    {
+                        SetPremium(false);
+                    }
+                }
+                finally
+                {
+                    _seeksInFlight--;
+                    _ignorePollsBefore = DateTime.UtcNow;
                 }
             },
             _log,

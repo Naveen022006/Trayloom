@@ -78,6 +78,7 @@ internal sealed partial class IslandWindow
             _core.Window = null;
         }
 
+        _core.SyncSpotifyTimeline();
         Close();
     }
 
@@ -214,9 +215,10 @@ internal sealed partial class IslandWindow
     private void OnPlayback()
     {
         var p = _core.Playback.Current;
-        if (p.HasTrack && p.Identity != _trackIdentity && p.IsPlaying)
+        if (p.HasTrack && p.SongKey != _trackIdentity && p.IsPlaying)
         {
-            _trackIdentity = p.Identity;
+            // SongKey, not Identity: a length the Web API adds or drops (Spotify, island opened or closed) is not a new song
+            _trackIdentity = p.SongKey;
             _trackSince = DateTime.UtcNow;
         }
 
@@ -681,6 +683,7 @@ internal sealed partial class IslandWindow
         SetKeyFocus(takeFocus && !byHover);
         _lastChange = DateTime.UtcNow;
         PublishPill();
+        _core.SyncSpotifyTimeline();
     }
 
     private static nint NativeForeground() => Trayloom.Core.Native.NativeMethods.GetForegroundWindow();
@@ -730,6 +733,7 @@ internal sealed partial class IslandWindow
         RefreshClosed(snap: immediate);
         ApplyWindow();
         PublishPill();
+        _core.SyncSpotifyTimeline();
     }
 
     public void Toggle()
