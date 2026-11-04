@@ -60,6 +60,17 @@ internal sealed class AppleMusicService : IDisposable
     private CancellationTokenSource? _resume;
     private TaskCompletionSource? _expedite;
 
+    // the library file is watched while a page of the music UI is on screen (see WatchLibrary)
+    private readonly DispatcherTimer _watchTimer;
+    private bool _reloading;
+    private DateTime? _seenStamp;
+    private DateTime? _failedStamp;
+
+    // what IsCurrent compares tracks with, folded once per media session sample instead of once per row
+    private string _currentSource = "";
+    private string _currentTitle = "";
+    private string _currentDetail = "";
+
     // "Play" with nothing loaded: choosing and starting something sensible counts as busy from the press on
     private bool _choosing;
     private DateTime _requestAt = DateTime.MinValue;
@@ -90,6 +101,8 @@ internal sealed class AppleMusicService : IDisposable
             Note = null;
             Changed?.Invoke();
         };
+        _watchTimer = new DispatcherTimer(DispatcherPriority.Background, core.Ui) { Interval = TimeSpan.FromSeconds(5) };
+        _watchTimer.Tick += (_, _) => WatchLibrary();
     }
 
     public LibraryUi Ui { get; } = new();
@@ -116,10 +129,25 @@ internal sealed class AppleMusicService : IDisposable
     public int Viewers { get; private set; }
 
     /// <summary>A page that shows the progress of Apple Music requests came on screen.</summary>
-    public void ViewerShown() => Viewers++;
+    public void ViewerShown()
+    {
+        Viewers++;
+        if (Viewers == 1 && !_disposed)
+        {
+            _seenStamp = null;
+            _watchTimer.Start();
+        }
+    }
 
     /// <summary>A page that shows the progress of Apple Music requests went away.</summary>
-    public void ViewerHidden() => Viewers = Math.Max(0, Viewers - 1);
+    public void ViewerHidden()
+    {
+        Viewers = Math.Max(0, Viewers - 1);
+        if (Viewers == 0)
+        {
+            _watchTimer.Stop();
+        }
+    }
 
     public IReadOnlyList<AmQueueItem>? Queue { get; private set; }
 
@@ -165,13 +193,16 @@ internal sealed class AppleMusicService : IDisposable
             return false;
         }
 
-        if (!string.Equals(p.Title.Trim(), t.Title.Trim(), StringComparison.CurrentCultureIgnoreCase))
+        // the session puts the album behind the artist ("Artist — Album"): the sample is split and folded once, not per row
+        var source = $"{p.Title}|{p.Artist}|{p.Album}";
+        if (source != _currentSource)
         {
-            return false;
+            _currentSource = source;
+            _currentTitle = p.Title;
+            _currentDetail = AmIdle.DetailKey(p.Artist, p.Album);
         }
 
-        var detail = p.Artist + " " + p.Album;
-        return (t.Album.Length == 0 || detail.Contains(t.Album, StringComparison.OrdinalIgnoreCase)) || (t.Artist.Length > 0 && detail.Contains(t.Artist, StringComparison.OrdinalIgnoreCase));
+        return AmIdle.IsPlaying(t, _currentTitle, _currentDetail);
     }
 
     // ---------------------------------------------------------------- library file
@@ -179,7 +210,7 @@ internal sealed class AppleMusicService : IDisposable
     /// <summary>Loads the library (again when the file changed); raises <see cref="Changed"/> when done.</summary>
     public void EnsureLoaded(bool force = false)
     {
-        if (_disposed || State == LibraryState.Loading)
+        if (_disposed || State == LibraryState.Loading || _reloading)
         {
             return;
         }
@@ -219,6 +250,8 @@ internal sealed class AppleMusicService : IDisposable
         }
 
         var id = ++_loadId;
+        _reloading = true;
+        _failedStamp = null;
         _ = Task.Run(() =>
         {
             AmDb? db = null;
@@ -238,6 +271,7 @@ internal sealed class AppleMusicService : IDisposable
 
             _core.Ui.BeginInvoke(() =>
             {
+                _reloading = false;
                 if (_disposed || id != _loadId)
                 {
                     return;
@@ -252,11 +286,37 @@ internal sealed class AppleMusicService : IDisposable
                 {
                     _core.Ctx.Log.Warn("Apple Music library could not be read: " + error?.Message);
                     State = Db is null ? LibraryState.Unreadable : LibraryState.Ready;
+                    _failedStamp = stamp;
                 }
 
                 Changed?.Invoke();
             });
         });
+    }
+
+    /// <summary>
+    /// While a page of the music UI is on screen, polls the library file's stamp every 5 s and reloads it once it has changed and rested
+    /// (<see cref="AmReload.ShouldLoad"/>); loads never run in parallel (<see cref="EnsureLoaded"/>). Cheap: one file-info call.
+    /// </summary>
+    private void WatchLibrary()
+    {
+        if (_disposed || Viewers == 0 || _reloading || State == LibraryState.Loading || Db is not { } db)
+        {
+            return;
+        }
+
+        try
+        {
+            if (File.Exists(AmDb.LibraryPath) && AmReload.ShouldLoad(db.Stamp, _failedStamp, File.GetLastWriteTimeUtc(AmDb.LibraryPath), ref _seenStamp))
+            {
+                _core.Ctx.Log.Info("Apple Music library changed; reloading it");
+                EnsureLoaded();
+            }
+        }
+        catch
+        {
+            // the file is busy or gone: the next poll looks again
+        }
     }
 
     // ---------------------------------------------------------------- requests
@@ -273,12 +333,15 @@ internal sealed class AppleMusicService : IDisposable
             CancelResume();
         }
 
+        var position = db.PagePosition(track, context);
         Guarded.FireAndLog(() => RunAsync(new AmCommand
         {
             Action = action,
             Track = track,
             Playlist = context,
             Page = page,
+            PageIndex = position.Index,
+            PageCount = position.Count,
             DbId = db.DbId,
             PlaylistAutomationId = context is null ? "" : db.PlaylistAutomationId(context.Pid),
         }, track.Pid), _core.Ctx.Log, "Apple Music " + action);
@@ -463,7 +526,7 @@ internal sealed class AppleMusicService : IDisposable
         }
 
         var db = Db;
-        var plan = db is null ? new IdlePlan([]) : AmIdle.Choose(db.Songs, db.Recent, db.Playlists, ReadLastPlayed(), DateTime.UtcNow, Random.Shared);
+        var plan = db is null ? new IdlePlan([]) : AmIdle.Choose(db, ReadLastPlayed(), DateTime.UtcNow, Random.Shared);
         if (db is null || plan.First is null)
         {
             _core.Ctx.Log.Warn($"AppleMusic {action}: nothing to play (library {State})");
@@ -498,6 +561,8 @@ internal sealed class AppleMusicService : IDisposable
                     Track = step.Track,
                     Playlist = step.Playlist,
                     Page = step.Page,
+                    PageIndex = step.Track is null ? -1 : db.PagePosition(step.Track, step.Playlist).Index,
+                    PageCount = step.Track is null ? 0 : db.PagePosition(step.Track, step.Playlist).Count,
                     DbId = db.DbId,
                     PlaylistAutomationId = step.Playlist is null ? "" : db.PlaylistAutomationId(step.Playlist.Pid),
                     ResumeAt = step.ResumeAt,
@@ -540,7 +605,9 @@ internal sealed class AppleMusicService : IDisposable
                 return;
             }
 
-            var key = $"{now.Title}|{now.Artist}|{now.Album}";
+            // Windows folds the album into the artist ("Artist — Album"): the song is kept with the artist alone and the album apart
+            var (artist, album) = AmIdle.SplitNowPlaying(now.Artist, now.Album);
+            var key = $"{now.Title}|{artist}|{album}";
             var changed = key != _lastKey;
             var paused = _lastPlaying && !now.IsPlaying;
             var due = now.IsPlaying && (DateTime.UtcNow - _lastSampled).TotalSeconds >= 20;
@@ -551,8 +618,8 @@ internal sealed class AppleMusicService : IDisposable
             }
 
             _lastKey = key;
-            var title = WatchService.Normalise(now.Title);
-            var same = ReadLastPlayed() is { } stored && WatchService.Normalise(stored.Title) == title && WatchService.Normalise(stored.Artist) == WatchService.Normalise(now.Artist);
+            var stored = ReadLastPlayed();
+            var same = stored is not null && AmIdle.SameSong(stored.Title, stored.Artist, now.Title, artist);
             if (same && !now.IsPlaying && now.Position < 1)
             {
                 // Apple Music coming up with the song loaded but at its start must not wipe the position that was left
@@ -563,19 +630,31 @@ internal sealed class AppleMusicService : IDisposable
             ulong trackPid = 0, playlistPid = 0;
             if (_lastCommand is { } command)
             {
-                if (command.Track is { } track && WatchService.Normalise(track.Title) == title)
+                if (command.Track is { } track && AmIdle.SameTitle(track.Title, now.Title))
                 {
                     trackPid = track.Pid;
                     playlistPid = command.Playlist?.Pid ?? 0;
                 }
-                else if (command.Playlist is { } playlist && playlist.Tracks.FirstOrDefault(t => WatchService.Normalise(t.Title) == title) is { } inList)
+                else if (command.Playlist is { } playlist && playlist.Tracks.FirstOrDefault(t => AmIdle.SameTitle(t.Title, now.Title)) is { } inList)
                 {
                     trackPid = inList.Pid;
                     playlistPid = playlist.Pid;
                 }
             }
 
-            KeepLastPlayed(new LastPlayed(now.Title, now.Artist, now.Album, now.Position, now.Duration, trackPid, playlistPid, DateTime.UtcNow), changed || paused);
+            if (trackPid == 0 && stored is { TrackPid: not 0 } && same)
+            {
+                // the same song sampled again (Apple Music restarted, a pause, the periodic sample): what is known about it is kept
+                trackPid = stored.TrackPid;
+                playlistPid = stored.PlaylistPid;
+            }
+
+            if (trackPid == 0 && Db is { } db && AmIdle.UniqueTrack(db.AllTracks, now.Title, artist, album) is { } unique)
+            {
+                trackPid = unique.Pid;
+            }
+
+            KeepLastPlayed(new LastPlayed(now.Title, artist, album, now.Position, now.Duration, trackPid, playlistPid, DateTime.UtcNow), changed || paused);
         }
         catch (Exception ex)
         {
@@ -792,7 +871,9 @@ internal sealed class AppleMusicService : IDisposable
         _snapshot = snapshot;
 
         // the position at the moment it closed is the most exact one there is
-        WriteLastPlayed(new LastPlayed(snapshot.Title, snapshot.Artist, snapshot.Album, snapshot.Position, snapshot.Duration, snapshot.Track?.Pid ?? 0, snapshot.Playlist?.Pid ?? 0, snapshot.At));
+        var (artist, album) = AmIdle.SplitNowPlaying(snapshot.Artist, snapshot.Album);
+        var carried = ReadLastPlayed() is { } stored && stored.TrackPid != 0 && AmIdle.SameSong(stored.Title, stored.Artist, snapshot.Title, artist) ? stored : null;
+        WriteLastPlayed(new LastPlayed(snapshot.Title, artist, album, snapshot.Position, snapshot.Duration, snapshot.Track?.Pid ?? carried?.TrackPid ?? 0, snapshot.Playlist?.Pid ?? carried?.PlaylistPid ?? 0, snapshot.At));
         if (Keeper.ResumeEnabled)
         {
             Guarded.FireAndLog(() => ResumeAfterQuit(snapshot, true), _core.Ctx.Log, "Apple Music resume");
@@ -811,30 +892,9 @@ internal sealed class AppleMusicService : IDisposable
         return n;
     }
 
-    /// <summary>The library song for what was playing (title, then artist and album, like <see cref="IsCurrent"/>).</summary>
-    private AmTrack? FindTrack(ClosedSnapshot s)
-    {
-        var title = s.Title.Trim();
-        if (title.Length == 0)
-        {
-            return null;
-        }
-
-        var detail = s.Artist + " " + s.Album;
-        int Score(AmTrack t)
-        {
-            if (!string.Equals(t.Title.Trim(), title, StringComparison.CurrentCultureIgnoreCase))
-            {
-                return 0;
-            }
-
-            var album = t.Album.Length == 0 || detail.Contains(t.Album, StringComparison.OrdinalIgnoreCase);
-            var artist = t.Artist.Length > 0 && detail.Contains(t.Artist, StringComparison.OrdinalIgnoreCase);
-            return 1 + (album ? 1 : 0) + (artist ? 1 : 0) + (s.Track is { } last && last.Pid == t.Pid ? 2 : 0);
-        }
-
-        return Db is { } db ? AmIdle.FindTrack(db.Songs, s) : (s.Track is { } known && Score(known) > 0 ? known : null);
-    }
+    /// <summary>The track (library song or playlist-only) for what was playing; see <see cref="AmIdle.FindTrack"/>.</summary>
+    private AmTrack? FindTrack(ClosedSnapshot s) =>
+        Db is { } db ? AmIdle.FindTrack(db.AllTracks, s) : (s.Track is { } known && AmIdle.FindTrack([known], s) is not null ? known : null);
 
     /// <summary>
     /// Starts Apple Music again in the background and plays the song that was playing when it was closed, from the same position.
@@ -910,27 +970,26 @@ internal sealed class AppleMusicService : IDisposable
                 return;
             }
 
-            var track = FindTrack(snapshot);
-            if (track is null || Db is not { } db)
+            if (Db is not { } db || AmResume.Pick(db, snapshot) is not { } pick)
             {
                 _core.Ctx.Log.Warn($"Apple Music resume: '{snapshot.Title}' is not in the library");
                 SetNote(new LibraryNote(LibStrings.NotFound, true));
                 return;
             }
 
-            var context = snapshot.Playlist is { } p ? db.Playlists.FirstOrDefault(x => x.Pid == p.Pid) : null;
-            if (context is not null && !context.Tracks.Any(t => t.Pid == track.Pid))
-            {
-                context = null;
-            }
+            var track = pick.Track;
+            var context = pick.Context;
 
             _core.Ctx.Log.Info($"Apple Music resume: '{track.Title}' from {(context is null ? "Songs" : context.Name)} at {snapshot.Position:0} s");
+            var position = db.PagePosition(track, context);
             await RunAsync(new AmCommand
             {
                 Action = AmAction.Play,
                 Track = track,
                 Playlist = context,
                 Page = "songs",
+                PageIndex = position.Index,
+                PageCount = position.Count,
                 DbId = db.DbId,
                 PlaylistAutomationId = context is null ? "" : db.PlaylistAutomationId(context.Pid),
                 ResumeAt = snapshot.Position,
@@ -1020,6 +1079,7 @@ internal sealed class AppleMusicService : IDisposable
 
         _resume?.Cancel();
         _noteTimer.Stop();
+        _watchTimer.Stop();
         _core.Playback.AppleMusicSeek = null;
         _core.Playback.Changed -= OnPlaybackChanged;
         Keeper.ClosedWhilePlaying -= OnClosedWhilePlaying;

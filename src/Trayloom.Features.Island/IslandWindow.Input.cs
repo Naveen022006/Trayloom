@@ -65,7 +65,8 @@ internal sealed partial class IslandWindow
         DragOver += OnDragOver;
         DragLeave += (_, _) => { _dragOver = false; RefreshClosed(); };
         Drop += OnDrop;
-        Deactivated += (_, _) => { };
+        Deactivated += (_, _) => WatchKeyboard();
+        Activated += (_, _) => OnReactivated();
     }
 
     private void StartPolling()
@@ -835,6 +836,11 @@ internal sealed partial class IslandWindow
     private void SetKeyFocus(bool focus)
     {
         _keyFocus = focus;
+        if (!focus)
+        {
+            _dropsWhenAppLeft = false;
+        }
+
         var hwnd = Handle;
         if (hwnd == 0)
         {
@@ -867,13 +873,22 @@ internal sealed partial class IslandWindow
         }
     }
 
-    internal void EnsureKeyboard()
+    /// <summary>
+    /// Makes the island take the keyboard (it is a window that does not activate). <paramref name="dropsWhenAppLeft"/> is for a box that
+    /// can be left in a hurry (the Library search, which lets go when another app comes to the front): the other pages (Scratchpad,
+    /// Clipboard, Live, Explore) keep the window activatable until they are closed, so a click back into their editor always types.
+    /// </summary>
+    internal void EnsureKeyboard(bool dropsWhenAppLeft = false)
     {
         if (!_keyFocus && Expanded)
         {
+            _dropsWhenAppLeft = dropsWhenAppLeft;
             SetKeyFocus(true);
         }
     }
+
+    /// <summary>The keyboard was taken by a box that lets go when another app takes the foreground (see <see cref="EnsureKeyboard"/>).</summary>
+    private bool _dropsWhenAppLeft;
 
     /// <summary>Whether the island currently holds the keyboard focus (it is activated).</summary>
     internal bool KeyboardActive => _keyFocus;
@@ -890,6 +905,138 @@ internal sealed partial class IslandWindow
         if (_prevForeground != 0 && _prevForeground != Handle && Trayloom.Core.Native.NativeMethods.GetForegroundWindow() == Handle)
         {
             Trayloom.Core.Native.NativeMethods.SetForegroundWindow(_prevForeground);
+        }
+    }
+
+    // ---------------------------------------------------------------- keyboard follow-up (Deactivated / Activated)
+
+    private DispatcherTimer? _keyWatch;
+    private int _keyWatchTicks;
+
+    /// <summary>The island gave up the keyboard because another app has the foreground (the page's text box lets go of its hold).</summary>
+    internal event Action? KeyboardLost;
+
+    /// <summary>The island is the active window again after Apple Music's driver held the foreground for a moment (the text box takes its caret back).</summary>
+    internal event Action? KeyboardRegained;
+
+    /// <summary>The island is the foreground window (what a text box needs before keys reach it).</summary>
+    internal bool IsForeground => Handle != 0 && NativeMethods.GetForegroundWindow() == Handle;
+
+    /// <summary>Asks Windows to make the island the active window again while it is in keyboard mode (after a click on its text box); true when it is.</summary>
+    internal bool ReclaimKeyboard()
+    {
+        if (_keyFocus && Expanded && !IsForeground)
+        {
+            try
+            {
+                Activate();
+                Focus();
+            }
+            catch
+            {
+                // a refused activation shows as IsForeground staying false
+            }
+        }
+
+        return IsForeground;
+    }
+
+    /// <summary>
+    /// The island lost the foreground while it holds the keyboard. Apple Music's driver takes the foreground two to five times per job: while it
+    /// works the island keeps its keyboard state and waits for <see cref="Window.Activated"/>. Any other window (another app) means the person
+    /// went elsewhere: the keyboard mode is dropped, without SetForegroundWindow (the person is already where they want to be).
+    /// </summary>
+    private void WatchKeyboard()
+    {
+        if (!_keyFocus || !Expanded || !_dropsWhenAppLeft)
+        {
+            return;
+        }
+
+        _keyWatchTicks = 0;
+        if (_keyWatch is null)
+        {
+            _keyWatch = new DispatcherTimer(DispatcherPriority.Background, Dispatcher) { Interval = TimeSpan.FromMilliseconds(120) };
+            _keyWatch.Tick += (_, _) => KeyWatchTick();
+        }
+
+        _keyWatch.Start();
+    }
+
+    private void StopKeyWatch() => _keyWatch?.Stop();
+
+    private void KeyWatchTick()
+    {
+        _keyWatchTicks++;
+        if (!_keyFocus || !Expanded || IsActive)
+        {
+            StopKeyWatch();
+            return;
+        }
+
+        var foreground = NativeMethods.GetForegroundWindow();
+        if (foreground == Handle)
+        {
+            StopKeyWatch();
+            return;
+        }
+
+        if (foreground == 0)
+        {
+            // between two windows: look again, but not for ever
+            if (_keyWatchTicks > 15)
+            {
+                StopKeyWatch();
+                LoseKeyboard();
+            }
+
+            return;
+        }
+
+        var pid = AmNative.ProcessOf(foreground);
+        if (pid == (uint)Environment.ProcessId)
+        {
+            // a menu or a dialog of Trayloom's own: the island gets the focus back when it closes; keep looking until it does (or until
+            // another app comes to the front), so the island is never left holding a keyboard nobody types into
+            return;
+        }
+
+        if (pid != 0 && IsAppleMusicProcess(pid) && _core.AppleMusic.Keeper.DriverActive)
+        {
+            // the driver is at work: keep the keyboard state and wait for Activated
+            return;
+        }
+
+        StopKeyWatch();
+        LoseKeyboard();
+    }
+
+    private void OnReactivated()
+    {
+        StopKeyWatch();
+        if (_keyFocus && Expanded)
+        {
+            KeyboardRegained?.Invoke();
+        }
+    }
+
+    private void LoseKeyboard()
+    {
+        SetKeyFocus(false);
+        Keyboard.ClearFocus();
+        KeyboardLost?.Invoke();
+    }
+
+    private static bool IsAppleMusicProcess(uint pid)
+    {
+        try
+        {
+            using var process = System.Diagnostics.Process.GetProcessById((int)pid);
+            return string.Equals(process.ProcessName, AppleMusicProcess, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
         }
     }
 

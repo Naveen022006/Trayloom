@@ -209,7 +209,84 @@ internal sealed class MusicPage : IslandPage
     // The Library search box asks the island for the keyboard itself, and only while it is focused.
     public override bool WantsKeyboard => false;
 
+    /// <summary>The magnifier: opens the Apple Music Library with the search box focused (only where the island can drive Apple Music).</summary>
+    public override FrameworkElement? Leading => HasWindow && !IsPreview && Core.AppleMusic.Available ? _leading ??= BuildSearchButton() : null;
+
     public override FrameworkElement? Trailing => null;
+
+    private StackPanel? _leading;
+
+    private StackPanel BuildSearchButton()
+    {
+        var search = D.IconButton(G.Search, LibStrings.SearchTip, OpenSearch, _extra == MusicExtra.Library, size: 28, glyphSize: 12);
+        System.Windows.Automation.AutomationProperties.SetAutomationId(search, "Island.Music.SearchButton");
+        return new StackPanel { Orientation = Orientation.Horizontal, Children = { search } };
+    }
+
+    /// <summary>
+    /// Opens the Library (when it is not open) and puts the caret in its search box. This and a click on the box, Ctrl+F, "/" and typing a
+    /// letter are the only ways the box takes the keyboard.
+    /// </summary>
+    private void OpenSearch()
+    {
+        if (!HasWindow || !Core.AppleMusic.Available)
+        {
+            return;
+        }
+
+        if (_extra != MusicExtra.Library)
+        {
+            // the page is rebuilt around the Library: the new box takes the request
+            LibraryNav.Focus.RequestFocus(LibraryNav.Now);
+            SetExtra(MusicExtra.Library);
+        }
+        else
+        {
+            _library?.FocusSearch(selectAll: true);
+        }
+    }
+
+    public override bool HandleKey(KeyEventArgs e)
+    {
+        if (!HasWindow || IsPreview || !Core.AppleMusic.Available)
+        {
+            return false;
+        }
+
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        var ctrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+        var alt = (Keyboard.Modifiers & ModifierKeys.Alt) != 0;
+        var shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
+        var typing = Keyboard.FocusedElement is System.Windows.Controls.Primitives.TextBoxBase;
+        if (ctrl && !alt && !shift && key == Key.F)
+        {
+            OpenSearch();
+            return true;
+        }
+
+        if (!typing && !ctrl && !alt && !shift && key == Key.Oem2)
+        {
+            OpenSearch();
+            return true;
+        }
+
+        // Space plays / pauses, unless the box has something typed in it
+        return !typing && !ctrl && !alt && key == Key.Space && _extra == MusicExtra.Library && _library is { HasText: true } box && box.TypeInto(" ");
+    }
+
+    /// <summary>A letter typed while the Library is open and the box does not have the caret goes into the box.</summary>
+    private void OnWindowText(object sender, TextCompositionEventArgs e)
+    {
+        if (_extra != MusicExtra.Library || _library is null || e.Text.Length == 0 || char.IsControl(e.Text[0]) || Keyboard.FocusedElement is System.Windows.Controls.Primitives.TextBoxBase)
+        {
+            return;
+        }
+
+        if (_library.TypeInto(e.Text))
+        {
+            e.Handled = true;
+        }
+    }
 
     public override bool GrowsBeyondBudget => _extra != MusicExtra.None;
 
@@ -298,6 +375,12 @@ internal sealed class MusicPage : IslandPage
         Core.AppleMusic.Keeper.Changed += OnKeeper;
         Core.AppleMusic.Changed += OnAppleMusic;
         _poll.Start();
+        if (HasWindow && !IsPreview)
+        {
+            Window.PreviewTextInput -= OnWindowText;
+            Window.PreviewTextInput += OnWindowText;
+        }
+
         Core.Levels.ForgetSilence();
         if (!_viewing && !IsPreview)
         {
@@ -314,6 +397,17 @@ internal sealed class MusicPage : IslandPage
         Core.AppleMusic.Keeper.Changed -= OnKeeper;
         Core.AppleMusic.Changed -= OnAppleMusic;
         _poll.Stop();
+        if (HasWindow)
+        {
+            Window.PreviewTextInput -= OnWindowText;
+        }
+
+        // not a rebuild of this page (Reopen sets the carry): the Library is being left, so its box gives the keyboard back at once
+        if (_extra == MusicExtra.Library && s_carry is null)
+        {
+            LibraryNav.Focus.LeaveRequested = true;
+        }
+
         if (_viewing)
         {
             _viewing = false;
@@ -436,7 +530,13 @@ internal sealed class MusicPage : IslandPage
 
     private void SetExtra(MusicExtra e)
     {
+        var was = _extra;
         _extra = e == _extra ? MusicExtra.None : e;
+        if (was == MusicExtra.Library && _extra != MusicExtra.Library)
+        {
+            _library?.ReleaseNow();
+        }
+
         if (_extra == MusicExtra.Lyrics)
         {
             Core.Lyrics.Ensure(Core.Playback.Current);
@@ -453,6 +553,13 @@ internal sealed class MusicPage : IslandPage
         }
 
         s_carry = (_extra, DateTime.UtcNow);
+
+        // the rebuilt page gets a new Library box: the keyboard of the focused one is handed over to it
+        if (_extra == MusicExtra.Library)
+        {
+            _library?.Park();
+        }
+
         Window.ReopenPage();
     }
 
@@ -495,7 +602,7 @@ internal sealed class MusicPage : IslandPage
             _extraView = _extra switch
             {
                 MusicExtra.Lyrics => _lyrics = new LyricsView(Core, () => HasWindow ? Window.HoldOpen() : null),
-                MusicExtra.Library => _library = new LibraryPanel(Core, () => HasWindow ? Window.HoldOpen() : null, () => { if (HasWindow) { Window.EnsureKeyboard(); } }, () => { if (HasWindow) { Window.ReleaseKeyboard(); } }, () => HasWindow && Window.KeyboardActive),
+                MusicExtra.Library => _library = new LibraryPanel(Core, HasWindow ? Window : null),
                 _ => BuildQueue(preferred),
             };
             var holder = new Grid { Height = _extraHeight, ClipToBounds = true, Margin = new Thickness(0, 10, 0, 0) };

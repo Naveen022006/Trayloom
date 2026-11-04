@@ -313,21 +313,34 @@ internal sealed class AppleMusicKeeper : IDisposable
     public void ExpectQuit() => Interlocked.Exchange(ref _expectQuitUntil, Environment.TickCount64 + 15000);
 
     /// <summary>An Apple Music process is running.</summary>
-    public static bool IsRunning() => Process.GetProcessesByName("AppleMusic").Length > 0;
+    public static bool IsRunning()
+    {
+        var all = Process.GetProcessesByName("AppleMusic");
+        var running = all.Length > 0;
+        foreach (var p in all)
+        {
+            p.Dispose();
+        }
+
+        return running;
+    }
 
     /// <summary>Apple Music has a main window that is on screen or in the taskbar (not hidden by the keeper, not parked or transparent).</summary>
     public bool HasVisibleWindow()
     {
+        var visible = false;
         foreach (var p in Process.GetProcessesByName("AppleMusic"))
         {
-            var h = AmNative.MainWindow((uint)p.Id, _keptHwnd);
-            if (h != 0 && h != _keptHwnd && AmNative.IsWindowVisible(h) && !AmNative.IsGhost(h))
+            if (!visible)
             {
-                return true;
+                var h = AmNative.MainWindow((uint)p.Id, _keptHwnd);
+                visible = h != 0 && h != _keptHwnd && AmNative.IsWindowVisible(h) && !AmNative.IsGhost(h);
             }
+
+            p.Dispose();
         }
 
-        return false;
+        return visible;
     }
 
     // ---------------------------------------------------------------- keeping
@@ -422,13 +435,24 @@ internal sealed class AppleMusicKeeper : IDisposable
             return;
         }
 
-        foreach (var p in Process.GetProcessesByName("AppleMusic"))
+        var processes = Process.GetProcessesByName("AppleMusic");
+        try
         {
-            var h = AmNative.MainWindow((uint)p.Id);
-            if (h != 0 && AmNative.IsWindowVisible(h) && !AmNative.IsGhost(h))
+            foreach (var p in processes)
             {
-                Adopt(h, (uint)p.Id, true);
-                return;
+                var h = AmNative.MainWindow((uint)p.Id);
+                if (h != 0 && AmNative.IsWindowVisible(h) && !AmNative.IsGhost(h))
+                {
+                    Adopt(h, (uint)p.Id, true);
+                    return;
+                }
+            }
+        }
+        finally
+        {
+            foreach (var p in processes)
+            {
+                p.Dispose();
             }
         }
     }

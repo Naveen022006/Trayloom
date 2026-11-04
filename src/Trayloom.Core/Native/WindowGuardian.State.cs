@@ -41,8 +41,9 @@ public static class WindowGuardianState
     private static readonly object Gate = new();
     private static readonly List<TrackedWindow> Tracked = [];
     private static FileLog? _log;
-    private static bool _warned;
     private static bool _moveWarned;
+    private static int _tempCounter;
+    private static int _writeFailures;
     private static uint _ownerPid;
     private static long _ownerStart;
 
@@ -258,20 +259,46 @@ public static class WindowGuardianState
 
     private static void WriteFileCore(GuardianSnapshot snapshot)
     {
+        // The step names where a failure happened (the temp write, the move over the state file, or the last-resort write in place).
+        var step = "create folder";
+        string? temp = null;
         try
         {
             Directory.CreateDirectory(AppPaths.Root);
             var path = FilePath;
-            var temp = path + "." + Environment.ProcessId.ToString(CultureInfo.InvariantCulture) + ".tmp";
+
+            // Unique per write: a leftover or still-open temp file of an earlier write can never block this one.
+            temp = path + "." + Environment.ProcessId.ToString(CultureInfo.InvariantCulture) + "." +
+                Interlocked.Increment(ref _tempCounter).ToString(CultureInfo.InvariantCulture) + ".tmp";
+            step = "temp write";
             File.WriteAllBytes(temp, Serialize(snapshot));
-            Replace(temp, path);
+            step = "replace";
+            Replace(temp, path, ref step);
+            var failures = Volatile.Read(ref _writeFailures);
+            if (failures > 0 && Interlocked.CompareExchange(ref _writeFailures, 0, failures) == failures)
+            {
+                Log.Info("Writing " + path + " works again after " + failures.ToString(CultureInfo.InvariantCulture) + " failed write(s)");
+            }
         }
         catch (Exception ex)
         {
-            if (!_warned)
+            var count = Interlocked.Increment(ref _writeFailures);
+            if (count is 1 or 10 or 100)
             {
-                _warned = true;
-                Log.Warn("Could not write " + FilePath + ": " + ex.Message);
+                Log.Warn("Could not write " + FilePath + " (failure " + count.ToString(CultureInfo.InvariantCulture) + ", step: " + step + "): " +
+                    ex.GetType().Name + " HResult=0x" + ex.HResult.ToString("X8", CultureInfo.InvariantCulture) + ": " + ex.Message);
+            }
+
+            if (temp is not null)
+            {
+                try
+                {
+                    File.Delete(temp);
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    // CleanTemporaryFiles removes it on the next start
+                }
             }
         }
     }
@@ -280,7 +307,7 @@ public static class WindowGuardianState
     /// Puts the temp file in place of the state file. A reader that has the file open (or antivirus) can make the move fail for a moment,
     /// so it is retried a few times, then <see cref="File.Replace(string, string, string?)"/> and finally a write in place are tried.
     /// </summary>
-    private static void Replace(string temp, string path)
+    private static void Replace(string temp, string path, ref string step)
     {
         for (var attempt = 0; ; attempt++)
         {
@@ -300,7 +327,8 @@ public static class WindowGuardianState
                 if (!_moveWarned)
                 {
                     _moveWarned = true;
-                    Log.Warn("Replacing " + path + " failed (" + e.GetType().Name + "); trying File.Replace, then a write in place");
+                    Log.Warn("Replacing " + path + " failed (" + e.GetType().Name + " HResult=0x" + e.HResult.ToString("X8", CultureInfo.InvariantCulture) +
+                        ": " + e.Message + "); trying File.Replace, then a write in place");
                 }
 
                 break;
@@ -320,6 +348,7 @@ public static class WindowGuardianState
             // fall through to the write in place
         }
 
+        step = "write in place";
         File.WriteAllBytes(path, File.ReadAllBytes(temp));
         try
         {
@@ -331,17 +360,17 @@ public static class WindowGuardianState
         }
     }
 
-    /// <summary>Removes <c>window-guardian.json.&lt;pid&gt;.tmp</c> files an earlier run left behind (a write that was cut short).</summary>
+    /// <summary>Removes <c>window-guardian.json.&lt;pid&gt;.&lt;n&gt;.tmp</c> files an earlier run left behind (a write that was cut short).</summary>
     internal static void CleanTemporaryFiles()
     {
         try
         {
-            var own = "." + Environment.ProcessId.ToString(CultureInfo.InvariantCulture) + ".tmp";
+            var own = "window-guardian.json." + Environment.ProcessId.ToString(CultureInfo.InvariantCulture) + ".";
             foreach (var file in Directory.EnumerateFiles(AppPaths.Root, "window-guardian.json.*.tmp"))
             {
                 try
                 {
-                    if (!file.EndsWith(own, StringComparison.OrdinalIgnoreCase) && DateTime.UtcNow - File.GetLastWriteTimeUtc(file) > TimeSpan.FromMinutes(1))
+                    if (!Path.GetFileName(file).StartsWith(own, StringComparison.OrdinalIgnoreCase) && DateTime.UtcNow - File.GetLastWriteTimeUtc(file) > TimeSpan.FromMinutes(1))
                     {
                         File.Delete(file);
                     }

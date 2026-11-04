@@ -117,6 +117,14 @@ internal sealed class ScratchpadPage : IslandPage
     {
         _doc = LoadDocument();
         _save.Tick += (_, _) => Commit();
+        // a click into the editor always gets the keyboard back (the window may have been made non-activating since the page was shown)
+        _editor.PreviewMouseDown += (_, _) =>
+        {
+            if (HasWindow && !IsPreview)
+            {
+                Window.EnsureKeyboard();
+            }
+        };
         _editor.AcceptsReturn = true;
         _editor.AcceptsTab = true;
         _editor.TextWrapping = TextWrapping.Wrap;

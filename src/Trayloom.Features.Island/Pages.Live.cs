@@ -643,6 +643,13 @@ internal sealed class WatchPage : IslandPage
                 }
             }
 
+            box.PreviewMouseDown += (_, _) =>
+            {
+                if (HasWindow)
+                {
+                    Window.EnsureKeyboard();
+                }
+            };
             box.KeyDown += (_, e) => { if (e.Key == Key.Return) { Apply(); } };
             if (HasWindow)
             {

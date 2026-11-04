@@ -8,6 +8,7 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
   </ItemGroup>
   <ItemGroup>
     <!-- the console harness under tests/ exercises the pure decisions of the Apple Music service -->

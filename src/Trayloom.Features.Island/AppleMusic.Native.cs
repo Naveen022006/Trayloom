@@ -653,6 +653,7 @@ internal static class AmNative
             }
             else if (Bounded(hwnd, job.Attempt, 1500, job.What, null))
             {
+                say?.Invoke($"{job.What}: done on a retry");
                 done = true;
             }
 

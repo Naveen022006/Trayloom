@@ -113,6 +113,13 @@ internal sealed class ExplorePage : IslandPage
     {
         // the island's own Back button (top row) leaves Explore; the search sits at the start of the page's side
         _search.Width = 120;
+        _search.PreviewMouseDown += (_, _) =>
+        {
+            if (HasWindow)
+            {
+                Window.EnsureKeyboard();
+            }
+        };
         _search.TextChanged += (_, _) => Rebuild();
         _search.GotKeyboardFocus += (_, _) => _searchBox!.BorderBrush = D.White(0.34);
         _search.LostKeyboardFocus += (_, _) => _searchBox!.BorderBrush = Brushes.Transparent;

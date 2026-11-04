@@ -60,8 +60,16 @@ internal sealed class AmCommand
 
     public AmPlaylist? Playlist { get; init; }
 
-    /// <summary>"songs" or "recent" when no playlist is given.</summary>
+    /// <summary>"songs" when no playlist is given ("recent" is accepted but also uses the Songs page: Recently added is an album grid without song rows).</summary>
     public string Page { get; init; } = "songs";
+
+    /// <summary>
+    /// Optional: the song's index on the page it is played from (the Songs page in <see cref="AmDb.Songs"/> order, or the playlist in its
+    /// stored order) and the page's song count. They let the driver jump straight to the right place in a long list; -1 / 0 = unknown.
+    /// </summary>
+    public int PageIndex { get; init; } = -1;
+
+    public int PageCount { get; init; }
 
     public ulong DbId { get; init; }
 
@@ -511,7 +519,8 @@ internal sealed class AppleMusicDriver : IDisposable
                     AmAction.ReadQueue => ReadQueue(am, ct),
                     AmAction.PlayPause or AmAction.SkipForward or AmAction.SkipBack => launched ? TransportAfterStart(am, cmd.Action, ct) : PressTransport(am, cmd.Action, 4000, ct),
                     AmAction.Seek => SeekScrubber(am, cmd.SeekTo, ct),
-                    _ => PlaySong(am, cmd, launched, launched ? 10000 : 4500, ct),
+                    // a cold start gets three tries of 4 s instead of one wait of 10 s
+                    _ => PlaySong(am, cmd, launched, launched ? 4000 : 4500, ct),
                 };
 
                 if (result.Ok && cmd.ResumeAt is { } resumeAt && cmd.Action is AmAction.Play or AmAction.PlayPlaylist or AmAction.ShufflePlaylist)
@@ -870,13 +879,10 @@ internal sealed class AppleMusicDriver : IDisposable
     private AmResult PlaySong(AmUia am, AmCommand cmd, bool launched, int menuWait, CancellationToken ct)
     {
         var track = cmd.Track ?? throw new ArgumentException("track");
-        var navId = cmd.Playlist is not null ? cmd.PlaylistAutomationId : (cmd.Page == "recent" ? "Sidebar_Library_RecentlyAdded" : "Sidebar_Library_Songs");
+        // Recently added is an album grid without song rows, so a song is always played from the Songs page (or its playlist): the songs
+        // of Recently added are library songs, and every library song is on the Songs page.
+        var navId = cmd.Playlist is not null ? cmd.PlaylistAutomationId : "Sidebar_Library_Songs";
         var nav = am.FindNav(navId, cmd.Playlist?.Name, launched ? 20000 : 8000, ct, Say, out var seen);
-        if (nav is null && cmd.Page == "recent" && cmd.Playlist is null)
-        {
-            nav = am.FindNav("Sidebar_Library_Songs", null, 3000, ct, Say, out _);
-        }
-
         if (nav is null)
         {
             return AmResult.Fail(AmFailure.NotFound, $"sidebar item {navId} ({seen})");
@@ -884,30 +890,37 @@ internal sealed class AppleMusicDriver : IDisposable
 
         am.Select(nav);
         Say("navigated to " + navId);
-        // the row is found (scrolling the list when needed), its "…" menu is opened; one retry if the menu does not come up
-        var squashed = Squash(track.Title);
-        List<AutomationElement> items = [];
-        var playIndex = -1;
-        AutomationElement? found = null;
-        for (var attempt = 0; attempt < 2 && found is null; attempt++)
+        // The exact row is found (scrolling the list when needed), its "More" menu is opened and one exact item of it is invoked.
+        // Nothing else is ever pressed: no other button, no menu item by position.
+        var noListMs = launched ? 5000 : 2500;
+        AutomationElement? target = null;
+        var detail = "menu";
+        for (var attempt = 0; attempt < 3 && target is null; attempt++)
         {
             AutomationElement? row = null;
             var deadline = Stopwatch.StartNew();
             var lastTotal = -1;
+            var sawList = false;
             while (deadline.ElapsedMilliseconds < 7000 && row is null)
             {
                 ct.ThrowIfCancellationRequested();
                 var list = am.RowList();
                 if (list is not null)
                 {
-                    row = FindRowDeep(list, track, ct, out var total);
-                    Say(row is null ? $"row not found ({total} rows)" : "row found");
+                    sawList = true;
+                    row = FindRowDeep(list, track, cmd, ct, out var total, out var why);
+                    Say(row is null ? why : "row found");
                     if (row is null && (total == lastTotal || total >= 30))
                     {
                         break;
                     }
 
                     lastTotal = total;
+                }
+                else if (deadline.ElapsedMilliseconds >= noListMs)
+                {
+                    Say($"no song list on {navId}");
+                    break;
                 }
 
                 if (row is null)
@@ -919,7 +932,7 @@ internal sealed class AppleMusicDriver : IDisposable
             if (row is null)
             {
                 DumpRows(am, track);
-                return AmResult.Fail(AmFailure.NotFound, "song row");
+                return AmResult.Fail(AmFailure.NotFound, sawList ? "no exact row" : "no song list");
             }
 
             if (row.TryGetCurrentPattern(VirtualizedItemPattern.Pattern, out var vp))
@@ -927,19 +940,20 @@ internal sealed class AppleMusicDriver : IDisposable
                 ((VirtualizedItemPattern)vp).Realize();
             }
 
-            var buttons = row.FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button));
-            AutomationElement? more = null;
-            foreach (AutomationElement b in buttons)
+            // The list is virtualised: the element may have been recycled for another song since it was found. Look at its cells again
+            // right before its menu is opened, for every action, so a wrong song is never queued.
+            if (!RowIsSong(row, track))
             {
-                if (b.Current.Name == "More")
-                {
-                    more = b;
-                }
+                detail = "row moved";
+                Say("the found row no longer shows the song (the list moved); searching again");
+                Thread.Sleep(300);
+                continue;
             }
 
-            more ??= buttons.Count > 0 ? buttons[buttons.Count - 1] : null;
+            var more = FindMore(row);
             if (more is null)
             {
+                detail = "no More button";
                 Thread.Sleep(300);
                 continue;
             }
@@ -947,40 +961,62 @@ internal sealed class AppleMusicDriver : IDisposable
             ct.ThrowIfCancellationRequested();
             Say("invoking More");
             am.Invoke(more);
-            found = am.WaitFor(() =>
+            List<AutomationElement> items = [];
+            target = am.WaitFor(() =>
             {
-                items = am.MenuItems();
-                playIndex = items.FindIndex(m => m.Current.ClassName == "MenuFlyoutItem" && Squash(m.Current.Name).Contains(squashed, StringComparison.Ordinal) && m.Current.Name.StartsWith("Play", StringComparison.OrdinalIgnoreCase));
-                return playIndex >= 0 ? items[playIndex] : null;
-            }, attempt == 0 ? menuWait : 5000, ct);
-            if (found is null)
+                items = am.MenuItems().Where(m => m.Current.ClassName == "MenuFlyoutItem").ToList();
+                var pick = AmMatch.PickMenuItem(cmd.Action, items.Select(m => m.Current.Name).ToList(), track.Title);
+                return pick >= 0 ? items[pick] : null;
+            }, attempt == 0 ? menuWait : 4000, ct);
+            if (target is null)
             {
-                Say("menu did not appear" + (items.Count > 0 ? "; items seen: " + string.Join(" | ", items.Select(m => m.Current.Name)) : ""));
+                detail = items.Count > 0 ? "menu has no " + cmd.Action : "menu";
+                Say((items.Count > 0 ? $"no menu item for {cmd.Action}" : "menu did not appear") + (items.Count > 0 ? "; items seen: " + string.Join(" | ", items.Select(m => m.Current.Name)) : ""));
             }
         }
 
-        if (found is null)
+        if (target is null)
         {
-            return AmResult.Fail(AmFailure.NoMenu, "menu");
+            return AmResult.Fail(AmFailure.NoMenu, detail);
         }
 
-        // "Play “title”", then "Play Next", then "Add to Queue" (matched by name, then by position so other languages work)
-        var target = found;
-        if (cmd.Action is AmAction.PlayNext or AmAction.AddToQueue)
-        {
-            var wanted = cmd.Action == AmAction.PlayNext ? "Play Next" : "Add to Queue";
-            target = items.FirstOrDefault(m => m.Current.Name == wanted)
-                ?? (playIndex + (cmd.Action == AmAction.PlayNext ? 1 : 2) < items.Count ? items[playIndex + (cmd.Action == AmAction.PlayNext ? 1 : 2)] : null);
-        }
-
-        if (target is null || !am.Invoke(target))
+        var invoked = target.Current.Name;
+        if (!am.Invoke(target))
         {
             return AmResult.Fail(AmFailure.NoMenu, "menu item");
         }
 
-        Say("invoked menu item: " + target.Current.Name);
+        Say("invoked menu item: " + invoked);
         Thread.Sleep(250);
         return AmResult.Success();
+    }
+
+    /// <summary>The row's "More" button: named exactly "More" or with an id containing "More". Anything else is logged and never pressed.</summary>
+    private AutomationElement? FindMore(AutomationElement row)
+    {
+        var request = new CacheRequest();
+        request.Add(AutomationElement.NameProperty);
+        request.Add(AutomationElement.AutomationIdProperty);
+        request.TreeScope = TreeScope.Element;
+        List<AutomationElement> buttons = [];
+        List<(string Name, string Id)> info = [];
+        using (request.Activate())
+        {
+            foreach (AutomationElement b in row.FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button)))
+            {
+                buttons.Add(b);
+                info.Add((b.Cached.Name, b.Cached.AutomationId));
+            }
+        }
+
+        var at = AmMatch.PickMore(info);
+        if (at < 0)
+        {
+            Say("no More button on the row; buttons: " + (info.Count == 0 ? "none" : string.Join(" | ", info.Select(b => $"'{b.Name}' [{b.Id}]"))));
+            return null;
+        }
+
+        return buttons[at];
     }
 
     private void DumpRows(AmUia am, AmTrack track)
@@ -1031,109 +1067,263 @@ internal sealed class AppleMusicDriver : IDisposable
         return sb.ToString().Trim();
     }
 
-    /// <summary>
-    /// Rows that are not on screen (or just around it) are unrealised stubs whose name is only a type name, so the list is scrolled
-    /// a page at a time (ScrollPattern) until the song's row has been realised.
-    /// </summary>
-    private AutomationElement? FindRowDeep(AutomationElement list, AmTrack track, CancellationToken ct, out int total)
+    /// <summary>What a search for a song's row has found so far (over several scroll positions).</summary>
+    private sealed class RowSearch
     {
-        var hit = FindRow(list, track, ct, out var realized, out total);
-        if (hit is not null || !list.TryGetCurrentPattern(ScrollPattern.Pattern, out var p))
+        public AutomationElement? Best { get; set; }
+
+        public AmRowScore Score { get; set; } = AmRowScore.None;
+
+        /// <summary>Where the list was scrolled (percent) when <see cref="Best"/> was seen; its row may be recycled once the list moves on.</summary>
+        public double BestPercent { get; set; } = -1;
+
+        public int Realized { get; set; }
+
+        public int Total { get; set; }
+
+        public List<string> NearMisses { get; } = [];
+    }
+
+    /// <summary>
+    /// Finds the song's row: only a row with a text equal to the song's title qualifies (a longer title that merely contains it is another
+    /// version). Rows that are not on screen (or just around it) are unrealised stubs whose name is only a type name, so the list is
+    /// scrolled a page at a time (ScrollPattern): first around the song's index on the page when it is known, then the whole list.
+    /// The search stops at the first row that also has the right artist and album; otherwise it makes a full pass and takes the best exact row.
+    /// </summary>
+    private AutomationElement? FindRowDeep(AutomationElement list, AmTrack track, AmCommand cmd, CancellationToken ct, out int total, out string why)
+    {
+        var search = new RowSearch();
+        var cap = cmd.PageCount > 0 ? cmd.PageCount + 50 : 20000;
+        ScrollPattern? scroll = null;
+        if (list.TryGetCurrentPattern(ScrollPattern.Pattern, out var p) && ((ScrollPattern)p).Current.VerticallyScrollable)
         {
-            return hit;
+            scroll = (ScrollPattern)p;
         }
 
-        var scroll = (ScrollPattern)p;
-        if (!scroll.Current.VerticallyScrollable)
-        {
-            return null;
-        }
-
-        // about `realized` rows around the viewport exist at a time: move in steps that overlap a little
-        var step = Math.Clamp(100.0 * Math.Max(1, realized) / Math.Max(1, total) * 0.8, 6, 45);
-        for (var pct = 0.0; pct < 100 + step; pct += step)
+        bool Scan(double percent)
         {
             ct.ThrowIfCancellationRequested();
-            scroll.SetScrollPercent(ScrollPattern.NoScroll, Math.Min(100, pct));
-            Thread.Sleep(60);
-            hit = FindRow(list, track, ct, out _, out _);
-            if (hit is not null)
+            if (percent >= 0 && scroll is not null)
             {
-                Say($"row found after scrolling to {Math.Min(100, pct):0}%");
-                return hit;
+                scroll.SetScrollPercent(ScrollPattern.NoScroll, Math.Min(100, percent));
+                Thread.Sleep(60);
+            }
+
+            FindRow(list, track, ct, cap, scroll, search);
+            return search.Best is not null && search.Score.IsConclusive(track);
+        }
+
+        var done = false;
+        if (scroll is not null && cmd.PageIndex >= 0 && cmd.PageCount > 1 && cmd.PageIndex < cmd.PageCount)
+        {
+            // jump to where the song should be, then look one viewport either side
+            var at = 100.0 * cmd.PageIndex / (cmd.PageCount - 1);
+            done = Scan(at);
+            var span = Math.Clamp(100.0 * Math.Max(search.Realized, 12) / cmd.PageCount, 3, 45);
+            foreach (var near in new[] { at - span, at + span })
+            {
+                if (!done && near is >= 0 and <= 100)
+                {
+                    done = Scan(near);
+                }
+            }
+
+            if (done)
+            {
+                Say($"row found near its index {cmd.PageIndex} of {cmd.PageCount}");
+            }
+        }
+        else
+        {
+            done = Scan(-1);
+        }
+
+        if (!done && scroll is not null)
+        {
+            // about `Realized` rows around the viewport exist at a time: move in steps that overlap a little
+            var step = Math.Clamp(100.0 * Math.Max(1, search.Realized) / Math.Max(1, search.Total) * 0.8, 6, 45);
+            for (var pct = 0.0; pct < 100 + step && !done; pct += step)
+            {
+                done = Scan(Math.Min(100, pct));
+                if (done)
+                {
+                    Say($"row found after scrolling to {Math.Min(100, pct):0}%");
+                }
             }
         }
 
-        return null;
+        total = search.Total;
+        if (search.Best is null)
+        {
+            why = $"no exact row ({search.Total} rows, {search.Realized} realised); similar rows: " + (search.NearMisses.Count == 0 ? "none" : string.Join(" | ", search.NearMisses));
+            return null;
+        }
+
+        why = "";
+        if (!done && scroll is not null && search.BestPercent >= 0)
+        {
+            // the full pass moved on: go back to where the best exact row was seen, and take it from there while it is realised
+            var again = new RowSearch();
+            scroll.SetScrollPercent(ScrollPattern.NoScroll, search.BestPercent);
+            Thread.Sleep(60);
+            FindRow(list, track, ct, cap, scroll, again);
+            if (again.Best is not null)
+            {
+                return again.Best;
+            }
+
+            // The element seen earlier belongs to a virtualised list that has moved on; it may have been recycled for another song.
+            why = "row moved: the exact row was seen but is no longer there";
+            return null;
+        }
+
+        return search.Best;
     }
 
-    private static AutomationElement? FindRow(AutomationElement list, AmTrack track, CancellationToken ct, out int realized, out int total)
+    /// <summary>One pass over the realised rows of the list; updates <paramref name="search"/> with the best exact row (the first of equals).</summary>
+    private static void FindRow(AutomationElement list, AmTrack track, CancellationToken ct, int cap, ScrollPattern? scroll, RowSearch search)
     {
-        realized = 0;
-        total = 0;
+        search.Realized = 0;
+        search.Total = 0;
         if (!list.TryGetCurrentPattern(ItemContainerPattern.Pattern, out var p))
         {
-            return null;
+            return;
         }
 
         var container = (ItemContainerPattern)p;
-        var title = Squash(track.Title);
+        var rows = new CacheRequest();
+        rows.Add(AutomationElement.NameProperty);
+        rows.Add(AutomationElement.ClassNameProperty);
+        rows.TreeScope = TreeScope.Element;
         AutomationElement? current = null;
-        AutomationElement? best = null;
-        var bestScore = 0;
         var scanned = 0;
-        while ((current = container.FindItemByProperty(current, null, null)) is not null && scanned < 6000)
+        using (rows.Activate())
         {
-            scanned++;
-            total = scanned;
-            if (scanned % 32 == 0)
+            while ((current = container.FindItemByProperty(current, null, null)) is not null && scanned < cap)
             {
-                ct.ThrowIfCancellationRequested();
-            }
+                scanned++;
+                search.Total = scanned;
+                if (scanned % 32 == 0)
+                {
+                    ct.ThrowIfCancellationRequested();
+                }
 
-            string name;
-            try
-            {
-                if (current.Current.ClassName != "ListViewItem")
+                string name;
+                try
+                {
+                    string cls;
+                    try
+                    {
+                        cls = current.Cached.ClassName;
+                        name = current.Cached.Name;
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // the properties were not cached by this call
+                        cls = current.Current.ClassName;
+                        name = current.Current.Name;
+                    }
+
+                    if (cls != "ListViewItem")
+                    {
+                        continue;
+                    }
+                }
+                catch
                 {
                     continue;
                 }
 
-                name = current.Current.Name;
-            }
-            catch
-            {
-                continue;
-            }
+                if (name.EndsWith("DataGridRow", StringComparison.Ordinal))
+                {
+                    continue;
+                }
 
-            if (name.EndsWith("DataGridRow", StringComparison.Ordinal))
-            {
-                continue;
-            }
+                search.Realized++;
+                if (!AmMatch.NameMayHoldTitle(name, track))
+                {
+                    continue;
+                }
 
-            realized++;
-            name = Squash(name);
-            if (!name.Contains(title, StringComparison.Ordinal))
-            {
-                continue;
-            }
+                var score = AmMatch.ScoreCells(name, ReadCells(current), track);
+                if (!score.TitleExact)
+                {
+                    var shown = name.Length > 70 ? name[..70] + "…" : name;
+                    if (search.NearMisses.Count < 8 && !search.NearMisses.Contains(shown))
+                    {
+                        search.NearMisses.Add(shown);
+                    }
 
-            var album = track.Album.Length == 0 || name.Contains(Squash(track.Album), StringComparison.Ordinal);
-            var artist = track.Artist.Length == 0 || name.Contains(Squash(track.Artist), StringComparison.Ordinal);
-            var score = 1 + (album ? 2 : 0) + (artist ? 1 : 0);
-            if (score > bestScore)
-            {
-                best = current;
-                bestScore = score;
-            }
+                    continue;
+                }
 
-            if (score == 4)
-            {
-                break;
+                if (score.Rank > search.Score.Rank)
+                {
+                    search.Best = current;
+                    search.Score = score;
+                    search.BestPercent = ReadPercent(scroll);
+                    if (score.IsConclusive(track))
+                    {
+                        break;
+                    }
+                }
             }
         }
+    }
 
-        return best;
+    private static double ReadPercent(ScrollPattern? scroll)
+    {
+        try
+        {
+            return scroll?.Current.VerticalScrollPercent ?? -1;
+        }
+        catch
+        {
+            return -1;
+        }
+    }
+
+    /// <summary>Whether the row element (re-read now) still shows the song: its title cell is exactly the song's title.</summary>
+    private static bool RowIsSong(AutomationElement row, AmTrack track)
+    {
+        try
+        {
+            return AmMatch.ScoreCells(row.Current.Name, ReadCells(row), track).TitleExact;
+        }
+        catch (Exception ex) when (ex is ElementNotAvailableException or System.Runtime.InteropServices.COMException or InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Everything inside a row (title, artist, album and duration cells) with its control type, read in one round trip.</summary>
+    private static List<AmCell> ReadCells(AutomationElement row)
+    {
+        List<AmCell> texts = [];
+        try
+        {
+            var request = new CacheRequest();
+            request.Add(AutomationElement.NameProperty);
+            request.Add(AutomationElement.ControlTypeProperty);
+            request.TreeScope = TreeScope.Element;
+            using (request.Activate())
+            {
+                foreach (AutomationElement e in row.FindAll(TreeScope.Descendants, Condition.TrueCondition))
+                {
+                    var text = e.Cached.Name;
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        texts.Add(new AmCell(text, e.Cached.ControlType == ControlType.Text));
+                    }
+                }
+            }
+        }
+        catch (Exception ex) when (ex is ElementNotAvailableException or System.Runtime.InteropServices.COMException or InvalidOperationException)
+        {
+            // the row went away while it was read: scored on its name alone
+        }
+
+        return texts;
     }
 
     // ---------------------------------------------------------------- playlists
@@ -1310,18 +1500,42 @@ internal sealed class AppleMusicDriver : IDisposable
             : (cmd.Playlist?.Tracks.Select(x => WatchService.Normalise(x.Title)).ToHashSet() ?? []);
         var watch = Stopwatch.StartNew();
         Media? now = null;
+        string? wrong = null;
         while (watch.ElapsedMilliseconds < 4500)
         {
             ct.ThrowIfCancellationRequested();
             now = Snapshot();
             if (now is { Status: "Playing" })
             {
-                var title = WatchService.Normalise(now.Title);
-                var match = cmd.Track is not null ? title == titles.First() || title.Contains(titles.First()) : titles.Contains(title) || before?.Title != now.Title || before?.Status != "Playing";
-                if (match)
+                if (cmd.Track is { } wanted)
                 {
-                    Say($"GSMTC confirmed '{now.Title}' after {watch.ElapsedMilliseconds} ms");
-                    return AmResult.Success();
+                    // the title must be the asked-for one: a longer or shorter version of it is another song
+                    var check = AmMatch.CheckPlaying(now.Title, now.Artist, wanted);
+                    if (check.TitleOk)
+                    {
+                        if (!check.ArtistOk && !check.AlbumOk)
+                        {
+                            Say($"warning: '{now.Title}' is playing, but its artist/album '{now.Artist}' do not match '{wanted.Artist}' / '{wanted.Album}'");
+                        }
+
+                        Say($"GSMTC confirmed '{now.Title}' after {watch.ElapsedMilliseconds} ms");
+                        return AmResult.Success();
+                    }
+
+                    if (wrong != now.Title)
+                    {
+                        wrong = now.Title;
+                        Say($"WRONG SONG: playing '{now.Title}' ('{now.Artist}'), asked for '{wanted.Title}' ('{wanted.Artist}')");
+                    }
+                }
+                else
+                {
+                    var title = WatchService.Normalise(now.Title);
+                    if (titles.Contains(title) || before?.Title != now.Title || before?.Status != "Playing")
+                    {
+                        Say($"GSMTC confirmed '{now.Title}' after {watch.ElapsedMilliseconds} ms");
+                        return AmResult.Success();
+                    }
                 }
             }
 
@@ -1329,7 +1543,7 @@ internal sealed class AppleMusicDriver : IDisposable
         }
 
         Say($"GSMTC not confirmed: now {now?.Status} '{now?.Title}'");
-        return AmResult.Fail(AmFailure.NotConfirmed, now?.Title ?? "");
+        return AmResult.Fail(AmFailure.NotConfirmed, wrong is not null ? $"playing '{wrong}'" : now?.Title ?? "");
     }
 
     // ---------------------------------------------------------------- launching
@@ -2108,14 +2322,25 @@ internal sealed class AmUia
     /// <summary>Apple Music's main window: a visible one, or the one the <paramref name="keeper"/> keeps hidden.</summary>
     public static AmUia? Find(AppleMusicKeeper? keeper = null)
     {
-        foreach (var p in Process.GetProcessesByName("AppleMusic"))
+        var processes = Process.GetProcessesByName("AppleMusic");
+        try
         {
-            var pid = (uint)p.Id;
-            var kept = keeper is not null && keeper.KeptPid == pid ? keeper.KeptHwnd : 0;
-            var h = AmNative.MainWindow(pid, kept);
-            if (h != 0 && (AmNative.IsWindowVisible(h) || (kept != 0 && h == kept)))
+            foreach (var p in processes)
             {
-                return new AmUia(h, pid);
+                var pid = (uint)p.Id;
+                var kept = keeper is not null && keeper.KeptPid == pid ? keeper.KeptHwnd : 0;
+                var h = AmNative.MainWindow(pid, kept);
+                if (h != 0 && (AmNative.IsWindowVisible(h) || (kept != 0 && h == kept)))
+                {
+                    return new AmUia(h, pid);
+                }
+            }
+        }
+        finally
+        {
+            foreach (var p in processes)
+            {
+                p.Dispose();
             }
         }
 
@@ -2206,12 +2431,14 @@ internal sealed class AmUia
             try
             {
                 pane ??= ById("PaneRoot") ?? Root;
-                ExpandSidebar(pane);
                 if (watch.ElapsedMilliseconds < timeoutMs && pane.FindFirst(TreeScope.Descendants, byId) is { } direct)
                 {
                     detail = "";
                     return direct;
                 }
+
+                // only when the entry is not simply there: the user's collapsed sidebar sections are left as they are
+                ExpandSidebar(pane);
 
                 if (watch.ElapsedMilliseconds < timeoutMs)
                 {

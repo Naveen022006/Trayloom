@@ -2,6 +2,9 @@
 // Trayloom — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
 
 using System.Windows;
+using System.Windows.Automation;
+using System.Windows.Automation.Peers;
+using System.Windows.Automation.Provider;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -428,6 +431,91 @@ internal sealed class HoverButton : Border
         }
 
         Opacity = IsEnabled ? (_down ? 0.8 : 1) : 0.4;
+    }
+
+    /// <summary>Does what a click does (UI Automation's Invoke); nothing when the button is disabled.</summary>
+    internal void Click()
+    {
+        if (IsEnabled)
+        {
+            _onClick();
+        }
+    }
+
+    protected override AutomationPeer OnCreateAutomationPeer() => new HoverButtonPeer(this);
+}
+
+/// <summary>
+/// What screen readers and UI Automation see of a <see cref="HoverButton"/> (a plain Border has no peer): a Button with a name (the
+/// automation name, else the tooltip, else its text) that can be invoked. AutomationProperties.AutomationId set on it is exposed too.
+/// </summary>
+internal sealed class HoverButtonPeer : FrameworkElementAutomationPeer, IInvokeProvider
+{
+    public HoverButtonPeer(HoverButton owner)
+        : base(owner)
+    {
+    }
+
+    private HoverButton Button => (HoverButton)Owner;
+
+    protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.Button;
+
+    protected override string GetClassNameCore() => nameof(HoverButton);
+
+    protected override bool IsControlElementCore() => true;
+
+    protected override bool IsContentElementCore() => true;
+
+    public override object? GetPattern(PatternInterface patternInterface) =>
+        patternInterface == PatternInterface.Invoke ? this : base.GetPattern(patternInterface);
+
+    protected override string GetNameCore()
+    {
+        var name = base.GetNameCore();
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            return name;
+        }
+
+        var tip = Button.ToolTip switch
+        {
+            string s => s,
+            ToolTip { Content: string c } => c,
+            _ => "",
+        };
+        return tip.Length > 0 ? tip : TextOf(Button, Button.Icon);
+    }
+
+    /// <summary>The first readable text inside the button; the icon (a glyph from the icon font) never counts.</summary>
+    internal static string TextOf(DependencyObject root, TextBlock? icon)
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is TextBlock t && !ReferenceEquals(t, icon) && t.Text.Length > 0 && !t.Text.Any(c => c is >= '\uE000' and <= '\uF8FF'))
+            {
+                return t.Text;
+            }
+
+            var inner = TextOf(child, icon);
+            if (inner.Length > 0)
+            {
+                return inner;
+            }
+        }
+
+        return "";
+    }
+
+    public void Invoke()
+    {
+        if (!IsEnabled())
+        {
+            throw new ElementNotEnabledException();
+        }
+
+        // asynchronous, as WPF's own Button peer does: a click can open a menu, and the caller must not wait for it
+        Button.Dispatcher.BeginInvoke(new Action(Button.Click));
     }
 }
 

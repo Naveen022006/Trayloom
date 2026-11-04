@@ -29,6 +29,13 @@ internal sealed class ClipboardPage : IslandPage
     public ClipboardPage(IslandCore core, IslandWindow? window)
         : base(core, window)
     {
+        _search.PreviewMouseDown += (_, _) =>
+        {
+            if (HasWindow)
+            {
+                Window.EnsureKeyboard();
+            }
+        };
         _search.TextChanged += (_, _) => RebuildList();
         _view.PreviewTextInput += (_, e) =>
         {

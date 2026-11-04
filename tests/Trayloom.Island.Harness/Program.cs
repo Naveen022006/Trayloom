@@ -30,6 +30,11 @@ internal static class Program
         Json();
         PlacementChecks.Run(Check);
         OpeningDirectionChecks.Run(Check);
+        AmDbChecks.Run(Check);
+        AmMatchChecks.Run(Check);
+        AmServiceChecks.Run(Check);
+        LibrarySearchChecks.Run(Check);
+        IslandUiChecks.Run(Check);
         Console.WriteLine($"{s_checks - s_failed}/{s_checks} checks passed");
         return s_failed == 0 ? 0 : 1;
     }
@@ -159,7 +164,7 @@ internal static class Program
         Check(picked.Count > 10, $"random: the pick varies ({picked.Count} different songs in 200 draws)");
 
         var fromRecent = Plan(songs, recent, seed: 5).First;
-        Check(fromRecent is { Page: "recent" } && recent.Contains(fromRecent.Track!), "random: recently added songs are preferred, on the Recently added page");
+        Check(fromRecent is { Page: "songs" } && recent.Contains(fromRecent.Track!), "random: recently added songs are preferred, played from the Songs page (the Recently added page has no song list)");
         Check(Plan(songs, seed: 9).First?.Track?.Pid == Plan(songs, seed: 9).First?.Track?.Pid, "random: the same random numbers give the same pick");
     }
 
