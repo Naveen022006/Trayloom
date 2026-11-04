@@ -59,7 +59,9 @@ internal static class AmMatch
         ScoreCells(rowName, texts.Select(t => new AmCell(t, true)).ToList(), track);
 
     /// <summary>
-    /// Scores a row. <paramref name="cells"/> are the descendants of the row in order. Only the first Text cell (the title cell) can make
+    /// Scores a row. Apple Music names a song row "Title m:ss Artist Album …", so when the name holds a duration the text before it
+    /// decides (see <see cref="TitleBeforeClock"/>). Only for a name without one: <paramref name="cells"/> are the descendants of the row
+    /// in order, and only the first Text cell (the title cell) can make
     /// the row qualify: an album or artist cell that happens to read like the title (a song "Willow" on an album "Willow") must not make a
     /// longer title such as "Willow (Sped Up)" the song. Every other cell is only used for the artist, album and duration scores. With no
     /// Text cell at all the row's name is used instead, and then only when it is the title alone or the title followed by the artist.
@@ -72,7 +74,23 @@ internal static class AmMatch
             return AmRowScore.None;
         }
 
-        var others = new List<string>(cells.Count);
+        var others = new List<string>(cells.Count + 2);
+        var byName = TitleBeforeClock(rowName, titleKey, out var clock, out var rest, cells);
+        if (byName is bool decided)
+        {
+            // Apple Music names a song row "Title m:ss Artist Album Genre Plays": what comes before the duration is the title, and
+            // only a row whose title is exactly the song's qualifies. The cells are read for the artist, album and time only.
+            if (!decided)
+            {
+                return AmRowScore.None;
+            }
+
+            others.Add(clock);
+            others.Add(rest);
+            others.AddRange(cells.Select(c => c.Name));
+            return Score(others, track);
+        }
+
         var exact = false;
         var sawText = false;
         foreach (var cell in cells)
@@ -106,6 +124,52 @@ internal static class AmMatch
             return AmRowScore.None;
         }
 
+        return Score(others, track);
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex Clock = new(@"(?<=\s)\d{1,2}:\d{2}(?::\d{2})?(?=\s|$)", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Whether the row name's text before a duration ("m:ss" or "h:mm:ss" between spaces) is exactly the title (an "Explicit" mark
+    /// after the title is allowed); null when the name holds no duration at all, so the cells must decide. Every duration in the name is
+    /// tried, so a title that itself holds a time ("9:30 Train") still matches.
+    /// </summary>
+    public static bool? TitleBeforeClock(string rowName, string titleKey, out string clock, out string rest, IReadOnlyList<AmCell>? cells = null)
+    {
+        clock = "";
+        rest = "";
+        rowName ??= "";
+        var any = false;
+        // a playlist row may start with its track number ("3 Title 4:05 …"); that is only taken off when a cell holds exactly the
+        // title, so "7 Rings" is never the song "Rings"
+        var cellIsTitle = cells?.Any(c => Key(c.Name) == titleKey) == true;
+        foreach (System.Text.RegularExpressions.Match m in Clock.Matches(rowName))
+        {
+            any = true;
+            var before = Key(rowName[..m.Index]);
+            if (cellIsTitle && before.Length > titleKey.Length)
+            {
+                var space = before.IndexOf(' ');
+                if (space > 0 && before[..space].All(char.IsAsciiDigit))
+                {
+                    before = before[(space + 1)..];
+                }
+            }
+
+            if (before == titleKey || before == titleKey + " explicit")
+            {
+                clock = m.Value;
+                rest = rowName[(m.Index + m.Length)..];
+                return true;
+            }
+        }
+
+        return any ? false : null;
+    }
+
+    /// <summary>Artist, album and duration scores of a row already known to be the song, from its other texts.</summary>
+    private static AmRowScore Score(List<string> others, AmTrack track)
+    {
         var artist = 0;
         var album = 0;
         var duration = false;

@@ -20,6 +20,7 @@ internal static class AmMatchChecks
         RowChoice();
         RowRanking();
         TitleCell();
+        RealRowNames();
         NamesAndCharacters();
         MoreButton();
         MenuChoice();
@@ -33,9 +34,9 @@ internal static class AmMatchChecks
     private static AmTrack Song(string title, string artist = "Artist", string album = "Album", int ms = 200_000) =>
         new() { Pid = 1, Title = title, Artist = artist, Album = album, DurationMs = ms };
 
-    /// <summary>A row as Apple Music shows it: the cells' texts, and an accessible name made of them.</summary>
+    /// <summary>A row as Apple Music shows it: the cells' texts, and an accessible name made of them ("Title m:ss Artist Album").</summary>
     private static (string Name, string[] Texts) Row(string title, string artist = "Artist", string album = "Album", string time = "3:20") =>
-        ($"{title}, {artist}, {album}, {time}", [title, artist, album, time]);
+        ($"{title} {time} {artist} {album}", [title, time, artist, album]);
 
     private static bool Exact(AmTrack track, (string Name, string[] Texts) row) => AmMatch.RowScore(row.Name, row.Texts, track).TitleExact;
 
@@ -71,24 +72,45 @@ internal static class AmMatchChecks
         // a song "Willow" on an album "Willow": the longer version's row has the title in its album cell, which must not count
         var plain = Song("Willow", "Artist", "Other Album");
         AmCell[] sped = [new("Willow (Sped Up)", true), new("Artist", true), new("Willow", true), new("3:20", true)];
-        Check(!AmMatch.ScoreCells("Willow (Sped Up), Artist, Willow, 3:20", sped, plain).TitleExact, "title cell: the album cell reading like the title does not make a longer title the song");
+        Check(!AmMatch.ScoreCells("Willow (Sped Up) 3:20 Artist Willow", sped, plain).TitleExact, "title cell: the album cell reading like the title does not make a longer title the song");
         AmCell[] artistCell = [new("Willow (Acoustic)", true), new("Willow", true), new("Album", true)];
         Check(!AmMatch.ScoreCells("Willow (Acoustic), Willow, Album", artistCell, plain).TitleExact, "title cell: nor does an artist cell");
         AmCell[] own = [new("Willow", true), new("Artist", true), new("Willow", true), new("3:20", true)];
         var selfTitled = Song("Willow", "Artist", "Willow", 200_000);
-        var score = AmMatch.ScoreCells("Willow, Artist, Willow, 3:20", own, selfTitled);
+        var score = AmMatch.ScoreCells("Willow 3:20 Artist Willow", own, selfTitled);
         Check(score.TitleExact && score.Album == 2 && score.Artist == 2 && score.Duration, "title cell: a song on a self-titled album still matches and scores artist, album and time");
         AmCell[] withButton = [new("More", false), new("Play", false), new("Willow", true), new("Artist", true)];
         Check(AmMatch.ScoreCells("x", withButton, plain).TitleExact, "title cell: buttons and images before the first text are skipped");
         AmCell[] onlyButtons = [new("Willow", false), new("Artist", false)];
         Check(!AmMatch.ScoreCells("Willow (Sped Up), Artist", onlyButtons, plain).TitleExact, "title cell: no Text cell at all falls back to the row name (a longer title does not qualify)");
-        Check(AmMatch.ScoreCells("Willow, Artist, Album, 3:20", onlyButtons, plain).TitleExact, "title cell: no Text cell at all falls back to the row name (title then artist qualifies)");
+        Check(AmMatch.ScoreCells("Willow, Artist, Album", onlyButtons, plain).TitleExact, "title cell: no Text cell at all falls back to the row name (title then artist qualifies)");
         AmCell[] blank = [new(" ", true)];
         Check(AmMatch.ScoreCells("Willow", blank, plain).TitleExact, "title cell: blank texts count as no text");
 
         // a recycled row (the list scrolled and the element now shows another song) is not the song any more
         var moved = Row("Another Tune", "Someone", "Elsewhere");
         Check(!Exact(plain, moved), "row moved: a row that now shows another song does not qualify");
+    }
+
+    /// <summary>Rows named the way Apple Music names them: "Title m:ss Artist Album Genre Plays"; the text before the duration decides.</summary>
+    private static void RealRowNames()
+    {
+        var song = Song("Sun And Moon", "Ari Vance, Sol Rivers & Kay", "Ember (Original Soundtrack)", 217_000);
+        const string name = "Sun And Moon 3:37 Ari Vance, Sol Rivers & Kay Ember (Original Soundtrack) Tamil 30";
+        AmCell[] otherFirst = [new("Ari Vance, Sol Rivers & Kay", true), new("Sun And Moon", false), new("3:37", true)];
+        var real = AmMatch.ScoreCells(name, otherFirst, song);
+        Check(real.TitleExact && real.Artist >= 1 && real.Duration, "real row: the title before the duration matches even when the first text cell is another column");
+        Check(AmMatch.ScoreCells(name, [], song).TitleExact, "real row: no readable cells, the name alone decides");
+        Check(real.IsConclusive(song), "real row: artist and album from the name end the search");
+
+        var plain = Song("Willow", "Artist", "Other Album");
+        AmCell[] albumFirst = [new("Willow", true), new("Willow (Sped Up)", true)];
+        Check(!AmMatch.ScoreCells("Willow (Sped Up) 3:20 Artist Willow", albumFirst, plain).TitleExact, "real row: a longer title before the duration never qualifies, whatever the cells say");
+        Check(AmMatch.ScoreCells("Willow Explicit 3:20 Artist Other Album", [], plain).TitleExact, "real row: an Explicit mark after the title is allowed");
+        Check(AmMatch.ScoreCells("3 Willow 3:20 Artist Other Album", [new("3", true), new("Willow", true)], plain).TitleExact, "playlist row: a leading track number is taken off when a cell is the title");
+        Check(!AmMatch.ScoreCells("7 Willow 3:20 Artist Other Album", [new("7 Willow", true)], plain).TitleExact, "playlist row: a number that is part of the title is not taken off ('7 Rings' is not 'Rings')");
+        Check(AmMatch.ScoreCells("9:30 Train 4:00 Artist Album", [], Song("9:30 Train")).TitleExact, "real row: a title that holds a time still matches");
+        Check(!AmMatch.ScoreCells("9:30 Train 4:00 Artist Album", [], Song("Train")).TitleExact, "real row: nor is its tail another song");
     }
 
     private static void RowRanking()
@@ -132,8 +154,8 @@ internal static class AmMatchChecks
 
         // a row whose texts could not be read is judged by its name: the title alone or title then artist, nothing longer
         var plain = Song("Hello", "Singer");
-        Check(AmMatch.RowScore("Hello, Singer, Album, 3:20", [], plain).TitleExact, "no readable text: title then artist in the name qualifies");
-        Check(!AmMatch.RowScore("Hello Again, Singer, Album, 3:20", [], plain).TitleExact, "no readable text: a longer title does not");
+        Check(AmMatch.RowScore("Hello Singer Album", [], plain).TitleExact, "no readable text: title then artist in the name qualifies");
+        Check(!AmMatch.RowScore("Hello Again Singer Album", [], plain).TitleExact, "no readable text: a longer title does not");
         Check(AmMatch.RowScore("Hello", [], plain).TitleExact, "no readable text: the title alone qualifies");
     }
 

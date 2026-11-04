@@ -1245,12 +1245,19 @@ internal sealed class AppleMusicDriver : IDisposable
                     continue;
                 }
 
-                var score = AmMatch.ScoreCells(name, ReadCells(current), track);
+                var cells = ReadCells(current);
+                var score = AmMatch.ScoreCells(name, cells, track);
                 if (!score.TitleExact)
                 {
                     var shown = name.Length > 70 ? name[..70] + "…" : name;
                     if (search.NearMisses.Count < 8 && !search.NearMisses.Contains(shown))
                     {
+                        if (search.NearMisses.Count == 0)
+                        {
+                            // the layout of the first rejected row, so a miss can be understood from the log alone
+                            shown += " [cells: " + string.Join(" / ", cells.Take(10).Select(c => (c.IsText ? "T:" : "o:") + (c.Name.Length > 40 ? c.Name[..40] + "…" : c.Name))) + "]";
+                        }
+
                         search.NearMisses.Add(shown);
                     }
 
