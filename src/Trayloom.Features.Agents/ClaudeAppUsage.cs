@@ -27,46 +27,8 @@ internal static class ClaudeAppUsage
         ("so", LimitKind.Weekly, 10_080, "Opus"), ("sn", LimitKind.Weekly, 10_080, "Sonnet"),
     ];
 
-    /// <summary>The newest history file: <c>%LOCALAPPDATA%\Claude-Data\claude_*\</c> (MSIX) or <c>%APPDATA%\Claude\</c>.</summary>
-    public static string? HistoryPath()
-    {
-        var candidates = new List<string>();
-        try
-        {
-            var local = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Claude-Data");
-            if (Directory.Exists(local))
-            {
-                foreach (var dir in Directory.EnumerateDirectories(local, "claude_*"))
-                {
-                    candidates.Add(Path.Combine(dir, "plan-usage-history.json"));
-                }
-            }
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-        }
-
-        candidates.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Claude", "plan-usage-history.json"));
-        string? best = null;
-        var bestTime = DateTime.MinValue;
-        foreach (var c in candidates)
-        {
-            try
-            {
-                var info = new FileInfo(c);
-                if (info.Exists && info.LastWriteTimeUtc >= bestTime)
-                {
-                    best = c;
-                    bestTime = info.LastWriteTimeUtc;
-                }
-            }
-            catch (IOException)
-            {
-            }
-        }
-
-        return best;
-    }
+    /// <summary>The history file of the account folder the Claude app uses now (see <see cref="ClaudeAppAccount.Choose"/>); null when there is none.</summary>
+    public static string? HistoryPath() => ClaudeAppAccount.Choose()?.HistoryFile;
 
     /// <summary>Whether the Claude desktop app looks installed (its history folder or its MSIX package exists).</summary>
     public static bool AppInstalled()
@@ -201,7 +163,8 @@ internal static class ClaudeAppUsage
             (DateTime Latest, DateTime? Estimate)? session = window.Kind == LimitKind.Session ? SessionEnd(history, used, sessionStart, length) : null;
             var resets = window.Kind == LimitKind.Session ? session?.Latest : Renewal(history, window.Key, length, latest.Date);
             // A window that renewed after the reading has spent an unknown amount since, and without a date a day-old week may have too.
-            if (resets is { } r && r <= now)
+            // A week that renewed keeps its row (it reads "Renewed" until the app checks again) instead of vanishing from the card.
+            if (resets is { } r && r <= now && window.Kind != LimitKind.Weekly)
             {
                 continue;
             }

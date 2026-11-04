@@ -49,6 +49,8 @@ public sealed class FileLog : ILog
 
     private readonly object _gate = new();
     private readonly string _path;
+    private string? _fallback;
+    private string? _failure;
 
     /// <summary>Creates a log writing to <paramref name="path"/> (default: <see cref="AppPaths.LogFile"/>).</summary>
     public FileLog(string? path = null)
@@ -71,23 +73,78 @@ public sealed class FileLog : ILog
         var line = string.Create(CultureInfo.InvariantCulture, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [{level}] {message}{Environment.NewLine}");
         lock (_gate)
         {
+            if (_fallback is null)
+            {
+                try
+                {
+                    Append(_path, line);
+                    return;
+                }
+                catch (Exception e)
+                {
+                    // A log that cannot be written would otherwise hide every later problem: move to a folder the person can write to.
+                    _failure = e.GetType().Name + ": " + e.Message;
+                    _fallback = ChooseFallback();
+                }
+            }
+
+            if (_fallback is null)
+            {
+                return;
+            }
+
             try
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-                var info = new FileInfo(_path);
-                if (info.Exists && info.Length > MaxBytes)
+                if (_failure is not null)
                 {
-                    var rolled = Path.ChangeExtension(_path, ".1.log");
-                    File.Move(_path, rolled, overwrite: true);
+                    Append(_fallback, string.Create(CultureInfo.InvariantCulture, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [WRN] The log file could not be written, so this log is used instead ({_failure}){Environment.NewLine}"));
+                    _failure = null;
                 }
 
-                File.AppendAllText(_path, line, Encoding.UTF8);
+                Append(_fallback, line);
             }
             catch
             {
                 // Logging must never take the app down.
             }
         }
+    }
+
+    private static void Append(string path, string line)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var info = new FileInfo(path);
+        if (info.Exists && info.Length > MaxBytes)
+        {
+            File.Move(path, Path.ChangeExtension(path, ".1.log"), overwrite: true);
+        }
+
+        File.AppendAllText(path, line, Encoding.UTF8);
+    }
+
+    /// <summary>The first of the per-user fallback logs that accepts a write; null when none does.</summary>
+    private static string? ChooseFallback()
+    {
+        var candidates = new[]
+        {
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Trayloom", "logs", "trayloom.log"),
+            Path.Combine(Path.GetTempPath(), "Trayloom", "trayloom.log"),
+        };
+        foreach (var candidate in candidates)
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(candidate)!);
+                File.AppendAllText(candidate, "", Encoding.UTF8);
+                return candidate;
+            }
+            catch
+            {
+                // try the next one
+            }
+        }
+
+        return null;
     }
 }
 

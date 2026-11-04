@@ -21,8 +21,12 @@ internal static class AgentLimitPlan
     /// <summary>A 5-hour row is always shown for these plans, with "No reading yet" when the source gave nothing.</summary>
     public static bool ExpectsSession(AgentProvider provider, AgentPlan? plan) => provider == AgentProvider.Claude && plan is not null && !IsUltra(plan);
 
-    /// <summary>A weekly row is always shown for these plans.</summary>
-    public static bool ExpectsWeekly(AgentProvider provider, AgentPlan? plan) => provider == AgentProvider.Claude && plan is not null;
+    /// <summary>
+    /// A weekly row is always shown for these plans, and for a Claude reading that comes from the Claude app: the app does not save the plan,
+    /// but a reading that has a weekly figure belongs to an account that has a weekly limit.
+    /// </summary>
+    public static bool ExpectsWeekly(AgentProvider provider, AgentPlan? plan, AgentLimits? limits = null) =>
+        provider == AgentProvider.Claude && (plan is not null || limits?.Origin == LimitOrigins.ClaudeDesktop);
 
     /// <summary>One sentence on which allowances the plan has (the plan chip's tooltip); null when there is nothing to say.</summary>
     public static string? Describe(AgentProvider provider, AgentPlan? plan)

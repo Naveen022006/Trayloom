@@ -42,6 +42,7 @@ public static class WindowGuardianState
     private static readonly List<TrackedWindow> Tracked = [];
     private static FileLog? _log;
     private static bool _warned;
+    private static bool _moveWarned;
     private static uint _ownerPid;
     private static long _ownerStart;
 
@@ -263,7 +264,7 @@ public static class WindowGuardianState
             var path = FilePath;
             var temp = path + "." + Environment.ProcessId.ToString(CultureInfo.InvariantCulture) + ".tmp";
             File.WriteAllBytes(temp, Serialize(snapshot));
-            File.Move(temp, path, overwrite: true);
+            Replace(temp, path);
         }
         catch (Exception ex)
         {
@@ -272,6 +273,88 @@ public static class WindowGuardianState
                 _warned = true;
                 Log.Warn("Could not write " + FilePath + ": " + ex.Message);
             }
+        }
+    }
+
+    /// <summary>
+    /// Puts the temp file in place of the state file. A reader that has the file open (or antivirus) can make the move fail for a moment,
+    /// so it is retried a few times, then <see cref="File.Replace(string, string, string?)"/> and finally a write in place are tried.
+    /// </summary>
+    private static void Replace(string temp, string path)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                File.Move(temp, path, overwrite: true);
+                return;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                if (attempt < 3)
+                {
+                    Thread.Sleep(50);
+                    continue;
+                }
+
+                if (!_moveWarned)
+                {
+                    _moveWarned = true;
+                    Log.Warn("Replacing " + path + " failed (" + e.GetType().Name + "); trying File.Replace, then a write in place");
+                }
+
+                break;
+            }
+        }
+
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Replace(temp, path, null);
+                return;
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // fall through to the write in place
+        }
+
+        File.WriteAllBytes(path, File.ReadAllBytes(temp));
+        try
+        {
+            File.Delete(temp);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // CleanTemporaryFiles removes it on the next start
+        }
+    }
+
+    /// <summary>Removes <c>window-guardian.json.&lt;pid&gt;.tmp</c> files an earlier run left behind (a write that was cut short).</summary>
+    internal static void CleanTemporaryFiles()
+    {
+        try
+        {
+            var own = "." + Environment.ProcessId.ToString(CultureInfo.InvariantCulture) + ".tmp";
+            foreach (var file in Directory.EnumerateFiles(AppPaths.Root, "window-guardian.json.*.tmp"))
+            {
+                try
+                {
+                    if (!file.EndsWith(own, StringComparison.OrdinalIgnoreCase) && DateTime.UtcNow - File.GetLastWriteTimeUtc(file) > TimeSpan.FromMinutes(1))
+                    {
+                        File.Delete(file);
+                    }
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    // someone else holds it; the next start tries again
+                }
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // no folder yet, or no access: nothing to clean
         }
     }
 
@@ -309,7 +392,14 @@ public static class WindowGuardianState
                     return null;
                 }
 
-                bytes = File.ReadAllBytes(FilePath);
+                // Shared with a writer's move: the default share mode of ReadAllBytes would make the owner's replace fail.
+                using (var stream = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                using (var copy = new MemoryStream())
+                {
+                    stream.CopyTo(copy);
+                    bytes = copy.ToArray();
+                }
+
                 break;
             }
             catch (FileNotFoundException)
@@ -431,6 +521,7 @@ public static class WindowGuardianState
     {
         try
         {
+            CleanTemporaryFiles();
             var snapshot = Read(out _);
             if (snapshot is null || snapshot.Windows.Count == 0 || snapshot.OwnerPid == OwnerPid)
             {

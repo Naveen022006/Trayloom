@@ -11,10 +11,14 @@ internal sealed class AgentWorker : IDisposable
     private readonly BlockingCollection<Action> _queue = [];
     private readonly Thread _thread;
     private readonly List<Timer> _timers = [];
+    private readonly Action<Exception>? _onError;
     private bool _disposed;
 
-    public AgentWorker(string name)
+    /// <param name="name">The thread's name.</param>
+    /// <param name="onError">Told about every exception a step throws (the loop goes on either way); it must not throw itself.</param>
+    public AgentWorker(string name, Action<Exception>? onError = null)
     {
+        _onError = onError;
         _thread = new Thread(Loop) { IsBackground = true, Name = name, Priority = ThreadPriority.BelowNormal };
         _thread.Start();
     }
@@ -90,9 +94,17 @@ internal sealed class AgentWorker : IDisposable
             {
                 action();
             }
-            catch (Exception)
+            catch (Exception e)
             {
-                // A failing step must not stop the queue; the next tick tries again.
+                // A failing step must not stop the queue; the next tick tries again. The owner decides how to report it.
+                try
+                {
+                    _onError?.Invoke(e);
+                }
+                catch (Exception)
+                {
+                    // Reporting must never end the loop either.
+                }
             }
         }
     }

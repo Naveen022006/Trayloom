@@ -2,6 +2,7 @@
 // Trayloom — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
 
 using System.Collections;
+using System.Diagnostics;
 using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Windows.Threading;
@@ -24,6 +25,9 @@ public sealed record AgentServiceStatus
     public ClaudeAccountProfile ClaudeProfile { get; init; } = new();
 
     public ClaudeAccountProfile.Identity? ClaudeAccountIdentity { get; init; }
+
+    /// <summary>With Claude Code left out: the terminal's Claude Code is signed in to another account than the Claude app, so its email and plan are not shown.</summary>
+    public bool ClaudeCodeOtherAccount { get; init; }
 
     /// <summary>The day of the price list in use.</summary>
     public DateTime? PricesUpdated { get; init; }
@@ -50,7 +54,7 @@ public sealed class AgentUsageService : IDisposable
     private readonly AgentSettings _settings;
     private readonly Dispatcher _ui;
     private readonly ILog _log;
-    private readonly AgentWorker _worker = new("Trayloom agent usage");
+    private readonly AgentWorker _worker;
     private readonly string _home = AgentLogRoot.Home;
 
     // ---- control state (worker thread)
@@ -95,6 +99,19 @@ public sealed class AgentUsageService : IDisposable
     private ClaudeAccountProfile _readerClaudeProfile = new();
     private DateTime? _claudeProfileModified;
     private DateTime? _claudeAppModified;
+    private string? _claudeAppPath;
+    private DateTime? _claudeAppUnreadable;
+    private bool _claudeOrgMismatch;
+    private bool _claudeMatchedCode;
+    private bool _claudeCodeElsewhere;
+    private string _claudeAppFolder = "";
+    private bool _appStampKnown;
+    private (string? Folder, DateTime? Config, DateTime? History, DateTime? Profile) _appStamp;
+    private string? _claudeSummary;
+    private readonly HashSet<string> _warnedKinds = [];
+    private readonly Dictionary<string, DateTime> _workerErrors = [];
+    private Stopwatch? _initialTimer;
+    private int _initialCount;
     private List<ClaudeAppUsage.Sample> _claudeAppSamples = [];
     private AgentLimits? _claudeAccountLimits;
     private AgentLimits? _claudeCachedLimits;
@@ -120,6 +137,53 @@ public sealed class AgentUsageService : IDisposable
         _settings = settings;
         _ui = ui;
         _log = log;
+        _worker = new AgentWorker("Trayloom agent usage", OnWorkerError);
+    }
+
+    /// <summary>
+    /// A queued step threw: the loop goes on, but the cause is logged (type and place only, never the message, which can hold a path), at most
+    /// once every ten minutes per kind. Before this, one throw during the first read left the island without any Claude reading and no trace.
+    /// </summary>
+    private void OnWorkerError(Exception e)
+    {
+        var kind = Describe(e);
+        var now = DateTime.UtcNow;
+        lock (_workerErrors)
+        {
+            if (_workerErrors.TryGetValue(kind, out var last) && now - last < TimeSpan.FromMinutes(10))
+            {
+                return;
+            }
+
+            _workerErrors[kind] = now;
+        }
+
+        _log.Warn("A usage step failed and was skipped: " + kind);
+    }
+
+    private static string Describe(Exception e) =>
+        e.GetType().Name + " in " + (e.TargetSite is { } site ? (site.DeclaringType?.Name ?? "?") + "." + site.Name : "?") + " (0x" + e.HResult.ToString("X8") + ")";
+
+    /// <summary>Logs a skipped step once per kind of failure.</summary>
+    private void WarnOnce(string what, Exception e)
+    {
+        if (_warnedKinds.Add(what + e.GetType().Name))
+        {
+            _log.Warn("skipped " + what + " after " + e.GetType().Name);
+        }
+    }
+
+    /// <summary>Runs one step of a longer chain so that a throw skips that step only.</summary>
+    private void Guard(string what, Action step)
+    {
+        try
+        {
+            step();
+        }
+        catch (Exception e) when (e is not OutOfMemoryException)
+        {
+            WarnOnce(what, e);
+        }
     }
 
     /// <summary>The latest published snapshot (not loaded until the first read finished).</summary>
@@ -164,6 +228,8 @@ public sealed class AgentUsageService : IDisposable
 
         _claudeProfile = profile;
         _claudeAppOnly = appOnly;
+        // The account is worked out again for the mode now in force.
+        _appStampKnown = false;
         _pageVisible = showingPage;
         if (!_running)
         {
@@ -414,6 +480,8 @@ public sealed class AgentUsageService : IDisposable
         }
 
         _initialFiles = new Queue<(string, AgentProvider)>(files);
+        _initialCount = files.Count;
+        _initialTimer = Stopwatch.StartNew();
         _worker.Post(() => StepInitial(session, cancellation, roots));
     }
 
@@ -434,34 +502,60 @@ public sealed class AgentUsageService : IDisposable
         if (_initialFiles.Count > 0)
         {
             var (path, provider) = _initialFiles.Dequeue();
-            Read(path, provider);
+            try
+            {
+                Read(path, provider);
+            }
+            catch (Exception e) when (e is not OutOfMemoryException)
+            {
+                // One unreadable log must not end the chain: nothing would ever be published.
+                WarnOnce("a log", e);
+            }
+
             _worker.Post(() => StepInitial(session, cancellation, roots));
             return;
         }
 
         _initialFiles = null;
         var now = DateTime.UtcNow;
-        // A turn left open by a crash would otherwise stay working.
-        _store.CloseIdleTurns(now, AgentSettings.IdleTurn);
-        CloseEndedTurns(roots, true);
-        // The account Claude Code uses picks the Claude app's readings.
-        ReadClaudePlan();
-        ReadClaudeApp(now);
-        _store.ReportsTransitions = true;
-        _previousLimits = new Dictionary<AgentProvider, AgentLimits>(_store.Limits);
-        // A budget already passed before launch is history, not news.
-        var today = now.ToLocalTime().Date;
-        if (_settings.DailyBudget() is { } budget && _store.Records.Where(r => r.Date.ToLocalTime() >= today).Sum(r => r.Cost ?? 0) >= budget)
+        try
         {
-            _budgetDay = today;
+            // A turn left open by a crash would otherwise stay working.
+            Guard("closing idle turns", () =>
+            {
+                _store.CloseIdleTurns(now, AgentSettings.IdleTurn);
+                CloseEndedTurns(roots, true);
+            });
+            // The Claude app's account picks the Claude readings.
+            Guard("the Claude account", ReadClaudePlan);
+            Guard("the Claude app reading", () => ReadClaudeApp(now));
+            _store.ReportsTransitions = true;
+            _previousLimits = new Dictionary<AgentProvider, AgentLimits>(_store.Limits);
+            // A budget already passed before launch is history, not news.
+            Guard("the budget check", () =>
+            {
+                var today = now.ToLocalTime().Date;
+                if (_settings.DailyBudget() is { } budget && _store.Records.Where(r => r.Date.ToLocalTime() >= today).Sum(r => r.Cost ?? 0) >= budget)
+                {
+                    _budgetDay = today;
+                }
+            });
         }
-
-        _loaded = true;
-        Watch(roots);
-        StartPolling();
-        WatchNetwork();
-        Publish();
-        SaveProgress();
+        finally
+        {
+            // Whatever failed above, the island must get a snapshot and the ticks must start working.
+            _loaded = true;
+            Guard("watching the logs", () => Watch(roots));
+            Guard("polling", StartPolling);
+            Guard("the network watch", WatchNetwork);
+            Guard("publishing", Publish);
+            Guard("saving progress", SaveProgress);
+            if (_initialTimer is { } timer)
+            {
+                _log.Info($"initial read finished: {_initialCount} log files in {timer.ElapsedMilliseconds} ms");
+                _initialTimer = null;
+            }
+        }
     }
 
     /// <summary>The scope word saved with the progress: which Claude lines the counters hold.</summary>
@@ -1096,6 +1190,7 @@ public sealed class AgentUsageService : IDisposable
             ClaudeAccountFailure = _claudeFailure,
             ClaudeProfile = _claudeProfile,
             ClaudeAccountIdentity = _claudeIdentity,
+            ClaudeCodeOtherAccount = _claudeAppOnly && _claudeCodeElsewhere,
             PricesUpdated = listed == AgentPriceList.Empty.Updated ? null : listed,
         };
     }
@@ -1224,11 +1319,20 @@ public sealed class AgentUsageService : IDisposable
 
     // ------------------------------------------------------------------------------------------ plans and limits
 
-    /// <summary>The plan and visible identity come from Claude Code's profile. Other fields are discarded.</summary>
+    /// <summary>
+    /// The plan and visible identity come from Claude Code's profile (other fields are discarded), or, with Claude Code left out, from the
+    /// Claude app's own account.
+    /// </summary>
     private void ReadClaudePlan()
     {
         if (!_enabled.Contains(AgentProvider.Claude))
         {
+            return;
+        }
+
+        if (_claudeAppOnly)
+        {
+            ReadClaudeAppIdentity();
             return;
         }
 
@@ -1251,13 +1355,7 @@ public sealed class AgentUsageService : IDisposable
         var reading = _readerClaudeProfile.Read(_home);
         if (reading.Identity != _claudeIdentity)
         {
-            _claudeAccountLimits = null;
-            _store.ClearLimits(AgentProvider.Claude);
-            _previousLimits.Remove(AgentProvider.Claude);
-            foreach (var key in _warned.Where(kv => kv.Value.Provider == AgentProvider.Claude).Select(kv => kv.Key).ToList())
-            {
-                _warned.Remove(key);
-            }
+            ClearClaudeReadings();
         }
 
         _claudeCachedLimits = reading.CachedLimits;
@@ -1286,6 +1384,91 @@ public sealed class AgentUsageService : IDisposable
         _claudePlan = reading.Plan;
     }
 
+    /// <summary>Forgets every Claude limit and warning: they belong to an account that is no longer the one in use.</summary>
+    private void ClearClaudeReadings()
+    {
+        _claudeAccountLimits = null;
+        _store.ClearLimits(AgentProvider.Claude);
+        _previousLimits.Remove(AgentProvider.Claude);
+        foreach (var key in _warned.Where(kv => kv.Value.Provider == AgentProvider.Claude).Select(kv => kv.Key).ToList())
+        {
+            _warned.Remove(key);
+        }
+    }
+
+    /// <summary>
+    /// The Claude app's account: its organization comes from the newest saved sample, its account id from the app's config, and the email and
+    /// plan only from a Claude Code login that is the same account. A terminal login for another account is never shown. It is worked out
+    /// again only when the app's files, the Claude Code profile file or the chosen folder changed.
+    /// </summary>
+    private void ReadClaudeAppIdentity()
+    {
+        LoadClaudeAppHistory();
+        var pick = ClaudeAppAccount.Choose();
+        DateTime? profileModified = null;
+        try
+        {
+            var info = new FileInfo(new ClaudeAccountProfile().ProfileFile(_home));
+            profileModified = info.Exists ? info.LastWriteTimeUtc : null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+        }
+
+        var stamp = (pick?.Folder, pick?.ConfigModified, pick?.HistoryModified, profileModified);
+        if (_appStampKnown && stamp == _appStamp)
+        {
+            return;
+        }
+
+        _appStampKnown = true;
+        _appStamp = stamp;
+        var app = ClaudeAppAccount.Locate();
+        var resolved = ClaudeAppAccount.Resolve(app, _claudeAppSamples, _home);
+        // Account and organization decide it; a changed email alone does not throw the readings away.
+        if (resolved.Identity?.Account != _claudeIdentity?.Account || resolved.Identity?.Organization != _claudeIdentity?.Organization)
+        {
+            ClearClaudeReadings();
+        }
+
+        _claudeIdentity = resolved.Identity;
+        _claudeOrganization = resolved.Organization;
+        _claudePlan = resolved.MatchedClaudeCode ? resolved.Plan : null;
+        _claudeOrgMismatch = resolved.OrgMismatch;
+        _claudeMatchedCode = resolved.MatchedClaudeCode;
+        _claudeCodeElsewhere = !resolved.MatchedClaudeCode && new ClaudeAccountProfile().Read(_home).Identity is not null;
+        _claudeAppFolder = pick is null ? "" : pick.Name;
+        // The saved copy of Claude Code's limits does not count in this mode.
+        _claudeCachedLimits = null;
+        _claudeCachedRaw = [];
+        _claudeCachedFetched = null;
+    }
+
+    /// <summary>One line when what the Claude app says changes (never an account id, an organization id or an email).</summary>
+    private void LogClaudeAppSummary(AgentLimits? reading, DateTime now)
+    {
+        var weekly = reading?.Windows.FirstOrDefault(w => w.Kind == LimitKind.Weekly && w.Scope is null);
+        var percent = weekly is null ? "-" : weekly.UsedPercent.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+        var key = string.Join('|', _claudeAppFolder, _claudeAppSamples.Count, percent, _claudeMatchedCode, _claudeOrgMismatch, reading is null);
+        if (key == _claudeSummary)
+        {
+            return;
+        }
+
+        _claudeSummary = key;
+        var newest = _claudeAppSamples.LastOrDefault()?.Date;
+        var text = "Claude app: " + (_claudeAppFolder.Length == 0 ? "no data folder found" : "folder " + _claudeAppFolder) + ", " + _claudeAppSamples.Count + " samples"
+                   + (newest is { } n ? ", newest " + Math.Max(0, (int)(now - n).TotalMinutes) + " min old" : "")
+                   + (weekly is null ? ", no weekly figure" : ", weekly " + percent + "%")
+                   + ", account matches Claude Code: " + (_claudeMatchedCode ? "yes" : "no");
+        if (_claudeOrgMismatch)
+        {
+            text += ", newest sample belongs to another account";
+        }
+
+        _log.Info(text);
+    }
+
     /// <summary>Reads the limits the Claude app saved when the file changes, and places them at now on every call.</summary>
     private void ReadClaudeApp(DateTime now)
     {
@@ -1302,10 +1485,17 @@ public sealed class AgentUsageService : IDisposable
         if (_claudeAppOnly)
         {
             LoadClaudeAppHistory();
-            var appStart = ClaudeAppUsage.SessionStart(_store.Records, _claudeAppSamples, null);
-            // No organization: the app's history is the app's own account.
-            var appReading = ClaudeAppUsage.Limits(_claudeAppSamples, now, appStart, null);
-            _claudeSources = [DescribeDesktopSource(appReading, appReading, null)];
+            var appStart = ClaudeAppUsage.SessionStart(_store.Records, _claudeAppSamples, _claudeOrganization);
+            // The newest sample of another account than the app is signed in to now says nothing about this one.
+            var appReading = _claudeOrgMismatch ? null : ClaudeAppUsage.Limits(_claudeAppSamples, now, appStart, _claudeOrganization);
+            var source = DescribeDesktopSource(appReading, appReading, _claudeOrganization);
+            if (_claudeOrgMismatch)
+            {
+                source.Status = Loc.T("The newest sample belongs to another account than the one signed in to the Claude app; waiting for its next check");
+            }
+
+            _claudeSources = [source];
+            LogClaudeAppSummary(appReading, now);
             if (appReading is not null)
             {
                 _store.SetLimits(appReading);
@@ -1370,10 +1560,42 @@ public sealed class AgentUsageService : IDisposable
         {
         }
 
-        if (modified != _claudeAppModified)
+        var moved = !string.Equals(path, _claudeAppPath, StringComparison.OrdinalIgnoreCase);
+        if (moved)
+        {
+            // Another folder is another account's history: nothing of the old one carries over.
+            _claudeAppPath = path;
+            _claudeAppModified = null;
+            _claudeAppSamples = [];
+            _claudeAppUnreadable = null;
+            _appStampKnown = false;
+        }
+        else if (modified == _claudeAppModified)
+        {
+            return;
+        }
+
+        if (modified is null)
+        {
+            _claudeAppModified = null;
+            _claudeAppSamples = [];
+            return;
+        }
+
+        if (ClaudeAppUsage.ReadFile(path) is { } samples)
         {
             _claudeAppModified = modified;
-            _claudeAppSamples = modified is null ? [] : ClaudeAppUsage.ReadFile(path) ?? [];
+            _claudeAppSamples = samples;
+            _claudeAppUnreadable = null;
+            return;
+        }
+
+        // The app is writing it right now, or the file is not a version this reader knows: keep the last good samples and look again on
+        // the next tick instead of treating the half-written file as the whole history.
+        if (_claudeAppUnreadable != modified)
+        {
+            _claudeAppUnreadable = modified;
+            _log.Warn("The Claude app's plan history could not be read this time; keeping the previous " + _claudeAppSamples.Count + " samples and trying again");
         }
     }
 

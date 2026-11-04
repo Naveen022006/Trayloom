@@ -10,9 +10,10 @@ namespace Trayloom.Agents.Harness;
 /// <summary>
 /// Console harness for "Claude means the Claude desktop app": runs <see cref="ClaudeAppUsage.Limits"/> on a copy of
 /// <c>plan-usage-history.json</c> (pass its path; the real file is never needed) and checks the app-only transcript filter of
-/// <see cref="ClaudeReader"/> on synthetic lines. Nothing is read from Claude Code, nothing is started. Exit code 0 = all passed.
+/// <see cref="ClaudeReader"/> on synthetic lines, and checks the desktop account rules in DesktopAccountChecks.cs. Nothing is read from Claude Code
+/// or the real Claude app, nothing is started. Exit code 0 = all passed.
 /// </summary>
-internal static class Program
+internal static partial class Program
 {
     private static int s_failed;
     private static int s_checks;
@@ -30,6 +31,7 @@ internal static class Program
 
         TranscriptFilter();
         SessionReportedRule();
+        DesktopAccount(args.Length > 0 ? args[0] : null);
         Console.WriteLine($"{s_checks - s_failed}/{s_checks} checks passed");
         return s_failed == 0 ? 0 : 1;
     }

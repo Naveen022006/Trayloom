@@ -206,7 +206,8 @@ internal static class AgentCardViews
         {
             var who = AU.Text(accountName, 9, null, AgentColors.Tertiary, TextTrimming.CharacterEllipsis);
             who.Margin = new Thickness(23, 1, 0, 0);
-            AU.Tip(who, provider.DisplayName() + " · " + accountName);
+            var elsewhere = provider == AgentProvider.Claude && tile.AccountId is null && c.Runtime.Service.Status.ClaudeCodeOtherAccount;
+            AU.Tip(who, provider.DisplayName() + " · " + accountName + (elsewhere ? Environment.NewLine + Loc.T("Claude Code in your terminal is signed in to another account. This card follows the Claude app.") : ""));
             body.Children.Add(who);
         }
 

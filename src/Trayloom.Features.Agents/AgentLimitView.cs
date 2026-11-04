@@ -53,7 +53,7 @@ internal static class LimitPresenter
         }
 
         // The plan says which windows exist; one the source did not report is still listed, saying so.
-        if (AgentLimitPlan.ExpectsWeekly(provider, plan) && weekly is null)
+        if (AgentLimitPlan.ExpectsWeekly(provider, plan, limits) && weekly is null)
         {
             rows.Insert(ordered.Count(w => w.Kind == LimitKind.Session), Missing(provider, AgentStrings.WeeklyLimit));
         }

@@ -180,6 +180,13 @@ internal sealed class LimitDiagnosticsView : StackPanel
             plan.Margin = new Thickness(0, 8, 0, 0);
             _list.Children.Add(plan);
         }
+        else if (_runtime is { } appRuntime && !appRuntime.Settings.IncludesClaudeCode() && AgentProviders.All.Contains(AgentProvider.Claude) && appRuntime.Settings.Providers().Contains(AgentProvider.Claude))
+        {
+            // The Claude app does not save which plan the account has; nothing is guessed.
+            var none = UiKit.Text(Loc.T("The Claude app does not save which plan the account has, so no plan is shown."), 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+            none.Margin = new Thickness(0, 8, 0, 0);
+            _list.Children.Add(none);
+        }
 
         if (sources.Count == 0)
         {
