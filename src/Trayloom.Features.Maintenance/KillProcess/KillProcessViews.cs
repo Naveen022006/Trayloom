@@ -326,13 +326,13 @@ internal sealed class KillProcessPageView : StackPanel
 
     private void ConfirmAll(KillEntry entry)
     {
-        if (!Dialogs.Confirm(Loc.F("Kill all “{0}” processes?", entry.Name), string.Empty, Loc.T("Kill"), true))
+        var targets = _s.Entries.Where(e => !e.IsProtected && e.Name.Equals(entry.Name, StringComparison.OrdinalIgnoreCase))
+            .SelectMany(e => e.Members.Select(m => new KillTarget(m.Pid, m.Started, e.Name))).Distinct().ToList();
+        if (targets.Count == 0 || !Dialogs.Confirm(Loc.F("Kill all {1} “{0}” processes?", entry.Name, targets.Count), string.Empty, Loc.T("Kill"), true))
         {
             return;
         }
 
-        var targets = _s.Entries.Where(e => !e.IsProtected && e.Name.Equals(entry.Name, StringComparison.OrdinalIgnoreCase))
-            .SelectMany(e => e.Members.Select(m => new KillTarget(m.Pid, m.Started, e.Name))).Distinct().ToList();
         _ = _s.KillAsync(targets, false);
     }
 

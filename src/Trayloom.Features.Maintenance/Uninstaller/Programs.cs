@@ -186,6 +186,30 @@ internal static class ProgramCatalog
     {
         var list = new List<InstalledProgram>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // development only: read just the sub keys of HKCU\<TRAYLOOM_UNINSTALLER_TEST_KEY>, never the real Uninstall keys
+        if (Environment.GetEnvironmentVariable("TRAYLOOM_DEV") == "1" && Environment.GetEnvironmentVariable("TRAYLOOM_UNINSTALLER_TEST_KEY") is { Length: > 0 } testKey)
+        {
+            try
+            {
+                using var testRoot = Registry.CurrentUser.OpenSubKey(testKey);
+                foreach (var name in testRoot?.GetSubKeyNames() ?? [])
+                {
+                    using var key = testRoot!.OpenSubKey(name);
+                    if (Read(key, name, RegistryHive.CurrentUser, RegistryView.Registry64, @"HKEY_CURRENT_USER\" + testKey + "\\" + name) is { } program)
+                    {
+                        list.Add(program);
+                    }
+                }
+            }
+            catch
+            {
+                // test key unreadable
+            }
+
+            return list;
+        }
+
         void AddHive(RegistryHive hive, RegistryView view)
         {
             try
@@ -246,7 +270,7 @@ internal static class ProgramCatalog
         return list;
     }
 
-    private static InstalledProgram? Read(RegistryKey? key, string name, RegistryHive hive, RegistryView view)
+    private static InstalledProgram? Read(RegistryKey? key, string name, RegistryHive hive, RegistryView view, string? registryPathOverride = null)
     {
         if (key is null)
         {
@@ -291,7 +315,7 @@ internal static class ProgramCatalog
         return new InstalledProgram
         {
             Key = name,
-            RegistryPath = path,
+            RegistryPath = registryPathOverride ?? path,
             Hive = hive,
             View = view,
             Name = display.Trim(),

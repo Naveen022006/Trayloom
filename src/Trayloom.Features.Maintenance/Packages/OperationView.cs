@@ -163,7 +163,7 @@ internal sealed class OperationStatusView : ContentControl
             column.Children.Add(note);
             if (!string.IsNullOrEmpty(status.Command))
             {
-                var buttons = V.Row(8, PanelButtons.Mini(Loc.T("Open terminal"), null, () => OpenTerminal(status.Command!)), PanelButtons.Mini(Loc.T("Copy"), G.Copy, () => TryCopy(status.Command!)));
+                var buttons = V.Row(8, PanelButtons.Mini(Loc.T("Open terminal"), null, () => OpenTerminal(status.CommandArgs)), PanelButtons.Mini(Loc.T("Copy"), G.Copy, () => TryCopy(status.Command!)));
                 buttons.Margin = new Thickness(0, 6, 0, 0);
                 column.Children.Add(buttons);
             }
@@ -235,11 +235,45 @@ internal sealed class OperationStatusView : ContentControl
         }
     }
 
-    private static void OpenTerminal(string command)
+    /// <summary>
+    /// Opens an administrator terminal running the winget command. The command is rebuilt from the argument arrays (every argument must be a
+    /// plain flag or pass <see cref="WingetCli.ValidToken"/>) and handed over as <c>-EncodedCommand</c>, so no text can add a second command.
+    /// </summary>
+    internal static string? BuildTerminalScript(IReadOnlyList<string[]> commands, string? wingetPath = null)
+    {
+        if (commands.Count == 0)
+        {
+            return null;
+        }
+
+        var exe = string.IsNullOrEmpty(wingetPath) ? "winget" : wingetPath.Replace("'", "''");
+        var lines = new List<string>();
+        foreach (var command in commands)
+        {
+            if (command.Length == 0 || !command.All(a => WingetCli.ValidToken(a) || System.Text.RegularExpressions.Regex.IsMatch(a, @"^--?[A-Za-z][A-Za-z-]*$")))
+            {
+                return null;
+            }
+
+            lines.Add($"& '{exe}' " + string.Join(' ', command.Select(a => $"'{a}'")));
+        }
+
+        return string.Join("; ", lines);
+    }
+
+    private static void OpenTerminal(IReadOnlyList<string[]> commands)
     {
         try
         {
-            Process.Start(new ProcessStartInfo("powershell.exe", $"-NoExit -Command \"{command.Replace("\"", "\\\"")}\"") { UseShellExecute = true, Verb = "runas" });
+            var script = BuildTerminalScript(commands, WingetCli.Path);
+            if (script is null)
+            {
+                return;
+            }
+
+            var encoded = Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script));
+            var powershell = System.IO.Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe");
+            Process.Start(new ProcessStartInfo(powershell, $"-NoExit -EncodedCommand {encoded}") { UseShellExecute = true, Verb = "runas" });
         }
         catch
         {

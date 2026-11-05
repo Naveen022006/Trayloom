@@ -432,6 +432,7 @@ Windows has no "drag the .app to the trash" model, so the vendor uninstaller mus
 * Safety: refuse removal paths that are a Windows root (`C:\`, `C:\Windows`, `C:\Program Files` itself, `%USERPROFILE%`, `%APPDATA%` itself...), always keep to the matched subfolder; symlink/junction-aware; protect other apps' sibling data (publisher folders shared with other installed apps are only offered when empty after the app's own subfolder is removed).
 * Elevation: HKLM/Program Files leftovers need admin -> perform via an elevated helper ("escalate") after the standard UAC prompt, same as the macOS Finder prompt; refusal of the prompt leaves items and counts them failed.
 * **Full Disk Access / Finder automation [MAC-ONLY]** -> administrator note (3.5). The `uninstallerFailedNeedsFDA` card becomes "Some protected items need administrator rights." (only for `Program Files`/`ProgramData`/HKLM paths when not elevated) with "Restart as administrator…".
+* **Windows administrator notes (hardening)**: the uninstaller no longer offers "Relaunch as administrator". The idle-screen note reads "Items in protected locations are removed after one Windows administrator prompt." (hint unchanged), without a button. After a run, items that failed for lack of rights show "These items are in protected locations. Try again and accept the Windows prompt to remove them." with a **Try again** mini button that re-runs the elevated removal for those items only.
 * Trayloom cannot uninstall itself here -> self-uninstall page in Advanced.
 
 ### 5.5 Gap vs Trayloom (`UninstallerFeature.cs`)

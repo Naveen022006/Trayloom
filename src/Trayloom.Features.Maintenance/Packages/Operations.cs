@@ -65,6 +65,9 @@ internal sealed class OperationStatus
     /// <summary>Command to hand to an elevated terminal when the operation needs administrator approval.</summary>
     public string? Command { get; set; }
 
+    /// <summary>The argument lists behind <see cref="Command"/>; the terminal button rebuilds its command from these, never from the display text.</summary>
+    public IReadOnlyList<string[]> CommandArgs { get; set; } = [];
+
     public StringBuilder Log { get; } = new();
 
     public string? Error { get; set; }
@@ -156,6 +159,7 @@ internal sealed class WingetOperations
             TargetId = request.TargetId,
             Phase = request.Action == PkgAction.Uninstall ? OpPhase.Uninstalling : OpPhase.Preparing,
         };
+        status.CommandArgs = request.Commands;
         status.Command = string.Join(" ; ", request.Commands.Select(c => "winget " + string.Join(' ', c.Select(Quote))));
         Status = status;
         _cts = new CancellationTokenSource();

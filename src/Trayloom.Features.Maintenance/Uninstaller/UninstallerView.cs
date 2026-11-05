@@ -327,20 +327,10 @@ internal sealed class UninstallerView : ContentControl
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         var infoIcon = UiKit.Icon(G.Info, 13, ThemeKeys.TextSecondary); infoIcon.VerticalAlignment = VerticalAlignment.Top; infoIcon.HorizontalAlignment = HorizontalAlignment.Left; infoIcon.Margin = new Thickness(0, 1, 0, 0); grid.Children.Add(infoIcon);
         var text = new StackPanel();
-        text.Children.Add(UiKit.Text(Loc.T("Run as administrator for a more thorough scan."), 12, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true));
+        text.Children.Add(UiKit.Text(Loc.T("Items in protected locations are removed after one Windows administrator prompt."), 12, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true));
         var h = V.Secondary(hint, 10);
         h.Margin = new Thickness(0, 4, 0, 0);
         text.Children.Add(h);
-        var button = V.Mini(Loc.T("Relaunch as administrator"), () =>
-        {
-            if (Elevated.RelaunchAsAdministrator())
-            {
-                Host.Services.Shell.Quit();
-            }
-        });
-        button.HorizontalAlignment = HorizontalAlignment.Left;
-        button.Margin = new Thickness(0, 8, 0, 0);
-        text.Children.Add(button);
         Grid.SetColumn(text, 1);
         grid.Children.Add(text);
         return V.Soft(grid, 11, width);
@@ -544,8 +534,21 @@ internal sealed class UninstallerView : ContentControl
             }
         }
 
-        await _m.RemoveSelectedAsync(Host.App.Get<bool>("uninstallerSilent"));
+        await _m.RemoveSelectedAsync(Host.App.Get<bool>("uninstallerSilent"), ConfirmClose, ConfirmForce);
     }
+
+    /// <summary>Lists at most eight names, then "and N more".</summary>
+    private static string NameList(IReadOnlyList<string> names)
+    {
+        var text = string.Join('\n', names.Take(8));
+        return names.Count > 8 ? text + '\n' + Loc.F("and {0} more", names.Count - 8) : text;
+    }
+
+    private bool ConfirmClose(IReadOnlyList<string> names) =>
+        Dialogs.Confirm(Loc.T("Close these apps first?"), NameList(names), Loc.T("Close apps"), false, Loc.T("Cancel"), _keepOpen);
+
+    private bool ConfirmForce(IReadOnlyList<string> names) =>
+        Dialogs.Confirm(Loc.T("Some apps didn’t close"), NameList(names) + '\n' + Loc.T("Unsaved work in them will be lost."), Loc.T("Force quit"), true, Loc.T("Skip"), _keepOpen);
 
     private FrameworkElement ItemRow(UnItem item)
     {
@@ -640,6 +643,20 @@ internal sealed class UninstallerView : ContentControl
         var freed = UiKit.Text(Loc.F("{0} removed", Fmt.Bytes(_m.Freed)), _compact ? 11 : 13, FontWeights.Normal, ThemeKeys.TextSecondary);
         freed.HorizontalAlignment = HorizontalAlignment.Center;
         column.AddSpaced(freed, 16);
+        if (_m.RecycledCount > 0)
+        {
+            var bin = V.Secondary(Loc.T("Removed files were moved to the Recycle Bin."), _compact ? 9.5 : 11);
+            bin.HorizontalAlignment = HorizontalAlignment.Center;
+            column.AddSpaced(bin, 10);
+        }
+
+        if (_m.TooLargeCount > 0)
+        {
+            var large = V.Orange(Loc.F("{0} items were too large for the Recycle Bin, so they were left in place.", _m.TooLargeCount), _compact ? 9.5 : 11);
+            large.HorizontalAlignment = HorizontalAlignment.Center;
+            column.AddSpaced(large, 10);
+        }
+
         if (_m.RebootRequired)
         {
             var reboot = V.Orange(Loc.T("A restart is required to finish."), 11);
@@ -667,16 +684,10 @@ internal sealed class UninstallerView : ContentControl
 
             if (_m.FailedNeedsAdmin)
             {
-                var admin = V.Secondary(Loc.T("These items are in protected locations. Relaunch Trayloom as administrator to remove them."), _compact ? 9.5 : 11);
+                var admin = V.Secondary(Loc.T("These items are in protected locations. Try again and accept the Windows prompt to remove them."), _compact ? 9.5 : 11);
                 admin.Margin = new Thickness(0, 8, 0, 0);
                 note.Children.Add(admin);
-                var button = V.Mini(Loc.T("Relaunch as administrator"), () =>
-                {
-                    if (Elevated.RelaunchAsAdministrator())
-                    {
-                        Host.Services.Shell.Quit();
-                    }
-                });
+                var button = V.Mini(Loc.T("Try again"), () => _ = _m.RetryFailedElevatedAsync());
                 button.HorizontalAlignment = HorizontalAlignment.Left;
                 button.Margin = new Thickness(0, 6, 0, 0);
                 note.Children.Add(button);

@@ -66,6 +66,9 @@ internal sealed class UnItem
 
     public bool NeedsAdmin { get; init; }
 
+    /// <summary>Why a removal failed for a reason an administrator prompt cannot fix ("TooLarge", "Refused", "NoBackup"); null otherwise.</summary>
+    public string? FailReason { get; set; }
+
     public bool IsRegistry => Kind is UnKind.RegistryKey or UnKind.RegistryValue;
 }
 
@@ -217,6 +220,92 @@ internal static class UninstallerSupport
         }
     }
 
+    /// <summary>
+    /// The install folder of a program when it is safe to treat as the program's own: an existing real folder that is not a
+    /// critical root (or an ancestor of one), not under Windows, not a shared system folder, and not shared with another listed
+    /// program. Returns an empty string otherwise, so a broad or forged <c>InstallLocation</c> can never drive a kill or a removal.
+    /// The log line carries the reason only, never the path.
+    /// </summary>
+    public static string UsableInstallLocation(InstalledProgram p, IReadOnlyList<InstalledProgram> all, Action<string>? log = null)
+    {
+        log ??= m => Host.Log(m);
+        var raw = p.InstallLocation;
+        if (p.IsAppx || string.IsNullOrWhiteSpace(raw))
+        {
+            return string.Empty;
+        }
+
+        string Refuse(string reason)
+        {
+            log($"Uninstaller: install location of {p.Name} not used ({reason})");
+            return string.Empty;
+        }
+
+        string full;
+        try
+        {
+            if (raw.Any(char.IsControl) || !Path.IsPathFullyQualified(raw) || raw.StartsWith(@"\\", StringComparison.Ordinal) || raw.StartsWith('/'))
+            {
+                return Refuse("not a local absolute path");
+            }
+
+            full = SafePaths.Normalize(raw);
+            if (!Directory.Exists(full))
+            {
+                return Refuse("folder missing");
+            }
+
+            if (Win32.IsReparsePoint(full))
+            {
+                return Refuse("link");
+            }
+        }
+        catch
+        {
+            return Refuse("unreadable");
+        }
+
+        if (SafePaths.IsCriticalOrAncestor(full) || SafePaths.IsUnderWindows(full))
+        {
+            return Refuse("critical folder");
+        }
+
+        if (SafePaths.IsSharedSystemFolder(full))
+        {
+            return Refuse("shared system folder");
+        }
+
+        if (!FileOps.MayRemove(full))
+        {
+            return Refuse("too shallow");
+        }
+
+        foreach (var other in all)
+        {
+            if (ReferenceEquals(other, p) || other.Identity == p.Identity || other.IsAppx || string.IsNullOrWhiteSpace(other.InstallLocation))
+            {
+                continue;
+            }
+
+            string otherFull;
+            try
+            {
+                otherFull = SafePaths.Normalize(other.InstallLocation);
+            }
+            catch
+            {
+                continue;
+            }
+
+            if (SafePaths.IsUnder(otherFull, full))
+            {
+                return Refuse("shared with another program");
+            }
+        }
+
+        return full;
+    }
+
     /// <summary>The programs the picker offers: the ones the selection check accepts, sorted by name.</summary>
     public static List<InstalledProgram> Offered(List<InstalledProgram> programs) =>
         programs.Where(p => Evaluate(p).Selection is not null && p.Publisher != "Microsoft Windows")
@@ -249,12 +338,15 @@ internal sealed class LeftoverScanner
     private readonly string _install;
     private readonly List<UnItem> _found = [];
 
+    /// <summary>The usable install folder; empty when the registry value was missing or too broad (see <see cref="UninstallerSupport.UsableInstallLocation"/>).</summary>
+    public string InstallFolder => _install;
+
     public LeftoverScanner(InstalledProgram program, List<InstalledProgram> all, CancellationToken ct)
     {
         _p = program;
         _ct = ct;
         _others = all.Where(o => !ReferenceEquals(o, program) && o.Identity != program.Identity).ToList();
-        _install = program.InstallLocation.TrimEnd('\\');
+        _install = UninstallerSupport.UsableInstallLocation(program, all).TrimEnd('\\');
         _publisher = Norm.Of(program.Publisher);
 
         void Id(string? text)
@@ -314,7 +406,7 @@ internal sealed class LeftoverScanner
 
     private bool PublisherShared => _publisher.Length > 0 && _others.Any(o => Norm.Of(o.Publisher) == _publisher);
 
-    private UnMatch? MatchName(string name)
+    private UnMatch? MatchName(string name, bool allowPublisher = true)
     {
         var n = Norm.Of(Path.GetFileNameWithoutExtension(name).Length > 0 && name.Contains('.') && name.Length - Path.GetFileNameWithoutExtension(name).Length <= 5 ? Path.GetFileNameWithoutExtension(name) : name);
         if (n.Length < 3 || ProtectedFolders.Contains(name))
@@ -340,7 +432,7 @@ internal sealed class LeftoverScanner
             }
         }
 
-        if (_publisher.Length >= 4 && n == _publisher && !PublisherShared)
+        if (allowPublisher && _publisher.Length >= 4 && n == _publisher && !PublisherShared)
         {
             return UnMatch.Related;
         }
@@ -360,6 +452,12 @@ internal sealed class LeftoverScanner
         }
 
         var isPath = kind == UnKind.Path;
+        if (isPath && SafePaths.IsUnderWindows(path))
+        {
+            // nothing under %WINDIR% is ever offered
+            return;
+        }
+
         _found.Add(new UnItem
         {
             Category = category,
@@ -404,7 +502,11 @@ internal sealed class LeftoverScanner
             ScanRoot(root, category, 2, root.StartsWith(FileOps.ProgramData, StringComparison.OrdinalIgnoreCase));
         }
 
-        ScanRoot(FileOps.Temp, UnCategory.Caches, 1, false);
+        if (FileOps.SafeTemp is { } safeTemp && !SafePaths.IsUnderWindows(safeTemp))
+        {
+            ScanRoot(safeTemp, UnCategory.Caches, 1, false);
+        }
+
         ScanRoot(Path.Combine(FileOps.Profile, ".config"), UnCategory.Support, 1, false);
         ScanRoot(Path.Combine(FileOps.Profile, ".cache"), UnCategory.Caches, 1, false);
 
@@ -476,6 +578,13 @@ internal sealed class LeftoverScanner
                 }
 
                 var match = MatchName(name);
+
+                // a vendor-level folder (depth 2 roots) that matches only through the publisher name is never added itself (V-13); its children are searched
+                if (match == UnMatch.Related && depth > 1 && MatchName(name, false) is null)
+                {
+                    match = null;
+                }
+
                 if (match is not null)
                 {
                     var cat = category == UnCategory.Support && name.Equals("logs", StringComparison.OrdinalIgnoreCase) ? UnCategory.Logs : category;
@@ -647,7 +756,8 @@ internal sealed class LeftoverScanner
 
                     var vendorPath = (view == RegistryView.Registry32 && hive == RegistryHive.LocalMachine ? $@"{label}\SOFTWARE\WOW6432Node\" : $@"{label}\{sub}\") + vendor;
                     var match = MatchName(vendor);
-                    if (match is not null && match == UnMatch.Exact || match is not null && vendor.Length >= 3)
+                    // a vendor key that matches only through the publisher name is never added itself (V-13); its children are searched
+                    if (match is not null && (match == UnMatch.Exact || MatchName(vendor, false) is not null))
                     {
                         Add(UnCategory.Preferences, match.Value, UnKind.RegistryKey, vendor, vendorPath, null, hive == RegistryHive.LocalMachine);
                         continue;
@@ -677,7 +787,7 @@ internal sealed class LeftoverScanner
                         foreach (var name in run.GetValueNames())
                         {
                             var exe = CleanerScanner.ExecutableOf(run.GetValue(name) as string ?? string.Empty);
-                            if (exe is not null && FileOps.IsUnder(exe, _install))
+                            if (exe is not null && !SafePaths.IsUnderWindows(exe) && FileOps.IsUnder(exe, _install))
                             {
                                 var runLabel = view == RegistryView.Registry32 && hive == RegistryHive.LocalMachine ? $@"{label}\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run" : $@"{label}\{sub}\Microsoft\Windows\CurrentVersion\Run";
                                 Add(UnCategory.Other, UnMatch.Exact, UnKind.RegistryValue, name, runLabel, null, hive == RegistryHive.LocalMachine, 0, name);
@@ -708,7 +818,8 @@ internal sealed class LeftoverScanner
                     {
                         var text = rules.GetValue(name) as string ?? string.Empty;
                         var match = Regex.Match(text, @"(?:^|\|)App=([^|]+)");
-                        if (match.Success && FileOps.IsUnder(Environment.ExpandEnvironmentVariables(match.Groups[1].Value), _install))
+                        var appPath = match.Success ? Environment.ExpandEnvironmentVariables(match.Groups[1].Value) : string.Empty;
+                        if (match.Success && !SafePaths.IsUnderWindows(appPath) && FileOps.IsUnder(appPath, _install))
                         {
                             Add(UnCategory.Other, UnMatch.Exact, UnKind.RegistryValue, $"Firewall rule {name}", @"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters\FirewallPolicy\FirewallRules", null, true, 0, name);
                         }
@@ -745,7 +856,7 @@ internal sealed class LeftoverScanner
                 foreach (Match m in Regex.Matches(xml, @"<Command>([^<]+)</Command>"))
                 {
                     var exe = Environment.ExpandEnvironmentVariables(System.Net.WebUtility.HtmlDecode(m.Groups[1].Value).Trim('"'));
-                    if (FileOps.IsUnder(exe, _install))
+                    if (!SafePaths.IsUnderWindows(exe) && FileOps.IsUnder(exe, _install))
                     {
                         Add(UnCategory.Other, UnMatch.Exact, UnKind.Task, Path.GetFileName(file), "\\" + relative, null, true, 0);
                         break;
@@ -783,7 +894,7 @@ internal sealed class LeftoverScanner
                 _ct.ThrowIfCancellationRequested();
                 using var key = services.OpenSubKey(name);
                 var image = CleanerScanner.ExecutableOf(key?.GetValue("ImagePath") as string ?? string.Empty);
-                if (image is not null && FileOps.IsUnder(image, _install))
+                if (image is not null && !SafePaths.IsUnderWindows(image) && FileOps.IsUnder(image, _install))
                 {
                     Add(UnCategory.Other, UnMatch.Exact, UnKind.Service, $"Service {name}", name, null, true, 0);
                 }

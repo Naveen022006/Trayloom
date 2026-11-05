@@ -77,11 +77,6 @@ internal readonly record struct KillTarget(int Pid, long StartedAt, string Name)
 /// </summary>
 internal sealed class KillService
 {
-    private static readonly HashSet<string> ProtectedNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "system", "idle", "system idle process", "smss", "csrss", "wininit", "winlogon", "services", "lsass", "lsaiso", "registry", "memory compression", "secure system", "dwm",
-    };
-
     private static readonly HashSet<string> NotOwners = new(StringComparer.OrdinalIgnoreCase) { "explorer", "services", "wininit", "system", "svchost", "winlogon", "trayloom" };
 
     private readonly Dictionary<(int, long), (long Ticks, long At)> _cpu = new();
@@ -108,7 +103,7 @@ internal sealed class KillService
 
     /// <summary>The protected set: system processes, this app, and anything whose identity cannot be read.</summary>
     public static bool IsProtected(int pid, string shortName, long created) =>
-        pid <= 4 || pid == SelfPid || created == 0 || ProtectedNames.Contains(shortName) || shortName.Equals("Trayloom", StringComparison.OrdinalIgnoreCase);
+        pid <= 4 || pid == SelfPid || created == 0 || ProcessSafety.IsProtectedName(shortName) || shortName.Equals("Trayloom", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Refreshes the list; a fresh cache (3 s) makes this a no-op unless forced.</summary>
     public async Task RefreshAsync(bool force = false)
@@ -522,10 +517,17 @@ internal sealed class KillService
     /// </summary>
     public async Task<bool> KillAsync(IReadOnlyList<KillTarget> targets, bool force)
     {
+        // protected names are refused here too, so no caller can end a Windows process by building a target by hand
+        targets = targets.Where(t => t.Pid > 4 && t.Pid != SelfPid && !ProcessSafety.IsProtectedName(t.Name)).ToList();
         var results = await Task.Run(() => targets.Select(t => (Target: t, Result: KillOne(t, force))).ToList()).ConfigureAwait(true);
         var needAdmin = results.Where(r => r.Result == KillResult.NeedsAdmin).Select(r => r.Target).ToList();
         var failed = results.Count(r => r.Result == KillResult.Failed);
-        if (needAdmin.Count > 0)
+        if (needAdmin.Count > 0 && targets.Count > 1)
+        {
+            // an administrator prompt is for one process the user picked; grouped and tree kills never escalate
+            failed += needAdmin.Count;
+        }
+        else if (needAdmin.Count > 0)
         {
             var name = needAdmin[0].Name;
             if (Dialogs.Confirm(Loc.F("Trayloom needs administrator access to end “{0}”.", name), string.Empty, Loc.T("Continue"), false))

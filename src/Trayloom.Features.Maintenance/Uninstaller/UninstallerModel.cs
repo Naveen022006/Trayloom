@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Win32;
+using Trayloom.Core;
 
 namespace Trayloom.Features.Maintenance;
 
@@ -246,27 +247,80 @@ internal sealed class UninstallerModel
 
     // ------------------------------------------------------------------ removal
 
-    public async Task RemoveSelectedAsync(bool silent)
+    /// <summary>A running process found under the program's install folder: identified by pid and start time so a reused pid is never hit.</summary>
+    internal sealed record RunningApp(int Pid, long StartFileTime, string Name);
+
+    private bool _closing;
+
+    /// <summary>Items that went to the Recycle Bin in the last run (the Done screen says "Recycle Bin" only when this is above zero).</summary>
+    public int RecycledCount { get; private set; }
+
+    /// <summary>Items left in place in the last run because they were too large to stay recoverable in the Recycle Bin.</summary>
+    public int TooLargeCount => Failed.Count(f => f.FailReason == "TooLarge");
+
+    /// <summary>
+    /// Removes the selected rows. <paramref name="confirmClose"/> lists the running apps and asks to close them (false aborts, nothing is
+    /// removed); <paramref name="confirmForce"/> lists the ones that did not close and asks to force quit (false carries on without killing).
+    /// Both are called on the UI thread.
+    /// </summary>
+    public async Task RemoveSelectedAsync(bool silent, Func<IReadOnlyList<string>, bool> confirmClose, Func<IReadOnlyList<string>, bool> confirmForce)
     {
-        if (!CanRemove || Target is null)
+        if (!CanRemove || Target is null || _closing)
         {
             return;
         }
 
         var target = Target;
         var selected = Items.Where(i => i.Include).ToList();
+        var application = selected.FirstOrDefault(i => i.Category == UnCategory.Application);
+
+        // 1. running apps from the program's own (usable) install folder: list, ask, close politely, ask again, only then force
+        if (application is not null)
+        {
+            _closing = true;
+            try
+            {
+                var location = UninstallerSupport.UsableInstallLocation(target, _programs);
+                var running = location.Length == 0 ? [] : await Task.Run(() => FindRunning(location)).ConfigureAwait(true);
+                if (running.Count > 0)
+                {
+                    if (!confirmClose(DistinctNames(running)))
+                    {
+                        return;
+                    }
+
+                    Phase = UnPhase.Removing;
+                    RemovingMessage = "Closing apps…";
+                    Raise();
+                    var left = await CloseGracefullyAsync(running).ConfigureAwait(true);
+                    if (left.Count > 0 && confirmForce(DistinctNames(left)))
+                    {
+                        await Task.Run(() => ForceQuit(left)).ConfigureAwait(true);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Host.Log("Uninstaller: closing apps failed", ex);
+            }
+            finally
+            {
+                _closing = false;
+            }
+        }
+
         Phase = UnPhase.Removing;
-        RemovingMessage = selected.Any(i => i.Category == UnCategory.Application) ? $"Running the uninstaller for {target.Name}…" : "Removing…";
+        RemovingMessage = application is not null ? $"Running the uninstaller for {target.Name}…" : "Removing…";
         Failed = [];
         RebootRequired = false;
         BackupFolder = null;
+        RecycledCount = 0;
         Raise();
 
         long freed = 0;
         var failed = new List<UnItem>();
         try
         {
-            var application = selected.FirstOrDefault(i => i.Category == UnCategory.Application);
             if (application is not null)
             {
                 var ok = await UninstallProgramAsync(target, silent).ConfigureAwait(true);
@@ -283,33 +337,15 @@ internal sealed class UninstallerModel
             RemovingMessage = "Removing…";
             Raise();
             var rest = selected.Where(i => i.Category != UnCategory.Application).ToList();
-            var (done, bad, backup, stubborn) = await Task.Run(() => RemoveItems(rest)).ConfigureAwait(true);
+            var (done, bad, backup, stubborn, recycled) = await Task.Run(() => RemoveItems(rest)).ConfigureAwait(true);
             freed += done;
             failed.AddRange(bad);
             BackupFolder = backup;
+            RecycledCount = recycled;
 
-            if (stubborn.Count > 0)
-            {
-                var result = await Task.Run(() => Elevated.Remove(stubborn.Select(ToElevated).ToList())).ConfigureAwait(true);
-                if (result is null)
-                {
-                    failed.AddRange(stubborn);
-                }
-                else
-                {
-                    foreach (var item in stubborn)
-                    {
-                        if (result.Any(f => string.Equals(f, item.Path, StringComparison.OrdinalIgnoreCase)))
-                        {
-                            failed.Add(item);
-                        }
-                        else
-                        {
-                            freed += item.Size;
-                        }
-                    }
-                }
-            }
+            var (elevatedFreed, elevatedFailed) = await RunElevatedAsync(stubborn).ConfigureAwait(true);
+            freed += elevatedFreed;
+            failed.AddRange(elevatedFailed);
         }
         catch (Exception ex)
         {
@@ -319,13 +355,105 @@ internal sealed class UninstallerModel
 
         Freed = freed;
         Failed = failed;
-        FailedNeedsAdmin = failed.Any(f => f.NeedsAdmin) && !FileOps.IsElevated;
+        FailedNeedsAdmin = failed.Any(f => f.NeedsAdmin && f.FailReason is null) && !FileOps.IsElevated;
         Items = [];
         Phase = UnPhase.Done;
         Raise();
     }
 
-    private static Elevated.Item ToElevated(UnItem item) => item.Kind switch
+    /// <summary>Re-runs the elevated removal for the rows that failed for lack of administrator rights ("Try again" on the Done screen).</summary>
+    public async Task RetryFailedElevatedAsync()
+    {
+        if (Phase != UnPhase.Done || _closing)
+        {
+            return;
+        }
+
+        var retry = Failed.Where(f => f.NeedsAdmin && f.FailReason is null && Elevated.IsAllowed(ToElevated(f))).ToList();
+        if (retry.Count == 0)
+        {
+            return;
+        }
+
+        _closing = true;
+        try
+        {
+            var (freedNow, stillFailed) = await RunElevatedAsync(retry).ConfigureAwait(true);
+            Freed += freedNow;
+            Failed = Failed.Where(f => !retry.Contains(f)).Concat(stillFailed).ToList();
+            FailedNeedsAdmin = Failed.Any(f => f.NeedsAdmin && f.FailReason is null) && !FileOps.IsElevated;
+        }
+        catch (Exception ex)
+        {
+            Host.Log("Uninstaller: retry failed", ex);
+        }
+        finally
+        {
+            _closing = false;
+        }
+
+        Raise();
+    }
+
+    /// <summary>
+    /// The only elevated path of the uninstaller. Rows that fail <see cref="Elevated.IsAllowed"/> are moved straight to the failed list
+    /// (logged by kind) before the Windows prompt; declining the prompt fails all of them.
+    /// </summary>
+    private static async Task<(long Freed, List<UnItem> Failed)> RunElevatedAsync(List<UnItem> stubborn)
+    {
+        long freed = 0;
+        var failed = new List<UnItem>();
+        if (stubborn.Count == 0)
+        {
+            return (freed, failed);
+        }
+
+        var allowed = new List<UnItem>();
+        foreach (var item in stubborn)
+        {
+            if (Elevated.IsAllowed(ToElevated(item)))
+            {
+                allowed.Add(item);
+            }
+            else
+            {
+                item.FailReason = "Refused";
+                failed.Add(item);
+                Host.Log($"Uninstaller: elevated removal refused a {item.Kind} row");
+            }
+        }
+
+        if (allowed.Count == 0)
+        {
+            return (freed, failed);
+        }
+
+        var result = await Task.Run(() => Elevated.Remove(allowed.Select(ToElevated).ToList())).ConfigureAwait(true);
+        if (result is null)
+        {
+            failed.AddRange(allowed);
+            return (freed, failed);
+        }
+
+        foreach (var item in allowed)
+        {
+            if (result.Any(f => string.Equals(f, item.Path, StringComparison.OrdinalIgnoreCase)))
+            {
+                failed.Add(item);
+            }
+            else
+            {
+                freed += item.Size;
+            }
+        }
+
+        return (freed, failed);
+    }
+
+    private static IReadOnlyList<string> DistinctNames(IEnumerable<RunningApp> apps) =>
+        apps.Select(a => a.Name).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
+
+    internal static Elevated.Item ToElevated(UnItem item) => item.Kind switch
     {
         UnKind.RegistryKey => new Elevated.Item("reg", "Registry::" + item.Path),
         UnKind.RegistryValue => new Elevated.Item("regvalue", "Registry::" + item.Path, item.ValueName),
@@ -334,12 +462,256 @@ internal sealed class UninstallerModel
         _ => new Elevated.Item("file", item.Path, null, true),
     };
 
-    private (long Freed, List<UnItem> Failed, string? Backup, List<UnItem> Stubborn) RemoveItems(List<UnItem> items)
+    /// <summary>
+    /// Processes whose main module lies under <paramref name="location"/> (a usable install folder). Never this process, another
+    /// session's processes, unreadable ones or protected Windows processes. Runs off the UI thread.
+    /// </summary>
+    internal static List<RunningApp> FindRunning(string location)
+    {
+        var list = new List<RunningApp>();
+        if (string.IsNullOrEmpty(location))
+        {
+            return list;
+        }
+
+        var self = Environment.ProcessId;
+        int session;
+        using (var me = Process.GetCurrentProcess())
+        {
+            session = me.SessionId;
+        }
+
+        foreach (var process in Process.GetProcesses())
+        {
+            try
+            {
+                if (process.Id == self || process.SessionId != session)
+                {
+                    continue;
+                }
+
+                var name = process.ProcessName;
+                if (ProcessSafety.IsProtectedName(name) || name.Equals("Trayloom", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var path = process.MainModule?.FileName;
+                if (string.IsNullOrEmpty(path) || !SafePaths.IsUnder(path, location))
+                {
+                    continue;
+                }
+
+                var started = Win32.CreationTime(process.Id);
+                if (started == 0)
+                {
+                    continue;
+                }
+
+                list.Add(new RunningApp(process.Id, started, name));
+            }
+            catch
+            {
+                // protected or already gone: the module cannot be read, so it is not ours to close
+            }
+            finally
+            {
+                process.Dispose();
+            }
+        }
+
+        return list;
+    }
+
+    /// <summary>Sends <c>CloseMainWindow</c> to each app whose start time still matches, waits up to 5 s, and returns the ones still running.</summary>
+    internal static async Task<List<RunningApp>> CloseGracefullyAsync(IReadOnlyList<RunningApp> apps)
+    {
+        foreach (var app in apps)
+        {
+            try
+            {
+                if (!IsStillRunning(app))
+                {
+                    continue;
+                }
+
+                using var process = Process.GetProcessById(app.Pid);
+                process.CloseMainWindow();
+            }
+            catch
+            {
+                // gone already
+            }
+        }
+
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (DateTime.UtcNow < deadline && apps.Any(IsStillRunning))
+        {
+            await Task.Delay(200).ConfigureAwait(true);
+        }
+
+        return apps.Where(IsStillRunning).ToList();
+    }
+
+    private static bool IsStillRunning(RunningApp app) => Win32.CreationTime(app.Pid) == app.StartFileTime;
+
+    /// <summary>Ends each app after re-checking that the pid still belongs to the same process (same start time).</summary>
+    internal static void ForceQuit(IReadOnlyList<RunningApp> apps)
+    {
+        foreach (var app in apps)
+        {
+            try
+            {
+                if (!IsStillRunning(app))
+                {
+                    continue;
+                }
+
+                using var process = Process.GetProcessById(app.Pid);
+                if (ProcessSafety.IsProtectedName(process.ProcessName))
+                {
+                    continue;
+                }
+
+                process.Kill();
+            }
+            catch
+            {
+                // gone or not allowed
+            }
+        }
+    }
+
+    /// <summary>
+    /// One folder per uninstall run holding the <c>.reg</c> exports taken before anything is deleted. Files are numbered, never overwritten,
+    /// and each distinct key is exported once per run.
+    /// </summary>
+    internal sealed class RegistryBackup
+    {
+        private readonly HashSet<string> _done = new(StringComparer.OrdinalIgnoreCase);
+        private int _next = 1;
+
+        private RegistryBackup(string folder)
+        {
+            Folder = folder;
+        }
+
+        /// <summary>The run folder (created by <see cref="BeginRun"/>).</summary>
+        public string Folder { get; }
+
+        /// <summary>True once at least one export succeeded.</summary>
+        public bool AnyExported { get; private set; }
+
+        /// <summary>Starts a run folder; a folder that already exists (same millisecond) is never reused.</summary>
+        public static RegistryBackup BeginRun(string appName, string? baseFolder = null)
+        {
+            var parent = baseFolder ?? Path.Combine(AppPaths.Root, "uninstaller", "backups");
+            var stem = $"{FileOps.SanitizeName(appName)}-{DateTime.Now:yyyyMMdd-HHmmss-fff}";
+            var folder = Path.Combine(parent, stem);
+            for (var i = 2; Directory.Exists(folder); i++)
+            {
+                folder = Path.Combine(parent, $"{stem}-{i}");
+            }
+
+            Directory.CreateDirectory(folder);
+            return new RegistryBackup(folder);
+        }
+
+        /// <summary>Exports <paramref name="key"/> ("HKEY_...\path") once per run. Returns false when the export failed.</summary>
+        public bool Export(string key)
+        {
+            if (_done.Contains(key))
+            {
+                return true;
+            }
+
+            try
+            {
+                string file;
+                do
+                {
+                    var label = FileOps.SanitizeName(key.Replace('\\', '_'), 80);
+                    file = Path.Combine(Folder, $"{_next++:000}-{label}.reg");
+                }
+                while (File.Exists(file));
+
+                // no /y: reg.exe refuses to overwrite, so an existing backup can never be replaced
+                var info = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "reg.exe")) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+                info.ArgumentList.Add("export");
+                info.ArgumentList.Add(key);
+                info.ArgumentList.Add(file);
+                using var process = Process.Start(info);
+                if (process is null)
+                {
+                    return false;
+                }
+
+                // drain the pipes so a chatty reg.exe cannot block on a full buffer
+                _ = process.StandardOutput.ReadToEndAsync();
+                _ = process.StandardError.ReadToEndAsync();
+                if (!process.WaitForExit(20_000))
+                {
+                    try
+                    {
+                        process.Kill();
+                    }
+                    catch
+                    {
+                        // already gone
+                    }
+
+                    return false;
+                }
+
+                if (process.ExitCode != 0 || !File.Exists(file))
+                {
+                    return false;
+                }
+
+                _done.Add(key);
+                AnyExported = true;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    }
+
+    private (long Freed, List<UnItem> Failed, string? Backup, List<UnItem> Stubborn, int Recycled) RemoveItems(List<UnItem> items)
     {
         long freed = 0;
+        var recycled = 0;
         var failed = new List<UnItem>();
         var stubborn = new List<UnItem>();
-        string? backup = null;
+
+        // back up every distinct registry key before anything is deleted; a row whose key could not be exported is not deleted
+        RegistryBackup? backup = null;
+        var unsaved = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var registryKeys = items.Where(i => i.IsRegistry).Select(i => i.Path).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (registryKeys.Count > 0)
+        {
+            try
+            {
+                backup = RegistryBackup.BeginRun(Target?.Name ?? "app");
+                foreach (var key in registryKeys)
+                {
+                    if (!backup.Export(key))
+                    {
+                        unsaved.Add(key);
+                    }
+                }
+            }
+            catch
+            {
+                foreach (var key in registryKeys)
+                {
+                    unsaved.Add(key);
+                }
+            }
+        }
+
         foreach (var item in items)
         {
             try
@@ -354,17 +726,23 @@ internal sealed class UninstallerModel
                             break;
                         }
 
-                        if (FileOps.Recycle(item.Path))
+                        switch (FileOps.TryRecycle(item.Path, item.Size))
                         {
-                            freed += item.Size;
-                        }
-                        else if (!File.Exists(item.Path) && !Directory.Exists(item.Path))
-                        {
-                            freed += item.Size;
-                        }
-                        else
-                        {
-                            stubborn.Add(item);
+                            case RecycleResult.Recycled:
+                                recycled++;
+                                freed += item.Size;
+                                break;
+                            case RecycleResult.Missing:
+                                freed += item.Size;
+                                break;
+                            case RecycleResult.NotRecyclable:
+                                // too large to stay recoverable: left in place, and never sent to the elevated path
+                                item.FailReason = "TooLarge";
+                                failed.Add(item);
+                                break;
+                            default:
+                                stubborn.Add(item);
+                                break;
                         }
 
                         break;
@@ -373,7 +751,14 @@ internal sealed class UninstallerModel
                     case UnKind.RegistryKey:
                     case UnKind.RegistryValue:
                     {
-                        var outcome = RemoveRegistry(item, ref backup);
+                        if (unsaved.Contains(item.Path) || !Elevated.IsAllowed(ToElevated(item)))
+                        {
+                            item.FailReason ??= unsaved.Contains(item.Path) ? "NoBackup" : "Refused";
+                            failed.Add(item);
+                            break;
+                        }
+
+                        var outcome = RemoveRegistry(item);
                         if (outcome == 1)
                         {
                             freed += item.Size;
@@ -402,12 +787,17 @@ internal sealed class UninstallerModel
             }
         }
 
-        return (freed, failed, backup, stubborn);
+        return (freed, failed, backup is { AnyExported: true } ? backup.Folder : null, stubborn, recycled);
     }
 
     private bool StillSafe(UnItem item)
     {
         if (!FileOps.IsUnder(item.Path, item.Root ?? string.Empty) && item.Root is not null)
+        {
+            return false;
+        }
+
+        if (SafePaths.IsUnderWindows(item.Path))
         {
             return false;
         }
@@ -430,8 +820,8 @@ internal sealed class UninstallerModel
         return FileOps.SegmentCount(item.Path) >= 2 && FileOps.MayRemove(item.Path);
     }
 
-    /// <summary>0 failed, 1 removed, 2 needs administrator rights.</summary>
-    private int RemoveRegistry(UnItem item, ref string? backup)
+    /// <summary>0 failed, 1 removed, 2 needs administrator rights. The key was already backed up by <see cref="RegistryBackup"/>.</summary>
+    private int RemoveRegistry(UnItem item)
     {
         var (hive, rest) = SplitHive(item.Path);
         if (hive is null)
@@ -441,25 +831,6 @@ internal sealed class UninstallerModel
 
         try
         {
-            var folder = Path.Combine(FileOps.AppData, "Trayloom", "uninstaller", "backups");
-            Directory.CreateDirectory(folder);
-            var file = Path.Combine(folder, $"{Path.GetFileName(Target?.Name ?? "app")}-{DateTime.Now:yyyyMMdd-HHmmss}.reg".Replace(' ', '-'));
-            var exportKey = item.Kind == UnKind.RegistryKey ? item.Path : item.Path;
-            var info = new ProcessStartInfo("reg.exe") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
-            info.ArgumentList.Add("export");
-            info.ArgumentList.Add(exportKey);
-            info.ArgumentList.Add(file);
-            info.ArgumentList.Add("/y");
-            using (var process = Process.Start(info))
-            {
-                process?.WaitForExit(20_000);
-                if (process is null || process.ExitCode != 0)
-                {
-                    return 0;
-                }
-            }
-
-            backup = folder;
             var isMachine = item.Path.StartsWith("HKEY_LOCAL_MACHINE", StringComparison.OrdinalIgnoreCase);
             if (isMachine && !FileOps.IsElevated)
             {
@@ -543,49 +914,10 @@ internal sealed class UninstallerModel
         }
     }
 
-    private void CloseProcesses(InstalledProgram program)
-    {
-        if (string.IsNullOrEmpty(program.InstallLocation) || !Directory.Exists(program.InstallLocation))
-        {
-            return;
-        }
-
-        var self = Environment.ProcessId;
-        foreach (var process in Process.GetProcesses())
-        {
-            try
-            {
-                if (process.Id == self)
-                {
-                    continue;
-                }
-
-                var path = process.MainModule?.FileName;
-                if (path is null || !FileOps.IsUnder(path, program.InstallLocation))
-                {
-                    continue;
-                }
-
-                process.CloseMainWindow();
-                if (!process.WaitForExit(3000))
-                {
-                    process.Kill();
-                }
-            }
-            catch
-            {
-                // protected process
-            }
-            finally
-            {
-                process.Dispose();
-            }
-        }
-    }
-
     private async Task<bool> UninstallProgramAsync(InstalledProgram program, bool silent)
     {
-        await Task.Run(() => CloseProcesses(program)).ConfigureAwait(true);
+        // resolved before the uninstaller runs: afterwards the folder is gone and could no longer be validated
+        var usableLocation = UninstallerSupport.UsableInstallLocation(program, _programs, _ => { });
         await Task.Delay(300).ConfigureAwait(true);
 
         // 1. packaged apps
@@ -632,7 +964,7 @@ internal sealed class UninstallerModel
         string args;
         if (program.ProductCode is { } code && (program.WindowsInstaller || program.UninstallString.Contains("msiexec", StringComparison.OrdinalIgnoreCase)))
         {
-            exe = "msiexec.exe";
+            exe = Path.Combine(Environment.SystemDirectory, "msiexec.exe");
             args = $"/x {code} {(silent ? "/qn" : "/passive")} /norestart";
         }
         else
@@ -678,7 +1010,7 @@ internal sealed class UninstallerModel
                 return true;
             }
 
-            if (exit == 0 && string.IsNullOrEmpty(program.InstallLocation) == false && !Directory.Exists(program.InstallLocation))
+            if (exit == 0 && !string.IsNullOrEmpty(usableLocation) && !Directory.Exists(usableLocation))
             {
                 return true;
             }
@@ -713,7 +1045,7 @@ internal sealed class UninstallerModel
             var exe = match.Groups[1].Value;
             if (exe.EndsWith(".msi", StringComparison.OrdinalIgnoreCase))
             {
-                return ("msiexec.exe", $"/i \"{exe}\" {match.Groups[4].Value}".Trim());
+                return (Path.Combine(Environment.SystemDirectory, "msiexec.exe"), $"/i \"{exe}\" {match.Groups[4].Value}".Trim());
             }
 
             return (exe, match.Groups[4].Value);

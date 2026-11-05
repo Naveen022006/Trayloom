@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
+using Trayloom.Core;
 
 namespace Trayloom.Features.Maintenance;
 
@@ -112,10 +113,17 @@ internal static class WingetCli
                 return;
             }
 
+            // a PATH hit counts only inside the WindowsApps folders: a winget.exe dropped into any other PATH folder is ignored
             foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? string.Empty).Split(';', StringSplitOptions.RemoveEmptyEntries))
             {
-                var candidate = System.IO.Path.Combine(dir.Trim(), "winget.exe");
-                if (File.Exists(candidate))
+                var trimmed = dir.Trim().Trim('"');
+                if (trimmed.Length == 0 || !System.IO.Path.IsPathFullyQualified(trimmed))
+                {
+                    continue;
+                }
+
+                var candidate = System.IO.Path.Combine(trimmed, "winget.exe");
+                if (IsTrustedLocation(candidate) && File.Exists(candidate))
                 {
                     _path = candidate;
                     return;
@@ -125,6 +133,26 @@ internal static class WingetCli
         catch
         {
             // treated as missing
+        }
+    }
+
+    /// <summary>True for <c>%LOCALAPPDATA%\Microsoft\WindowsApps\winget.exe</c> or a <c>winget.exe</c> under <c>%ProgramFiles%\WindowsApps</c>.</summary>
+    internal static bool IsTrustedLocation(string candidate)
+    {
+        try
+        {
+            if (!System.IO.Path.IsPathFullyQualified(candidate) || !string.Equals(System.IO.Path.GetFileName(candidate), "winget.exe", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            var full = SafePaths.Normalize(candidate);
+            return string.Equals(full, SafePaths.Normalize(System.IO.Path.Combine(WindowsAppsFolder, "winget.exe")), StringComparison.OrdinalIgnoreCase)
+                || SafePaths.IsUnder(full, System.IO.Path.Combine(FileOps.ProgramFiles, "WindowsApps"));
+        }
+        catch
+        {
+            return false;
         }
     }
 
