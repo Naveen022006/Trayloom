@@ -4,6 +4,7 @@
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -51,6 +52,8 @@ internal static class LibStrings
     public static string NoSongs => Loc.T("No songs");
     public static string NoPlaylists => Loc.T("No playlists");
     public static string NoRecent => Loc.T("No recently added songs");
+    public static string NoAlbums => Loc.T("No albums");
+    public static string NoArtists => Loc.T("No artists");
     public static string UpNextHint => Loc.T("Nothing is queued in Apple Music.");
     public static string UpNextLoading => Loc.T("Reading the queue…");
     public static string ShowApple => Loc.T("Show Apple Music");
@@ -64,6 +67,32 @@ internal static class LibStrings
     public static string SeekFailed => Loc.T("Couldn't move in the song");
 
     public static string Count(int n) => n == 1 ? Loc.T("1 song") : Loc.F("{0} songs", n);
+
+    /// <summary>A total length as "2 hr 13 min", "2 hr" or "52 min" (rounded to the minute; anything above zero is at least a minute); empty for none.</summary>
+    public static string Duration(long ms)
+    {
+        if (ms <= 0)
+        {
+            return "";
+        }
+
+        var minutes = Math.Max(1, (ms + 30_000) / 60_000);
+        var hours = minutes / 60;
+        var rest = minutes % 60;
+        if (hours == 0)
+        {
+            return Loc.F("{0} min", minutes);
+        }
+
+        return rest == 0 ? Loc.F("{0} hr", hours) : Loc.F("{0} hr {1} min", hours, rest);
+    }
+
+    /// <summary>The secondary line of a list header: "40 songs · 2 hr 13 min" (just the count when no song has a length).</summary>
+    public static string Summary(int count, long totalMs)
+    {
+        var length = Duration(totalMs);
+        return length.Length == 0 ? Count(count) : Count(count) + " · " + length;
+    }
 
     public static string ShowAll(int n) => Loc.F("Show all ({0})", n);
 
@@ -366,21 +395,25 @@ internal sealed class LibrarySearchModel
 
     // ---------------------------------------------------------------- album / artist of a song
 
-    public AmAlbum? AlbumOf(AmTrack track)
+    public AmAlbum? AlbumOf(AmTrack track) => AlbumOf(Db, track);
+
+    public AmArtist? ArtistOf(AmTrack track) => ArtistOf(Db, track);
+
+    public static AmAlbum? AlbumOf(AmDb db, AmTrack track)
     {
         if (string.IsNullOrWhiteSpace(track.Album))
         {
             return null;
         }
 
-        return Db.Search.Query(track.Album, int.MaxValue).Albums.Select(h => h.Item).FirstOrDefault(a => a.Tracks.Any(t => t.Pid == track.Pid));
+        return db.Search.Query(track.Album, int.MaxValue).Albums.Select(h => h.Item).FirstOrDefault(a => a.Tracks.Any(t => t.Pid == track.Pid));
     }
 
-    public AmArtist? ArtistOf(AmTrack track)
+    public static AmArtist? ArtistOf(AmDb db, AmTrack track)
     {
         foreach (var name in AmSearchIndex.SplitArtists(track.Artist))
         {
-            if (Db.Search.Query(name, int.MaxValue).Artists.Select(h => h.Item).FirstOrDefault(a => a.Tracks.Any(t => t.Pid == track.Pid)) is { } artist)
+            if (db.Search.Query(name, int.MaxValue).Artists.Select(h => h.Item).FirstOrDefault(a => a.Tracks.Any(t => t.Pid == track.Pid)) is { } artist)
             {
                 return artist;
             }
@@ -409,6 +442,18 @@ internal sealed class LibrarySearchModel
         if (Tab == 0)
         {
             rows.AddRange(Db.Playlists.Select(p => new LibRow(LibRowKind.Playlist, "p:" + p.Pid) { Playlist = p }));
+            return;
+        }
+
+        if (Tab == 3)
+        {
+            rows.AddRange(Db.Search.AllAlbums.Select(a => new LibRow(LibRowKind.Album, "al:" + a.Key) { Album = a }));
+            return;
+        }
+
+        if (Tab == 4)
+        {
+            rows.AddRange(Db.Search.AllArtists.Select(a => new LibRow(LibRowKind.Artist, "ar:" + a.Key) { Artist = a }));
             return;
         }
 
@@ -817,8 +862,11 @@ internal sealed class LibraryPanel : Grid, IMusicBrowserPanel
     private readonly Border _contentHost = new();
     private readonly Border _noteHost = new() { VerticalAlignment = VerticalAlignment.Bottom, HorizontalAlignment = HorizontalAlignment.Center, IsHitTestVisible = false, Margin = new Thickness(0, 0, 0, 6) };
     private readonly DispatcherTimer _debounce = new(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(120) };
-    private readonly Dictionary<ulong, ImageSource?> _art = [];
-    private readonly HashSet<ulong> _artPending = [];
+    private readonly Dictionary<(ulong Pid, int Width), ImageSource?> _art = [];
+    private readonly Dictionary<(ulong Pid, int Width), List<ArtTarget>> _artWaiting = [];
+    private readonly Dictionary<ulong, IReadOnlyList<string>> _mosaics = [];
+    private readonly Dictionary<ulong, List<ArtTarget>> _mosaicWaiting = [];
+    private int _artGeneration;
     private VirtualList? _list;
     private LibrarySearchModel? _model;
     private LibContainer? _container;
@@ -1387,6 +1435,12 @@ internal sealed class LibraryPanel : Grid, IMusicBrowserPanel
         Rebuild();
     }
 
+    /// <summary>Opens an album or artist from outside the panel (the Music page's "Go to album / artist").</summary>
+    public void ShowContainer(LibContainer container)
+    {
+        OpenContainer(container);
+    }
+
     private void OpenContainer(LibContainer? container)
     {
         if (container is null)
@@ -1523,6 +1577,8 @@ internal sealed class LibraryPanel : Grid, IMusicBrowserPanel
         }
 
         _hint.Text = HintText();
+        // an open list shows a 44 px cover and two lines; the tabs and chips stay 28 px
+        _headerHost.Height = _container is null ? 28 : 44;
         _headerHost.Child = _container is { } c ? ContainerHeader(c) : (_model is { Searching: true } ? Chips() : Tabs());
     }
 
@@ -1539,13 +1595,14 @@ internal sealed class LibraryPanel : Grid, IMusicBrowserPanel
         return b;
     }
 
-    private FrameworkElement Plate(IReadOnlyList<HoverButton> segments)
+    /// <summary>The segmented plate; <paramref name="weights"/> give longer labels more room (equal columns when null).</summary>
+    private FrameworkElement Plate(IReadOnlyList<HoverButton> segments, double[]? weights = null)
     {
         var plate = new Border { CornerRadius = new CornerRadius(10), Background = D.White(0.065), Padding = new Thickness(2), Height = 28 };
         var grid = new Grid();
         for (var i = 0; i < segments.Count; i++)
         {
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(weights?[i] ?? 1, GridUnitType.Star) });
             Grid.SetColumn(segments[i], i);
             grid.Children.Add(segments[i]);
         }
@@ -1556,16 +1613,18 @@ internal sealed class LibraryPanel : Grid, IMusicBrowserPanel
 
     private FrameworkElement Tabs()
     {
-        string[] names = [LibStrings.Playlists, LibStrings.Songs, LibStrings.Recent];
-        string[] ids = ["Playlists", "Songs", "Recent"];
+        // LibraryUi.Tab values in the order shown; "Recently added" is the longest label and gets the widest segment
+        int[] tabs = [0, 1, 3, 4, 2];
+        string[] names = [LibStrings.Playlists, LibStrings.Songs, LibStrings.Albums, LibStrings.Artists, LibStrings.Recent];
+        string[] ids = ["Playlists", "Songs", "Albums", "Artists", "Recent"];
         var segments = new List<HoverButton>();
-        for (var i = 0; i < 3; i++)
+        for (var i = 0; i < tabs.Length; i++)
         {
-            var tab = i;
-            segments.Add(Segment(names[i], _svc.Ui.Tab == i, false, () => SetTab(tab), "Island.Music.Tab." + ids[i]));
+            var tab = tabs[i];
+            segments.Add(Segment(names[i], _svc.Ui.Tab == tab, false, () => SetTab(tab), "Island.Music.Tab." + ids[i]));
         }
 
-        return Plate(segments);
+        return Plate(segments, [1.1, 0.9, 1, 1, 1.4]);
     }
 
     /// <summary>While searching the tab plate becomes the scope chips.</summary>
@@ -1587,27 +1646,40 @@ internal sealed class LibraryPanel : Grid, IMusicBrowserPanel
     private FrameworkElement ContainerHeader(LibContainer container)
     {
         var grid = new Grid();
+        // back, cover, title + "N songs · length", [play, shuffle]
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var back = D.IconButton(G.ChevronLeft, Strings.Back, CloseContainer, size: 28, glyphSize: 12);
+        back.VerticalAlignment = VerticalAlignment.Center;
         AutomationProperties.SetAutomationId(back, "Island.Music.SearchBack");
         grid.Children.Add(back);
-        var title = D.T(container.Name, 13, FontWeights.SemiBold, D.Text, false, TextTrimming.CharacterEllipsis);
-        title.VerticalAlignment = VerticalAlignment.Center;
-        title.Margin = new Thickness(4, 0, 8, 0);
-        Grid.SetColumn(title, 1);
-        grid.Children.Add(title);
+        var cover = HeaderTile(container);
+        cover.Margin = new Thickness(4, 0, 0, 0);
+        Grid.SetColumn(cover, 1);
+        grid.Children.Add(cover);
+        var texts = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 8, 0) };
+        texts.Children.Add(D.T(container.Name, 13, FontWeights.SemiBold, D.Text, false, TextTrimming.CharacterEllipsis));
+        long totalMs = 0;
+        foreach (var track in container.Tracks)
+        {
+            totalMs += Math.Max(0, track.DurationMs);
+        }
+
+        texts.Children.Add(D.T(LibStrings.Summary(container.Tracks.Count, totalMs), 11, null, D.Secondary, false, TextTrimming.CharacterEllipsis));
+        Grid.SetColumn(texts, 2);
+        grid.Children.Add(texts);
         if (container.Playlist is { } pl)
         {
             var busy = _svc.BusyPid == pl.Pid;
             var play = ActionPill(G.Play, LibStrings.Play, () => _svc.PlayPlaylist(pl, false), busy && !_svc.BusyShuffle);
-            Grid.SetColumn(play, 2);
+            Grid.SetColumn(play, 3);
             grid.Children.Add(play);
             var shuffle = ActionPill(G.Shuffle, Strings.Shuffle, () => _svc.PlayPlaylist(pl, true), busy && _svc.BusyShuffle);
             shuffle.Margin = new Thickness(6, 0, 0, 0);
-            Grid.SetColumn(shuffle, 3);
+            Grid.SetColumn(shuffle, 4);
             grid.Children.Add(shuffle);
         }
 
@@ -1667,6 +1739,13 @@ internal sealed class LibraryPanel : Grid, IMusicBrowserPanel
         {
             // a reloaded library: the highlight stays on the same item when it is still listed
             var kept = _model?.HighlightId ?? "";
+
+            // a new snapshot may carry other covers: what was loaded for the old one is dropped (loads still running are ignored)
+            _artGeneration++;
+            _art.Clear();
+            _artWaiting.Clear();
+            _mosaics.Clear();
+            _mosaicWaiting.Clear();
             _model = new LibrarySearchModel(db);
             _model.Keep(kept);
         }
@@ -1696,7 +1775,14 @@ internal sealed class LibraryPanel : Grid, IMusicBrowserPanel
             }
             else
             {
-                message = _svc.Ui.Tab == 0 ? LibStrings.NoPlaylists : (_svc.Ui.Tab == 2 ? LibStrings.NoRecent : LibStrings.NoSongs);
+                message = _svc.Ui.Tab switch
+                {
+                    0 => LibStrings.NoPlaylists,
+                    2 => LibStrings.NoRecent,
+                    3 => LibStrings.NoAlbums,
+                    4 => LibStrings.NoArtists,
+                    _ => LibStrings.NoSongs,
+                };
             }
 
             var empty = D.EmptyView(glyph, message);
@@ -1777,16 +1863,24 @@ internal sealed class LibraryPanel : Grid, IMusicBrowserPanel
         return button;
     }
 
-    /// <summary>The picture tile of a row: the track's artwork when Apple Music cached one (decoded off the UI thread), else a glyph.</summary>
-    private FrameworkElement Tile(AmTrack? art, string glyph, bool round, bool current, bool busy)
+    /// <summary>A tile that is waiting for (or showing) a picture: the plate it fills, its size and corner radius, and the playlist whose mosaic stands in when it has no picture of its own.</summary>
+    private sealed record ArtTarget(Border Plate, double Size, double Radius, AmPlaylist? Fallback);
+
+    private const int HeaderDecodeWidth = 128;
+
+    /// <summary>
+    /// The picture tile of a row: the artwork Apple Music cached for <paramref name="artPid"/> (a track or a playlist; decoded off the UI
+    /// thread), else, for a playlist, a 2x2 mosaic of its songs' covers, else a glyph.
+    /// </summary>
+    private FrameworkElement Tile(ulong? artPid, AmPlaylist? mosaicOf, string glyph, bool round, bool current, bool busy)
     {
         var radius = round ? TileSize / 2 : 7;
         var tile = new Grid { Width = TileSize, Height = TileSize, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
         var plate = new Border { CornerRadius = new CornerRadius(radius), Background = D.White(0.08), Child = D.I(glyph, 12, D.White(0.45)) };
         tile.Children.Add(plate);
-        if (art is not null)
+        if (artPid is { } pid)
         {
-            LoadArt(art.Pid, plate, radius);
+            LoadArt(pid, AmArtwork.DecodeWidth, new ArtTarget(plate, TileSize, radius, mosaicOf));
         }
 
         if (busy || current)
@@ -1800,47 +1894,185 @@ internal sealed class LibraryPanel : Grid, IMusicBrowserPanel
         return tile;
     }
 
-    private void LoadArt(ulong pid, Border plate, double radius)
+    /// <summary>The larger tile of a list header (a playlist's cover, mosaic fallback included, or an album's / artist's first cover).</summary>
+    private FrameworkElement HeaderTile(LibContainer container)
     {
-        if (_art.TryGetValue(pid, out var known))
+        const double size = 44;
+        var radius = container.Kind == LibContainerKind.Artist ? size / 2 : 9;
+        var glyph = container.Kind == LibContainerKind.Playlist ? G.List : G.MusicLibrary;
+        var plate = new Border { Width = size, Height = size, CornerRadius = new CornerRadius(radius), Background = D.White(0.08), Child = D.I(glyph, 16, D.White(0.45)), VerticalAlignment = VerticalAlignment.Center };
+        ulong? pid = container.Playlist?.Pid ?? (container.Tracks.Count > 0 ? container.Tracks[0].Pid : null);
+        if (pid is { } id)
         {
-            if (known is not null)
-            {
-                SetArt(plate, known, radius);
-            }
+            // 128 px: the 64 px row decode looks soft at this size
+            LoadArt(id, HeaderDecodeWidth, new ArtTarget(plate, size, radius, container.Playlist));
+        }
 
+        return plate;
+    }
+
+    /// <summary>
+    /// Fills a tile with a cover. Rows are rebuilt while a load is still running, so every tile that asked for the same picture waits on
+    /// one list and all of them are filled when the load ends (a later row would otherwise keep its glyph).
+    /// </summary>
+    private void LoadArt(ulong pid, int width, ArtTarget target)
+    {
+        var key = (pid, width);
+        if (_art.TryGetValue(key, out var known))
+        {
+            ShowArt(known, width, target);
             return;
         }
 
-        if (_svc.Db is not { } db || !_artPending.Add(pid))
+        if (_svc.Db is not { } db)
         {
             return;
         }
 
+        if (_artWaiting.TryGetValue(key, out var waiting))
+        {
+            waiting.Add(target);
+            return;
+        }
+
+        _artWaiting[key] = [target];
+        var generation = _artGeneration;
         Guarded.FireAndLog(async () =>
         {
             ImageSource? image = null;
             try
             {
-                image = await AmArtwork.GetAsync(db, pid);
+                image = await AmArtwork.GetAsync(db, pid, width);
             }
             finally
             {
-                // whatever happened, the picture is not pending any more (a failure is remembered as "no picture", not retried per rebuild)
-                _artPending.Remove(pid);
-                _art[pid] = image;
-            }
-
-            if (image is not null)
-            {
-                SetArt(plate, image, radius);
+                // whatever happened, the picture is not pending any more (a failure is remembered as "no picture", not retried per rebuild);
+                // a load that belongs to an older library snapshot is dropped
+                if (generation == _artGeneration)
+                {
+                    _art[key] = image;
+                    if (_artWaiting.Remove(key, out var done))
+                    {
+                        foreach (var t in done)
+                        {
+                            ShowArt(image, width, t);
+                        }
+                    }
+                }
             }
         }, _core.Ctx.Log, "Library artwork");
     }
 
-    private static void SetArt(Border plate, ImageSource image, double radius)
+    private void ShowArt(ImageSource? image, int width, ArtTarget target)
     {
-        var picture = new Image { Source = image, Stretch = Stretch.UniformToFill, Width = TileSize, Height = TileSize, Clip = new RectangleGeometry(new Rect(0, 0, TileSize, TileSize), radius, radius) };
+        if (image is not null)
+        {
+            SetArt(target.Plate, image, target.Size, target.Radius);
+        }
+        else if (target.Fallback is { } playlist)
+        {
+            LoadMosaic(playlist, width, target);
+        }
+    }
+
+    /// <summary>A playlist without a cover of its own: the covers of its first songs, picked off the UI thread and remembered per playlist.</summary>
+    private void LoadMosaic(AmPlaylist playlist, int width, ArtTarget target)
+    {
+        if (_mosaics.TryGetValue(playlist.Pid, out var known))
+        {
+            ShowMosaic(known, width, target);
+            return;
+        }
+
+        if (_svc.Db is not { } db)
+        {
+            return;
+        }
+
+        if (_mosaicWaiting.TryGetValue(playlist.Pid, out var waiting))
+        {
+            waiting.Add(target);
+            return;
+        }
+
+        _mosaicWaiting[playlist.Pid] = [target];
+        var generation = _artGeneration;
+        Guarded.FireAndLog(async () =>
+        {
+            IReadOnlyList<string> paths = [];
+            try
+            {
+                paths = await Task.Run(() => AmArtwork.PickMosaic(playlist.Tracks.Select(t => db.ArtworkPath(t.Pid))));
+            }
+            finally
+            {
+                if (generation == _artGeneration)
+                {
+                    _mosaics[playlist.Pid] = paths;
+                    if (_mosaicWaiting.Remove(playlist.Pid, out var done))
+                    {
+                        foreach (var t in done)
+                        {
+                            ShowMosaic(paths, width, t);
+                        }
+                    }
+                }
+            }
+        }, _core.Ctx.Log, "Library mosaic");
+    }
+
+    private void ShowMosaic(IReadOnlyList<string> paths, int width, ArtTarget target)
+    {
+        if (paths.Count == 1)
+        {
+            // one to three distinct covers: the first one, whole
+            LoadPath(paths[0], width, image => SetArt(target.Plate, image, target.Size, target.Radius));
+            return;
+        }
+
+        if (paths.Count < AmArtwork.MosaicCount)
+        {
+            return;
+        }
+
+        var grid = new UniformGrid { Rows = 2, Columns = 2, Width = target.Size, Height = target.Size, Clip = new RectangleGeometry(new Rect(0, 0, target.Size, target.Size), target.Radius, target.Radius) };
+        foreach (var path in paths)
+        {
+            var cell = new Image { Stretch = Stretch.UniformToFill };
+            RenderOptions.SetBitmapScalingMode(cell, BitmapScalingMode.HighQuality);
+            grid.Children.Add(cell);
+
+            // 64 px is plenty for a quarter of a tile and shares the cache with the song rows
+            LoadPath(path, AmArtwork.DecodeWidth, image => cell.Source = image);
+        }
+
+        target.Plate.Child = grid;
+    }
+
+    private void LoadPath(string path, int width, Action<ImageSource> show)
+    {
+        if (AmArtwork.TryGetCached(path, out var cached, width))
+        {
+            if (cached is not null)
+            {
+                show(cached);
+            }
+
+            return;
+        }
+
+        Guarded.FireAndLog(async () =>
+        {
+            if (await AmArtwork.GetForPathAsync(path, width) is { } image)
+            {
+                show(image);
+            }
+        }, _core.Ctx.Log, "Library artwork");
+    }
+
+    private static void SetArt(Border plate, ImageSource image, double size, double radius)
+    {
+        var picture = new Image { Source = image, Stretch = Stretch.UniformToFill, Width = size, Height = size, Clip = new RectangleGeometry(new Rect(0, 0, size, size), radius, radius) };
         RenderOptions.SetBitmapScalingMode(picture, BitmapScalingMode.HighQuality);
         plate.Child = picture;
     }
@@ -1867,7 +2099,7 @@ internal sealed class LibraryPanel : Grid, IMusicBrowserPanel
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.Children.Add(Tile(track, G.Music, false, current, busy));
+        grid.Children.Add(Tile(track.Pid, null, G.Music, false, current, busy));
         var texts = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
         texts.Children.Add(D.T(title, 13, FontWeights.SemiBold, D.Text, false, TextTrimming.CharacterEllipsis));
         texts.Children.Add(D.T(subtitle, 11, null, D.Secondary, false, TextTrimming.CharacterEllipsis));
@@ -1905,30 +2137,30 @@ internal sealed class LibraryPanel : Grid, IMusicBrowserPanel
     {
         var album = data.Album!;
         var subtitle = (album.Artist.Length > 0 ? album.Artist + " · " : "") + LibStrings.Count(album.Tracks.Count);
-        return NamedRow(data, index, highlighted, album.Name, subtitle, album.Tracks.Count > 0 ? album.Tracks[0] : null, G.MusicLibrary, false);
+        return NamedRow(data, index, highlighted, album.Name, subtitle, album.Tracks.Count > 0 ? album.Tracks[0].Pid : null, null, G.MusicLibrary, false);
     }
 
     private FrameworkElement ArtistRow(LibRow data, int index, bool highlighted)
     {
         var artist = data.Artist!;
-        return NamedRow(data, index, highlighted, artist.Name, LibStrings.Count(artist.Tracks.Count), artist.Tracks.Count > 0 ? artist.Tracks[0] : null, "", true);
+        return NamedRow(data, index, highlighted, artist.Name, LibStrings.Count(artist.Tracks.Count), artist.Tracks.Count > 0 ? artist.Tracks[0].Pid : null, null, "", true);
     }
 
     private FrameworkElement PlaylistRow(LibRow data, int index, bool highlighted)
     {
         var pl = data.Playlist!;
-        return NamedRow(data, index, highlighted, pl.Name, LibStrings.Count(pl.Tracks.Count), null, G.List, false);
+        return NamedRow(data, index, highlighted, pl.Name, LibStrings.Count(pl.Tracks.Count), pl.Pid, pl, G.List, false);
     }
 
     /// <summary>An album, artist or playlist line: tile, name, count, chevron.</summary>
-    private FrameworkElement NamedRow(LibRow data, int index, bool highlighted, string name, string subtitle, AmTrack? art, string glyph, bool round)
+    private FrameworkElement NamedRow(LibRow data, int index, bool highlighted, string name, string subtitle, ulong? artPid, AmPlaylist? mosaicOf, string glyph, bool round)
     {
         var row = RowButton(index, highlighted, false, name + ", " + subtitle);
         var grid = new Grid { Margin = new Thickness(6, 0, 8, 0) };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(TileSize + 8) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.Children.Add(Tile(art, glyph, round, false, false));
+        grid.Children.Add(Tile(artPid, mosaicOf, glyph, round, false, false));
         var texts = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
         texts.Children.Add(D.T(name, 13, FontWeights.SemiBold, D.Text, false, TextTrimming.CharacterEllipsis));
         texts.Children.Add(D.T(subtitle, 11, null, D.Secondary, false, TextTrimming.CharacterEllipsis));

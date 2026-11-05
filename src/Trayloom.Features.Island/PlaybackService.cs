@@ -24,6 +24,41 @@ internal sealed class PlayerSource
     public int Order { get; set; }
 }
 
+/// <summary>A media session's repeat mode.</summary>
+internal enum RepeatKind
+{
+    None,
+    List,
+    Track,
+}
+
+/// <summary>The repeat button's cycle and its mapping to the media session's modes (pure: tested by the harness).</summary>
+internal static class RepeatCycle
+{
+    /// <summary>The mode a press switches to: none, then list, then track, then none again.</summary>
+    public static RepeatKind Next(RepeatKind mode) => mode switch
+    {
+        RepeatKind.None => RepeatKind.List,
+        RepeatKind.List => RepeatKind.Track,
+        _ => RepeatKind.None,
+    };
+
+    public static RepeatKind? FromWinRt(Windows.Media.MediaPlaybackAutoRepeatMode? mode) => mode switch
+    {
+        Windows.Media.MediaPlaybackAutoRepeatMode.None => RepeatKind.None,
+        Windows.Media.MediaPlaybackAutoRepeatMode.List => RepeatKind.List,
+        Windows.Media.MediaPlaybackAutoRepeatMode.Track => RepeatKind.Track,
+        _ => null,
+    };
+
+    public static Windows.Media.MediaPlaybackAutoRepeatMode ToWinRt(RepeatKind mode) => mode switch
+    {
+        RepeatKind.List => Windows.Media.MediaPlaybackAutoRepeatMode.List,
+        RepeatKind.Track => Windows.Media.MediaPlaybackAutoRepeatMode.Track,
+        _ => Windows.Media.MediaPlaybackAutoRepeatMode.None,
+    };
+}
+
 /// <summary>What is playing now (immutable snapshot).</summary>
 internal sealed class Playback
 {
@@ -64,6 +99,11 @@ internal sealed class Playback
     public bool? Shuffle { get; init; }
 
     public bool CanShuffle { get; init; }
+
+    /// <summary>The repeat mode the session reports (null when it has none).</summary>
+    public RepeatKind? Repeat { get; init; }
+
+    public bool CanRepeat { get; init; }
 
     public bool HasPosition { get; init; }
 
@@ -124,6 +164,8 @@ internal sealed class PlaybackService : IDisposable
         public double SeekPos;
         public DateTime? SeekAt;
         public bool? Shuffle;
+        public bool CanRepeat;
+        public RepeatKind? Repeat;
         public long StartTicks;
         public bool Paused;
         public int Rev;
@@ -269,6 +311,22 @@ internal sealed class PlaybackService : IDisposable
             _ = e;
             _ui.BeginInvoke(async () =>
             {
+                await Task.Delay(1500);
+                RefreshEntry(e.Session);
+            });
+        }
+    }
+
+    /// <summary>Cycles the session's repeat mode: off, then repeat the list, then repeat the song, then off.</summary>
+    public void ToggleRepeat()
+    {
+        if (CurrentEntry() is { Repeat: { } mode } e)
+        {
+            var next = RepeatCycle.Next(mode);
+            Command(s => s.TryChangeAutoRepeatModeAsync(RepeatCycle.ToWinRt(next)));
+            _ui.BeginInvoke(async () =>
+            {
+                // players answer late: read the mode again after a moment
                 await Task.Delay(1500);
                 RefreshEntry(e.Session);
             });
@@ -531,6 +589,8 @@ internal sealed class PlaybackService : IDisposable
             e.CanPlay = c.IsPlayPauseToggleEnabled || c.IsPlayEnabled || c.IsPauseEnabled;
             e.CanShuffle = c.IsShuffleEnabled;
             e.Shuffle = info.IsShuffleActive;
+            e.CanRepeat = c.IsRepeatEnabled;
+            e.Repeat = RepeatCycle.FromWinRt(info.AutoRepeatMode);
             e.Rate = Math.Clamp(info.PlaybackRate ?? 1.0, 0, 16);
             e.StartTicks = tl.StartTime.Ticks;
             var duration = (tl.EndTime - tl.StartTime).TotalSeconds;
@@ -642,6 +702,8 @@ internal sealed class PlaybackService : IDisposable
                     CanPlayPause = e.CanPlay,
                     Shuffle = e.Shuffle,
                     CanShuffle = e.CanShuffle && e.Shuffle is not null,
+                    Repeat = e.Repeat,
+                    CanRepeat = e.CanRepeat && e.Repeat is not null,
                     HasPosition = (fill?.Duration ?? e.Duration) > 0,
                     BasePosition = fill?.BasePosition ?? e.BasePos,
                     BaseStamp = fill?.BaseStamp ?? e.Stamp,

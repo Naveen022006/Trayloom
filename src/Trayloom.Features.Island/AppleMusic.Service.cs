@@ -19,7 +19,7 @@ internal enum LibraryState
 /// <summary>What the Library panel remembers while the music page is rebuilt (track changes rebuild the page).</summary>
 internal sealed class LibraryUi
 {
-    /// <summary>0 = Playlists, 1 = Songs, 2 = Recently added.</summary>
+    /// <summary>0 = Playlists, 1 = Songs, 2 = Recently added, 3 = Albums, 4 = Artists (shown in the order Playlists, Songs, Albums, Artists, Recently added).</summary>
     public int Tab { get; set; } = 1;
 
     public ulong? PlaylistPid { get; set; }

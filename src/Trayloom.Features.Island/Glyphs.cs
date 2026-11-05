@@ -52,6 +52,8 @@ internal static class G
     public const string Previous = "\uE892";
     public const string Next = "\uE893";
     public const string Shuffle = "\uE8B1";
+    public const string RepeatAll = "\uE8EE";
+    public const string RepeatOne = "\uE8ED";
     public const string Speaker = "\uE767";
     public const string SpeakerOff = "\uE74F";
     public const string Headphones = "\uE7F6";

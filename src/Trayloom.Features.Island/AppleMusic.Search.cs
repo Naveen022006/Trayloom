@@ -64,6 +64,13 @@ internal sealed partial class AmSearchIndex
     private static readonly char[] Space = [' '];
 
     private readonly Entry[] _entries;
+
+    /// <summary>Every album in name order (the Albums browse tab).</summary>
+    public IReadOnlyList<AmAlbum> AllAlbums { get; }
+
+    /// <summary>Every artist in name order (the Artists browse tab).</summary>
+    public IReadOnlyList<AmArtist> AllArtists { get; }
+
     private readonly List<Named<AmAlbum>> _albums = [];
     private readonly List<Named<AmArtist>> _artists = [];
     private readonly List<Named<AmPlaylist>> _playlists = [];
@@ -141,6 +148,8 @@ internal sealed partial class AmSearchIndex
 
         BuildAlbums(tracks);
         BuildArtists(tracks);
+        AllAlbums = [.. _albums.Select(a => a.Item)];
+        AllArtists = [.. _artists.Select(a => a.Item)];
         foreach (var p in playlists)
         {
             var name = Fold(p.Name);

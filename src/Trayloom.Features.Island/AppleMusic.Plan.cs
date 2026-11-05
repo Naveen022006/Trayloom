@@ -200,6 +200,38 @@ internal static class AmIdle
         SameTitle(t.Title, title) && (AlbumMatches(t, detailKey) || ArtistMatches(t, detailKey));
 
     /// <summary>
+    /// The track of the library the media session plays now (title, artist and album as the session reports them), or null. Several tracks may
+    /// pass <see cref="IsPlaying"/>; the one whose album and artist both agree wins, then one in the library proper, then the first.
+    /// </summary>
+    public static AmTrack? FindPlaying(IReadOnlyList<AmTrack> tracks, string title, string artist, string album)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            return null;
+        }
+
+        var detail = DetailKey(artist, album);
+        AmTrack? best = null;
+        var bestScore = -1;
+        foreach (var t in tracks)
+        {
+            if (!IsPlaying(t, title, detail))
+            {
+                continue;
+            }
+
+            var score = (t.Album.Length > 0 && AlbumMatches(t, detail) ? 2 : 0) + (ArtistMatches(t, detail) ? 2 : 0) + (t.InLibrary ? 1 : 0);
+            if (score > bestScore)
+            {
+                best = t;
+                bestScore = score;
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>
     /// The track (library song or playlist-only) for what was playing: title, then artist and album, like <c>AppleMusicService.IsCurrent</c>.
     /// Several tracks may share a title (versions, other artists): one needs the artist, its real album or the remembered Pid to agree unless it
     /// is the only one with the title. Null when none matches.

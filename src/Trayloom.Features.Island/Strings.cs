@@ -45,6 +45,8 @@ internal static class Strings
     public static  string PlaybackSource => Loc.T("Playback source");
     public static  string AutomaticSource => Loc.T("Automatic");
     public static  string Shuffle => Loc.T("Shuffle");
+    public static  string Repeat => Loc.T("Repeat");
+    public static  string RepeatOne => Loc.T("Repeat one");
     public static  string PlaybackFailed => Loc.T("Could not change playback.");
     public static  string NewTrack => Loc.T("New track");
     public static  string LyricsLoading => Loc.T("Loading lyrics…");

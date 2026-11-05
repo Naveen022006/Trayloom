@@ -433,7 +433,15 @@ internal sealed class MusicPage : IslandPage
         {
             RefreshInPlace();
         }
+        else if (_active && _awaitingLibrary && svc.Db is not null)
+        {
+            // the library finished loading: the "…" menu can now look up the song that is playing
+            RefreshInPlace();
+        }
     });
+
+    // Apple Music is playing and its library has not been read yet, so the "Go to album / artist" lookup waits for it
+    private bool _awaitingLibrary;
 
     public override void Shown()
     {
@@ -577,7 +585,8 @@ internal sealed class MusicPage : IslandPage
     /// <summary>Something the page shows changed in a way that needs the page built again: another song, the timeline appearing or going, idle / track, the failure line, a new cover.</summary>
     private bool NeedsRebuild(Playback p) =>
         SongOf(p) != _song || (p.Duration > 0) != _hadTimeline || !p.HasTrack != _idle || Core.Playback.CommandFailed != _commandFailed
-        || (p.Duration > 0 && p.CanSeek != _canSeek) || !ReferenceEquals(p.Artwork, _artwork);
+        || (p.Duration > 0 && p.CanSeek != _canSeek) || !ReferenceEquals(p.Artwork, _artwork)
+        || (p.HasTrack && (p.CanShuffle != _canShuffle || p.CanRepeat != _canRepeat));
 
     /// <summary>The song as the page shows it: the length is left out (it arrives after the title and must not rebuild the page).</summary>
     private static string SongOf(Playback p) => $"{p.Aumid}|{p.Title}|{p.Artist}|{p.Album}";
@@ -597,6 +606,42 @@ internal sealed class MusicPage : IslandPage
             _shownDuration = (int)p.Duration;
             _timeline.RefreshDuration();
         }
+
+        // shuffle / repeat turned on or off (here or in the player): only the two buttons change
+        if (_shuffleButton is not null && p.Shuffle != _shownShuffle)
+        {
+            StyleToggle(_shuffleButton, G.Shuffle, p.Shuffle == true, p, Strings.Shuffle);
+            _shownShuffle = p.Shuffle;
+        }
+
+        if (_repeatButton is not null && p.Repeat != _shownRepeat)
+        {
+            StyleRepeat(_repeatButton, p);
+            _shownRepeat = p.Repeat;
+        }
+    }
+
+    private HoverButton? _shuffleButton;
+    private HoverButton? _repeatButton;
+    private bool? _shownShuffle;
+    private RepeatKind? _shownRepeat;
+    private bool _canShuffle;
+    private bool _canRepeat;
+
+    /// <summary>The look of a shuffle / repeat toggle: grey glyph when off, the accent colour on a soft round plate when on.</summary>
+    private static void StyleToggle(HoverButton button, string glyph, bool active, Playback p, string tip)
+    {
+        var accent = active ? (p.Tint is { } t ? new SolidColorBrush(t) : Brushes.White) : D.White(0.55);
+        var icon = D.I(glyph, 16, accent);
+        icon.FontWeight = FontWeights.SemiBold;
+        button.Child = active ? new Border { Width = 32, Height = 32, CornerRadius = new CornerRadius(16), Background = D.White(0.12), Child = icon } : icon;
+        D.Tip(button, tip);
+    }
+
+    private static void StyleRepeat(HoverButton button, Playback p)
+    {
+        var mode = p.Repeat ?? RepeatKind.None;
+        StyleToggle(button, mode == RepeatKind.Track ? G.RepeatOne : G.RepeatAll, mode != RepeatKind.None, p, mode == RepeatKind.Track ? Strings.RepeatOne : Strings.Repeat);
     }
 
     private void Settle()
@@ -714,6 +759,12 @@ internal sealed class MusicPage : IslandPage
         _wasPlaying = p.IsPlaying;
         _commandFailed = Core.Playback.CommandFailed;
         _playGlyph = null;
+        _shuffleButton = null;
+        _repeatButton = null;
+        _shownShuffle = p.Shuffle;
+        _shownRepeat = p.Repeat;
+        _canShuffle = p.CanShuffle;
+        _canRepeat = p.CanRepeat;
         _cover = null;
         _bars = null;
         var idle = !p.HasTrack;
@@ -1029,6 +1080,11 @@ internal sealed class MusicPage : IslandPage
             bottom.Children.Add(BuildSourceMenu(sources, p));
         }
 
+        if (appleLibrary && BuildGoToMenu(p) is { } goTo)
+        {
+            bottom.Children.Add(goTo);
+        }
+
         var bars = new EqBars(4, 2.5, 15, D.White(0.5)) { Playing = p.IsPlaying, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
         _bars = bars;
         bottom.Children.Add(bars);
@@ -1036,6 +1092,83 @@ internal sealed class MusicPage : IslandPage
         Grid.SetColumn(cluster, 2);
         head.Children.Add(cluster);
         return head;
+    }
+
+    /// <summary>
+    /// The "…" of an Apple Music song: "Go to album" / "Go to artist" open the island's Library on them. The song is matched to the library
+    /// by its title, artist and album; without a match (or before the library is read) there is no button.
+    /// </summary>
+    private FrameworkElement? BuildGoToMenu(Playback p)
+    {
+        var svc = Core.AppleMusic;
+        _awaitingLibrary = false;
+        if (svc.Db is not { } db)
+        {
+            // read the library now; the page is refreshed when it arrives (see OnAppleMusic)
+            _awaitingLibrary = svc.State is LibraryState.Idle or LibraryState.Loading;
+            if (svc.State == LibraryState.Idle)
+            {
+                _view.Dispatcher.BeginInvoke(() => svc.EnsureLoaded());
+            }
+
+            return null;
+        }
+
+        if (AmIdle.FindPlaying(db.AllTracks, p.Title, p.Artist, p.Album) is not { } track)
+        {
+            return null;
+        }
+
+        var album = LibrarySearchModel.AlbumOf(db, track);
+        var artist = LibrarySearchModel.ArtistOf(db, track);
+        if (album is null && artist is null)
+        {
+            return null;
+        }
+
+        HoverButton? btn = null;
+        btn = new HoverButton(() => IslandMenu.Show(btn!, GoToItems(album, artist), () => HasWindow ? Window.HoldOpen() : null)) { Width = 24, Height = 24, CornerRadius = new CornerRadius(6), Lifts = false, Margin = new Thickness(4, 0, 0, 0) };
+        btn.Child = D.I(G.More, 13, D.Secondary);
+        D.Tip(btn, LibStrings.More);
+        return btn;
+    }
+
+    private IEnumerable<IslandMenu.Item> GoToItems(AmAlbum? album, AmArtist? artist)
+    {
+        if (album is not null)
+        {
+            yield return new IslandMenu.Item(LibStrings.GoToAlbum, () => GoToLibrary(LibrarySearchModel.ForAlbum(album)));
+        }
+
+        if (artist is not null)
+        {
+            yield return new IslandMenu.Item(LibStrings.GoToArtist, () => GoToLibrary(LibrarySearchModel.ForArtist(artist)));
+        }
+    }
+
+    /// <summary>Opens the Library extra on Apple Music with an album or artist open (the one that is open already is replaced).</summary>
+    private void GoToLibrary(LibContainer container)
+    {
+        if (!HasWindow)
+        {
+            return;
+        }
+
+        var svc = Core.AppleMusic;
+        svc.Ui.PlaylistPid = null;
+        svc.Ui.Search = "";
+        LibraryNav.ReturnText = "";
+        LibraryNav.Scope = LibScope.All;
+        LibraryNav.Container = container;
+        if (_extra == MusicExtra.Library && MusicSources.Current(Core) == MusicSource.Apple && _library is LibraryPanel panel)
+        {
+            panel.ShowContainer(container);
+        }
+        else
+        {
+            // a new Library view is built on Apple Music and picks the open container up from LibraryNav
+            ChooseSource(MusicSource.Apple);
+        }
     }
 
     private FrameworkElement BuildSourceMenu(IReadOnlyList<PlayerSource> sources, Playback p)
@@ -1075,9 +1208,15 @@ internal sealed class MusicPage : IslandPage
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         }
 
-        HoverButton Btn(int slot, string glyph, double size, Action click, bool enabled = true, string? tip = null, bool visible = true, Brush? tint = null, bool plate = false)
+        // the last slot holds repeat and the output menu side by side when the player offers repeat
+        var tail = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
+        Grid.SetColumn(tail, 4);
+        var showRepeat = !idle && p.CanRepeat;
+        var showOutput = Core.Ctx.Runtime.IsAvailable("mixer") || Core.Audio.Available;
+
+        HoverButton Btn(int slot, string glyph, double size, Action click, bool enabled = true, string? tip = null, bool visible = true, Brush? tint = null, bool plate = false, double width = 44, Panel? host = null)
         {
-            var b = new HoverButton(click) { Width = 44, Height = 44, CornerRadius = new CornerRadius(14), HorizontalAlignment = HorizontalAlignment.Center };
+            var b = new HoverButton(click) { Width = width, Height = 44, CornerRadius = new CornerRadius(14), HorizontalAlignment = HorizontalAlignment.Center };
             var ic = D.I(glyph, size, tint ?? D.Text);
             ic.FontWeight = FontWeights.SemiBold;
             if (plate)
@@ -1097,8 +1236,16 @@ internal sealed class MusicPage : IslandPage
                 D.Tip(b, tip);
             }
 
-            Grid.SetColumn(b, slot);
-            grid.Children.Add(b);
+            if (host is not null)
+            {
+                host.Children.Add(b);
+            }
+            else
+            {
+                Grid.SetColumn(b, slot);
+                grid.Children.Add(b);
+            }
+
             return b;
         }
 
@@ -1135,7 +1282,13 @@ internal sealed class MusicPage : IslandPage
             var accent = p.Tint is { } t ? new SolidColorBrush(t) : Brushes.White;
             if (p.CanShuffle)
             {
-                Btn(0, G.Shuffle, 16, Core.Playback.ToggleShuffle, true, Strings.Shuffle, true, p.Shuffle == true ? accent : D.White(0.55), plate: p.Shuffle == true);
+                _shuffleButton = Btn(0, G.Shuffle, 16, Core.Playback.ToggleShuffle, true, Strings.Shuffle, true, p.Shuffle == true ? accent : D.White(0.55), plate: p.Shuffle == true);
+            }
+
+            if (showRepeat)
+            {
+                _repeatButton = Btn(4, G.RepeatAll, 16, Core.Playback.ToggleRepeat, true, Strings.Repeat, true, width: showOutput ? 32 : 44, host: tail);
+                StyleRepeat(_repeatButton, p);
             }
 
             Btn(1, G.Previous, 19, Core.Playback.Previous, p.CanPrevious, Strings.Previous, p.CanPrevious || true);
@@ -1144,12 +1297,17 @@ internal sealed class MusicPage : IslandPage
             Btn(3, G.Next, 19, Core.Playback.Next, p.CanNext, Strings.Next);
         }
 
-        if (Core.Ctx.Runtime.IsAvailable("mixer") || Core.Audio.Available)
+        if (showOutput)
         {
             var outputs = Core.Audio.Outputs();
             var def = outputs.FirstOrDefault(o => o.IsDefault);
             HoverButton? ob = null;
-            ob = Btn(4, AudioService.GlyphFor(def), 16, () => IslandMenu.Show(ob!, OutputItems(outputs), () => HasWindow ? Window.HoldOpen() : null), true, def?.Name ?? Strings.OutputUnavailable, true, D.White(0.55));
+            ob = Btn(4, AudioService.GlyphFor(def), 16, () => IslandMenu.Show(ob!, OutputItems(outputs), () => HasWindow ? Window.HoldOpen() : null), true, def?.Name ?? Strings.OutputUnavailable, true, D.White(0.55), width: showRepeat ? 32 : 44, host: showRepeat ? tail : null);
+        }
+
+        if (tail.Children.Count > 0)
+        {
+            grid.Children.Add(tail);
         }
 
         return grid;

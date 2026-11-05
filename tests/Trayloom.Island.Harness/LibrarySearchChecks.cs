@@ -22,6 +22,7 @@ internal static class LibrarySearchChecks
         Highlight();
         Actions();
         Containers();
+        ArtAndTabs();
         EscapeOrder();
         FocusCarry();
         Unplayable();
@@ -187,6 +188,44 @@ internal static class LibrarySearchChecks
         var track = db.ByPid(1)!;
         Check(m.AlbumOf(track)?.Name == "Lantern" && m.ArtistOf(track)?.Name == "Ari", "go to: the album and the artist of a song are found");
         Check(m.AlbumOf(T(99, "x", "y", "")) is null, "go to: a song without an album has none");
+    }
+
+    private static void ArtAndTabs()
+    {
+        // total lengths
+        Check(LibStrings.Duration(0) == "" && LibStrings.Duration(-5) == "", "duration: none is empty");
+        Check(LibStrings.Duration(52 * 60_000L) == "52 min", "duration: under an hour is minutes");
+        Check(LibStrings.Duration((2 * 60 + 13) * 60_000L) == "2 hr 13 min", "duration: hours and minutes");
+        Check(LibStrings.Duration(2 * 3_600_000L) == "2 hr", "duration: whole hours have no minutes");
+        Check(LibStrings.Duration(20_000) == "1 min" && LibStrings.Duration(59 * 60_000L + 40_000) == "1 hr", "duration: rounded to the minute, at least one minute");
+        Check(LibStrings.Summary(40, (2 * 60 + 13) * 60_000L) == "40 songs · 2 hr 13 min" && LibStrings.Summary(1, 0) == "1 song", "summary: count and length, count alone without a length");
+
+        // mosaic pictures
+        Check(AmArtwork.PickMosaic(["a", "b", "c", "d", "e"]).SequenceEqual(["a", "b", "c", "d"]), "mosaic: the first four pictures");
+        Check(AmArtwork.PickMosaic(["a", null, "A", "b", "a", "c", "d"]).SequenceEqual(["a", "b", "c", "d"]), "mosaic: distinct (ignoring case), tracks without a picture skipped");
+        Check(AmArtwork.PickMosaic(["a", "b", "a", "c"]).SequenceEqual(["a"]), "mosaic: three distinct pictures show the first one only");
+        Check(AmArtwork.PickMosaic(["a", "a"]).SequenceEqual(["a"]) && AmArtwork.PickMosaic([null, null]).Count == 0 && AmArtwork.PickMosaic([]).Count == 0, "mosaic: one picture, or none");
+
+        // repeat cycle
+        Check(RepeatCycle.Next(RepeatKind.None) == RepeatKind.List && RepeatCycle.Next(RepeatKind.List) == RepeatKind.Track && RepeatCycle.Next(RepeatKind.Track) == RepeatKind.None, "repeat: none, list, track, none");
+        Check(RepeatCycle.FromWinRt(Windows.Media.MediaPlaybackAutoRepeatMode.Track) == RepeatKind.Track && RepeatCycle.FromWinRt(null) is null, "repeat: session modes map both ways");
+
+        // Albums and Artists browse tabs
+        var db = Synthetic();
+        var albums = Model(db, "", tab: 3);
+        Check(albums.Rows.Count == db.Search.AllAlbums.Count && albums.Rows.Count > 0 && albums.Rows.All(r => r.Kind == LibRowKind.Album), "albums tab: every album, name order");
+        Check(LibrarySearchModel.ActionFor(albums.Rows[0]).Kind == LibActionKind.OpenAlbum, "albums tab: a row opens the album");
+        var artists = Model(db, "", tab: 4);
+        Check(artists.Rows.Count == db.Search.AllArtists.Count && artists.Rows.Any(r => r.Artist!.Name == "Luna") && artists.Rows.All(r => r.Kind == LibRowKind.Artist), "artists tab: every artist");
+        Check(LibrarySearchModel.ActionFor(artists.Rows[0]).Kind == LibActionKind.OpenArtist, "artists tab: a row opens the artist");
+        Check(Model(db, "luna", tab: 3).Searching && Model(db, "luna", tab: 4).Rows.Any(r => r.Kind == LibRowKind.Song), "tabs: a search ignores the browse tab");
+
+        // the song that plays -> its album and artist
+        var playing = AmIdle.FindPlaying(db.AllTracks, "Moonlight", "Luna", "Night");
+        Check(playing?.Pid == 12, "playing: matched by title, artist and album");
+        Check(AmIdle.FindPlaying(db.AllTracks, "Moonlight", "Luna — Night", "")?.Pid == 12, "playing: the album folded into the artist is split off");
+        Check(AmIdle.FindPlaying(db.AllTracks, "Nothing Like It", "Luna", "Night") is null && AmIdle.FindPlaying(db.AllTracks, " ", "Luna", "Night") is null, "playing: no match, blank title");
+        Check(playing is not null && LibrarySearchModel.AlbumOf(db, playing)?.Name == "Night" && LibrarySearchModel.ArtistOf(db, playing)?.Name == "Luna", "playing: the album and artist to open");
     }
 
     private static void Containers()

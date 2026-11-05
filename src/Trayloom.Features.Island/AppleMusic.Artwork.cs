@@ -135,23 +135,59 @@ internal sealed class AmArtworkMap
     }
 }
 
-/// <summary>Small decoded pictures for the library rows: 64 px wide, an LRU of 200, decoded on the thread pool.</summary>
+/// <summary>
+/// Small decoded pictures for the library rows: 64 px wide by default (a larger width for a header tile), an LRU of 200 keyed by file and
+/// width, decoded on the thread pool.
+/// </summary>
 internal static class AmArtwork
 {
     private const int Capacity = 200;
-    private const int DecodeWidth = 64;
+
+    /// <summary>The decode width of a row tile.</summary>
+    public const int DecodeWidth = 64;
+
+    /// <summary>How many pictures a mosaic holds.</summary>
+    public const int MosaicCount = 4;
 
     private static readonly object Gate = new();
     private static readonly SemaphoreSlim Slots = new(2);
-    private static readonly Dictionary<string, LinkedListNode<(string Path, ImageSource? Image)>> Cache = new(StringComparer.OrdinalIgnoreCase);
-    private static readonly LinkedList<(string Path, ImageSource? Image)> Order = new();
+    private static readonly Dictionary<string, LinkedListNode<(string Key, ImageSource? Image)>> Cache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly LinkedList<(string Key, ImageSource? Image)> Order = new();
+
+    /// <summary>The cache key of one picture at one width.</summary>
+    private static string KeyOf(string path, int width) => width == DecodeWidth ? path : path + "|" + width.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// The pictures a 2x2 mosaic shows for a list of artwork files (null = a track without one): the first four distinct files, in order.
+    /// With one to three distinct pictures a mosaic would repeat or leave holes, so only the first is returned (shown whole); none gives none.
+    /// </summary>
+    public static IReadOnlyList<string> PickMosaic(IEnumerable<string?> paths)
+    {
+        var distinct = new List<string>(MosaicCount);
+        foreach (var path in paths)
+        {
+            if (path is null || distinct.Exists(d => string.Equals(d, path, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            distinct.Add(path);
+            if (distinct.Count == MosaicCount)
+            {
+                return distinct;
+            }
+        }
+
+        return distinct.Count > 0 ? [distinct[0]] : [];
+    }
 
     /// <summary>The picture if it was decoded before (cheap, UI-thread safe); a failed decode is cached as "no picture".</summary>
-    public static bool TryGetCached(string path, out ImageSource? image)
+    public static bool TryGetCached(string path, out ImageSource? image, int width = DecodeWidth)
     {
+        var key = KeyOf(path, width);
         lock (Gate)
         {
-            if (Cache.TryGetValue(path, out var node))
+            if (Cache.TryGetValue(key, out var node))
             {
                 Order.Remove(node);
                 Order.AddFirst(node);
@@ -167,21 +203,21 @@ internal static class AmArtwork
     /// <summary>
     /// The track's picture, decoded off the calling thread (null = none or unreadable). The result is frozen, so any thread may use it.
     /// At most two decodes run at once: a screenful of rows asks for dozens of pictures together, and many parallel decodes on thread-pool
-    /// threads were far slower than the same decodes one after another.
+    /// threads were far slower than the same decodes one after another. Also used for playlists (their pid has a picture too).
     /// </summary>
-    public static async Task<ImageSource?> GetAsync(AmDb db, ulong pid)
+    public static async Task<ImageSource?> GetAsync(AmDb db, ulong pid, int width = DecodeWidth)
     {
         return await Task.Run(async () =>
         {
             var path = db.ArtworkPath(pid);
-            return path is null ? null : await GetForPathAsync(path).ConfigureAwait(false);
+            return path is null ? null : await GetForPathAsync(path, width).ConfigureAwait(false);
         }).ConfigureAwait(false);
     }
 
     /// <summary>The picture of one artwork file; a file that cannot be decoded is remembered as "no picture" so it is not retried.</summary>
-    internal static async Task<ImageSource?> GetForPathAsync(string path)
+    internal static async Task<ImageSource?> GetForPathAsync(string path, int width = DecodeWidth)
     {
-        if (TryGetCached(path, out var cached))
+        if (TryGetCached(path, out var cached, width))
         {
             return cached;
         }
@@ -189,20 +225,21 @@ internal static class AmArtwork
         await Slots.WaitAsync().ConfigureAwait(false);
         try
         {
-            if (TryGetCached(path, out cached))
+            if (TryGetCached(path, out cached, width))
             {
                 return cached;
             }
 
-            var image = Decode(path);
+            var image = Decode(path, width);
+            var key = KeyOf(path, width);
             lock (Gate)
             {
-                if (!Cache.ContainsKey(path))
+                if (!Cache.ContainsKey(key))
                 {
-                    Cache[path] = Order.AddFirst((path, image));
+                    Cache[key] = Order.AddFirst((key, image));
                     while (Order.Count > Capacity)
                     {
-                        Cache.Remove(Order.Last!.Value.Path);
+                        Cache.Remove(Order.Last!.Value.Key);
                         Order.RemoveLast();
                     }
                 }
@@ -216,7 +253,7 @@ internal static class AmArtwork
         }
     }
 
-    internal static ImageSource? Decode(string path)
+    internal static ImageSource? Decode(string path, int width = DecodeWidth)
     {
         try
         {
@@ -233,7 +270,7 @@ internal static class AmArtwork
             var bitmap = new BitmapImage();
             bitmap.BeginInit();
             bitmap.CacheOption = BitmapCacheOption.OnLoad;
-            bitmap.DecodePixelWidth = DecodeWidth;
+            bitmap.DecodePixelWidth = width;
             bitmap.StreamSource = stream;
             bitmap.EndInit();
             bitmap.Freeze();
