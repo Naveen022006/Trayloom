@@ -34,6 +34,12 @@ internal sealed class CalEvent
 
     public string? LocalId { get; init; }
 
+    /// <summary>A video-call link (Meet, Zoom, Teams…) found in the event, or null.</summary>
+    public string? JoinUrl { get; init; }
+
+    /// <summary>Where the event can be opened on the web (Google Calendar's day view), or null.</summary>
+    public string? WebUrl { get; init; }
+
     public string CountdownKey => LocalId is null ? Id : $"{LocalId}@{Start.Ticks}";
 
     public bool Ongoing(DateTime now) => !AllDay && Start <= now && End > now;
@@ -49,7 +55,7 @@ internal enum CalendarAccess
     Unavailable,
 }
 
-/// <summary>Calendar data from the Windows appointment store and ICS files/URLs (spec Part C 6.4/6.7).</summary>
+/// <summary>Calendar data from Google Calendar (secret iCal addresses), the Windows appointment store and ICS files/URLs (spec Part C 6.4/6.7, spec 09 part 4).</summary>
 internal sealed class CalendarService : IDisposable
 {
     private readonly IAppSettings _app;
@@ -57,6 +63,7 @@ internal sealed class CalendarService : IDisposable
     private readonly ILog _log;
     private readonly DispatcherTimer _timer;
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
+    private readonly GoogleCalendarSource _google;
     private AppointmentStore? _store;
     private List<CalEvent> _events = [];
     private List<CalendarInfo> _calendars = [];
@@ -64,6 +71,7 @@ internal sealed class CalendarService : IDisposable
     private DateTime _rangeEnd;
     private bool _loading;
     private bool _disposed;
+    private bool _again;
     private DateTime _lastIcs = DateTime.MinValue;
     private readonly Dictionary<string, string> _icsCache = [];
 
@@ -75,6 +83,36 @@ internal sealed class CalendarService : IDisposable
         _timer = new DispatcherTimer(DispatcherPriority.Background, ui);
         _timer.Tick += (_, _) => Refresh();
         Microsoft.Win32.SystemEvents.TimeChanged += OnClock;
+        GoogleCalendarKeys.Register(app);
+        _google = new GoogleCalendarSource(app, log);
+        _google.Changed += OnGoogleChanged;
+        _google.RefreshRequested += OnGoogleRefresh;
+        _app.Changed += OnSetting;
+    }
+
+    /// <summary>The Google calendars added through secret iCal addresses.</summary>
+    public GoogleCalendarSource Google => _google;
+
+    /// <summary>The sources chosen by the "Show events from" setting (Automatic prefers Google once a calendar is added).</summary>
+    public CalendarSourceMode SourceMode => GoogleRules.Resolve(_app.Get<string>(GoogleCalendarKeys.Source), _google.Feeds.Count);
+
+    /// <summary>True when Windows Calendar feeds the island.</summary>
+    public bool UsesWindows => SourceMode is CalendarSourceMode.Windows or CalendarSourceMode.Both;
+
+    /// <summary>True when Google calendars feed the island.</summary>
+    public bool UsesGoogle => SourceMode is CalendarSourceMode.Google or CalendarSourceMode.Both;
+
+    private void OnGoogleChanged() => _ui.BeginInvoke(() => Changed?.Invoke());
+
+    private void OnGoogleRefresh() => _ui.BeginInvoke(Refresh);
+
+    /// <summary>A changed source or check interval re-reads the calendars so the page and the closed strip follow at once.</summary>
+    private void OnSetting(string key)
+    {
+        if (key is GoogleCalendarKeys.Source or GoogleCalendarKeys.Interval)
+        {
+            _ui.BeginInvoke(Refresh);
+        }
     }
 
     public CalendarAccess Access { get; private set; }
@@ -146,8 +184,15 @@ internal sealed class CalendarService : IDisposable
 
     public async Task RefreshAsync()
     {
-        if (_disposed || _loading)
+        if (_disposed)
         {
+            return;
+        }
+
+        if (_loading)
+        {
+            // A change that arrives mid-read (a calendar added, a setting flipped) must not be lost, so read once more afterwards.
+            _again = true;
             return;
         }
 
@@ -162,7 +207,7 @@ internal sealed class CalendarService : IDisposable
         Changed?.Invoke();
         try
         {
-            if (_store is null && Access == CalendarAccess.Unknown)
+            if (UsesWindows && _store is null && Access == CalendarAccess.Unknown)
             {
                 await RequestAccessAsync();
             }
@@ -170,9 +215,14 @@ internal sealed class CalendarService : IDisposable
             var excluded = _app.Get<List<string>>(K.CalendarExcluded) ?? [];
             var events = new List<CalEvent>();
             var calendars = new List<CalendarInfo>();
-            if (_store is not null)
+            if (UsesWindows && _store is not null)
             {
                 await ReadStore(events, calendars, excluded);
+            }
+
+            if (UsesGoogle)
+            {
+                await _google.ReadAsync(events, calendars, excluded, _rangeStart, _rangeEnd);
             }
 
             await ReadIcs(events, calendars, excluded);
@@ -194,6 +244,11 @@ internal sealed class CalendarService : IDisposable
 
         ScheduleNext();
         Changed?.Invoke();
+        if (_again)
+        {
+            _again = false;
+            Refresh();
+        }
     }
 
     private async Task ReadStore(List<CalEvent> events, List<CalendarInfo> calendars, List<string> excluded)
@@ -308,7 +363,7 @@ internal sealed class CalendarService : IDisposable
                     continue;
                 }
 
-                events.AddRange(IcsParser.Parse(text, _rangeStart, _rangeEnd, id, string.IsNullOrEmpty(name) ? "Calendar" : name));
+                events.AddRange(IcsReader.Read(text, _rangeStart, _rangeEnd, id, string.IsNullOrEmpty(name) ? "Calendar" : name, Color.FromRgb(0x5E, 0xC8, 0x6B), "ics", _log));
             }
             catch (Exception ex)
             {
@@ -327,6 +382,11 @@ internal sealed class CalendarService : IDisposable
         if (midnight < next)
         {
             next = midnight;
+        }
+
+        if (UsesGoogle && _google.Feeds.Count > 0 && _google.NextDueUtc.ToLocalTime() < next)
+        {
+            next = _google.NextDueUtc.ToLocalTime();
         }
 
         foreach (var e in _events.Where(e => !e.AllDay))
@@ -417,6 +477,12 @@ internal sealed class CalendarService : IDisposable
 
     public void OpenEvent(CalEvent e)
     {
+        if (e.Source == "google" && e.WebUrl is { } web)
+        {
+            OpenLink(web);
+            return;
+        }
+
         try
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("outlookcal:") { UseShellExecute = true });
@@ -433,229 +499,33 @@ internal sealed class CalendarService : IDisposable
         }
     }
 
+    /// <summary>Opens an https link (a video call or Google Calendar) in the default browser; anything else is ignored.</summary>
+    public static void OpenLink(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
+        {
+            return;
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+        }
+        catch
+        {
+            // No browser to open it with; nothing sensible to do.
+        }
+    }
+
     public void Dispose()
     {
         _disposed = true;
         _timer.Stop();
         Microsoft.Win32.SystemEvents.TimeChanged -= OnClock;
+        _app.Changed -= OnSetting;
+        _google.Changed -= OnGoogleChanged;
+        _google.RefreshRequested -= OnGoogleRefresh;
+        _google.Dispose();
         _http.Dispose();
-    }
-}
-
-/// <summary>Minimal iCalendar reader (VEVENT with basic RRULE/EXDATE expansion).</summary>
-internal static class IcsParser
-{
-    public static IEnumerable<CalEvent> Parse(string text, DateTime from, DateTime to, string calId, string calName)
-    {
-        var lines = Unfold(text);
-        var color = Color.FromRgb(0x5E, 0xC8, 0x6B);
-        Dictionary<string, string>? cur = null;
-        List<DateTime> ex = [];
-        foreach (var raw in lines)
-        {
-            if (raw.StartsWith("BEGIN:VEVENT", StringComparison.OrdinalIgnoreCase))
-            {
-                cur = new(StringComparer.OrdinalIgnoreCase);
-                ex = [];
-                continue;
-            }
-
-            if (raw.StartsWith("END:VEVENT", StringComparison.OrdinalIgnoreCase) && cur is not null)
-            {
-                foreach (var e in Expand(cur, ex, from, to, calId, calName, color))
-                {
-                    yield return e;
-                }
-
-                cur = null;
-                continue;
-            }
-
-            if (cur is null)
-            {
-                continue;
-            }
-
-            var colon = raw.IndexOf(':');
-            if (colon < 0)
-            {
-                continue;
-            }
-
-            var head = raw[..colon];
-            var value = raw[(colon + 1)..];
-            var name = head.Split(';')[0].ToUpperInvariant();
-            if (name == "EXDATE")
-            {
-                foreach (var v in value.Split(','))
-                {
-                    if (ParseDate(head, v, out var d, out _))
-                    {
-                        ex.Add(d);
-                    }
-                }
-
-                continue;
-            }
-
-            cur[name] = value;
-            cur[name + "_HEAD"] = head;
-        }
-    }
-
-    private static IEnumerable<CalEvent> Expand(Dictionary<string, string> ev, List<DateTime> ex, DateTime from, DateTime to, string calId, string calName, Color color)
-    {
-        if (!ev.TryGetValue("DTSTART", out var ds) || !ParseDate(ev.GetValueOrDefault("DTSTART_HEAD", ""), ds, out var start, out var allDay))
-        {
-            yield break;
-        }
-
-        var end = start.AddHours(1);
-        if (ev.TryGetValue("DTEND", out var de) && ParseDate(ev.GetValueOrDefault("DTEND_HEAD", ""), de, out var e2, out _))
-        {
-            end = e2;
-        }
-        else if (allDay)
-        {
-            end = start.AddDays(1);
-        }
-
-        var length = end - start;
-        var title = Unescape(ev.GetValueOrDefault("SUMMARY", ""));
-        var loc = Unescape(ev.GetValueOrDefault("LOCATION", ""));
-        var uid = ev.GetValueOrDefault("UID", Guid.NewGuid().ToString());
-        var starts = new List<DateTime>();
-        if (ev.TryGetValue("RRULE", out var rrule))
-        {
-            starts.AddRange(Recur(rrule, start, from, to));
-        }
-        else
-        {
-            starts.Add(start);
-        }
-
-        foreach (var s in starts)
-        {
-            if (ex.Contains(s) || s + length <= from || s >= to)
-            {
-                continue;
-            }
-
-            yield return new CalEvent
-            {
-                Id = $"{calId}|{uid}",
-                Title = title,
-                Start = s,
-                End = s + length,
-                AllDay = allDay,
-                Location = loc,
-                CalendarId = calId,
-                CalendarName = calName,
-                Color = color,
-                Source = "ics",
-            };
-        }
-    }
-
-    private static IEnumerable<DateTime> Recur(string rule, DateTime start, DateTime from, DateTime to)
-    {
-        var parts = rule.Split(';').Select(p => p.Split('=', 2)).Where(p => p.Length == 2).ToDictionary(p => p[0].ToUpperInvariant(), p => p[1]);
-        var freq = parts.GetValueOrDefault("FREQ", "");
-        var interval = int.TryParse(parts.GetValueOrDefault("INTERVAL", "1"), out var iv) ? Math.Max(1, iv) : 1;
-        var count = int.TryParse(parts.GetValueOrDefault("COUNT", "0"), out var c) ? c : 0;
-        DateTime? until = parts.TryGetValue("UNTIL", out var u) && ParseDate("", u, out var ud, out _) ? ud : null;
-        var byDay = parts.TryGetValue("BYDAY", out var bd) ? bd.Split(',').Select(DayOf).Where(d => d is not null).Select(d => d!.Value).ToList() : [];
-        var produced = 0;
-        for (var i = 0; i < 4000; i++)
-        {
-            IEnumerable<DateTime> batch;
-            switch (freq)
-            {
-                case "DAILY":
-                    batch = [start.AddDays(i * interval)];
-                    break;
-                case "WEEKLY":
-                    var weekStart = start.AddDays(7 * i * interval - (int)start.DayOfWeek);
-                    batch = byDay.Count == 0 ? [start.AddDays(7 * i * interval)] : byDay.OrderBy(d => (int)d).Select(d => weekStart.AddDays((int)d).Date + start.TimeOfDay).Where(d => d >= start);
-                    break;
-                case "MONTHLY":
-                    batch = [start.AddMonths(i * interval)];
-                    break;
-                case "YEARLY":
-                    batch = [start.AddYears(i * interval)];
-                    break;
-                default:
-                    yield break;
-            }
-
-            foreach (var s in batch)
-            {
-                if ((until is not null && s > until) || s >= to || (count > 0 && produced >= count))
-                {
-                    yield break;
-                }
-
-                produced++;
-                yield return s;
-            }
-        }
-    }
-
-    private static DayOfWeek? DayOf(string s)
-    {
-        s = s.Length > 2 ? s[^2..] : s;
-        return s switch { "MO" => DayOfWeek.Monday, "TU" => DayOfWeek.Tuesday, "WE" => DayOfWeek.Wednesday, "TH" => DayOfWeek.Thursday, "FR" => DayOfWeek.Friday, "SA" => DayOfWeek.Saturday, "SU" => DayOfWeek.Sunday, _ => null };
-    }
-
-    private static bool ParseDate(string head, string v, out DateTime date, out bool allDay)
-    {
-        allDay = false;
-        date = default;
-        v = v.Trim();
-        if (v.Length == 8 && DateTime.TryParseExact(v, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out date))
-        {
-            allDay = true;
-            return true;
-        }
-
-        var utc = v.EndsWith('Z');
-        if (DateTime.TryParseExact(v.TrimEnd('Z'), "yyyyMMdd'T'HHmmss", CultureInfo.InvariantCulture, DateTimeStyles.None, out date))
-        {
-            if (utc)
-            {
-                date = DateTime.SpecifyKind(date, DateTimeKind.Utc).ToLocalTime();
-            }
-
-            return true;
-        }
-
-        return false;
-    }
-
-    private static string Unescape(string s) => s.Replace("\\n", "\n").Replace("\\,", ",").Replace("\\;", ";").Replace("\\\\", "\\");
-
-    private static IEnumerable<string> Unfold(string text)
-    {
-        string? current = null;
-        foreach (var line in text.Replace("\r\n", "\n").Split('\n'))
-        {
-            if (line.StartsWith(' ') || line.StartsWith('\t'))
-            {
-                current += line[1..];
-                continue;
-            }
-
-            if (current is not null)
-            {
-                yield return current;
-            }
-
-            current = line;
-        }
-
-        if (current is not null)
-        {
-            yield return current;
-        }
     }
 }

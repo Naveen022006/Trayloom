@@ -256,20 +256,20 @@ internal sealed class ContentEditor : Grid
         {
             try
             {
-                var preset = _c.App.Get<string>(K.Size);
-                double w = preset switch { "compact" => 480, "custom" => Math.Clamp(_c.App.Get<double>(K.CustomWidth), 360, 600), _ => 560 };
+                var custom = IslandSizes.IsCustom(_c.App);
+                var w = IslandSizes.Width(_c.App);
                 IslandPage? page = m.Id == "camera"
                     ? new StillPage(Loc.T("The camera turns on only in the island."), G.Video)
                     : (m.Id == "agents" && _core.External("agents") is null ? new StillPage(Loc.T("Claude Code, Codex, OpenCode and GitHub Copilot usage, limits and costs."), G.Claude) : PageFactory.Create(_core, null, m.Id));
                 if (page is not null)
                 {
                     page.IsPreview = true;
-                    if (page.NaturalWidth is { } nw && preset != "custom")
+                    if (page.NaturalWidth is { } nw && !custom)
                     {
                         w = Math.Min(w, nw + 56);
                     }
 
-                    var budget = preset == "compact" ? 180 : (preset == "custom" ? Math.Clamp(_c.App.Get<double>(K.CustomHeight), 260, 640) - 76 : 264);
+                    var budget = IslandSizes.Budget(_c.App, 76);
                     var ch = Math.Clamp(page.Height(w - 56, budget), 40, budget);
                     var h = page.HasTopRow ? 12 + 64 + ch : 32 + ch;
                     var surface = new Grid { Width = w, Height = h, IsHitTestVisible = false };
@@ -558,7 +558,12 @@ internal sealed class ContentEditor : Grid
         var app = _c.App;
         var svc = _core?.Calendar;
         card.AddCaption(Loc.T("Read your calendars to show upcoming appointments. Events stay on this PC."));
-        if (svc is not null)
+        GoogleCalendarSettings.Add(card, app, svc, _c);
+        card.AddDivider();
+
+        // The Windows permission rows only matter while Windows Calendar feeds the island.
+        var usesWindows = svc is null || svc.UsesWindows;
+        if (svc is not null && usesWindows)
         {
             if (svc.Access == CalendarAccess.Allowed)
             {
@@ -584,8 +589,12 @@ internal sealed class ContentEditor : Grid
             }
         }
 
-        card.AddDivider();
-        card.Add(SUi.SwitchRow(app, K.CalendarCountdown, "", Loc.T("Event countdown"), Loc.T("Show every timed event in the closed island before it starts. To count down to only some, turn this off and right-click them on the island’s Calendar page. Titles may appear in screen captures.")));
+        if (usesWindows)
+        {
+            card.AddDivider();
+        }
+
+        card.Add(SUi.SwitchRow(app, K.CalendarCountdown,"", Loc.T("Event countdown"), Loc.T("Show every timed event in the closed island before it starts. To count down to only some, turn this off and right-click them on the island’s Calendar page. Titles may appear in screen captures.")));
         var leads = new List<(int Value, string Label)>();
         var cur = Math.Clamp(app.Get<int>(K.CalendarLead), 5, 240);
         foreach (var v in new[] { 15, 30, 60, 120, cur }.Distinct().OrderBy(x => x))
@@ -596,7 +605,7 @@ internal sealed class ContentEditor : Grid
         card.Add(new PickerRow<int>("", Loc.T("Time before event"), null, leads, cur, v => app.Set(K.CalendarLead, v), 120));
         card.Add(SUi.SwitchRow(app, K.CalendarTimeLeft, "", Loc.T("Time left in current event"), Loc.T("Show a timed event in progress in the closed island during the hour before it ends. Its title may appear in screen captures.")));
         card.Add(SUi.SwitchRow(app, K.CalendarWeekNumbers, "", Loc.T("Week numbers")));
-        if (svc is { Access: CalendarAccess.Allowed })
+        if (svc is { Access: CalendarAccess.Allowed } || svc is { UsesGoogle: true })
         {
             card.AddDivider();
             card.Add(UiKit.Text(Loc.T("Calendars shown"), 12.5, FontWeights.Medium, ThemeKeys.TextPrimary));

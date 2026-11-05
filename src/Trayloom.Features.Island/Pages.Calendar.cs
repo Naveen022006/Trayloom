@@ -54,9 +54,15 @@ internal sealed class CalendarPage : IslandPage
     public override void Shown()
     {
         Core.Calendar.Changed += OnData;
-        if (Core.Calendar.Access == CalendarAccess.Unknown)
+        if (Core.Calendar.UsesWindows && Core.Calendar.Access == CalendarAccess.Unknown)
         {
             Guarded.FireAndLog(Core.Calendar.RequestAccessAsync, Core.Ctx.Log, "Calendar access");
+        }
+
+        if (Core.Calendar.UsesGoogle)
+        {
+            // Google can lag minutes behind an edit, so opening the page checks again when the last check is older than 5 minutes.
+            Core.Calendar.Google.MarkStale(TimeSpan.FromMinutes(5));
         }
 
         RequestRange();
@@ -109,7 +115,14 @@ internal sealed class CalendarPage : IslandPage
         _view.Children.Clear();
         BuildBand();
         RequestRange();
-        if (Core.Calendar.Access != CalendarAccess.Allowed && Core.Calendar.Access != CalendarAccess.Unknown)
+        var cal = Core.Calendar;
+        if (cal.SourceMode == CalendarSourceMode.Google && cal.Google.Feeds.Count == 0)
+        {
+            _view.Children.Add(NoGoogleCard());
+            return;
+        }
+
+        if (cal.UsesWindows && !cal.UsesGoogle && cal.Access != CalendarAccess.Allowed && cal.Access != CalendarAccess.Unknown)
         {
             _view.Children.Add(PermissionCard());
             return;
@@ -194,6 +207,12 @@ internal sealed class CalendarPage : IslandPage
 
     private void OpenCalendar()
     {
+        if (Core.Calendar.UsesGoogle && !Core.Calendar.UsesWindows)
+        {
+            CalendarService.OpenLink("https://calendar.google.com/calendar/r");
+            return;
+        }
+
         try
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("outlookcal:") { UseShellExecute = true });
@@ -516,6 +535,16 @@ internal sealed class CalendarPage : IslandPage
             timeRow.Children.Add(ic);
         }
 
+        // The Join button only appears around the meeting; before that, a small icon tells there is a call to join.
+        var joinNow = e.JoinUrl is not null && !e.AllDay && now >= e.Start.AddMinutes(-15) && now < e.End;
+        if (e.JoinUrl is not null && !joinNow)
+        {
+            var vid = D.I(G.Video, 10, D.White(0.75));
+            vid.Margin = new Thickness(6, 0, 0, 0);
+            D.Tip(vid, Loc.T("Has a video call"));
+            timeRow.Children.Add(vid);
+        }
+
         col.Children.Add(timeRow);
         if (e.CalendarName.Length > 0)
         {
@@ -533,9 +562,19 @@ internal sealed class CalendarPage : IslandPage
         }
 
         grid.Children.Add(col);
+        if (joinNow)
+        {
+            var url = e.JoinUrl!;
+            var join = D.PillButton(Loc.T("Join"), () => CalendarService.OpenLink(url), true);
+            join.HorizontalAlignment = HorizontalAlignment.Right;
+            join.VerticalAlignment = VerticalAlignment.Center;
+            join.Margin = new Thickness(8, 0, 0, 0);
+            grid.Children.Add(join);
+        }
+
         card.Child = grid;
         b.Child = card;
-        D.Tip(b, Loc.T("Open Calendar"));
+        D.Tip(b, e.Source == "google" ? Loc.T("Open in Google Calendar") : Loc.T("Open Calendar"));
         if (!e.AllDay && e.Start > now && !Core.App.Get<bool>(K.CalendarCountdown))
         {
             b.MouseRightButtonUp += (_, ev) =>
@@ -547,6 +586,12 @@ internal sealed class CalendarPage : IslandPage
         }
 
         return b;
+    }
+
+    private FrameworkElement NoGoogleCard()
+    {
+        var open = D.PillButton(Loc.T("Open Settings"), () => Core.Ctx.Shell.OpenSettings("island#content-calendar"), true);
+        return D.EmptyView(G.Calendar, Loc.T("Add a Google calendar in Settings to see its events here."), open);
     }
 
     private FrameworkElement PermissionCard()
