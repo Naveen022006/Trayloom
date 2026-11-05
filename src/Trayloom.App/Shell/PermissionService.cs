@@ -191,7 +191,7 @@ internal static class PermissionService
         try
         {
             Process.Start(new ProcessStartInfo(exe, $"--relaunch {Environment.ProcessId}") { UseShellExecute = true, Verb = "runas" });
-            Application.Current.Dispatcher.BeginInvoke(() => Application.Current.Shutdown());
+            Application.Current.Dispatcher.BeginInvoke(() => ((App)Application.Current).ShutdownAfterFinish());
         }
         catch
         {

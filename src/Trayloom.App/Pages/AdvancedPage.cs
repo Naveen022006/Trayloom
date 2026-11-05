@@ -167,9 +167,10 @@ internal static class AdvancedPage
 
         try
         {
-            s.Host.Store.Flush();
-            AtomicFile.WriteAllText(AppPaths.SettingsFile, settings.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-            s.Shell.Restart(skipSave: true);
+            // Nothing is written here: the file replaces settings.json only once the restart is confirmed (it may wait for a recording
+            // to finish, or be cancelled), after saving has been suspended so the running copy cannot overwrite it.
+            var imported = settings.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+            s.Shell.Restart(skipSave: true, () => AtomicFile.WriteAllText(AppPaths.SettingsFile, imported));
         }
         catch (Exception ex)
         {

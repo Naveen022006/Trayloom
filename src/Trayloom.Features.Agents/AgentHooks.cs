@@ -313,7 +313,7 @@ public static class AgentHooks
         }
     }
 
-    public static HookResult Remove(string settingsPath)
+    public static HookResult Remove(string settingsPath, bool backupBesideFile = false)
     {
         try
         {
@@ -324,6 +324,7 @@ public static class AgentHooks
 
             var changed = false;
             string? backup = null;
+            var hooksTouched = false;
             if (root["hooks"] is JsonObject hooks)
             {
                 foreach (var e in Events)
@@ -333,35 +334,41 @@ public static class AgentHooks
                         continue;
                     }
 
+                    // only containers an entry of ours was taken out of are tidied up; foreign empty ones stay as they were
+                    var touchedEvent = false;
                     foreach (var group in list.OfType<JsonObject>().ToList())
                     {
                         if (group["hooks"] is JsonArray inner)
                         {
+                            var touchedGroup = false;
                             foreach (var h in inner.OfType<JsonObject>().Where(IsOurs).ToList())
                             {
                                 if (!changed)
                                 {
-                                    backup = Backup(settingsPath);
+                                    backup = Backup(settingsPath, backupBesideFile);
                                     changed = true;
                                 }
 
                                 inner.Remove(h);
+                                touchedGroup = true;
+                                touchedEvent = true;
                             }
 
-                            if (inner.Count == 0)
+                            if (touchedGroup && inner.Count == 0)
                             {
                                 list.Remove(group);
                             }
                         }
                     }
 
-                    if (list.Count == 0)
+                    if (touchedEvent && list.Count == 0)
                     {
                         hooks.Remove(e);
+                        hooksTouched = true;
                     }
                 }
 
-                if (hooks.Count == 0)
+                if (hooksTouched && hooks.Count == 0)
                 {
                     root.Remove("hooks");
                 }
@@ -386,7 +393,26 @@ public static class AgentHooks
         ["hooks"] = new JsonArray(new JsonObject { ["type"] = "command", ["command"] = Command }),
     };
 
-    private static bool IsOurs(JsonObject h) => h["command"]?.GetValue<string>() is { } c && c.Contains(ScriptName, StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// An entry is ours when its command is exactly the one Trayloom writes, or runs <c>agent-hook.ps1</c> from a <c>Trayloom</c> (or the
+    /// renamed-from) folder. Another tool's script of the same file name elsewhere is not touched.
+    /// </summary>
+    private static bool IsOurs(JsonObject h)
+    {
+        if (h["command"] is not JsonValue value || !value.TryGetValue<string>(out var c) || !c.Contains(ScriptName, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (string.Equals(c, Command, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var normalized = c.Replace('\\', '/');
+        return normalized.Contains("/Trayloom/" + ScriptName, StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains(LegacyNames.HookFolderSegment + ScriptName, StringComparison.OrdinalIgnoreCase);
+    }
 
     private static List<JsonObject> Ours(JsonObject root, string ev)
     {
@@ -439,10 +465,19 @@ public static class AgentHooks
     }
 
     /// <summary>Copies settings.json to a millisecond-named file in the backup folder; never overwrites an earlier backup.</summary>
-    private static string Backup(string settingsPath)
+    private static string Backup(string settingsPath, bool beside = false)
     {
-        Directory.CreateDirectory(BackupFolder);
-        var stem = Path.Combine(BackupFolder, "settings.json." + DateTime.Now.ToString("yyyyMMdd-HHmmss-fff"));
+        string stem;
+        if (beside)
+        {
+            stem = settingsPath + ".trayloom-backup-" + DateTime.Now.ToString("yyyyMMdd-HHmmss-fff");
+        }
+        else
+        {
+            Directory.CreateDirectory(BackupFolder);
+            stem = Path.Combine(BackupFolder, "settings.json." + DateTime.Now.ToString("yyyyMMdd-HHmmss-fff"));
+        }
+
         for (var n = 0; ; n++)
         {
             var target = n == 0 ? stem : stem + "-" + n;

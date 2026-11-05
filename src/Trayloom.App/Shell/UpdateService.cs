@@ -46,6 +46,7 @@ internal sealed class UpdateService : IDisposable
     private DispatcherTimer? _timer;
     private DateTime _lastManualUtc = DateTime.MinValue;
     private bool _disposed;
+    private UpdateChecker? _checker;
 
     public UpdateService(IAppSettings settings, ILog log, INotifier notifier, Dispatcher ui, HttpMessageHandler? handler = null)
     {
@@ -113,12 +114,14 @@ internal sealed class UpdateService : IDisposable
             }
 
             var now = DateTime.UtcNow;
-            if (ReadUtc(KeyBackoff) is { } backoff && backoff > now)
+            // A date in the future means the clock was wrong once: a back-off never lasts longer than a day, and an attempt more than
+            // an hour ahead of now is ignored, so a bad clock cannot switch the check off for good.
+            if (ReadUtc(KeyBackoff) is { } backoff && backoff > now && backoff <= now.AddHours(24))
             {
                 return;
             }
 
-            if (ReadUtc(KeyLastAttempt) is { } attempt && now - attempt < AutoInterval)
+            if (ReadUtc(KeyLastAttempt) is { } attempt && attempt <= now.AddHours(1) && now - attempt < AutoInterval)
             {
                 return;
             }
@@ -144,6 +147,8 @@ internal sealed class UpdateService : IDisposable
         {
             if (now - _lastManualUtc < ManualGap)
             {
+                // nothing to do, but the button is not left looking pressed: tell the page to refresh
+                RaiseChanged();
                 return;
             }
 
@@ -156,12 +161,13 @@ internal sealed class UpdateService : IDisposable
         {
             if (!ReleaseVersion.TryParse(AppInfo.Version, out var current))
             {
-                Fail(manual, Loc.F("GitHub answered {0}.", "?"));
+                Fail(manual, Loc.T("This build has no release version number."));
                 return;
             }
 
             var cache = ReadCache();
             using var checker = new UpdateChecker(AppInfo.Version, _handler);
+            _checker = checker;
             var result = await checker.FetchAsync(cache?.ETag).ConfigureAwait(true);
             if (_disposed)
             {
@@ -215,6 +221,14 @@ internal sealed class UpdateService : IDisposable
             _log.Warn("Update check failed: " + ex.Message);
             Fail(manual, Loc.T("No connection to GitHub."));
         }
+        finally
+        {
+            _checker = null;
+            if (State == UpdateState.Checking && !_disposed)
+            {
+                SetState(LatestVersion is null ? UpdateState.Idle : UpdateState.Available, null); // "Checking…" always ends
+            }
+        }
     }
 
     /// <summary>Beta updates when the user asked for them; a beta build that never saved the choice wants them too (spec 02e section 9.2).</summary>
@@ -223,14 +237,28 @@ internal sealed class UpdateService : IDisposable
 
     private void Fail(bool manual, string reason)
     {
-        if (manual)
+        // an update found earlier stays on offer (with its link) when a later check fails
+        var known = LatestVersion is not null;
+        if (manual && !known)
         {
             SetState(UpdateState.Failed, reason);
         }
         else
         {
-            _log.Info("Automatic update check: " + reason);
-            SetState(State == UpdateState.Available ? UpdateState.Available : UpdateState.Idle, null);
+            _log.Info((manual ? "Update check: " : "Automatic update check: ") + reason);
+            SetState(known ? UpdateState.Available : UpdateState.Idle, null);
+        }
+    }
+
+    private void RaiseChanged()
+    {
+        if (_ui.CheckAccess())
+        {
+            Changed?.Invoke();
+        }
+        else
+        {
+            _ui.BeginInvoke(() => Changed?.Invoke());
         }
     }
 
@@ -320,6 +348,7 @@ internal sealed class UpdateService : IDisposable
     public void Dispose()
     {
         _disposed = true;
+        _checker?.Dispose();
         _first?.Stop();
         _timer?.Stop();
     }

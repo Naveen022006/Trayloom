@@ -191,7 +191,13 @@ internal sealed class AppShell : IShell
 
     public void Restart() => Restart(false);
 
-    public void Restart(bool skipSave)
+    public void Restart(bool skipSave) => Restart(skipSave, null);
+
+    /// <summary>
+    /// Restarts after the recording check. <paramref name="beforeRelaunch"/> runs only on the confirmed path, after saving was suspended,
+    /// so a cancelled restart changes nothing and a pending debounced save cannot overwrite what it wrote. If it throws, nothing restarts.
+    /// </summary>
+    public void Restart(bool skipSave, Action? beforeRelaunch)
     {
         var exe = Environment.ProcessPath;
         if (exe is null)
@@ -204,6 +210,17 @@ internal sealed class AppShell : IShell
             if (skipSave)
             {
                 _host.Store.SuspendSaving();
+            }
+
+            try
+            {
+                beforeRelaunch?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                _host.Log.Error("Preparing the restart failed", ex);
+                Dialogs.Show(null, Loc.T("Restart stopped"), ex.Message, [Loc.T("OK")]);
+                return;
             }
 
             try
@@ -247,9 +264,16 @@ internal sealed class AppShell : IShell
             _host.Log.Warn("Could not ask the recorder: " + ex.Message);
         }
 
-        if (rec is not { IsRecording: true })
+        if (rec is null)
         {
             proceed();
+            return;
+        }
+
+        if (!rec.IsRecording)
+        {
+            // nothing to ask, but still let the recorder finish: it puts open editors into keep mode so no unsaved take is deleted
+            _ = StopThenAsync(rec, proceed);
             return;
         }
 

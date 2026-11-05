@@ -158,7 +158,7 @@ It also asks whether to **delete my data** (default: no): `%APPDATA%\Trayloom` (
 ## Does Trayloom run as administrator?
 
 No, and it does not offer to. Work that needs administrator rights (cleaning system caches, removing a program for all users)
-goes through one Windows permission prompt for that task alone. Programs that run as administrator ignore Trayloom's window
+goes through one Windows permission prompt for that task alone. If you start it as administrator yourself it keeps running but ignores developer flags and never offers elevation. `Trayloom-Setup.cmd` refuses to run as administrator. Programs that run as administrator ignore Trayloom's window
 and input tools. Cleaning system caches can also be done in Windows Settings > System > Storage.
 
 ## Checking your download

@@ -362,8 +362,8 @@ What to expect:
 * **Elevated windows.** Tools that work with input (smooth scrolling, focus follows mouse, Super key, snippets, protection,
   the switcher) cannot affect windows of programs running as administrator. Trayloom does not offer to run as administrator,
   because the folder it is installed in can be changed without administrator rights, and a copy started with administrator
-  rights would run whatever is in that folder. If you start it as administrator by hand it restarts itself without those
-  rights. Work that needs administrator rights (the cleaner, the uninstaller) asks Windows for permission one task at a time.
+  rights would run whatever is in that folder. If you start it as administrator by hand it keeps running but ignores developer
+  flags and never offers elevation (one line in the log says so); start it normally to avoid that. Work that needs administrator rights (the cleaner, the uninstaller) asks Windows for permission one task at a time.
 * **First start.** The first start after a fresh copy can take around 10 seconds while Windows scans the new files. Later
   starts take about a second.
 * **Something not working?** Right-click the tray icon > **Report a problem...** opens the folder with the log

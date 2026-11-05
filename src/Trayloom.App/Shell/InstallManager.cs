@@ -337,18 +337,38 @@ internal static class InstallManager
         return later;
     }
 
-    private enum FolderKind
+    internal enum FolderKind
     {
         Install,
         Data,
         Local,
     }
 
+    /// <summary>The local root holds one of Trayloom's known children, or is named Trayloom or local.</summary>
+    private static bool IsTrayloomLocalFolder(string folder)
+    {
+        var name = Path.GetFileName(folder.TrimEnd('\\', '/'));
+        if (name.Equals("Trayloom", StringComparison.OrdinalIgnoreCase) || name.Equals("local", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        foreach (var child in new[] { "clipboard.json", "Clipboard", "RecentCaptures", "Recordings", "agent-events", "agent-hook.ps1" })
+        {
+            if (File.Exists(Path.Combine(folder, child)) || Directory.Exists(Path.Combine(folder, child)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>
     /// A last check before a folder is handed to the recursive delete: it must not be a system folder (or hold one), must be at least
     /// three levels deep and, for the install and data folders, must contain Trayloom's own marker files.
     /// </summary>
-    private static bool LooksLikeOurs(string folder, FolderKind kind)
+    internal static bool LooksLikeOurs(string folder, FolderKind kind)
     {
         try
         {
@@ -361,7 +381,7 @@ internal static class InstallManager
             {
                 FolderKind.Install => File.Exists(Path.Combine(folder, ExeName)) && File.Exists(Path.Combine(folder, ManifestName)),
                 FolderKind.Data => File.Exists(Path.Combine(folder, "settings.json")) || Directory.Exists(Path.Combine(folder, "logs")),
-                _ => true, // the local root is the default %LOCALAPPDATA%\Trayloom or came from TRAYLOOM_LOCALDATA / TRAYLOOM_DATA
+                _ => IsTrayloomLocalFolder(folder),
             };
         }
         catch (Exception)

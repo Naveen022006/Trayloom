@@ -180,7 +180,7 @@ public sealed class SettingsStore : IDisposable
             WasReset = true;
             try
             {
-                File.Copy(_path, _path + ".bad", overwrite: true);
+                File.Copy(_path, File.Exists(_path + ".bad") ? _path + ".bad." + DateTime.Now.ToString("yyyyMMdd-HHmmss") : _path + ".bad", overwrite: true);
             }
             catch
             {

@@ -31,10 +31,15 @@ public sealed class AgentUninstall : IStartupRecovery
     {
         try
         {
-            if (AgentHooks.Status(settingsPath).Installed)
+            // Always asked, even when only one of the two entries is left: Remove does nothing (no backup, no write) when none is ours.
+            var result = AgentHooks.Remove(settingsPath, backupBesideFile: true);
+            if (result.BackupPath is not null)
             {
-                var result = AgentHooks.Remove(settingsPath);
                 log.Info("Claude hook removed: " + result.Message);
+            }
+            else if (!result.Ok)
+            {
+                log.Warn("Claude hook: " + result.Message);
             }
         }
         catch (Exception ex)

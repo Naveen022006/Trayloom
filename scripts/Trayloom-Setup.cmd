@@ -4,6 +4,15 @@ rem  - Inside the unzipped Trayloom folder it starts Trayloom.exe --install.
 rem  - Next to Trayloom-win-x64.zip it unpacks the zip to %TEMP% first, then starts the installer.
 rem The installer is Trayloom itself: per-user, no administrator rights, shortcuts + Apps & features entry.
 setlocal
+
+rem Refuse to run as administrator: the installer is per-user and needs no administrator rights, and an elevated copy would
+rem install into the administrator account's folders instead of yours.
+net session >nul 2>&1
+if not errorlevel 1 (
+  echo Run Trayloom-Setup.cmd normally, not as administrator. Close this window and double-click the file again.
+  pause
+  exit /b 1
+)
 set "LOG=%TEMP%\Trayloom-Setup.log"
 echo %DATE% %TIME% setup started from %~dp0> "%LOG%"
 
@@ -37,5 +46,6 @@ if not exist "%DEST%\Trayloom.exe" (
 )
 echo Starting the installer...
 start "" /wait "%DEST%\Trayloom.exe" --install
+rem the unpacked copy has exited by now (start /wait); if anything still holds a file the folder is simply left behind
 rmdir /s /q "%DEST%" 2>nul
 exit /b 0

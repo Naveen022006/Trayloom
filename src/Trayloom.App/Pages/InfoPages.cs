@@ -157,6 +157,12 @@ internal static class AboutPage
         {
             svc.Changed += Refresh;
             stack.Unloaded += (_, _) => svc.Changed -= Refresh;
+            stack.Loaded += (_, _) =>
+            {
+                svc.Changed -= Refresh; // never twice
+                svc.Changed += Refresh;
+                Refresh();
+            };
         }
 
         lastChecked.FontSize = 11;

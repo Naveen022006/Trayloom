@@ -94,6 +94,18 @@ internal static partial class Program
             AgentUninstall.Run(settings, new HarnessLog());
             Check(!AgentHooks.Status(settings).Installed && !File.Exists(AgentHooks.ScriptPath) && !Directory.Exists(AgentHooks.EventsFolder), "hooks: the uninstall stage removes ours, the script and the events");
             Check(JsonNode.Parse(File.ReadAllText(settings))!.ToJsonString() == before, "hooks: the uninstall keeps the foreign entries");
+
+            // A single leftover entry (the other was deleted by hand) is still removed, and a foreign agent-hook.ps1 is left alone.
+            AgentHooks.Install(settings);
+            var doc = JsonNode.Parse(File.ReadAllText(settings))!.AsObject();
+            doc["hooks"]!.AsObject().Remove("PermissionRequest");
+            doc["hooks"]!["Stop"]!.AsArray().Add(JsonNode.Parse("""{ "hooks": [ { "type": "command", "command": "node C:/other/agent-hook.ps1" } ] }"""));
+            File.WriteAllText(settings, doc.ToJsonString());
+            Check(!AgentHooks.Status(settings).Installed, "hooks: with one entry gone the hook counts as not installed");
+            AgentUninstall.Run(settings, new HarnessLog());
+            var left = File.ReadAllText(settings);
+            Check(!left.Contains("Trayloom") && left.Contains("C:/other/agent-hook.ps1") && left.Contains("echo foreign"), "hooks: a single leftover entry is removed, foreign entries stay");
+            Check(Directory.GetFiles(Path.GetDirectoryName(settings)!, "settings.json.trayloom-backup-*").Length >= 1, "hooks: the uninstall backup sits beside settings.json");
         }
         finally
         {

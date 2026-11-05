@@ -46,22 +46,31 @@ public sealed class UpdateChecker : IDisposable
 
     private readonly HttpClient _http;
     private readonly string _userAgent;
+    private readonly TimeSpan _timeout;
+    private readonly CancellationTokenSource _life = new();
 
     /// <summary>Creates a checker. <paramref name="handler"/> is injectable for tests; the default never follows redirects.</summary>
     public UpdateChecker(string appVersion, HttpMessageHandler? handler = null, TimeSpan? timeout = null)
     {
         _userAgent = "Trayloom/" + appVersion;
+        _timeout = timeout ?? TimeSpan.FromSeconds(15);
         _http = new HttpClient(handler ?? new SocketsHttpHandler { AllowAutoRedirect = false }, disposeHandler: true)
         {
-            Timeout = timeout ?? TimeSpan.FromSeconds(15),
+            Timeout = Timeout.InfiniteTimeSpan, // the whole request, body included, is bounded below instead
         };
     }
 
-    /// <summary>Asks GitHub for the release list. Never throws.</summary>
+    /// <summary>
+    /// Asks GitHub for the release list. Never throws. The whole request, headers and body, ends within the timeout (15 s by default),
+    /// even when the server stalls or the stream ignores cancellation; disposing the checker cancels it too.
+    /// </summary>
     public async Task<FetchResult> FetchAsync(string? etag, CancellationToken cancel = default)
     {
         try
         {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancel, _life.Token);
+            cts.CancelAfter(_timeout);
+            var token = cts.Token;
             using var request = new HttpRequestMessage(HttpMethod.Get, ApiUrl);
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
             request.Headers.UserAgent.ParseAdd(_userAgent);
@@ -71,7 +80,7 @@ public sealed class UpdateChecker : IDisposable
                 request.Headers.TryAddWithoutValidation("If-None-Match", etag);
             }
 
-            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancel).ConfigureAwait(false);
+            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).WaitAsync(token).ConfigureAwait(false);
             var status = (int)response.StatusCode;
             if (response.StatusCode == HttpStatusCode.NotModified)
             {
@@ -93,11 +102,11 @@ public sealed class UpdateChecker : IDisposable
                 return new FetchResult(FetchStatus.HttpError, HttpStatus: status);
             }
 
-            await using var stream = await response.Content.ReadAsStreamAsync(cancel).ConfigureAwait(false);
+            await using var stream = await response.Content.ReadAsStreamAsync(token).WaitAsync(token).ConfigureAwait(false);
             using var buffer = new MemoryStream();
             var chunk = new byte[16 * 1024];
             int read;
-            while ((read = await stream.ReadAsync(chunk, cancel).ConfigureAwait(false)) > 0)
+            while ((read = await stream.ReadAsync(chunk, token).AsTask().WaitAsync(token).ConfigureAwait(false)) > 0)
             {
                 if (buffer.Length + read > MaxBytes)
                 {
@@ -158,5 +167,18 @@ public sealed class UpdateChecker : IDisposable
     }
 
     /// <inheritdoc />
-    public void Dispose() => _http.Dispose();
+    public void Dispose()
+    {
+        try
+        {
+            _life.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // already disposed
+        }
+
+        _http.Dispose();
+        _life.Dispose();
+    }
 }

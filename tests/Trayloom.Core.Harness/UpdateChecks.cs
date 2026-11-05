@@ -178,5 +178,43 @@ internal static class UpdateChecks
             return Json("[]");
         }, timeout: TimeSpan.FromMilliseconds(200));
         Check(slow.Status == FetchStatus.NoConnection, "a timeout is NoConnection");
+
+        // Headers arrive at once, then the body never does (a stream that even ignores cancellation): the whole request still ends.
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var stalled = await Fetch(_ =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new StalledStream()) };
+            return Task.FromResult(response);
+        }, timeout: TimeSpan.FromMilliseconds(400));
+        watch.Stop();
+        Check(stalled.Status == FetchStatus.NoConnection && watch.Elapsed < TimeSpan.FromSeconds(3), "a stalled body ends as NoConnection within the bound (" + watch.ElapsedMilliseconds + " ms)");
+    }
+
+    /// <summary>A body that never delivers a byte and ignores cancellation.</summary>
+    private sealed class StalledStream : Stream
+    {
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+
+        public override void Flush()
+        {
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) => new(new TaskCompletionSource<int>().Task);
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 }

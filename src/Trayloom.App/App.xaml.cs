@@ -54,6 +54,8 @@ public partial class App : Application
     /// <summary>True when Trayloom runs elevated from a user-writable folder and could not restart itself without administrator rights.</summary>
     internal static bool RestrictedElevated { get; private set; }
 
+    private static int s_crashHandled;
+
     private Mutex? _mutex;
     private EventWaitHandle? _activateEvent;
     private RegisteredWaitHandle? _activateWait;
@@ -115,16 +117,10 @@ public partial class App : Application
             return;
         }
 
-        // An administrator copy started by hand from a folder an unprivileged user can write to would run code a normal process could
-        // have replaced: start again without administrator rights (through Explorer) and leave. Development builds are excepted.
+        // An administrator copy started by hand from a folder an unprivileged user can write to is not restarted or "fixed": it keeps
+        // running, but as a restricted copy (no developer flags, no command file, never an offer to elevate). Development builds are excepted.
         if (ElevationPolicy.IsElevated && !ElevationPolicy.IsAdminOwnedInstall && !InstallManager.IsDevelopmentBuild)
         {
-            if (TryRestartWithoutElevation())
-            {
-                Shutdown();
-                return;
-            }
-
             RestrictedElevated = true;
         }
 
@@ -210,7 +206,7 @@ public partial class App : Application
         _quitEvent = new EventWaitHandle(false, EventResetMode.AutoReset, QuitEventName);
         _quitWait = ThreadPool.RegisterWaitForSingleObject(
             _quitEvent,
-            (_, _) => Dispatcher.BeginInvoke(() => Shutdown()),
+            (_, _) => Dispatcher.BeginInvoke(QuitFromSignal),
             null,
             Timeout.Infinite,
             executeOnlyOnce: true);
@@ -222,6 +218,10 @@ public partial class App : Application
         _host = new CoreHost(Dispatcher);
         var log = _host.Log;
         log.Info($"Trayloom {AppInfo.Version} starting");
+        if (RestrictedElevated)
+        {
+            log.Warn("Trayloom is running as administrator from a folder that can be changed without administrator rights; developer flags are ignored and no elevation is offered");
+        }
 
         // A previous run that was killed or crashed may have left Apple Music's window hidden, transparent or off-screen: give it back
         // (before the features start, so nothing of this run can overwrite the record first). Off the UI thread: cross-process calls.
@@ -258,7 +258,7 @@ public partial class App : Application
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
         {
             log.Error("Unhandled exception" + (args.IsTerminating ? " (terminating)" : string.Empty), args.ExceptionObject as Exception);
-            if (args.IsTerminating)
+            if (args.IsTerminating && Interlocked.Exchange(ref s_crashHandled, 1) == 0)
             {
                 // The process is going down: put back what Trayloom changed in Windows. No UI thread is needed for this.
                 try
@@ -425,7 +425,7 @@ public partial class App : Application
             return;
         }
 
-        Dispatcher.BeginInvoke(() => Shutdown());
+        Dispatcher.BeginInvoke(ShutdownAfterFinish);
     }
 
     // ------------------------------------------------------------------------------------------------ uninstall
@@ -477,6 +477,39 @@ public partial class App : Application
         }
 
         InstallManager.ScheduleDeletion(later, log);
+        Shutdown();
+    }
+
+    /// <summary>
+    /// <c>--quit</c> and the uninstaller ask through an event, with nobody to answer a dialog: a recording in progress is stopped and
+    /// saved first (up to 15 s), then Trayloom shuts down.
+    /// </summary>
+    private void QuitFromSignal() => ShutdownAfterFinish();
+
+    /// <summary>
+    /// Every shutdown path goes through here (or through the shell's confirmed quit): the recorder is asked to stop and finish, within
+    /// 15 s, even when nothing is recording, because that also puts open recorder editors into keep mode so their unsaved takes are
+    /// not deleted. It is awaited, never blocked on, so the UI thread keeps pumping.
+    /// </summary>
+    internal async void ShutdownAfterFinish()
+    {
+        try
+        {
+            if (_host?.Services.Get<IRecordingState>() is { } rec)
+            {
+                if (rec.IsRecording)
+                {
+                    _host.Log.Info("Shutting down while recording: finishing the recording first");
+                }
+
+                await rec.StopAndFinishAsync(TimeSpan.FromSeconds(15));
+            }
+        }
+        catch (Exception ex)
+        {
+            _host?.Log.Error("Finishing the recording before quitting failed", ex);
+        }
+
         Shutdown();
     }
 
@@ -598,7 +631,7 @@ public partial class App : Application
     /// </summary>
     private void RunDevFlags(string[] args, bool startup)
     {
-        if (!DevMode)
+        if (!DevMode || RestrictedElevated)
         {
             args = KeepAlwaysAllowed(args);
         }
@@ -793,38 +826,6 @@ public partial class App : Application
         return kept.ToArray();
     }
 
-    /// <summary>
-    /// Starts this exe again through Explorer, which runs it with the normal user's rights, so an administrator copy started by hand from
-    /// a user-writable folder does not keep running with elevated rights. False (and nothing started) when Explorer is not running.
-    /// </summary>
-    private static bool TryRestartWithoutElevation()
-    {
-        try
-        {
-            var session = Process.GetCurrentProcess().SessionId;
-            var explorerRunning = Process.GetProcessesByName("explorer").Any(p => p.SessionId == session);
-            var exe = Environment.ProcessPath;
-            if (!explorerRunning || string.IsNullOrEmpty(exe))
-            {
-                return false;
-            }
-
-            var explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
-            if (!File.Exists(explorer))
-            {
-                return false;
-            }
-
-            new FileLog().Info("Restarting without administrator rights");
-            Process.Start(new ProcessStartInfo(explorer, "\"" + exe + "\"") { UseShellExecute = false });
-            return true;
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-    }
-
     private static readonly string[] DevFlags = ["--open-settings", "--open-panel", "--open-menu", "--search", "--dev-uninstall", "--dev-install", "--action", "--dump-info", "--close-panel", "--open-onboarding", "--open-install", "--show-toast", "--simulate-problem", "--dev-key", "--shot", "--set-language", "--set-appearance", "--shot-delay", "--shot-full", "--dump-text", "--scroll-to", "--host-utility"];
 
     /// <summary>Raises a PreviewKeyDown for <paramref name="name"/> (e.g. "escape") on the active window, as if it had been typed there.</summary>
@@ -880,6 +881,25 @@ public partial class App : Application
         _shell?.Recover();
     }
 
+    protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
+    {
+        // Sign-out or shutdown cannot wait for a dialog or an await: give the recorder a short, bounded moment on a worker thread so the
+        // UI thread is never blocked on work that needs it, then let Windows go on.
+        try
+        {
+            if (_host?.Services.Get<IRecordingState>() is { } rec)
+            {
+                Task.Run(() => rec.StopAndFinishAsync(TimeSpan.FromSeconds(4))).Wait(TimeSpan.FromSeconds(5));
+            }
+        }
+        catch (Exception ex)
+        {
+            _host?.Log.Warn("Finishing the recording at session end failed: " + ex.Message);
+        }
+
+        base.OnSessionEnding(e);
+    }
+
     protected override void OnExit(ExitEventArgs e)
     {
         _activateWait?.Unregister(null);
@@ -904,15 +924,21 @@ public partial class App : Application
             {
                 // "Uninstall completely": put back every Windows change Trayloom made and remove its Claude Code hook, then delete the data.
                 StartupRecovery.RunAll(RecoveryStage.Uninstall, _host.Log, TimeSpan.FromSeconds(10));
-                foreach (var folder in new[] { AppPaths.Root, AppPaths.LocalRoot })
+                foreach (var (folder, kind) in new[] { (AppPaths.Root, InstallManager.FolderKind.Data), (AppPaths.LocalRoot, InstallManager.FolderKind.Local) })
                 {
+                    if (!InstallManager.LooksLikeOurs(folder, kind))
+                    {
+                        _host.Log.Warn("Not deleting " + folder + ": it does not look like a Trayloom data folder");
+                        continue;
+                    }
+
                     try
                     {
                         Directory.Delete(folder, recursive: true);
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine(ex);
+                        _host.Log.Warn($"Could not delete {folder}: {ex.Message}");
                     }
                 }
             }
