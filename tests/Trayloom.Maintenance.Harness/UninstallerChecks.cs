@@ -23,6 +23,10 @@ internal static class UninstallerChecks
     {
         _check = check;
         UsableLocation();
+        Aliases();
+        SharedVendors();
+        Depth();
+        Targets();
         BroadLocationScan();
         Backups();
         ElevatedRows();
@@ -103,6 +107,128 @@ internal static class UninstallerChecks
         {
             TryDelete(root);
         }
+    }
+
+    private static void Aliases()
+    {
+        var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var drive = Path.GetPathRoot(windows)!;
+        var bypass = new Dictionary<string, string>
+        {
+            ["NT device path to drivers"] = @"\??\" + Path.Combine(windows, "System32", "drivers"),
+            ["extended path"] = @"\\?\" + Path.Combine(windows, "System32", "drivers"),
+            ["device path"] = @"\\.\" + Path.Combine(windows, "System32", "drivers"),
+            ["NT device path to LocalAppData"] = @"\??\" + local,
+            ["NTFS stream syntax"] = windows + @"::$INDEX_ALLOCATION\System32\drivers",
+            ["second colon"] = drive + @"Users:x\y",
+            ["forward slashes into Windows"] = windows.Replace('\\', '/') + "/System32/drivers",
+            ["dot segments into Windows"] = Path.Combine(Path.GetTempPath(), @"..\..\..\..\..\Windows\System32\drivers"),
+        };
+        foreach (var (label, path) in bypass)
+        {
+            Check(Usable(Program("Alias " + label, path)).Length == 0, $"alias '{label}' is not used");
+        }
+
+        var legacy = Path.Combine(drive, "Documents and Settings", Environment.UserName, "AppData", "Local");
+        if (Directory.Exists(legacy))
+        {
+            Check(Usable(Program("Alias legacy profile", legacy)).Length == 0, "the 'Documents and Settings' junction into the profile is not used");
+        }
+
+        var root = Path.Combine(Path.GetTempPath(), "tl-wp1-al-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var real = Path.Combine(root, "Real");
+            Directory.CreateDirectory(Path.Combine(real, "Sub"));
+            var link = Path.Combine(root, "Link");
+            if (MakeJunction(link, real))
+            {
+                Check(Usable(Program("Alias parent junction", Path.Combine(link, "Sub"))).Length == 0, "a folder behind a junction in a parent is not used");
+            }
+
+            Check(Usable(Program("Alias temp", Path.GetTempPath())).Length == 0, "%TEMP% itself is not used");
+            Check(Usable(Program("Alias temp child", Path.Combine(real, "Sub"))).Length > 0, "a real folder under %TEMP% is used");
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    private static void SharedVendors()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "tl-wp1-sv-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var vendor = Path.Combine(root, "Vendor");
+            Directory.CreateDirectory(Path.Combine(vendor, "B"));
+            var a = Program("VendorA", vendor, "a");
+            var b = new InstalledProgram { Key = "b", Name = "VendorB", UninstallString = "\"" + Path.Combine(vendor, "B", "uninst.exe") + "\" /S" };
+            Check(Usable(a, b).Length == 0, "a vendor folder is refused when another program's UninstallString lies below it");
+            var c = new InstalledProgram { Key = "c", Name = "VendorC", UninstallString = "x", DisplayIcon = Path.Combine(vendor, "B", "c.exe") + ",0" };
+            Check(Usable(a, c).Length == 0, "a vendor folder is refused when another program's DisplayIcon lies below it");
+            var d = new InstalledProgram { Key = "d", Name = "VendorD", IsAppx = true, InstallLocation = Path.Combine(vendor, "B"), PackageFullName = "d" };
+            Check(Usable(a, d).Length == 0, "a packaged program below the folder blocks it too");
+            var e = new InstalledProgram { Key = "e", Name = "Elsewhere", UninstallString = Path.Combine(Environment.SystemDirectory, "msiexec.exe") + " /x {1}" };
+            Check(Usable(a, e).Length > 0, "an msiexec uninstall string elsewhere does not block it");
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    private static void Depth()
+    {
+        string Env(Environment.SpecialFolder f) => Environment.GetFolderPath(f);
+        var programFiles = Env(Environment.SpecialFolder.ProgramFiles);
+        Check(Usable(Program("PF", programFiles)).Length == 0, "Program Files itself is refused");
+        foreach (var path in new[] { Path.Combine(programFiles, "Git"), Path.Combine(Env(Environment.SpecialFolder.ProgramFilesX86), "Steam") })
+        {
+            if (Directory.Exists(path))
+            {
+                Check(Usable(Program("Normal " + Path.GetFileName(path), path)).Length > 0, $"{Path.GetFileName(path)} under Program Files is accepted (two segments)");
+            }
+        }
+
+        var twoSegments = Path.Combine(Path.GetPathRoot(Path.GetTempPath())!, "tl-wp1-d-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(twoSegments, "App"));
+            Check(SafePaths.SegmentCount(Path.Combine(twoSegments, "App")) == 2, "the fixture really is two segments deep");
+            Check(Usable(Program("TwoSeg", Path.Combine(twoSegments, "App"))).Length > 0, "a two-segment install folder is accepted");
+            Check(Usable(Program("OneSeg", twoSegments)).Length == 0, "a one-segment folder is refused");
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // no right to create a folder at the drive root: the Program Files rows above cover the rule when those folders exist
+        }
+        finally
+        {
+            TryDelete(twoSegments);
+        }
+
+        var users = Path.Combine(Path.GetPathRoot(programFiles)!, "Users");
+        var other = Directory.Exists(users) ? Directory.GetDirectories(users).FirstOrDefault(d => !string.Equals(d, Env(Environment.SpecialFolder.UserProfile), StringComparison.OrdinalIgnoreCase)) : null;
+        if (other is not null)
+        {
+            Check(Usable(Program("OtherProfile", other)).Length == 0, "another user's profile folder is refused");
+        }
+    }
+
+    private static void Targets()
+    {
+        var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        var install = Path.Combine(Path.GetTempPath(), "tl-wp1-t-" + Guid.NewGuid().ToString("N"), "App");
+        Check(UninstallerSupport.TargetUnder(@"\??\" + Path.Combine(install, "svc.exe"), install), "an NT-prefixed target under the install folder is recognised");
+        Check(!UninstallerSupport.TargetUnder(Path.Combine(install, "..", "Other", "svc.exe"), install), "a dot-dot target outside the folder is not under it");
+        Check(!UninstallerSupport.TargetUnder(@"\??\" + Path.Combine(windows, "system32", "drivers", "x.sys"), Path.Combine(windows, "system32")), "a driver image is never under any install folder");
+        Check(!UninstallerSupport.TargetUnder(@"\SystemRoot\System32\drivers\x.sys", Path.Combine(windows, "System32")), "a \\SystemRoot\\ image is never under any install folder");
+        Check(!UninstallerSupport.TargetUnder(@"System32\drivers\x.sys", Path.Combine(windows, "System32")), "a relative System32 image is never under any install folder");
+        Check(UninstallerSupport.NormalizeTarget(@"\SystemRoot\System32\drivers\x.sys").StartsWith(windows, StringComparison.OrdinalIgnoreCase), "\\SystemRoot\\ maps to the Windows folder");
+        Check(UninstallerSupport.NormalizeTarget(@"\\server\share\x.exe").Length == 0, "a UNC target is not a local path");
+        Check(UninstallerSupport.NormalizeTarget("notepad.exe").Length == 0, "a bare name is not a local path");
     }
 
     private static bool MakeJunction(string link, string target)
@@ -262,11 +388,16 @@ internal static class UninstallerChecks
 
     private static void Commands()
     {
-        var good = OperationStatusView.BuildTerminalScript([["uninstall", "--id", "Vendor.App", "--exact", "--silent"]]);
-        Check(good is not null && good.Contains("'Vendor.App'") && good.StartsWith("& 'winget'"), "a plain winget command builds");
-        Check(OperationStatusView.BuildTerminalScript([["uninstall", "--id", "x; calc"]]) is null, "an argument with a separator is refused");
-        Check(OperationStatusView.BuildTerminalScript([["uninstall", "--id", "x' ; calc ; '"]]) is null, "an argument with a quote is refused");
-        Check(OperationStatusView.BuildTerminalScript([["uninstall", "--id", "$(calc)"]]) is null, "an argument with a sub-expression is refused");
+        var good = OperationStatusView.BuildTerminalScript([["uninstall", "--id", "Vendor.App", "--exact", "--silent"]], null);
+        Check(good is null, "no command is built without a trusted winget path");
+        good = OperationStatusView.BuildTerminalScript([["uninstall", "--id", "Vendor.App", "--exact", "--silent"]], @"C:\Program Files\WindowsApps\p\winget.exe");
+        Check(good is not null && good.Contains("'Vendor.App'") && good.StartsWith("& 'C:"), "a plain winget command builds");
+        var quoted = OperationStatusView.BuildTerminalScript([["list"]], "C:\\Users\\D\u2019Souza\\winget.exe");
+        Check(quoted is not null && quoted.Contains("D\u2019\u2019Souza"), "a typographic quote in the path is doubled");
+        Check(OperationStatusView.BuildTerminalScript([["uninstall", "--id", "x\n"]], "C:\\w\\winget.exe") is null, "a trailing newline in an argument is refused");
+        Check(OperationStatusView.BuildTerminalScript([["uninstall", "--id", "x; calc"]], "C:\\w\\winget.exe") is null, "an argument with a separator is refused");
+        Check(OperationStatusView.BuildTerminalScript([["uninstall", "--id", "x' ; calc ; '"]], "C:\\w\\winget.exe") is null, "an argument with a quote is refused");
+        Check(OperationStatusView.BuildTerminalScript([["uninstall", "--id", "$(calc)"]], "C:\\w\\winget.exe") is null, "an argument with a sub-expression is refused");
         Check(OperationStatusView.BuildTerminalScript([]) is null, "no commands build nothing");
         var two = OperationStatusView.BuildTerminalScript([["source", "update"], ["upgrade", "--all"]], @"C:\Program Files\WindowsApps\p\winget.exe");
         Check(two is not null && two.Contains("; & ") && two.Contains(@"& 'C:\Program Files\WindowsApps\p\winget.exe' 'source'"), "several commands join with the resolved winget path");

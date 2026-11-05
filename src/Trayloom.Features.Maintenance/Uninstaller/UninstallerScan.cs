@@ -220,11 +220,204 @@ internal static class UninstallerSupport
         }
     }
 
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern uint GetFinalPathNameByHandleW(Microsoft.Win32.SafeHandles.SafeFileHandle file, StringBuilder path, uint size, uint flags);
+
+    private static readonly Regex DriveLetterPath = new(@"^[A-Za-z]:\\", RegexOptions.Compiled);
+
     /// <summary>
-    /// The install folder of a program when it is safe to treat as the program's own: an existing real folder that is not a
-    /// critical root (or an ancestor of one), not under Windows, not a shared system folder, and not shared with another listed
-    /// program. Returns an empty string otherwise, so a broad or forged <c>InstallLocation</c> can never drive a kill or a removal.
-    /// The log line carries the reason only, never the path.
+    /// Turns a path taken from the registry or a scheduled task into a plain normalised path: environment variables expanded, the NT
+    /// prefixes <c>\??\</c>, <c>\\?\</c> and <c>\\.\</c> removed, <c>\SystemRoot\</c> and a leading <c>System32\</c> mapped to the Windows
+    /// folder. Returns an empty string when the result is not a local drive-letter path.
+    /// </summary>
+    public static string NormalizeTarget(string? text)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return string.Empty;
+            }
+
+            var value = Environment.ExpandEnvironmentVariables(text.Trim().Trim('"')).Replace('/', '\\');
+            foreach (var prefix in new[] { @"\??\", @"\\?\", @"\\.\" })
+            {
+                if (value.StartsWith(prefix, StringComparison.Ordinal))
+                {
+                    value = value[prefix.Length..];
+                    break;
+                }
+            }
+
+            var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+            if (value.StartsWith(@"\SystemRoot\", StringComparison.OrdinalIgnoreCase))
+            {
+                value = Path.Combine(windows, value[@"\SystemRoot\".Length..]);
+            }
+            else if (value.StartsWith(@"System32\", StringComparison.OrdinalIgnoreCase) || value.StartsWith(@"SysWOW64\", StringComparison.OrdinalIgnoreCase))
+            {
+                value = Path.Combine(windows, value);
+            }
+
+            return DriveLetterPath.IsMatch(value) && value.IndexOf(':', 2) < 0 ? SafePaths.Normalize(value) : string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// True when a scan target (a service image, task action, Run value, firewall program or shortcut target) lies under
+    /// <paramref name="install"/> after normalisation, and never when it lies under the Windows folder.
+    /// </summary>
+    public static bool TargetUnder(string? target, string install)
+    {
+        if (string.IsNullOrEmpty(install))
+        {
+            return false;
+        }
+
+        var normalized = NormalizeTarget(target);
+        return normalized.Length > 0 && !SafePaths.IsUnderWindows(normalized) && SafePaths.IsUnder(normalized, install);
+    }
+
+    /// <summary>The real final path of a folder (links in any parent resolved), or empty when it cannot be read.</summary>
+    internal static string FinalPath(string folder)
+    {
+        try
+        {
+            // FILE_FLAG_BACKUP_SEMANTICS opens a directory; the handle follows links on purpose so the final target is reported
+            using var handle = Win32.CreateFileW(folder, 0, 7, nint.Zero, 3, 0x02000000, nint.Zero);
+            if (handle.IsInvalid)
+            {
+                return string.Empty;
+            }
+
+            var buffer = new StringBuilder(1024);
+            var length = GetFinalPathNameByHandleW(handle, buffer, (uint)buffer.Capacity, 0);
+            if (length == 0 || length >= buffer.Capacity)
+            {
+                return string.Empty;
+            }
+
+            var text = buffer.ToString();
+            return text.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase) ? string.Empty : text.StartsWith(@"\\?\", StringComparison.Ordinal) ? text[4..] : text;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static readonly string[] MicrosoftOwnedProgramFolders =
+    [
+        "Windows Defender", "Windows Defender Advanced Threat Protection", "Windows NT", "Windows Mail", "Windows Media Player", "Windows Photo Viewer", "Windows Sidebar",
+        "Windows Portable Devices", "Windows Security", "Windows Kits", "WindowsPowerShell", "Internet Explorer", "dotnet", "Reference Assemblies", "MSBuild", "Microsoft",
+        "Uninstall Information", "WindowsApps", "ModifiableWindowsApps", "Common Files",
+    ];
+
+    /// <summary>Folders an installer must never be allowed to claim as its own (beyond the critical roots): shared, Microsoft-owned or temp.</summary>
+    private static bool IsBroadFolder(string full)
+    {
+        string Special(Environment.SpecialFolder f) => Environment.GetFolderPath(f);
+        var programFiles = new[] { Special(Environment.SpecialFolder.ProgramFiles), Special(Environment.SpecialFolder.ProgramFilesX86) }.Where(p => p.Length > 0).ToList();
+        var local = Special(Environment.SpecialFolder.LocalApplicationData);
+        var roaming = Special(Environment.SpecialFolder.ApplicationData);
+        var programData = Special(Environment.SpecialFolder.CommonApplicationData);
+        var systemDrive = Path.GetPathRoot(Special(Environment.SpecialFolder.Windows)) ?? @"C:\";
+
+        // app packages and the user's alias folder
+        var packaged = programFiles.SelectMany(p => new[] { Path.Combine(p, "WindowsApps"), Path.Combine(p, "ModifiableWindowsApps") }).ToList();
+        if (local.Length > 0)
+        {
+            packaged.Add(Path.Combine(local, "Microsoft", "WindowsApps"));
+        }
+
+        if (packaged.Any(p => SafePaths.IsUnder(full, p)))
+        {
+            return true;
+        }
+
+        // the Windows-owned parts of the profile and ProgramData
+        var windowsOwned = new List<string>();
+        foreach (var (root, _) in new[] { (local, 0), (roaming, 0), (programData, 0) })
+        {
+            if (root.Length > 0)
+            {
+                windowsOwned.Add(Path.Combine(root, "Microsoft", "Windows"));
+            }
+        }
+
+        if (windowsOwned.Any(p => SafePaths.IsUnder(full, p)))
+        {
+            return true;
+        }
+
+        // the temp folder itself, and anything the Cleaner treats as a temp root
+        if (string.Equals(full, SafePaths.Normalize(FileOps.Temp), StringComparison.OrdinalIgnoreCase) || FileOps.IsSafeTempRoot(full))
+        {
+            return true;
+        }
+
+        var parent = Path.GetDirectoryName(full) ?? string.Empty;
+        if (parent.Length > 0)
+        {
+            // direct children of either Common Files, other users' profiles, and Microsoft-owned Program Files folders
+            var commonFiles = new[] { Special(Environment.SpecialFolder.CommonProgramFiles), Special(Environment.SpecialFolder.CommonProgramFilesX86) };
+            if (commonFiles.Any(c => c.Length > 0 && SafePaths.IsUnder(full, c)))
+            {
+                return true;
+            }
+
+            if (string.Equals(parent, SafePaths.Normalize(Path.Combine(systemDrive, "Users")), StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (programFiles.Any(p => string.Equals(parent, SafePaths.Normalize(p), StringComparison.OrdinalIgnoreCase))
+                && MicrosoftOwnedProgramFolders.Contains(Path.GetFileName(full), StringComparer.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>The folders another program's registry entry points into: install location, icon folder, uninstaller folders.</summary>
+    private static IEnumerable<string> ClaimedFolders(InstalledProgram other)
+    {
+        var candidates = new List<string>();
+        void Add(string? path)
+        {
+            var normalized = NormalizeTarget(path);
+            if (normalized.Length > 0)
+            {
+                candidates.Add(normalized);
+            }
+        }
+
+        Add(other.InstallLocation);
+        foreach (var file in new[] { Icons.CleanIconPath(other.DisplayIcon), CleanerScanner.ExecutableOf(other.UninstallString), CleanerScanner.ExecutableOf(other.QuietUninstallString) })
+        {
+            var normalized = NormalizeTarget(file);
+            if (normalized.Length > 0 && !SafePaths.IsUnderWindows(normalized) && Path.GetDirectoryName(normalized) is { Length: > 0 } dir)
+            {
+                candidates.Add(dir);
+            }
+        }
+
+        return candidates.Where(c => !SafePaths.IsUnderWindows(c));
+    }
+
+    /// <summary>
+    /// The install folder of a program when it is safe to treat as the program's own: an existing real folder (no link in any part of the
+    /// path, checked through its final path) at least two levels deep, that is not a critical root (or an ancestor of one), not under
+    /// Windows, not a shared, Microsoft-owned or temp folder, and not shared with another listed program (by install location, icon
+    /// folder or uninstaller folder; packaged apps included). Returns an empty string otherwise, so a broad or forged
+    /// <c>InstallLocation</c> can never drive a kill or a removal. The log line carries the reason only, never the path.
+    /// Touches the disk: call it off the UI thread.
     /// </summary>
     public static string UsableInstallLocation(InstalledProgram p, IReadOnlyList<InstalledProgram> all, Action<string>? log = null)
     {
@@ -244,12 +437,13 @@ internal static class UninstallerSupport
         string full;
         try
         {
-            if (raw.Any(char.IsControl) || !Path.IsPathFullyQualified(raw) || raw.StartsWith(@"\\", StringComparison.Ordinal) || raw.StartsWith('/'))
+            var text = raw.Trim().Trim('"').Replace('/', '\\');
+            if (text.Any(char.IsControl) || !DriveLetterPath.IsMatch(text) || text.IndexOf(':', 2) >= 0)
             {
-                return Refuse("not a local absolute path");
+                return Refuse("not a local drive path");
             }
 
-            full = SafePaths.Normalize(raw);
+            full = SafePaths.Normalize(text);
             if (!Directory.Exists(full))
             {
                 return Refuse("folder missing");
@@ -258,6 +452,13 @@ internal static class UninstallerSupport
             if (Win32.IsReparsePoint(full))
             {
                 return Refuse("link");
+            }
+
+            var final = FinalPath(full);
+            if (final.Length == 0 || !string.Equals(SafePaths.Normalize(final), full, StringComparison.OrdinalIgnoreCase))
+            {
+                // a link in a parent folder, a substituted drive or stream syntax
+                return Refuse("path is an alias");
             }
         }
         catch
@@ -270,34 +471,24 @@ internal static class UninstallerSupport
             return Refuse("critical folder");
         }
 
-        if (SafePaths.IsSharedSystemFolder(full))
+        if (SafePaths.IsSharedSystemFolder(full) || IsBroadFolder(full))
         {
             return Refuse("shared system folder");
         }
 
-        if (!FileOps.MayRemove(full))
+        if (SafePaths.SegmentCount(full) < 2)
         {
             return Refuse("too shallow");
         }
 
         foreach (var other in all)
         {
-            if (ReferenceEquals(other, p) || other.Identity == p.Identity || other.IsAppx || string.IsNullOrWhiteSpace(other.InstallLocation))
+            if (ReferenceEquals(other, p) || other.Identity == p.Identity)
             {
                 continue;
             }
 
-            string otherFull;
-            try
-            {
-                otherFull = SafePaths.Normalize(other.InstallLocation);
-            }
-            catch
-            {
-                continue;
-            }
-
-            if (SafePaths.IsUnder(otherFull, full))
+            if (ClaimedFolders(other).Any(c => SafePaths.IsUnder(c, full)))
             {
                 return Refuse("shared with another program");
             }
@@ -679,7 +870,7 @@ internal sealed class LeftoverScanner
                 {
                     _ct.ThrowIfCancellationRequested();
                     var target = SafeTarget(file);
-                    if (target is not null && _install.Length > 0 && FileOps.IsUnder(target, _install))
+                    if (UninstallerSupport.TargetUnder(target, _install))
                     {
                         Add(UnCategory.SavedState, UnMatch.Exact, UnKind.Path, Path.GetFileNameWithoutExtension(file), file, place, place.StartsWith(FileOps.ProgramData, StringComparison.OrdinalIgnoreCase));
                     }
@@ -702,7 +893,7 @@ internal sealed class LeftoverScanner
                 foreach (var file in Directory.EnumerateFiles(desktop, "*.lnk"))
                 {
                     var target = SafeTarget(file);
-                    if (target is not null && _install.Length > 0 && FileOps.IsUnder(target, _install))
+                    if (UninstallerSupport.TargetUnder(target, _install))
                     {
                         Add(UnCategory.Other, UnMatch.Exact, UnKind.Path, Path.GetFileNameWithoutExtension(file), file, desktop, desktop == Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory));
                     }
@@ -787,7 +978,7 @@ internal sealed class LeftoverScanner
                         foreach (var name in run.GetValueNames())
                         {
                             var exe = CleanerScanner.ExecutableOf(run.GetValue(name) as string ?? string.Empty);
-                            if (exe is not null && !SafePaths.IsUnderWindows(exe) && FileOps.IsUnder(exe, _install))
+                            if (UninstallerSupport.TargetUnder(exe, _install))
                             {
                                 var runLabel = view == RegistryView.Registry32 && hive == RegistryHive.LocalMachine ? $@"{label}\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run" : $@"{label}\{sub}\Microsoft\Windows\CurrentVersion\Run";
                                 Add(UnCategory.Other, UnMatch.Exact, UnKind.RegistryValue, name, runLabel, null, hive == RegistryHive.LocalMachine, 0, name);
@@ -818,8 +1009,7 @@ internal sealed class LeftoverScanner
                     {
                         var text = rules.GetValue(name) as string ?? string.Empty;
                         var match = Regex.Match(text, @"(?:^|\|)App=([^|]+)");
-                        var appPath = match.Success ? Environment.ExpandEnvironmentVariables(match.Groups[1].Value) : string.Empty;
-                        if (match.Success && !SafePaths.IsUnderWindows(appPath) && FileOps.IsUnder(appPath, _install))
+                        if (match.Success && UninstallerSupport.TargetUnder(match.Groups[1].Value, _install))
                         {
                             Add(UnCategory.Other, UnMatch.Exact, UnKind.RegistryValue, $"Firewall rule {name}", @"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters\FirewallPolicy\FirewallRules", null, true, 0, name);
                         }
@@ -856,7 +1046,7 @@ internal sealed class LeftoverScanner
                 foreach (Match m in Regex.Matches(xml, @"<Command>([^<]+)</Command>"))
                 {
                     var exe = Environment.ExpandEnvironmentVariables(System.Net.WebUtility.HtmlDecode(m.Groups[1].Value).Trim('"'));
-                    if (!SafePaths.IsUnderWindows(exe) && FileOps.IsUnder(exe, _install))
+                    if (UninstallerSupport.TargetUnder(exe, _install))
                     {
                         Add(UnCategory.Other, UnMatch.Exact, UnKind.Task, Path.GetFileName(file), "\\" + relative, null, true, 0);
                         break;
@@ -893,8 +1083,10 @@ internal sealed class LeftoverScanner
             {
                 _ct.ThrowIfCancellationRequested();
                 using var key = services.OpenSubKey(name);
-                var image = CleanerScanner.ExecutableOf(key?.GetValue("ImagePath") as string ?? string.Empty);
-                if (image is not null && !SafePaths.IsUnderWindows(image) && FileOps.IsUnder(image, _install))
+                // kernel and file-system drivers are never offered: Windows refuses to delete them and the script says no
+                var type = key?.GetValue("Type") is int t ? t : 0;
+                var image = CleanerScanner.ExecutableOf(key?.GetValue("ImagePath") as string ?? string.Empty) ?? (key?.GetValue("ImagePath") as string);
+                if ((type & 3) == 0 && UninstallerSupport.TargetUnder(image, _install))
                 {
                     Add(UnCategory.Other, UnMatch.Exact, UnKind.Service, $"Service {name}", name, null, true, 0);
                 }

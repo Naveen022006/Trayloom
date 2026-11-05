@@ -274,22 +274,31 @@ internal sealed class UninstallerModel
         var selected = Items.Where(i => i.Include).ToList();
         var application = selected.FirstOrDefault(i => i.Category == UnCategory.Application);
 
-        // 1. running apps from the program's own (usable) install folder: list, ask, close politely, ask again, only then force
+        // 1. running apps from the program's own (usable) install folder: list, ask, close politely, ask again, only then force.
+        // The Removing phase starts first so Cancel cannot reset the wizard while the search or the dialogs are open.
         if (application is not null)
         {
             _closing = true;
+            Phase = UnPhase.Removing;
+            RemovingMessage = "Checking for running apps…";
+            Raise();
             try
             {
-                var location = UninstallerSupport.UsableInstallLocation(target, _programs);
-                var running = location.Length == 0 ? [] : await Task.Run(() => FindRunning(location)).ConfigureAwait(true);
+                var programs = _programs;
+                var running = await Task.Run(() =>
+                {
+                    var location = UninstallerSupport.UsableInstallLocation(target, programs);
+                    return location.Length == 0 ? [] : FindRunning(location);
+                }).ConfigureAwait(true);
                 if (running.Count > 0)
                 {
                     if (!confirmClose(DistinctNames(running)))
                     {
+                        Phase = UnPhase.Results;
+                        Raise();
                         return;
                     }
 
-                    Phase = UnPhase.Removing;
                     RemovingMessage = "Closing apps…";
                     Raise();
                     var left = await CloseGracefullyAsync(running).ConfigureAwait(true);
@@ -301,7 +310,11 @@ internal sealed class UninstallerModel
             }
             catch (Exception ex)
             {
+                // without the user's confirmation nothing is removed
                 Host.Log("Uninstaller: closing apps failed", ex);
+                Phase = UnPhase.Results;
+                Raise();
+                return;
             }
             finally
             {
@@ -390,9 +403,8 @@ internal sealed class UninstallerModel
         finally
         {
             _closing = false;
+            Raise();
         }
-
-        Raise();
     }
 
     /// <summary>
@@ -553,7 +565,27 @@ internal sealed class UninstallerModel
         return apps.Where(IsStillRunning).ToList();
     }
 
-    private static bool IsStillRunning(RunningApp app) => Win32.CreationTime(app.Pid) == app.StartFileTime;
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    private static extern uint WaitForSingleObject(nint handle, uint milliseconds);
+
+    /// <summary>True while the same process (same pid and start time) has not exited; an exited process that others still hold open does not count.</summary>
+    private static bool IsStillRunning(RunningApp app)
+    {
+        var handle = Win32.OpenProcess(Win32.PROCESS_QUERY_LIMITED_INFORMATION | Win32.SYNCHRONIZE, false, app.Pid);
+        if (handle == 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            return Win32.GetProcessTimes(handle, out var creation, out _, out _, out _) && creation == app.StartFileTime && WaitForSingleObject(handle, 0) == 258;
+        }
+        finally
+        {
+            Win32.CloseHandle(handle);
+        }
+    }
 
     /// <summary>Ends each app after re-checking that the pid still belongs to the same process (same start time).</summary>
     internal static void ForceQuit(IReadOnlyList<RunningApp> apps)
@@ -562,18 +594,13 @@ internal sealed class UninstallerModel
         {
             try
             {
-                if (!IsStillRunning(app))
+                if (ProcessSafety.IsProtectedName(app.Name))
                 {
                     continue;
                 }
 
-                using var process = Process.GetProcessById(app.Pid);
-                if (ProcessSafety.IsProtectedName(process.ProcessName))
-                {
-                    continue;
-                }
-
-                process.Kill();
+                // one handle checks the start time and ends the process, so a reused pid can never be hit
+                KillService.KillOne(new KillTarget(app.Pid, app.StartFileTime, app.Name), true);
             }
             catch
             {
@@ -917,7 +944,8 @@ internal sealed class UninstallerModel
     private async Task<bool> UninstallProgramAsync(InstalledProgram program, bool silent)
     {
         // resolved before the uninstaller runs: afterwards the folder is gone and could no longer be validated
-        var usableLocation = UninstallerSupport.UsableInstallLocation(program, _programs, _ => { });
+        var programs = _programs;
+        var usableLocation = await Task.Run(() => UninstallerSupport.UsableInstallLocation(program, programs, _ => { })).ConfigureAwait(true);
         await Task.Delay(300).ConfigureAwait(true);
 
         // 1. packaged apps

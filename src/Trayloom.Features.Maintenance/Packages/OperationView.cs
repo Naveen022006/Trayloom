@@ -246,11 +246,18 @@ internal sealed class OperationStatusView : ContentControl
             return null;
         }
 
-        var exe = string.IsNullOrEmpty(wingetPath) ? "winget" : wingetPath.Replace("'", "''");
+        if (string.IsNullOrEmpty(wingetPath))
+        {
+            // never fall back to a bare name: the elevated shell would search PATH
+            return null;
+        }
+
+        // PowerShell treats the typographic single quotes as quotes too, so all four are doubled
+        var exe = new string(wingetPath.SelectMany(c => c is '\'' or '\u2018' or '\u2019' or '\u201A' or '\u201B' ? new[] { c, c } : new[] { c }).ToArray());
         var lines = new List<string>();
         foreach (var command in commands)
         {
-            if (command.Length == 0 || !command.All(a => WingetCli.ValidToken(a) || System.Text.RegularExpressions.Regex.IsMatch(a, @"^--?[A-Za-z][A-Za-z-]*$")))
+            if (command.Length == 0 || !command.All(a => WingetCli.ValidToken(a) || System.Text.RegularExpressions.Regex.IsMatch(a, @"^--?[A-Za-z][A-Za-z-]*\z")))
             {
                 return null;
             }

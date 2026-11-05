@@ -57,7 +57,7 @@ internal static class WingetCli
     private static string? _path;
     private static bool _probed;
     private static readonly Regex Ansi = new(@"\u001B\[[0-9;?]*[ -/]*[@-~]", RegexOptions.Compiled);
-    private static readonly Regex TokenRegex = new(@"^[A-Za-z0-9][A-Za-z0-9._+@/-]*$", RegexOptions.Compiled);
+    private static readonly Regex TokenRegex = new(@"^[A-Za-z0-9][A-Za-z0-9._+@/-]*\z", RegexOptions.Compiled);
 
     /// <summary>Full path of winget.exe or null when missing.</summary>
     public static string? Path
@@ -162,7 +162,7 @@ internal static class WingetCli
 
     public static ProcessStartInfo Start(IEnumerable<string> arguments)
     {
-        var info = new ProcessStartInfo(Path ?? "winget")
+        var info = new ProcessStartInfo(Path ?? throw new InvalidOperationException("winget was not found in a trusted location"))
         {
             UseShellExecute = false,
             RedirectStandardOutput = true,
