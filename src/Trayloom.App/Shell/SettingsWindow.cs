@@ -351,7 +351,16 @@ internal sealed class SettingsWindow : Window
         var offset = keepScroll ? _detailScroll.VerticalOffset : 0;
         var content = PageComposer.Build(_s, visit, _hubState, _router, () => RebuildAll(false, keepScroll: true), out var anchors);
         var wrapper = new Border { Padding = new Thickness(22), Child = new Border { MaxWidth = 760, HorizontalAlignment = HorizontalAlignment.Stretch, Child = content } };
+
+        // A rebuild replaces every control, which would drop keyboard focus; when the page is refreshed in place, put focus back
+        // on the same place in the new tree.
+        var focusPath = keepScroll && _detailHost.Child is Visual oldPage ? UiKit.FocusPath(oldPage) : null;
         _detailHost.Child = wrapper;
+        if (focusPath is not null)
+        {
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => UiKit.RestoreFocus(wrapper, focusPath));
+        }
+
         _builtRevision = _s.Runtime.Revision;
         _builtRequest = _router.RequestId;
         _backButton.IsEnabled = _router.CanGoBack;

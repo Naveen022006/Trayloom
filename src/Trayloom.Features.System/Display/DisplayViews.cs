@@ -143,19 +143,21 @@ internal static class DisplayViews
 
             Grid.SetColumn(percent, 4);
             row.Children.Add(percent);
-            if (item.CanChooseDimming)
-            {
-                var dim = DimButton(item, 12);
-                dim.Margin = new Thickness(8, 0, 0, 0);
-                Grid.SetColumn(dim, 5);
-                row.Children.Add(dim);
-            }
-
             var power = PowerButton(item);
             power.Margin = new Thickness(6, 0, 0, 0);
             Grid.SetColumn(power, 6);
             row.Children.Add(power);
             stack.Children.Add(row);
+
+            // On its own line under the name: in the row grid this button squeezed the slider.
+            if (item.CanChooseDimming)
+            {
+                var dim = DimButton(item, 12);
+                dim.Margin = new Thickness(global::Trayloom.Core.Ui.SettingsRow.TextInset, 4, 0, 0);
+                dim.HorizontalAlignment = HorizontalAlignment.Left;
+                stack.Children.Add(dim);
+            }
+
             AddFailure(stack, item, 11.5);
             return stack;
         }

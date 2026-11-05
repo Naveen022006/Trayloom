@@ -117,6 +117,9 @@ public static class ThemeKeys
     public const string SwitchSmallStyle = "WK.SwitchSmallStyle";
     public const string SwitchMiniStyle = "WK.SwitchMiniStyle";
     public const string TileStyle = "WK.TileStyle";
+
+    /// <summary>Focus visual (accent ring) for border-based controls made keyboard-reachable by <see cref="UiKit.Clickable{T}"/>.</summary>
+    public const string FocusRing = "WK.FocusRing";
     public const string AccentButtonStyle = "WK.AccentButtonStyle";
     public const string ButtonBordered = "WK.Button.Bordered";
     public const string ButtonProminent = "WK.Button.Prominent";

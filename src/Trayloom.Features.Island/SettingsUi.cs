@@ -38,7 +38,7 @@ internal static class SUi
         t.Margin = new Thickness(0, 8, 0, 0);
         stack.Children.Add(t);
         b.Child = stack;
-        b.MouseLeftButtonUp += (_, _) => onClick();
+        b.Clickable(onClick, title);
         return b;
     }
 
@@ -146,7 +146,7 @@ internal static class SUi
         var b = new Border { CornerRadius = new CornerRadius(8), Padding = new Thickness(10, 4, 10, 4), Cursor = Cursors.Hand };
         b.SetResourceReference(Border.BackgroundProperty, ThemeKeys.ControlFill);
         b.Child = UiKit.Text(text, 11.5, FontWeights.Medium, ThemeKeys.TextPrimary);
-        b.MouseLeftButtonUp += (_, _) => onClick();
+        b.Clickable(onClick, text);
         return b;
     }
 
@@ -162,8 +162,8 @@ internal static class SUi
         stack.Children.Add(ic);
         var t = UiKit.Text(title, 11, FontWeights.Medium, available ? ThemeKeys.TextPrimary : ThemeKeys.TextSecondary, true);
         t.TextAlignment = TextAlignment.Center;
-        t.Height = 28;
-        t.TextTrimming = TextTrimming.CharacterEllipsis;
+        // A minimum, not a fixed height, so a long title wraps onto a third line instead of being cut off.
+        t.MinHeight = 28;
         t.Margin = new Thickness(0, 8, 0, 0);
         stack.Children.Add(t);
         if (!available && reason is not null || reserveReason)
@@ -182,7 +182,7 @@ internal static class SUi
         grid.Children.Add(badge);
         card.Child = grid;
         card.ToolTip = reason ?? title;
-        card.MouseLeftButtonUp += (_, _) =>
+        card.Clickable(() =>
         {
             if (available)
             {
@@ -192,19 +192,20 @@ internal static class SUi
             {
                 unavailableAction?.Invoke();
             }
-        };
+        }, title);
         return card;
     }
 
-    /// <summary>Wraps toggle cards into an adaptive grid (min item width 116).</summary>
-    public static UniformGrid CardGrid(IEnumerable<FrameworkElement> cards, double minWidth, double width)
+    /// <summary>
+    /// Wraps toggle cards into a responsive grid: as many columns as fit at <paramref name="minWidth"/> each. The width argument
+    /// is kept for the callers but ignored, because the grid now follows the width it is given.
+    /// </summary>
+    public static TileGrid CardGrid(IEnumerable<FrameworkElement> cards, double minWidth, double width)
     {
-        var list = cards.ToList();
-        var cols = Math.Max(1, (int)Math.Floor((Math.Max(300, width) + 10) / (minWidth + 10)));
-        var g = new UniformGrid { Columns = cols };
-        foreach (var c in list)
+        _ = width;
+        var g = new TileGrid { MinItemWidth = minWidth };
+        foreach (var c in cards)
         {
-            c.Margin = new Thickness(0, 0, 10, 10);
             g.Children.Add(c);
         }
 

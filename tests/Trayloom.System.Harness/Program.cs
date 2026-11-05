@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Trayloom — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
 
+using Trayloom.Core.Ui;
 using Trayloom.Features.SystemTools;
 
 namespace Trayloom.System.Harness;
@@ -33,6 +34,18 @@ internal static class Program
         Check(!DisplayMath.AssumeInternalWithoutTopology(2, 1, 1, false), "topology available: no guess");
         Check(!DisplayMath.AssumeInternalWithoutTopology(0, 1, 0, false), "no WMI panel: no guess");
         Check(!DisplayMath.AssumeInternalWithoutTopology(0, 1, 1, true), "panel already assigned: no guess");
+
+        // Settings row stacking and tile grid arithmetic (Core, pure).
+        Check(SettingsLayoutMath.ShouldStack(300, 38, 214, false), "narrow row stacks its accessory");
+        Check(!SettingsLayoutMath.ShouldStack(684, 38, 214, false), "wide row keeps the accessory beside the text");
+        Check(!SettingsLayoutMath.ShouldStack(400, 38, 0, false), "no accessory never stacks");
+        Check(SettingsLayoutMath.ShouldStack(434 + 10, 38, 214, true), "stacked row stays stacked inside the hysteresis band");
+        Check(!SettingsLayoutMath.ShouldStack(434 + SettingsLayoutMath.StackHysteresis, 38, 214, true), "stacked row unstacks past the band");
+        Check(!SettingsLayoutMath.ShouldStack(434, 38, 214, false), "unstacked row at the threshold stays unstacked");
+        Check(SettingsLayoutMath.TileColumns(684, 116, 10, 6) == 5, "684 wide fits five 116 tiles");
+        Check(SettingsLayoutMath.TileColumns(50, 116, 10, 6) == 1, "never fewer than one column");
+        Check(SettingsLayoutMath.TileColumns(2000, 92, 8, 4) == 4, "capped at MaxColumns");
+        Check(Math.Abs(SettingsLayoutMath.TileCellWidth(684, 5, 10) - 128.8) < 1e-9, "cell width shares the width minus gaps");
 
         Console.WriteLine($"{s_checks - s_failed}/{s_checks} checks passed");
         return s_failed == 0 ? 0 : 1;

@@ -106,16 +106,31 @@ internal sealed class IslandSettingsView : StackPanel
             ot.VerticalAlignment = VerticalAlignment.Center;
         }
 
-        open.MouseLeftButtonUp += (_, _) =>
+        open.Clickable(() =>
         {
             if (app.Get<bool>(K.Enabled))
             {
                 IslandCore.Current?.Window?.Open(null, false, true);
             }
-        };
+        }, Strings.Open);
         void Gate() => open.Opacity = app.Get<bool>(K.Enabled) ? 1 : 0.4;
         Gate();
-        app.Changed += k => { if (k == K.Enabled) { Dispatcher.BeginInvoke(Gate); } };
+
+        // Named so it can be detached: the settings store outlives this view, and every rebuild creates a new one.
+        void OnSettingChanged(string k)
+        {
+            if (k == K.Enabled)
+            {
+                Dispatcher.BeginInvoke(Gate);
+            }
+        }
+
+        Loaded += (_, _) =>
+        {
+            app.Changed -= OnSettingChanged;
+            app.Changed += OnSettingChanged;
+        };
+        Unloaded += (_, _) => app.Changed -= OnSettingChanged;
         Grid.SetColumn(open, 1);
         row.Children.Add(open);
         Children.Add(row);
@@ -131,6 +146,8 @@ internal sealed class IslandSettingsView : StackPanel
 
     private void Build()
     {
+        // A tab rebuild replaces every control, which would drop keyboard focus; remember where it was inside the body and put it back.
+        var focusPath = UiKit.FocusPath(_body);
         _body.Children.Clear();
         FrameworkElement view = _tab switch
         {
@@ -142,6 +159,10 @@ internal sealed class IslandSettingsView : StackPanel
         };
         _pendingModule = null;
         _body.Children.Add(view);
+        if (focusPath is not null)
+        {
+            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, () => UiKit.RestoreFocus(_body, focusPath));
+        }
     }
 }
 
@@ -239,7 +260,7 @@ internal static class SettingsTabs
         t.Margin = new Thickness(0, 8, 0, 0);
         stack.Children.Add(t);
         b.Child = stack;
-        b.MouseLeftButtonUp += (_, _) => onClick();
+        b.Clickable(onClick, title);
         return b;
     }
 
@@ -407,7 +428,7 @@ internal static class SettingsTabs
         t.Margin = new Thickness(0, 14, 0, 0);
         inner.Children.Add(t);
         b.Child = inner;
-        b.MouseLeftButtonUp += (_, _) => onClick();
+        b.Clickable(onClick, title);
         col.Children.Add(b);
         if (reason is not null)
         {
@@ -767,7 +788,7 @@ internal static class SettingsTabs
         t.Margin = new Thickness(0, 8, 0, 0);
         stack.Children.Add(t);
         b.Child = stack;
-        b.MouseLeftButtonUp += (_, _) => onClick();
+        b.Clickable(onClick, title);
         return b;
     }
 

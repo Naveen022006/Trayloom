@@ -3,6 +3,7 @@
 
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 
 namespace Trayloom.Core.Ui;
@@ -207,6 +208,123 @@ public static class UiKit
         }
 
         panel.Children.Add(child);
+    }
+
+    /// <summary>
+    /// Makes a border-based "button" behave like one: reachable with Tab, activated by Space or Enter, shows the focus ring, and
+    /// fires only on a release that follows a press on the same element (a drag that ends here is not a click).
+    /// </summary>
+    public static T Clickable<T>(this T element, Action onClick, string? name = null) where T : FrameworkElement
+    {
+        element.Focusable = true;
+        KeyboardNavigation.SetIsTabStop(element, true);
+        element.SetResourceReference(FrameworkElement.FocusVisualStyleProperty, ThemeKeys.FocusRing);
+        if (element.Cursor is null)
+        {
+            element.Cursor = Cursors.Hand;
+        }
+
+        if (name is not null)
+        {
+            System.Windows.Automation.AutomationProperties.SetName(element, name);
+        }
+
+        var pressed = false;
+        element.MouseLeftButtonDown += (_, _) => pressed = true;
+        element.MouseLeave += (_, _) => pressed = false;
+        element.MouseLeftButtonUp += (_, args) =>
+        {
+            if (pressed)
+            {
+                pressed = false;
+                args.Handled = true;
+                onClick();
+            }
+        };
+        element.KeyDown += (_, args) =>
+        {
+            if (args.Key is Key.Space or Key.Enter)
+            {
+                args.Handled = true;
+                onClick();
+            }
+        };
+        return element;
+    }
+
+    /// <summary>
+    /// The child-index path from <paramref name="root"/> down to the element that has keyboard focus, or null when focus is
+    /// elsewhere. Pair with <see cref="RestoreFocus"/> to keep focus across a rebuild of the visual tree.
+    /// </summary>
+    public static List<int>? FocusPath(Visual root)
+    {
+        if (Keyboard.FocusedElement is not DependencyObject focused)
+        {
+            return null;
+        }
+
+        var path = new List<int>();
+        DependencyObject? node = focused;
+        while (node is not null && !ReferenceEquals(node, root))
+        {
+            if (node is not Visual && node is not System.Windows.Media.Media3D.Visual3D)
+            {
+                return null;
+            }
+
+            var parent = VisualTreeHelper.GetParent(node);
+            if (parent is null)
+            {
+                return null;
+            }
+
+            var count = VisualTreeHelper.GetChildrenCount(parent);
+            var index = -1;
+            for (var i = 0; i < count; i++)
+            {
+                if (ReferenceEquals(VisualTreeHelper.GetChild(parent, i), node))
+                {
+                    index = i;
+                    break;
+                }
+            }
+
+            if (index < 0)
+            {
+                return null;
+            }
+
+            path.Add(index);
+            node = parent;
+        }
+
+        if (node is null)
+        {
+            return null;
+        }
+
+        path.Reverse();
+        return path;
+    }
+
+    /// <summary>Walks <paramref name="path"/> (from <see cref="FocusPath"/>) in a rebuilt tree and focuses the element it ends on, when that is still focusable, visible and enabled.</summary>
+    public static void RestoreFocus(Visual root, List<int> path)
+    {
+        DependencyObject node = root;
+        foreach (var index in path)
+        {
+            if (index >= VisualTreeHelper.GetChildrenCount(node))
+            {
+                return;
+            }
+
+            node = VisualTreeHelper.GetChild(node, index);
+        }
+
+        if (node is UIElement { Focusable: true, IsVisible: true, IsEnabled: true } target)
+        {
+            target.Focus();
+        }
     }
 
     /// <summary>Opens a URL in the default browser (best effort).</summary>

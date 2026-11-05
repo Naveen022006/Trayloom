@@ -91,7 +91,7 @@ public sealed class SegmentedControl : Border
             ((TextBlock)cell.Child).HorizontalAlignment = HorizontalAlignment.Center;
             ((TextBlock)cell.Child).TextAlignment = TextAlignment.Center;
             ((TextBlock)cell.Child).VerticalAlignment = VerticalAlignment.Center;
-            cell.MouseLeftButtonUp += (_, _) => SelectedIndex = index;
+            cell.Clickable(() => SelectedIndex = index, _items[i]);
             Grid.SetColumn(cell, i);
             grid.Children.Add(cell);
             _cells.Add(cell);
@@ -99,6 +99,32 @@ public sealed class SegmentedControl : Border
 
         Child = grid;
         SelectedIndex = selectedIndex;
+        PreviewKeyDown += OnPreviewKeyDown;
+    }
+
+    /// <summary>Left and Right move the selection to the neighbouring cell and keep keyboard focus on it.</summary>
+    private void OnPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        var step = e.Key switch
+        {
+            Key.Left => -1,
+            Key.Right => 1,
+            _ => 0,
+        };
+        if (step == 0)
+        {
+            return;
+        }
+
+        var target = _selected + step;
+        if (target < 0 || target >= _items.Count)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        SelectedIndex = target;
+        _cells[target].Focus();
     }
 
     /// <summary>Raised when the selection changed.</summary>
@@ -207,7 +233,7 @@ public sealed class PanelChip : Border
         _label = UiKit.Text(text, 11, FontWeights.Medium, ThemeKeys.TextPrimary);
         _label.VerticalAlignment = VerticalAlignment.Center;
         Child = _label;
-        MouseLeftButtonUp += (_, _) => onClick?.Invoke();
+        this.Clickable(() => onClick?.Invoke(), text);
         IsSelected = selected;
     }
 

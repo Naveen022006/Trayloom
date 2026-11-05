@@ -64,11 +64,23 @@ public sealed class SettingsRow : Grid
     /// <summary>Width of tile + gap (26 + 12): left inset of controls under a row.</summary>
     public const double TextInset = 38;
 
+    /// <summary>Narrowest the title and caption column may get before the accessory moves under the text.</summary>
+    public const double MinTextWidth = 170;
+
+    /// <summary>Gap kept between the text column and a side-by-side accessory.</summary>
+    private const double AccessoryGap = 12;
+
     private readonly TextBlock _title;
     private readonly TextBlock? _caption;
+    private readonly StackPanel _text;
+    private readonly FrameworkElement? _accessory;
+    private readonly HorizontalAlignment _accessoryAlignment;
+    private readonly Thickness _accessoryMargin;
+    private readonly double _lead;
+    private bool _stacked;
 
     /// <summary>Creates a row.</summary>
-    /// <param name="glyph">Icon glyph (null = no tile and no inset).</param>
+    /// <param name="glyph">Icon glyph (null = no tile and no inset; empty = keep the inset but draw no tile).</param>
     /// <param name="title">Title.</param>
     /// <param name="caption">Optional wrapped caption under the title.</param>
     /// <param name="accessory">Control at the right edge (switch, picker, button...).</param>
@@ -76,13 +88,18 @@ public sealed class SettingsRow : Grid
     public SettingsRow(string? glyph, string title, string? caption = null, UIElement? accessory = null, string? badge = null)
     {
         var tileCol = glyph is null ? 0 : 26;
+        var gapCol = glyph is null ? 0 : 12;
+        _lead = tileCol + gapCol;
         ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(tileCol) });
-        ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(glyph is null ? 0 : 12) });
+        ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(gapCol) });
         ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, MinWidth = 12 });
+        ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, MinWidth = AccessoryGap });
         ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        if (glyph is not null)
+        // An empty glyph keeps the icon columns so the text lines up with the icon rows around it, but a blank tile is not drawn.
+        if (!string.IsNullOrEmpty(glyph))
         {
             var tile = UiKit.IconTile(glyph);
             tile.VerticalAlignment = VerticalAlignment.Top;
@@ -91,7 +108,10 @@ public sealed class SettingsRow : Grid
         }
 
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        var titleRow = new StackPanel { Orientation = Orientation.Horizontal };
+        _text = text;
+
+        // A WrapPanel (not a horizontal StackPanel) so the title gets a finite width and wraps instead of being cut off.
+        var titleRow = new WrapPanel { Orientation = Orientation.Horizontal };
         _title = UiKit.Text(title, 13, FontWeights.Normal, ThemeKeys.TextPrimary, wrap: true);
         titleRow.Children.Add(_title);
         if (badge is not null)
@@ -120,7 +140,42 @@ public sealed class SettingsRow : Grid
 
             SetColumn(accessory, 4);
             Children.Add(accessory);
+            _accessory = accessory as FrameworkElement;
+            if (_accessory is not null)
+            {
+                _accessoryAlignment = _accessory.HorizontalAlignment;
+                _accessoryMargin = _accessory.Margin;
+            }
         }
+    }
+
+    /// <inheritdoc />
+    protected override Size MeasureOverride(Size constraint)
+    {
+        // Decided here, before the grid measures, so the row settles in one pass instead of flashing a squeezed layout first.
+        if (_accessory is not null && !double.IsInfinity(constraint.Width))
+        {
+            _accessory.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            var stack = SettingsLayoutMath.ShouldStack(constraint.Width, _lead, _accessory.DesiredSize.Width, _stacked);
+            if (stack != _stacked)
+            {
+                ApplyStacking(stack);
+            }
+        }
+
+        return base.MeasureOverride(constraint);
+    }
+
+    /// <summary>Moves the accessory under the text (and lets the text use the full width) or puts it back beside it.</summary>
+    private void ApplyStacking(bool stack)
+    {
+        _stacked = stack;
+        SetRow(_accessory!, stack ? 1 : 0);
+        SetColumn(_accessory!, stack ? 2 : 4);
+        SetColumnSpan(_accessory!, stack ? 3 : 1);
+        SetColumnSpan(_text, stack ? 3 : 1);
+        _accessory!.HorizontalAlignment = stack ? HorizontalAlignment.Left : _accessoryAlignment;
+        _accessory.Margin = stack ? new Thickness(_accessoryMargin.Left, _accessoryMargin.Top + 8, _accessoryMargin.Right, _accessoryMargin.Bottom) : _accessoryMargin;
     }
 
     /// <summary>The title text.</summary>
@@ -285,5 +340,122 @@ public sealed class FeatureSwitchRow : StackPanel
             line.Children.Add(open);
             Children.Add(line);
         }
+    }
+}
+
+/// <summary>Pure layout decisions of <see cref="SettingsRow"/> and <see cref="TileGrid"/>, kept free of WPF so a harness can check them.</summary>
+public static class SettingsLayoutMath
+{
+    /// <summary>
+    /// Extra width, beyond the stack threshold, a stacked row needs before it goes side by side again. It is wider than a vertical
+    /// scroll bar: stacking makes a page taller, which can add a scroll bar and take that width away, and without the margin the row
+    /// would flip back and forth.
+    /// </summary>
+    public const double StackHysteresis = 24;
+
+    /// <summary>Whether a row of <paramref name="width"/> should put its accessory under the text.</summary>
+    /// <param name="width">Width offered to the row.</param>
+    /// <param name="lead">Width of the icon columns.</param>
+    /// <param name="accessoryWidth">Natural width of the accessory.</param>
+    /// <param name="wasStacked">The current state, which decides which side of the hysteresis applies.</param>
+    public static bool ShouldStack(double width, double lead, double accessoryWidth, bool wasStacked)
+    {
+        if (accessoryWidth <= 0)
+        {
+            return false;
+        }
+
+        var needed = lead + SettingsRow.MinTextWidth + 12 + accessoryWidth;
+        return wasStacked ? width < needed + StackHysteresis : width < needed;
+    }
+
+    /// <summary>Number of tile columns that fit: each at least <paramref name="minItemWidth"/> wide, at most <paramref name="maxColumns"/>, at least one.</summary>
+    public static int TileColumns(double width, double minItemWidth, double spacing, int maxColumns)
+    {
+        var fit = (int)Math.Floor((width + spacing) / (minItemWidth + spacing));
+        return Math.Clamp(fit, 1, Math.Max(1, maxColumns));
+    }
+
+    /// <summary>Width of one tile when <paramref name="columns"/> share <paramref name="width"/> with <paramref name="spacing"/> between them.</summary>
+    public static double TileCellWidth(double width, int columns, double spacing) =>
+        Math.Max(0, (width - spacing * (columns - 1)) / columns);
+}
+
+/// <summary>
+/// Equal-width tiles in as many columns as fit (each at least <see cref="MinItemWidth"/>, at most <see cref="MaxColumns"/>), rows as
+/// tall as their tallest tile, flush at both edges. Unlike a fixed-column grid it never squeezes a label below a readable width.
+/// </summary>
+public sealed class TileGrid : Panel
+{
+    /// <summary>Narrowest a tile may get before the grid drops a column.</summary>
+    public double MinItemWidth { get; set; } = 116;
+
+    /// <summary>Most columns the grid will use.</summary>
+    public int MaxColumns { get; set; } = 6;
+
+    /// <summary>Gap between tiles, horizontally and vertically.</summary>
+    public double Spacing { get; set; } = 10;
+
+    /// <inheritdoc />
+    protected override Size MeasureOverride(Size availableSize)
+    {
+        var count = InternalChildren.Count;
+        if (count == 0)
+        {
+            return new Size(0, 0);
+        }
+
+        // With unbounded width (a horizontal parent) lay the tiles out as one wide row so the grid still reports a sensible size.
+        var width = double.IsInfinity(availableSize.Width)
+            ? Math.Min(count, Math.Max(1, MaxColumns)) * (MinItemWidth + Spacing) - Spacing
+            : availableSize.Width;
+        var columns = SettingsLayoutMath.TileColumns(width, MinItemWidth, Spacing, MaxColumns);
+        var cell = SettingsLayoutMath.TileCellWidth(width, columns, Spacing);
+        double height = 0;
+        double row = 0;
+        for (var i = 0; i < count; i++)
+        {
+            InternalChildren[i].Measure(new Size(cell, double.PositiveInfinity));
+            row = Math.Max(row, InternalChildren[i].DesiredSize.Height);
+            if (i % columns == columns - 1 || i == count - 1)
+            {
+                height += row + (i >= columns ? Spacing : 0);
+                row = 0;
+            }
+        }
+
+        return new Size(width, height);
+    }
+
+    /// <inheritdoc />
+    protected override Size ArrangeOverride(Size finalSize)
+    {
+        var count = InternalChildren.Count;
+        if (count == 0)
+        {
+            return finalSize;
+        }
+
+        var columns = SettingsLayoutMath.TileColumns(finalSize.Width, MinItemWidth, Spacing, MaxColumns);
+        var cell = SettingsLayoutMath.TileCellWidth(finalSize.Width, columns, Spacing);
+        double y = 0;
+        for (var start = 0; start < count; start += columns)
+        {
+            var end = Math.Min(count, start + columns);
+            double row = 0;
+            for (var i = start; i < end; i++)
+            {
+                row = Math.Max(row, InternalChildren[i].DesiredSize.Height);
+            }
+
+            for (var i = start; i < end; i++)
+            {
+                InternalChildren[i].Arrange(new Rect((i - start) * (cell + Spacing), y, cell, row));
+            }
+
+            y += row + Spacing;
+        }
+
+        return finalSize;
     }
 }

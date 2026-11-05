@@ -44,10 +44,22 @@
         <Setter Property="HorizontalAlignment" Value="Center" />
     </Style>
 
+    <!-- Accent ring drawn around a focused border-based control (see UiKit.Clickable). -->
+    <Style x:Key="WK.FocusRing">
+        <Setter Property="Control.Template">
+            <Setter.Value>
+                <ControlTemplate>
+                    <Border Margin="-2" CornerRadius="8" BorderThickness="2" BorderBrush="{DynamicResource WK.Accent}" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- Mac-style switch (regular 40x22). Small = 34x18, Mini = 28x15. Track on = accent, thumb white. -->
     <Style x:Key="WK.SwitchStyle" TargetType="CheckBox">
         <Setter Property="Foreground" Value="{DynamicResource WK.Text}" />
-        <Setter Property="Padding" Value="10,0,0,0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource WK.FocusRing}" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Focusable" Value="True" />
         <Setter Property="Template">

@@ -27,9 +27,13 @@ internal sealed class ContentEditor : Grid
         _c = c;
         _core = IslandCore.Current;
         _selected = pending ?? "controls";
-        ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(216) });
+        var listColumn = new ColumnDefinition { Width = new GridLength(216) };
+        ColumnDefinitions.Add(listColumn);
         ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16) });
         ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        // A narrower section list at small widths gives the options column room. The editor's own width does not depend on its columns, so this cannot feed back.
+        SizeChanged += (_, e) => listColumn.Width = new GridLength(e.NewSize.Width < 660 ? 180 : 216);
         var list = new Border { CornerRadius = new CornerRadius(16), Padding = new Thickness(10) };
         list.SetResourceReference(Border.BackgroundProperty, ThemeKeys.SettingsCard);
         var lstack = new StackPanel();
@@ -455,16 +459,22 @@ internal sealed class ContentEditor : Grid
         }
 
         var primary = IslandCatalog.Controls.Where(d => d.Id is "music" or "volume" or "brightness" or "keyboardLight").OrderBy(d => d.Id switch { "music" => 0, "volume" => 1, "brightness" => 2, _ => 3 }).ToList();
-        card.Add(SUi.TileRow(4, 10, primary.Select(CardFor).ToArray()));
+        var primaryGrid = new TileGrid { MinItemWidth = 92, MaxColumns = 4 };
+        foreach (var d in primary)
+        {
+            primaryGrid.Children.Add(CardFor(d));
+        }
+
+        card.Add(primaryGrid);
         var sub = UiKit.Text(Loc.T("Controls and shortcuts"), 12.5, FontWeights.Medium, ThemeKeys.TextPrimary);
         card.Add(sub);
         var order = IslandCatalog.ControlOrder(app).Select(IslandCatalog.Control).Where(d => d is { IsLevel: false } && d.Id != "music").Select(d => d!).ToList();
-        var grid = new UniformGrid { Columns = 4 };
+        // TileGrid lays tiles out in child order, so the drag-to-reorder below (which rewrites the order and rebuilds) keeps working.
+        var grid = new TileGrid { MinItemWidth = 92, MaxColumns = 4, Spacing = 8 };
         for (var i = 0; i < order.Count; i++)
         {
             var d = order[i];
             var item = CardFor(d);
-            item.Margin = new Thickness(0, 0, 8, 8);
             item.AllowDrop = true;
             Point? start = null;
             item.MouseLeftButtonDown += (_, e) => start = e.GetPosition(item);
