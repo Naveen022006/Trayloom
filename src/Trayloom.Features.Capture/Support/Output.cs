@@ -188,9 +188,10 @@ internal static class Output
 
     /// <summary>
     /// Writes the PNG next to its final name and moves it into place without replacing anything: when the name was taken in the
-    /// meantime the file gets the next free numbered name. Returns the path that was written.
+    /// meantime the file gets the next free numbered name. <paramref name="replace"/> is for a path the person chose in a Save As
+    /// dialog (Windows already asked about overwriting). Returns the path that was written.
     /// </summary>
-    public static string SavePng(BitmapSource bitmap, string path, double scale = 1)
+    public static string SavePng(BitmapSource bitmap, string path, double scale = 1, bool replace = false)
     {
         var dir = Path.GetDirectoryName(path)!;
         Directory.CreateDirectory(dir);
@@ -200,9 +201,9 @@ internal static class Output
             File.WriteAllBytes(tmp, ToPng(bitmap, scale));
             try
             {
-                File.Move(tmp, path, false);
+                File.Move(tmp, path, replace);
             }
-            catch (IOException) when (File.Exists(path))
+            catch (IOException) when (!replace && File.Exists(path))
             {
                 path = UniquePath(dir, Path.GetFileNameWithoutExtension(path), Path.GetExtension(path));
                 File.Move(tmp, path, false);

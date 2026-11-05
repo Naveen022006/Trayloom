@@ -339,7 +339,7 @@ internal sealed class ShelfTile : Border
                 switch (leaf.Kind)
                 {
                     case ShelfKinds.File when leaf.Path is not null:
-                        if (ShelfDrops.IsRisky(leaf.Path) && ShelfDrops.IsUnder(_actions.Store.ImageDirectory, leaf.Path) && !ConfirmRiskyOpen(leaf.Path))
+                        if (ShelfDrops.IsRisky(leaf.Path) && ShelfDrops.IsUnder(_actions.Store.ImageDirectory, leaf.Path) && !ConfirmRiskyOpen(leaf.Path, Window.GetWindow(this)))
                         {
                             break;
                         }
@@ -365,14 +365,13 @@ internal sealed class ShelfTile : Border
         }
     }
 
-    private static bool ConfirmRiskyOpen(string path)
+    private static bool ConfirmRiskyOpen(string path, Window? owner)
     {
-        var answer = MessageBox.Show(
-            Loc.T("This file was dropped on the shelf from another app or a web page. Open it only if you trust where it came from."),
-            Loc.F("Open “{0}”?", System.IO.Path.GetFileName(path)),
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning,
-            MessageBoxResult.No);
+        var message = Loc.T("This file was dropped on the shelf from another app or a web page. Open it only if you trust where it came from.");
+        var title = Loc.F("Open “{0}”?", System.IO.Path.GetFileName(path));
+        var answer = owner is null
+            ? MessageBox.Show(message, title, MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No)
+            : MessageBox.Show(owner, message, title, MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
         return answer == MessageBoxResult.Yes;
     }
 

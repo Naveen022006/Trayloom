@@ -505,12 +505,23 @@ public sealed class ScreenRecorderSection : ToolSectionBase
 
             var (folder, time) = takes[i];
             var buttons = new StackPanel { Orientation = Orientation.Horizontal };
-            var open = UiKit.Button(Loc.T("Open"), ButtonKind.Bordered, 12, null, () => c.Ui.BeginInvoke(() => CaptureHost.Recorder?.OpenRecovered(folder)));
+            var open = UiKit.Button(Loc.T("Open"), ButtonKind.Bordered, 12, null, () => c.Ui.BeginInvoke(() =>
+            {
+                CaptureHost.Recorder?.OpenRecovered(folder);
+                c.RequestRebuild();
+            }));
             var delete = UiKit.Button(Loc.T("Delete"), ButtonKind.Bordered, 12, null, () =>
             {
                 var answer = MessageBox.Show(Loc.T("This recording hasn’t been saved anywhere else. Delete it?"), Loc.T("Delete recording?"), MessageBoxButton.OKCancel, MessageBoxImage.Warning, MessageBoxResult.Cancel);
                 if (answer == MessageBoxResult.OK)
                 {
+                    if (CaptureHost.Recorder?.OwnedFolders().Any(o => string.Equals(o, folder, StringComparison.OrdinalIgnoreCase)) == true)
+                    {
+                        CaptureHost.Beep();
+                        c.RequestRebuild();
+                        return;
+                    }
+
                     new Take { Folder = folder }.Delete();
                     c.RequestRebuild();
                 }

@@ -38,6 +38,7 @@ internal sealed class RecorderService
     private string? _stopReason;
     private bool _opensEditor;
     private Task? _finishTask;
+    private readonly HashSet<string> _saving = new(StringComparer.OrdinalIgnoreCase);
     private volatile int _exitMode; // 0 normal, 1 quitting (save the take to the folder), 2 session ending (keep it for recovery)
     private static long _freq;
 
@@ -57,6 +58,11 @@ internal sealed class RecorderService
     public IReadOnlyList<string> OwnedFolders()
     {
         var owned = _editors.Select(e => e.Take.Folder).ToList();
+        lock (_saving)
+        {
+            owned.AddRange(_saving);
+        }
+
         if (_take is { } t)
         {
             owned.Add(t.Folder);
@@ -89,6 +95,12 @@ internal sealed class RecorderService
     /// </summary>
     public async Task<bool> StopAndFinishAsync(TimeSpan budget)
     {
+        // open editors must neither ask nor delete from here on, whether or not a recording is running
+        foreach (var editor in _editors.ToList())
+        {
+            editor.PrepareForExit();
+        }
+
         if (!IsRecording && !_finishing)
         {
             return true;
@@ -355,6 +367,7 @@ internal sealed class RecorderService
             _startQpc = Qpc();
             _cap.Start();
             _pointerRec.Start();
+            _exitMode = 0; // a cancelled quit or sign-out must not change how later recordings finish
             IsRecording = true;
             _preparing = false;
             ElapsedSeconds = 0;
@@ -649,14 +662,14 @@ internal sealed class RecorderService
             ShowsPointer = _opensEditor,
         };
         var dest = Output.UniquePath(Output.BaseFolder(s.Get<string>(K.RecSaveFolder)), RecorderSupport.DefaultName(DateTime.Now), ".mp4");
-        _finishTask = FinishAsync(take, writer, duration, _generation, _sys, _mic, _pointerRec, dest);
+        _finishTask = FinishAsync(take, writer, duration, _generation, _exitMode, _sys, _mic, _pointerRec, dest);
     }
 
     /// <summary>
     /// Closes the audio and video files and writes the take's index. Nothing in here waits for the UI thread (every await is
     /// <c>ConfigureAwait(false)</c>), so quitting can wait on this task without a deadlock.
     /// </summary>
-    private async Task FinishAsync(Take take, VideoWriter writer, double duration, int gen, WasapiCapture? sys, WasapiCapture? mic, PointerRecorder? pointer, string dest)
+    private async Task FinishAsync(Take take, VideoWriter writer, double duration, int gen, int exit, WasapiCapture? sys, WasapiCapture? mic, PointerRecorder? pointer, string dest)
     {
         try
         {
@@ -690,7 +703,6 @@ internal sealed class RecorderService
         _pointerRec = null;
         take.Duration = duration;
         var ok = writer.Failure is null && File.Exists(take.VideoPath) && new FileInfo(take.VideoPath).Length > 0;
-        var exit = _exitMode;
         if (ok)
         {
             // meta.json marks the take as finished: from here on it can be recovered if nothing else happens to it
@@ -767,6 +779,11 @@ internal sealed class RecorderService
     /// <summary>Renders the take into the recordings folder, records it in the history and removes the take. Safe off the UI thread.</summary>
     private async Task ExportToFolderAsync(Take take, string dest)
     {
+        lock (_saving)
+        {
+            _saving.Add(take.Folder);
+        }
+
         await RecorderExporter.ExportMp4Async(take, dest, null, CancellationToken.None).ConfigureAwait(false);
         take.MarkExported();
         RecordInHistory(dest, take);
@@ -775,6 +792,11 @@ internal sealed class RecorderService
 
     private async Task DirectSaveAsync(Take take, string? reason)
     {
+        lock (_saving)
+        {
+            _saving.Add(take.Folder);
+        }
+
         try
         {
             var dest = Output.UniquePath(Output.BaseFolder(_ctx.App.Get<string>(K.RecSaveFolder)), RecorderSupport.DefaultName(DateTime.Now), ".mp4");
@@ -829,9 +851,16 @@ internal sealed class RecorderService
             Stop(null);
         }
 
-        if (_finishTask is { IsCompleted: false } finishing && !finishing.Wait(TimeSpan.FromSeconds(15)))
+        try
         {
-            CaptureHost.Log("recording not finished before exit; kept for recovery");
+            if (_finishTask is { IsCompleted: false } finishing && !finishing.Wait(TimeSpan.FromSeconds(15)))
+            {
+                CaptureHost.Log("recording not finished before exit; kept for recovery");
+            }
+        }
+        catch (Exception ex)
+        {
+            CaptureHost.Log("finishing the recording failed", ex);
         }
 
         _preparing = false;

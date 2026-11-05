@@ -92,6 +92,7 @@ internal sealed class WavReader : IDisposable
             return 0;
         }
 
+        _fs.Position = _dataStart + _position * 8;
         var bytes = MemoryMarshal.AsBytes(destination[..(want * 2)]);
         var total = 0;
         while (total < bytes.Length)
@@ -235,10 +236,22 @@ internal static class AudioMix
         var readers = new List<WavReader>();
         try
         {
-            foreach (var (path, _) in tracks)
+            var usableTracks = new List<(string Path, double Gain)>();
+            foreach (var (path, gain) in tracks)
             {
-                readers.Add(new WavReader(path));
+                try
+                {
+                    readers.Add(new WavReader(path));
+                    usableTracks.Add((path, gain));
+                }
+                catch (Exception ex) when (ex is IOException or InvalidDataException or EndOfStreamException)
+                {
+                    // an unreadable sidecar is silence, as it always was; it must not fail the whole export
+                    CaptureHost.Log("audio track skipped: " + ex.Message);
+                }
             }
+
+            tracks = usableTracks;
 
             var mix = new float[blockFrames * 2];
             var scratch = new float[blockFrames * 2];
@@ -327,24 +340,25 @@ internal static class AudioMix
     /// <summary>Applies the export speed to the 1x mix file with the WSOLA stretch (in memory, so capped) and rewrites it.</summary>
     public static void StretchPcmWav(string path, double speed)
     {
-        var floats = new List<float>();
+        float[] input;
         using (var fs = File.OpenRead(path))
         {
+            input = new float[Math.Max(0, (fs.Length - 44) / 2)];
             fs.Position = 44;
             var buf = new byte[1 << 16];
+            var at = 0;
             int n;
-            while ((n = fs.Read(buf, 0, buf.Length)) > 0)
+            while (at < input.Length && (n = fs.Read(buf, 0, buf.Length)) > 0)
             {
                 n -= n % 2;
-                for (var i = 0; i < n; i += 2)
+                for (var i = 0; i < n && at < input.Length; i += 2)
                 {
-                    floats.Add(BitConverter.ToInt16(buf, i) / 32767f);
+                    input[at++] = BitConverter.ToInt16(buf, i) / 32767f;
                 }
             }
         }
 
-        var stretched = TimeStretch.Stretch(floats.ToArray(), speed);
-        floats = null;
+        var stretched = TimeStretch.Stretch(input, speed);
         var pcm = new byte[stretched.Length * 2];
         ToPcm16(stretched, pcm);
         using var output = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read);

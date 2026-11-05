@@ -90,7 +90,8 @@ internal sealed partial class RecorderEditorWindow : Window
             _exportCts?.Cancel();
             _audio.Dispose();
             _media.Close();
-            if (!_keepTake)
+            // only what the person decided is removed: an export, a copy-out or an explicit discard; anything else stays recoverable
+            if (!_keepTake && (_exported || Take.IsExported || Take.IsDiscarded))
             {
                 Take.Delete();
             }
@@ -476,6 +477,7 @@ internal sealed partial class RecorderEditorWindow : Window
         {
             item.IsEnabled = false;
             item.ToolTip = GifLimits.Message;
+            ToolTipService.SetShowOnDisabled(item, true);
         }
     }
 
@@ -906,14 +908,30 @@ internal sealed partial class RecorderEditorWindow : Window
             return;
         }
 
+        // never ask while the app is shutting down: the take is kept for recovery instead
+        if (System.Windows.Application.Current?.Dispatcher.HasShutdownStarted == true)
+        {
+            _keepTake = true;
+            return;
+        }
+
         if (!ConfirmDiscard())
         {
+            // WPF ignores Cancel while the app shuts down, so the take must survive that too
+            _keepTake = true;
             e.Cancel = true;
         }
         else
         {
             Take.MarkDiscarded();
         }
+    }
+
+    /// <summary>Marks the editor as closing for good because Trayloom is quitting: no prompt, and an unsaved take stays on disk.</summary>
+    public void PrepareForExit()
+    {
+        _keepTake = !_exported;
+        _forceClose = true;
     }
 
     /// <summary>Closes the editor because Trayloom is quitting: a take that was not saved stays on disk so it can be recovered.</summary>

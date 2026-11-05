@@ -895,7 +895,8 @@ internal static class ShelfDrops
     /// <summary>True for a file type that runs code or mounts something when opened.</summary>
     public static bool IsRisky(string? path)
     {
-        var ext = string.IsNullOrEmpty(path) ? string.Empty : System.IO.Path.GetExtension(path);
+        // Windows drops a trailing dot or space from a name, so "x.exe." is x.exe
+        var ext = string.IsNullOrEmpty(path) ? string.Empty : System.IO.Path.GetExtension(path.TrimEnd('.', ' '));
         return ext.Length > 0 && s_risky.Contains(ext);
     }
 
@@ -920,13 +921,14 @@ internal static class ShelfDrops
     /// </summary>
     internal static string? WriteDropped(string dir, string name, Stream contents)
     {
-        var safeName = System.IO.Path.GetFileName(name);
+        var safeName = System.IO.Path.GetFileName(name).TrimEnd('.', ' ');
         if (string.IsNullOrWhiteSpace(safeName) || safeName.IndexOfAny(System.IO.Path.GetInvalidFileNameChars()) >= 0)
         {
             return null;
         }
 
-        var path = System.IO.Path.Combine(dir, safeName);
+        // the same normalised path is used to write, to mark and to classify, so no name spelling skips the Zone.Identifier
+        var path = System.IO.Path.GetFullPath(System.IO.Path.Combine(dir, safeName));
         var created = false;
         try
         {

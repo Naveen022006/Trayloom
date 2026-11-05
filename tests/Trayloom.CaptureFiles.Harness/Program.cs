@@ -183,6 +183,21 @@ internal static class Program
         Check(zone is not null && zone.Contains("ZoneId=3"), "dropped file carries Zone.Identifier ZoneId=3");
         Check(ShelfDrops.WriteDropped(shelf, "note.txt", new MemoryStream("other"u8.ToArray())) is null && File.ReadAllText(path!) == "hello", "an existing name is refused and left alone");
         Check(ShelfDrops.WriteDropped(shelf, "..\\evil.txt", new MemoryStream([1])) is { } p2 && Path.GetDirectoryName(p2) == shelf, "a path in the name is reduced to the file name");
+        var dotted = ShelfDrops.WriteDropped(shelf, "a.exe.", new MemoryStream([1]));
+        string? dz = null;
+        try
+        {
+            dz = dotted is null ? null : File.ReadAllText(dotted + ":Zone.Identifier");
+        }
+        catch
+        {
+            // no alternate streams
+        }
+
+        Check(dotted is not null && dotted.EndsWith("a.exe", StringComparison.Ordinal) && dz is not null && dz.Contains("ZoneId=3"), "a.exe. is stored as a.exe with ZoneId=3");
+        var spaced = ShelfDrops.WriteDropped(shelf, "b.exe ", new MemoryStream([1]));
+        Check(spaced is not null && spaced.EndsWith("b.exe", StringComparison.Ordinal), "b.exe with a trailing space is stored as b.exe");
+        Check(ShelfDrops.IsRisky("c.exe.") && ShelfDrops.IsRisky("c.exe "), "trailing dot or space is still risky");
         Check(ShelfDrops.IsRisky("a.EXE") && ShelfDrops.IsRisky("x.settingcontent-ms") && !ShelfDrops.IsRisky("a.png"), "risky extensions");
         Check(ShelfDrops.IsUnder(shelf, path!) && !ShelfDrops.IsUnder(shelf, Path.Combine(dir, "other.txt")), "IsUnder");
     }
@@ -203,6 +218,7 @@ internal static class Program
         Check(ShelfStore.ReadLink(Url("UniformResourceLocatorW", "https://a.b")) == "https://a.b", "https URL is a link");
         Check(ShelfStore.ReadLink(Url("UniformResourceLocator", "mailto:a@b.c")) == "mailto:a@b.c", "mailto is a link");
         Check(OcrSupport.OpenableUrl("https://a.b/c") is "https://a.b/c", "QR https opens");
+        Check(OcrSupport.OpenableUrl("https://a.b/x%20y") is "https://a.b/x%20y", "QR keeps escapes");
         Check(OcrSupport.OpenableUrl("mailto:a@b.c") is null && OcrSupport.OpenableUrl("file:///C:/x") is null && OcrSupport.OpenableUrl("C:\\x.exe") is null, "QR refuses mailto, file and paths");
     }
 
@@ -211,5 +227,12 @@ internal static class Program
         var a = Output.WriteUnique(dir, "cap", ".png", [1]);
         var b = Output.WriteUnique(dir, "cap", ".png", [2]);
         Check(a != b && File.ReadAllBytes(a)[0] == 1 && File.ReadAllBytes(b)[0] == 2, "WriteUnique never overwrites");
+        var bmp = System.Windows.Media.Imaging.BitmapSource.Create(2, 2, 96, 96, System.Windows.Media.PixelFormats.Bgra32, null, new byte[16], 8);
+        var target = Path.Combine(dir, "shot.png");
+        var first = Output.SavePng(bmp, target);
+        var second = Output.SavePng(bmp, target);
+        var third = Output.SavePng(bmp, target, 1, replace: true);
+        Check(first == target && second != target && File.Exists(second), "SavePng collision returns the new path");
+        Check(third == target, "SavePng replace writes the chosen path");
     }
 }

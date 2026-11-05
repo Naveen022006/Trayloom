@@ -204,7 +204,7 @@ internal sealed class PinWindow : Window
             var dlg = new Microsoft.Win32.SaveFileDialog { Filter = "PNG image|*.png", FileName = Output.DefaultName(Strings.Screenshot.FileNamePrefix, DateTime.Now) + ".png" };
             if (dlg.ShowDialog(this) == true)
             {
-                Output.SavePng(_image, dlg.FileName, _scale);
+                Output.SavePng(_image, dlg.FileName, _scale, replace: true);
             }
         };
         menu.Items.Add(copy);

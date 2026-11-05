@@ -307,6 +307,6 @@ internal static class OcrSupport
     /// <summary>Only plain http / https links with a host and no user-info or whitespace may be opened (no mailto from a QR code).</summary>
     public static string? OpenableUrl(string payload)
     {
-        return SafeLinks.IsWebUrl(payload.Trim(), out var uri, allowMailto: false) ? uri!.ToString() : null;
+        return SafeLinks.IsWebUrl(payload.Trim(), out var uri, allowMailto: false) ? uri!.AbsoluteUri : null;
     }
 }

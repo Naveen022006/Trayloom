@@ -563,7 +563,7 @@ internal sealed partial class ScreenshotEditorWindow : Window
         {
             var (path, _, _) = Output.NextScreenshotPath(_app, DateTime.Now);
             var (img, scale) = ExportImage();
-            Output.SavePng(img, path, scale);
+            path = Output.SavePng(img, path, scale);
             QuickToolHud.Show(G.Camera, string.Format(Strings.Screenshot.SavedFormat, Path.GetFileName(Path.GetDirectoryName(path)) ?? Strings.Desktop));
             Finish();
         }
@@ -591,7 +591,7 @@ internal sealed partial class ScreenshotEditorWindow : Window
         try
         {
             var (img, scale) = ExportImage();
-            Output.SavePng(img, dlg.FileName, scale);
+            Output.SavePng(img, dlg.FileName, scale, replace: true);
             QuickToolHud.Show(G.Camera, string.Format(Strings.Screenshot.SavedFormat, Path.GetFileName(Path.GetDirectoryName(dlg.FileName)) ?? string.Empty));
             Finish();
         }

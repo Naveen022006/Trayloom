@@ -280,8 +280,7 @@ internal sealed class ScreenshotService
         {
             var (path, _, _) = Output.NextScreenshotPath(App, DateTime.Now);
             var (img, scale) = Output.ApplyDownscale(App, capture.Image, capture.Scale);
-            Output.SavePng(img, path, scale);
-            return path;
+            return Output.SavePng(img, path, scale);
         }
         catch (Exception ex)
         {
