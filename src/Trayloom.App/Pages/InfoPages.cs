@@ -154,6 +154,8 @@ internal static class WhatsNewPage
             Loc.T("Wi-Fi: see your network and its signal, turn Wi-Fi on or off and join nearby networks from the Dynamic Island and the tray."),
             Loc.T("Away mode: your windows are minimized when you leave the PC and come back in the same order when you return, optionally when the camera sees you."),
             Loc.T("Away mode can also close the apps you choose when you leave and open them again when you’re back. Chrome and Edge come back with the same windows and tabs; an app that asks to save something is left open, so nothing is lost."),
+            Loc.T("Away mode can start when the camera stops seeing you, after a 10-second notice that any movement cancels. Off until you turn it on."),
+            Loc.T("Modes: one-click workspaces for coding, studying and more. Save what’s open now as a mode and start it from the island, the tray, the Command Bar or a shortcut."),
         ]),
         new("Changed",
         [

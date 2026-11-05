@@ -166,6 +166,27 @@ internal static class BarCatalog
             rows.Add(Simple("action.awayReopen", awayReopen.Title, Loc.T("Away mode"), 0xE8A7, awayReopen.Invoke, 150, Loc.T("Away mode reopen closed apps browser tabs")));
         }
 
+        // Modes: one row per saved mode, "Leave" while one is active, and the capture shortcut. The actions are evaluated live, so a
+        // renamed, added or deleted mode shows up the next time the bar opens.
+        if (Has("modes"))
+        {
+            foreach (var (_, a) in ctx.Actions.All.Where(x => FeatureCatalog.Resolve(x.Feature.Id) == "modes"))
+            {
+                if (a.Id.StartsWith("mode.", StringComparison.Ordinal))
+                {
+                    rows.Add(Simple("action.mode." + a.Id[5..], a.Title, Loc.T("Modes"), 0xE7C4, a.Invoke, 200, Loc.T("Mode workspace switch open apps tabs coding study")));
+                }
+                else if (a.Id == "leave")
+                {
+                    rows.Add(Simple("action.modeLeave", a.Title, Loc.T("Modes"), 0xE89F, a.Invoke, 200, Loc.T("Mode leave workspace")));
+                }
+                else if (a.Id == "save-current")
+                {
+                    rows.Add(Simple("action.modeSave", a.Title, Loc.T("Modes"), 0xE74E, a.Invoke, 150, Loc.T("Mode save workspace capture tabs")));
+                }
+            }
+        }
+
         // keep awake
         if (Has("keep-awake"))
         {

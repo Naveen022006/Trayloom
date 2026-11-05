@@ -127,6 +127,12 @@ public interface IShortcutService
     /// <summary>Defines (or replaces) a role at runtime (a feature with extra shortcuts, e.g. window-layout actions).</summary>
     void DefineRole(ShortcutRole role);
 
+    /// <summary>
+    /// Removes a runtime-defined role together with its bindings, so a deleted item (a Modes workspace) leaves no row on the
+    /// Keyboard shortcuts page and no registered hotkey behind. The default does nothing for implementations without removal.
+    /// </summary>
+    void RemoveRole(string roleId) { }
+
     /// <summary>The configured hotkey (saved value, else the default); null when cleared. Hook-based features read this.</summary>
     Hotkey? GetHotkey(string roleId);
 
@@ -220,6 +226,31 @@ public sealed class ShortcutService : IShortcutService
     {
         AddRole(role);
         Changed?.Invoke(role.Id);
+    }
+
+    /// <inheritdoc />
+    public void RemoveRole(string roleId)
+    {
+        List<Binding> removed;
+        lock (_gate)
+        {
+            if (_byId.Remove(roleId, out var existing))
+            {
+                _roles.Remove(existing);
+            }
+
+            // The bindings belong to the removed role: dispose their registrations so no hotkey stays registered for it.
+            removed = _bindings.Remove(roleId, out var list) ? list : [];
+            _runtime.Remove(roleId);
+        }
+
+        foreach (var binding in removed)
+        {
+            binding.Registration?.Dispose();
+            binding.Registration = null;
+        }
+
+        Changed?.Invoke(roleId);
     }
 
     /// <inheritdoc />

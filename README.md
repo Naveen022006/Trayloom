@@ -140,7 +140,8 @@ The tools are grouped the same way as in the Features hub. Each line says what t
 | **Camera preview** | A floating mirror of your webcam before a call. |
 | **Scratchpad** | Floating pads for short-lived notes, with tabs and formatting. |
 | **Cleaning Mode** | Locks the keyboard and blanks the screen so you can wipe them. |
-| **Away mode** | Minimizes your windows when you leave and brings them back in the same order when you return, by mouse, unlock or (optionally) when the camera sees you. Optionally closes the apps you choose and opens them again, browsers with their tabs. |
+| **Away mode** | Minimizes your windows when you leave the PC, or (optionally) when the camera stops seeing you, and brings them back in the same order when you return, by mouse, unlock or (optionally) when the camera sees you. Optionally closes the apps you choose and opens them again, browsers with their tabs. |
+| **Modes** | One-click workspaces: open the apps, folders and browser tabs of a task, like coding or studying, put the others away, and save what is open now as a mode. Start one from the Dynamic Island, the tray, the Quick panel, the Command Bar or its own shortcut. |
 | **Quit apps** | Quit open apps one by one, all at once, or all but the one in front, always after showing the list. |
 | **Wallpaper** | Pick a still wallpaper without opening Windows Settings. |
 | **Cleaner** | Find and clear caches and junk files, with a review before anything is removed. |
@@ -186,6 +187,17 @@ key and no account (your own YouTube Data API key is an optional alternative). B
   same windows and tabs. Private windows can’t be reopened, so a browser with one open is only minimized, and so is an app that
   asks to save something. What was closed is remembered on your PC only until it is open again. Face detection is detection,
   not recognition: any face counts, so it cannot tell you from a colleague. For real protection, switch on **Lock the PC too**.
+  **Leave when the camera doesn’t see you** (off by default) turns the camera on only after 30 seconds without the mouse or
+  keyboard. If it sees no face and no movement for the time you choose, a 10-second notice appears in the island (or as a
+  toast) and any movement or key press cancels it; then Away mode starts. It never counts a dark room or a covered lens as
+  absence, and it stays off during calls, media, full screen, battery saver and while the PC is locked. Pictures are checked
+  in memory and never saved; the camera light is on while it checks. **Which apps** can limit closing to the list, add the
+  apps of the mode you are in, or cover every app with a window (File Explorer, terminals and anything under “Leave these
+  apps alone” are never closed).
+* **Modes** keep their list in `%APPDATA%\Trayloom\modes\modes.json` on your PC. “Save what’s open now” lists what it found
+  and saves nothing until you confirm. Switching never closes a window that asks to save something and never closes File
+  Explorer or terminals; a mode can only close windows it opened itself. It does not turn on Do not disturb or change per-app
+  volume, and it refuses to run while Trayloom itself runs as administrator.
 * **GitHub** is offline until you connect it. It then uses the GitHub CLI you are already signed in to, or a token you paste
   that is stored encrypted with Windows DPAPI for your account. It is read-only: Trayloom never writes to GitHub.
 
@@ -312,6 +324,10 @@ What to expect:
   (after you connect), app and package updates, and links you choose to open. Feedback opens a GitHub issue in your browser.
 * Tools that need a Windows permission (screen capture, microphone, camera, calendar, notifications) list it on the
   **Permissions** tab of the Features hub before you install them.
+* **Modes and your browser tabs.** Only when you press **Add current browser tabs** or **Save what’s open now**, Trayloom reads
+  the addresses of the open tabs of Chrome and Edge from the browser’s own session file on your PC. They are read in memory,
+  never sent anywhere, and nothing is kept unless you save the mode (then the addresses are stored in `modes.json` on your PC).
+  Page titles are not read, and private windows are never in that file.
 * **Spotify and YouTube Music (optional).** Nothing is sent until you turn a service on in Settings › Dynamic Island › Content › Now Playing. Spotify sign-in happens on Spotify’s own page in your browser (Trayloom never sees your password); Trayloom asks only to read your playlists, liked and recently played songs and what’s playing, and to control playback, and never changes your library or playlists. The sign-in is stored encrypted for your Windows account in `%APPDATA%\Trayloom\music`; Disconnect deletes it, and spotify.com/account/apps removes access. YouTube Music needs no account and no key: when you press Enter in its search box, Trayloom sends the search text to music.youtube.com’s own web service (the one the YouTube Music website uses), with no cookies and no sign-in, and shows the results in the island. That service is not an official API, so it may stop working if YouTube changes it. If you add your own YouTube Data API key (optional, stored encrypted the same way), searches go to Google’s official YouTube Data API instead. YouTube’s Terms of Service and Google’s Privacy Policy apply to those searches. Results are kept in memory only.
 
 ## Requirements

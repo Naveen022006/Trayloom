@@ -13,7 +13,7 @@ namespace Trayloom.Features.Tools;
 /// <param name="HasOptions">Edit mode shows a gear and an options card.</param>
 internal sealed record QuickItem(string Id, string FeatureId, string Title, string? Glyph, bool HasOptions = false);
 
-/// <summary>The 17 tiles in declaration order plus the persistence helpers of 2.0.3.</summary>
+/// <summary>The 18 tiles in declaration order plus the persistence helpers of 2.0.3.</summary>
 internal static class QuickItems
 {
     public const string OrderKey = "quickLauncherItemOrder";
@@ -39,6 +39,7 @@ internal static class QuickItems
         new("screenRecorder", "screen-recorder", Loc.T("Screen recording"), ""),
         new("cameraPreview", "camera-preview", Loc.T("Camera preview"), ""),
         new("scratchpad", "scratchpad", Loc.T("Scratchpad"), ""),
+        new("modes", "modes", Loc.T("Modes"), ""),
     ]);
 
     public static QuickItem? Get(string id) => All.FirstOrDefault(i => i.Id == id);

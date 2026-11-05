@@ -43,7 +43,7 @@ public static class PanelTabs
         [
             "quick-launcher", "cleaner", "homebrew", "app-updates", "media-tools", "clipboard-history", "window-layout", "uninstaller",
             "url-cleaner", "cleaning-mode", "screen-ocr", "color-picker", "screenshot", "screen-recorder", "camera-preview", "scratchpad",
-            "command-bar", "port-manager",
+            "command-bar", "port-manager", "modes",
         ], true),
         new(Controls, Loc.T("Controls"), "", Loc.T("Switches for mouse, keyboard and window features."),
         [
@@ -51,7 +51,7 @@ public static class PanelTabs
             "finder-cut-paste", "auto-quit", "shelf", "window-maximizer", "dock-preview", "keyboard-debounce", "dock-click", "spaces-order",
             "middle-click", "text-snippets", "super-key", "radial-menu", "mouse-click-debounce", "notch",
         ], true),
-        new(Toggles, Loc.T("Quick toggles"), "", Loc.T("One-click actions like dark mode and muting the mic."), ["quick-toggles", "mic-mute", "quit-apps", "away-mode"], true),
+        new(Toggles, Loc.T("Quick toggles"), "", Loc.T("One-click actions like dark mode and muting the mic."), ["quick-toggles", "mic-mute", "quit-apps", "away-mode", "modes"], true),
         new(Wallpaper, Loc.T("Wallpaper"), "", Loc.T("Pick a still wallpaper without opening Settings."), ["wallpaper"], false),
     ]);
 

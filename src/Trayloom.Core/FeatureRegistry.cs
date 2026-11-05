@@ -476,6 +476,8 @@ public sealed class FeatureRegistry : IActionCatalog, IDisposable
 
         public void DefineRole(ShortcutRole role) => inner.DefineRole(role);
 
+        public void RemoveRole(string roleId) => inner.RemoveRole(roleId);
+
         public Hotkey? GetHotkey(string roleId) => inner.GetHotkey(roleId);
 
         public ShortcutState GetState(string roleId) => inner.GetState(roleId);

@@ -40,6 +40,14 @@ Closing apps (0.4.0): `--action away-mode dev-close-now|simulate-session-end|reo
 (`chrome`, `msedge`, ...) only matches a browser started with `--user-data-dir` under `TRAYLOOM_DATA` or the temp folder, so
 the isolated browser test of spec 07 section 11.4 can never touch your own browser. `tests\AwayDummy --mode
 closable|asks|refuses|slow|tray` stands in for other apps.
+Camera leaving (spec 08): with `TRAYLOOM_DEV=1` Away mode also has `--action away-mode
+simulate-absence|simulate-motion|simulate-dark`, which feed one camera observation without a camera (use them with
+`TRAYLOOM_AWAY_NO_CAMERA=1`; repeat `simulate-absence` over the "Nobody there for" time to see the countdown, then
+`simulate-motion` to cancel it). `TRAYLOOM_AWAY_ARM_SECONDS=<n>` (only with `TRAYLOOM_DEV=1`) replaces the 30 seconds without
+input the camera waits for. Modes: `--action modes dump` (counts only) and `--action modes dev-capture` (logs how many apps,
+browser windows and folders were found, nothing else), both only with `TRAYLOOM_DEV=1`; `--action modes save-current` opens
+Settings at the Modes card and its capture dialog. Mode actions are `mode.<id>` and `leave`. The log holds mode ids and counts,
+never names, paths or addresses.
 
 With `TRAYLOOM_DEV=1` the island also exposes one action per page. Island placement: `--action island move` enters
 "Move island" mode and `--action island reset-position` puts the island back at the top centre; with `TRAYLOOM_DEV=1` also

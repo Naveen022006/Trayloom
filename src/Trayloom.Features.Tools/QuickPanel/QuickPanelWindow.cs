@@ -860,7 +860,7 @@ internal sealed class QuickPanelWindow : GlassWindow
                 }, false);
                 Rebuild();
                 return;
-            case "cleaner" or "homebrew" or "media" or "urlCleaner" or "uninstaller" or "windowLayout":
+            case "cleaner" or "homebrew" or "media" or "urlCleaner" or "uninstaller" or "windowLayout" or "modes":
                 var provider = UtilityProviders.For(item.FeatureId).FirstOrDefault();
                 if (provider is not null)
                 {
