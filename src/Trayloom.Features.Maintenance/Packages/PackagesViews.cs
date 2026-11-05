@@ -361,7 +361,7 @@ internal static class PackageParts
 
         if (details is { Homepage.Length: > 0 } && Uri.TryCreate(details.Homepage, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https")
         {
-            var link = V.Link(Loc.T("Open website"), () => UiKit.OpenUrl(uri.ToString()), compact ? 10 : 12);
+            var link = V.Link(Loc.T("Open website"), () => UiKit.OpenWebUrl(uri.ToString()), compact ? 10 : 12);
             link.HorizontalAlignment = HorizontalAlignment.Left;
             link.Margin = new Thickness(0, 8, 0, 0);
             column.Children.Add(link);

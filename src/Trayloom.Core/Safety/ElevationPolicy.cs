@@ -43,7 +43,26 @@ public static class ElevationPolicy
     }
 
     /// <summary>True when the running executable lives in an admin-owned folder.</summary>
-    public static bool IsAdminOwnedInstall => IsAdminOwnedPath(Environment.ProcessPath ?? string.Empty);
+    public static bool IsAdminOwnedInstall => IsAdminOwnedPath(Environment.ProcessPath ?? string.Empty)
+        && IsAdminOwnedPath(AppContext.BaseDirectory); // under "dotnet Trayloom.dll" the process is the host in Program Files, the code is not
+
+    /// <summary>
+    /// The one restart-as-administrator path, set by the App (it shuts down through the recorder-aware quit and starts the new copy with
+    /// <c>--relaunch</c>). Feature pages call <see cref="RequestRestartElevated"/> instead of starting a process themselves.
+    /// </summary>
+    public static Action? RestartElevatedHandler { get; set; }
+
+    /// <summary>Restarts Trayloom elevated through the App's handler; false when elevation is not allowed or no handler is set.</summary>
+    public static bool RequestRestartElevated()
+    {
+        if (!CanOfferElevation || RestartElevatedHandler is not { } handler)
+        {
+            return false;
+        }
+
+        handler();
+        return true;
+    }
 
     /// <summary>True when a "restart as administrator" button may be shown. No current install qualifies.</summary>
     public static bool CanOfferElevation => IsAdminOwnedInstall;

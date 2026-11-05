@@ -72,21 +72,8 @@ public sealed class CutPasteSettingsSection : ISettingsSection
         }
 
         card.Add(Ui.Caption(Loc.T("Some windows belong to apps running as administrator. Run Trayloom as administrator to control them.")));
-        var button = UiKit.Button(Loc.T("Restart as administrator"), ButtonKind.Bordered, 12, null, () =>
-        {
-            try
-            {
-                var path = Environment.ProcessPath;
-                if (path is not null)
-                {
-                    Process.Start(new ProcessStartInfo(path, $"--relaunch {Environment.ProcessId}") { UseShellExecute = true, Verb = "runas" });
-                }
-            }
-            catch (Exception)
-            {
-                // the UAC prompt was declined
-            }
-        });
+        // the App's shared restart path: finishes a recording, starts the elevated copy with --relaunch and quits this one
+        var button = UiKit.Button(Loc.T("Restart as administrator"), ButtonKind.Bordered, 12, null, () => ElevationPolicy.RequestRestartElevated());
         button.HorizontalAlignment = HorizontalAlignment.Left;
         card.Add(button);
         return card;

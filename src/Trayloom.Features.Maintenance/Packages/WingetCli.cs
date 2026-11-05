@@ -136,6 +136,40 @@ internal static class WingetCli
         }
     }
 
+    /// <summary>
+    /// A winget.exe that only an administrator can replace, for the elevated terminal: <paramref name="path"/> itself when it is under
+    /// <c>%ProgramFiles%\WindowsApps</c>, otherwise the newest <c>Microsoft.DesktopAppInstaller</c> package there (null when that folder
+    /// cannot be listed). The per-user alias in <c>%LOCALAPPDATA%\Microsoft\WindowsApps</c> is writable by the user and never qualifies.
+    /// </summary>
+    internal static string? AdminOwnedPath(string? path, string? programFiles = null)
+    {
+        try
+        {
+            var root = System.IO.Path.Combine(programFiles ?? FileOps.ProgramFiles, "WindowsApps");
+            if (!string.IsNullOrEmpty(path) && System.IO.Path.IsPathFullyQualified(path)
+                && string.Equals(System.IO.Path.GetFileName(path), "winget.exe", StringComparison.OrdinalIgnoreCase)
+                && SafePaths.IsUnder(SafePaths.Normalize(path), root))
+            {
+                return path;
+            }
+
+            if (!Directory.Exists(root))
+            {
+                return null;
+            }
+
+            return Directory.EnumerateDirectories(root, "Microsoft.DesktopAppInstaller_*_8wekyb3d8bbwe")
+                .Where(d => !System.IO.Path.GetFileName(d).Contains("_arm", StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(d => System.IO.Path.GetFileName(d), StringComparer.OrdinalIgnoreCase)
+                .Select(d => System.IO.Path.Combine(d, "winget.exe"))
+                .FirstOrDefault(File.Exists);
+        }
+        catch
+        {
+            return null; // the folder is normally not listable without administrator rights
+        }
+    }
+
     /// <summary>True for <c>%LOCALAPPDATA%\Microsoft\WindowsApps\winget.exe</c> or a <c>winget.exe</c> under <c>%ProgramFiles%\WindowsApps</c>.</summary>
     internal static bool IsTrustedLocation(string candidate)
     {

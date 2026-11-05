@@ -38,6 +38,7 @@ internal sealed class RecorderService
     private string? _stopReason;
     private bool _opensEditor;
     private Task? _finishTask;
+    private volatile bool _finishAwaited; // StopAndFinishAsync already ran in this quit, so Shutdown need not wait its full time again
     private readonly HashSet<string> _saving = new(StringComparer.OrdinalIgnoreCase);
     private volatile int _exitMode; // 0 normal, 1 quitting (save the take to the folder), 2 session ending (keep it for recovery)
     private static long _freq;
@@ -97,6 +98,7 @@ internal sealed class RecorderService
     /// </summary>
     public async Task<bool> StopAndFinishAsync(TimeSpan budget)
     {
+        _finishAwaited = true;
         // open editors must neither ask nor delete from here on, whether or not a recording is running
         foreach (var editor in _editors.ToList())
         {
@@ -369,6 +371,7 @@ internal sealed class RecorderService
             _startQpc = Qpc();
             _cap.Start();
             _pointerRec.Start();
+            _finishAwaited = false;
             _exitMode = 0; // a cancelled quit or sign-out must not change how later recordings finish
             IsRecording = true;
             _preparing = false;
@@ -835,12 +838,30 @@ internal sealed class RecorderService
         });
     }
 
+    /// <summary>Closes the pill and the region guide. Never throws: Stop() must always get on to finalising the video.</summary>
     private void CloseSurfaces()
     {
-        _pill?.Close();
+        var pill = _pill;
+        var guide = _guide;
         _pill = null;
-        _guide?.Close();
         _guide = null;
+        try
+        {
+            pill?.Close();
+        }
+        catch (Exception ex)
+        {
+            CaptureHost.Log("closing the recording pill failed", ex);
+        }
+
+        try
+        {
+            guide?.Close();
+        }
+        catch (Exception ex)
+        {
+            CaptureHost.Log("closing the region guide failed", ex);
+        }
     }
 
     public void Shutdown()
@@ -855,7 +876,7 @@ internal sealed class RecorderService
 
         try
         {
-            if (_finishTask is { IsCompleted: false } finishing && !finishing.Wait(TimeSpan.FromSeconds(15)))
+            if (_finishTask is { IsCompleted: false } finishing && !finishing.Wait(QuitBudget.ShutdownWait(_finishAwaited)))
             {
                 CaptureHost.Log("recording not finished before exit; kept for recovery");
             }

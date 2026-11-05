@@ -7,6 +7,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Windows.ApplicationModel.Appointments;
 using Trayloom.Core;
+using Trayloom.Core.Ui;
 
 namespace Trayloom.Features.Island;
 
@@ -611,19 +612,13 @@ internal sealed class CalendarService : IDisposable
     /// <summary>Opens an https link (a video call or Google Calendar) in the default browser; anything else is ignored.</summary>
     public static void OpenLink(string url)
     {
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
+        // https only, and SafeLinks refuses user-info (https://trusted@evil) and control characters
+        if (!SafeLinks.IsWebUrl(url, out var uri, allowMailto: false) || uri is null || uri.Scheme != Uri.UriSchemeHttps)
         {
             return;
         }
 
-        try
-        {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
-        }
-        catch
-        {
-            // No browser to open it with; nothing sensible to do.
-        }
+        UiKit.OpenWebUrl(uri.AbsoluteUri);
     }
 
     public void Dispose()

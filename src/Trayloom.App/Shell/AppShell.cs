@@ -225,7 +225,7 @@ internal sealed class AppShell : IShell
 
             try
             {
-                // The new process waits (<= 20 s) for this one to exit, then starts normally.
+                // The new process waits (<= 35 s) for this one to exit, then starts normally.
                 Process.Start(new ProcessStartInfo(exe, $"--relaunch {Environment.ProcessId}") { UseShellExecute = false });
             }
             catch (Exception ex)
@@ -291,7 +291,7 @@ internal sealed class AppShell : IShell
     {
         try
         {
-            if (!await rec.StopAndFinishAsync(TimeSpan.FromSeconds(15)))
+            if (!await rec.StopAndFinishAsync(QuitBudget.FinishWait))
             {
                 _host.Log.Warn("The recording did not finish within 15 s; quitting anyway");
             }

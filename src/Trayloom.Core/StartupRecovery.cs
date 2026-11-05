@@ -35,7 +35,7 @@ public interface IStartupRecovery
     void Recover(RecoveryStage stage, ILog log);
 }
 
-/// <summary>Runs every <see cref="IStartupRecovery"/> hook, each on its own task, within a total time budget.</summary>
+/// <summary>Runs every <see cref="IStartupRecovery"/> hook, each on its own long-running task (a dedicated thread, so a slow hook cannot starve the others of pool threads), within a total time budget.</summary>
 public static class StartupRecovery
 {
     /// <summary>
@@ -103,7 +103,7 @@ public static class StartupRecovery
             var index = n;
             var hook = list[n];
             ids[n] = SafeId(hook);
-            tasks[n] = Task.Run(() =>
+            tasks[n] = Task.Factory.StartNew(() =>
             {
                 try
                 {
@@ -122,7 +122,7 @@ public static class StartupRecovery
                         // logging must not break recovery
                     }
                 }
-            });
+            }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         }
 
         try

@@ -182,6 +182,29 @@ internal static class CoreChecks
         }
 
         Check(StartupRecovery.Run([], RecoveryStage.Crash, log, TimeSpan.FromSeconds(1)).Count == 0, "no hooks, no lines");
+
+        // a slow hook must not starve the others: more blocking hooks than pool threads, plus one quick hook that has to run at once
+        var blockers = Math.Max(Environment.ProcessorCount * 2, 8);
+        var quick = 0;
+        var many = new List<IStartupRecovery>();
+        for (var n = 0; n < blockers; n++)
+        {
+            many.Add(new Hook("slow" + n, () => Thread.Sleep(1500)));
+        }
+
+        many.Add(new Hook("quick", () => Interlocked.Increment(ref quick)));
+        var sw = Stopwatch.StartNew();
+        var manyLines = StartupRecovery.Run(many, RecoveryStage.Startup, log, TimeSpan.FromMilliseconds(600));
+        sw.Stop();
+        Check(quick == 1 && manyLines.Contains("recovery quick: done"), "a quick hook runs although many hooks block");
+        Check(sw.ElapsedMilliseconds <= 900, $"the per-stage bound still holds ({sw.ElapsedMilliseconds} ms)");
+
+        // quit budget: the worst case fits inside what the uninstaller and a restarted copy wait
+        Check(QuitBudget.ShutdownWait(true) < QuitBudget.ShutdownWait(false), "a finish that already ran shortens the recorder shutdown wait");
+        Check(QuitBudget.ShutdownWait(false) == QuitBudget.FinishWait, "without a finish the full wait stays");
+        Check(QuitBudget.WorstCase(true, true) <= QuitBudget.OtherProcessWait, "the worst quit (finish + residual + stops + uninstall) fits in the 35 s the uninstaller and --relaunch wait");
+        Check(QuitBudget.WorstCase(false, true) <= QuitBudget.OtherProcessWait, "a quit without a prior finish also fits");
+        Check(QuitBudget.WorstCase(true, true) > TimeSpan.FromSeconds(15), "the budget is not the old 15 s the old waits assumed");
     }
 
     private static void LocalRoot()

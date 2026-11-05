@@ -398,7 +398,7 @@ public sealed class AutoQuitFeature : IFeature
 
     private void AskClose(uint pid, Watched watched)
     {
-        _context?.Log.Info(Loc.F("Quit on close: asking {0} (pid {1}) to quit", System.IO.Path.GetFileName(watched.Path), pid));
+        _context?.Log.Info($"Quit on close: asking {System.IO.Path.GetFileName(watched.Path)} (pid {pid}) to quit");
 
         // Only windows this app showed while watched, and only if they still exist and still belong to the app.
         foreach (var hwnd in watched.Windows)
@@ -438,7 +438,7 @@ public sealed class AutoQuitFeature : IFeature
 
             if (main is not null)
             {
-                _context?.Log.Info(Loc.F("Quit on close: {0} (pid {1}) ignored the close request, ending its main thread's message loop", System.IO.Path.GetFileName(watched.Path), pid));
+                _context?.Log.Info($"Quit on close: {System.IO.Path.GetFileName(watched.Path)} (pid {pid}) ignored the close request, ending its main thread’s message loop");
                 WinApi.PostThreadMessageW((uint)main.Id, WinApi.WM_QUIT, 0, 0);
             }
         }

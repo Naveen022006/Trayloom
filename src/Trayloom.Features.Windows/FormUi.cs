@@ -149,29 +149,8 @@ internal static class FormUi
         return card;
     }
 
-    private static void RestartAsAdmin()
-    {
-        if (!ElevationPolicy.CanOfferElevation)
-        {
-            return;
-        }
-
-        try
-        {
-            var exe = Environment.ProcessPath;
-            if (exe is null)
-            {
-                return;
-            }
-
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe) { UseShellExecute = true, Verb = "runas" });
-            Application.Current?.Shutdown();
-        }
-        catch (Exception)
-        {
-            // the user declined the UAC prompt
-        }
-    }
+    /// <summary>Goes through the App's shared restart path, which finishes a recording and passes <c>--relaunch</c>.</summary>
+    private static void RestartAsAdmin() => ElevationPolicy.RequestRestartElevated();
 
     /// <summary>A mini screen (outline + filled placement) used for placement glyphs.</summary>
     public static FrameworkElement MiniScreen(double x0, double y0, double x1, double y1, double width, double height, string? fillKey = null, string? outlineKey = null)

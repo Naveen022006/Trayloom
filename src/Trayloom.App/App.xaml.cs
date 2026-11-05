@@ -75,6 +75,7 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        ElevationPolicy.RestartElevatedHandler = PermissionService.RestartElevated;
         base.OnStartup(e);
         try
         {
@@ -135,10 +136,10 @@ public partial class App : Application
         var relaunchIndex = Array.FindIndex(e.Args, a => string.Equals(a, "--relaunch", StringComparison.OrdinalIgnoreCase));
         if (relaunchIndex >= 0 && relaunchIndex + 1 < e.Args.Length && int.TryParse(e.Args[relaunchIndex + 1], out var oldPid))
         {
-            // Started by "Restart now": wait (<= 20 s) for the previous process to exit before taking the single-instance lock.
+            // Started by "Restart now": wait (<= 35 s, see QuitBudget) for the previous process to exit before taking the single-instance lock.
             try
             {
-                Process.GetProcessById(oldPid).WaitForExit(20_000);
+                Process.GetProcessById(oldPid).WaitForExit((int)QuitBudget.OtherProcessWait.TotalMilliseconds);
             }
             catch (Exception)
             {
@@ -502,7 +503,7 @@ public partial class App : Application
                     _host.Log.Info("Shutting down while recording: finishing the recording first");
                 }
 
-                await rec.StopAndFinishAsync(TimeSpan.FromSeconds(15));
+                await rec.StopAndFinishAsync(QuitBudget.FinishWait);
             }
         }
         catch (Exception ex)
@@ -556,7 +557,7 @@ public partial class App : Application
             var got = false;
             try
             {
-                got = mutex.WaitOne(15_000);
+                got = mutex.WaitOne(QuitBudget.OtherProcessWait); // a slow quit (recording export) can take about 31 s
             }
             catch (AbandonedMutexException)
             {
@@ -883,13 +884,18 @@ public partial class App : Application
 
     protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
     {
-        // Sign-out or shutdown cannot wait for a dialog or an await: give the recorder a short, bounded moment on a worker thread so the
-        // UI thread is never blocked on work that needs it, then let Windows go on.
+        // StopAndFinishAsync is a UI-thread API (it closes WPF windows), so it is called right here and never blocked on: its synchronous
+        // part stops the recording and starts finalising the video before its first await. The recorder's own SystemEvents handler then
+        // makes the one bounded (5 s) wait for the file work, which never needs the UI thread. If the sign-out is cancelled, the
+        // recorder clears its own "finishing" state when the file work ends, so recording works again.
         try
         {
             if (_host?.Services.Get<IRecordingState>() is { } rec)
             {
-                Task.Run(() => rec.StopAndFinishAsync(TimeSpan.FromSeconds(4))).Wait(TimeSpan.FromSeconds(5));
+                var log = _host.Log;
+                rec.StopAndFinishAsync(TimeSpan.FromSeconds(4)).ContinueWith(
+                    t => log.Warn("Finishing the recording at session end failed: " + t.Exception?.GetBaseException().Message),
+                    CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
             }
         }
         catch (Exception ex)

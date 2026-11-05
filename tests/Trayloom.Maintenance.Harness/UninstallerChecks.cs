@@ -503,6 +503,15 @@ internal static class UninstallerChecks
 
     private static void Commands()
     {
+        var pf = Path.Combine(Path.GetTempPath(), "tl-pf-" + Guid.NewGuid().ToString("N"));
+        var alias = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "WindowsApps", "winget.exe");
+        Check(WingetCli.AdminOwnedPath(alias, pf) is null, "the per-user winget alias is never used for the elevated terminal");
+        var admin = Path.Combine(pf, "WindowsApps", "Microsoft.DesktopAppInstaller_1.0_x64__8wekyb3d8bbwe", "winget.exe");
+        Check(WingetCli.AdminOwnedPath(admin, pf) == admin, "a winget.exe under Program Files WindowsApps is accepted");
+        Directory.CreateDirectory(Path.GetDirectoryName(admin)!);
+        File.WriteAllText(admin, "x");
+        Check(WingetCli.AdminOwnedPath(alias, pf) == admin, "the alias is resolved to the admin-owned package copy when it can be listed");
+        Directory.Delete(pf, true);
         var good = OperationStatusView.BuildTerminalScript([["uninstall", "--id", "Vendor.App", "--exact", "--silent"]], null);
         Check(good is null, "no command is built without a trusted winget path");
         good = OperationStatusView.BuildTerminalScript([["uninstall", "--id", "Vendor.App", "--exact", "--silent"]], @"C:\Program Files\WindowsApps\p\winget.exe");

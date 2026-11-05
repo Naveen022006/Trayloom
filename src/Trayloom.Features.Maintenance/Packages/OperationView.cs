@@ -272,7 +272,15 @@ internal sealed class OperationStatusView : ContentControl
     {
         try
         {
-            var script = BuildTerminalScript(commands, WingetCli.Path);
+            // an elevated shell must never run an executable the user can rewrite (the per-user WindowsApps alias)
+            var admin = WingetCli.AdminOwnedPath(WingetCli.Path);
+            if (admin is null)
+            {
+                Dialogs.Alert(Loc.T("Can’t open an administrator terminal"), Loc.T("Trayloom couldn’t find a copy of winget that only an administrator can change. Use Copy and run the command in a terminal yourself."));
+                return;
+            }
+
+            var script = BuildTerminalScript(commands, admin);
             if (script is null)
             {
                 return;
