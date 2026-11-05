@@ -269,14 +269,50 @@ internal sealed class CleanerModel
     }
 
     /// <summary>State shared by the removals of one clean: the registry backup folder and the keys that could not be saved.</summary>
-    private sealed class CleanRun
+    internal sealed class CleanRun
     {
         public string? Backup { get; set; }
 
         public int TooLarge { get; set; }
 
-        public HashSet<string> FailedKeys { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public HashSet<string> SavedKeys { get; } = new(StringComparer.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// Turns the per-path recycle results into totals: only <see cref="RecycleResult.Recycled"/> frees space and sets
+    /// <c>RecycledAny</c>; <see cref="RecycleResult.NotRecyclable"/> counts as too large and as failed; a missing path is neutral.
+    /// </summary>
+    internal static (long Freed, int Failed, int TooLarge, bool RecycledAny) TallyRecycle(IEnumerable<(RecycleResult Result, long Size)> results)
+    {
+        long freed = 0;
+        var failed = 0;
+        var tooLarge = 0;
+        var any = false;
+        foreach (var (result, size) in results)
+        {
+            switch (result)
+            {
+                case RecycleResult.Recycled:
+                    freed += size;
+                    any = true;
+                    break;
+                case RecycleResult.Missing:
+                    break;
+                case RecycleResult.NotRecyclable:
+                    tooLarge++;
+                    failed++;
+                    break;
+                default:
+                    failed++;
+                    break;
+            }
+        }
+
+        return (freed, failed, tooLarge, any);
+    }
+
+    /// <summary>True only when the value's key was exported successfully in this run, so no value is ever deleted without a backup.</summary>
+    internal static bool MayDeleteRegistryValue(CleanItem item, CleanRun run) => run.SavedKeys.Contains(KeyId(item));
 
     private (long Freed, int Failed, bool Recycled) Remove(CleanItem item, CleanRun run)
     {
@@ -287,38 +323,24 @@ internal sealed class CleanerModel
 
             case RemoveKind.Recycle:
             {
-                var failed = 0;
-                long freed = 0;
-                var recycledAny = false;
+                var results = new List<(RecycleResult Result, long Size)>();
+                var invalid = 0;
                 foreach (var path in item.Paths)
                 {
                     if (!Validate(item, path) || (item.Identity is not null && Win32.FileIdentity(path) != item.Identity))
                     {
-                        failed++;
+                        invalid++;
                         continue;
                     }
 
                     // never a silent permanent delete: what the bin cannot keep stays where it is
                     var size = FileOps.DirectorySize(path);
-                    switch (FileOps.TryRecycle(path, size))
-                    {
-                        case RecycleResult.Recycled:
-                            freed += size;
-                            recycledAny = true;
-                            break;
-                        case RecycleResult.Missing:
-                            break;
-                        case RecycleResult.NotRecyclable:
-                            run.TooLarge++;
-                            failed++;
-                            break;
-                        default:
-                            failed++;
-                            break;
-                    }
+                    results.Add((FileOps.TryRecycle(path, size), size));
                 }
 
-                return (freed, failed, recycledAny);
+                var tally = TallyRecycle(results);
+                run.TooLarge += tally.TooLarge;
+                return (tally.Freed, tally.Failed + invalid, tally.RecycledAny);
             }
 
             case RemoveKind.PermanentFiles:
@@ -418,7 +440,7 @@ internal sealed class CleanerModel
 
     private static string RegExe => Path.Combine(Environment.SystemDirectory, "reg.exe");
 
-    private static string KeyId(CleanItem item) => $"{item.Hive}|{item.View}|{item.SubKey}";
+    internal static string KeyId(CleanItem item) => $"{item.Hive}|{item.View}|{item.SubKey}";
 
     /// <summary>
     /// Exports each distinct (hive, view, key) once into a new folder for this run, before any value is deleted. A key whose export
@@ -439,11 +461,6 @@ internal sealed class CleanerModel
         }
         catch
         {
-            foreach (var item in items)
-            {
-                run.FailedKeys.Add(KeyId(item));
-            }
-
             return;
         }
 
@@ -458,7 +475,7 @@ internal sealed class CleanerModel
                 var hive = first.Hive == RegistryHive.CurrentUser ? "HKCU" : "HKLM";
                 var safeName = new string(first.SubKey!.Select(c => char.IsAsciiLetterOrDigit(c) ? c : '_').ToArray());
                 var file = Path.Combine(folder, $"{number:000}-{hive}-{safeName}.reg");
-                var info = new ProcessStartInfo(RegExe) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+                var info = new ProcessStartInfo(RegExe) { UseShellExecute = false, CreateNoWindow = true };
                 info.ArgumentList.Add("export");
                 info.ArgumentList.Add($"{hive}\\{first.SubKey}");
                 info.ArgumentList.Add(file);
@@ -466,9 +483,22 @@ internal sealed class CleanerModel
                 using var process = Process.Start(info);
                 if (process is not null)
                 {
-                    process.StandardOutput.ReadToEnd();
-                    process.StandardError.ReadToEnd();
-                    ok = process.WaitForExit(15_000) && process.ExitCode == 0 && File.Exists(file);
+                    if (process.WaitForExit(15_000))
+                    {
+                        ok = process.ExitCode == 0 && File.Exists(file);
+                    }
+                    else
+                    {
+                        // a hung reg.exe must not leave the cleaner in the cleaning phase for good
+                        try
+                        {
+                            process.Kill();
+                        }
+                        catch
+                        {
+                            // already gone
+                        }
+                    }
                 }
             }
             catch
@@ -479,10 +509,7 @@ internal sealed class CleanerModel
             if (ok)
             {
                 run.Backup = folder;
-            }
-            else
-            {
-                run.FailedKeys.Add(group.Key);
+                run.SavedKeys.Add(group.Key);
             }
         }
     }
@@ -491,7 +518,7 @@ internal sealed class CleanerModel
     {
         try
         {
-            if (run.FailedKeys.Contains(KeyId(item)) || run.Backup is null)
+            if (!MayDeleteRegistryValue(item, run))
             {
                 return false;
             }

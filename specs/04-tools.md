@@ -4813,7 +4813,7 @@ Windows `mayRemove` guard: not a drive root, not in {`%WINDIR%`, `%WINDIR%\Syste
 * `Internet cache` lists the child folders of INetCache except `Content.Outlook`. `Crash dumps` is not pre-checked. Electron app caches are offered only for `%APPDATA%\<App>` folders holding `Local State` or `Preferences`.
 * Orphaned startup items: a target is missing only when its drive is a fixed, ready drive letter and nothing exists there; removable, network, optical, not-ready and UNC targets are never orphans. Unattended (automatic) runs do not pre-check startup items. An automatic run is skipped while Trayloom runs elevated.
 * Recycle: items go through `FileOps.TryRecycle`; an item the bin cannot keep is left in place, counted as failed and reported on the Done screen as `{0} items were too large for the Recycle Bin, so they were left in place.` The recycle sentence shows only when something was really recycled.
-* Registry backup: each clean writes to a new folder `%APPDATA%\Trayloom\cleanerackups\<yyyyMMdd-HHmmss-fff>`, exports every distinct (hive, view, key) once as `NNN-<key>.reg` before deleting any value, and leaves the values of a key whose export failed. Done text: `Registry entries were saved to {0} first.`
+* Registry backup: each clean writes to a new folder `%APPDATA%\Trayloom\cleaner\backups\<yyyyMMdd-HHmmss-fff>`, exports every distinct (hive, view, key) once as `NNN-<key>.reg` before deleting any value, and leaves the values of a key whose export failed. Done text: `Registry entries were saved to {0} first.`
 
 ### 7.1.8 Gap vs Trayloom (`Trayloom.Features.Tools/Cleaner/CleanerFeature.cs`, 534 lines)
 

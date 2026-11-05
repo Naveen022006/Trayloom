@@ -21,6 +21,9 @@ internal static class CleanerChecks
         InetCache();
         Electron();
         Zone();
+        Recycling();
+        Backups();
+        Personal();
     }
 
     private static void Check(bool ok, string what) => _check(ok, "cleaner: " + what);
@@ -42,6 +45,22 @@ internal static class CleanerChecks
             }
         }
 
+        foreach (var kind in Enum.GetValues<RemoveKind>())
+        {
+            var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            var downloads = Path.Combine(profile, "Downloads");
+            Check(!CleanerModel.Validate(Item(kind, desktop), desktop), $"Validate refuses Desktop for {kind}");
+            Check(!CleanerModel.Validate(Item(kind, downloads), downloads), $"Validate refuses Downloads for {kind}");
+        }
+
+        foreach (var name in new[] { "Prefetch", "Minidump" })
+        {
+            var shallow = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), name);
+            Check(CleanerModel.Validate(Item(RemoveKind.PermanentContents, shallow), shallow), $"Validate accepts Windows\\{name} for PermanentContents");
+        }
+
+        var winTemp0 = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Temp");
+        Check(!CleanerModel.Validate(Item(RemoveKind.PermanentFiles, winTemp0), winTemp0), "Validate refuses Windows\\Temp for PermanentFiles");
         var winTemp = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Temp");
         Check(CleanerModel.Validate(Item(RemoveKind.PermanentContents, winTemp), winTemp), "Validate accepts Windows\\Temp for PermanentContents");
         Check(!CleanerModel.Validate(Item(RemoveKind.Permanent, winTemp), winTemp), "Validate refuses Windows\\Temp for Permanent");
@@ -67,7 +86,14 @@ internal static class CleanerChecks
     {
         // a path that cannot exist, so the probe decides
         const string path = @"Q:\tl-no-such-folder\app.exe";
-        Check(CleanerScanner.TargetIsVerifiablyMissing(path, _ => (DriveType.Fixed, true)), "fixed and ready and missing is missing");
+        Check(CleanerScanner.TargetIsVerifiablyMissing(path, _ => (DriveType.Fixed, true), _ => true), "fixed and ready and missing is missing");
+        Check(!CleanerScanner.TargetIsVerifiablyMissing(path, _ => (DriveType.Fixed, true), _ => false), "a missing target in an unreadable folder is not missing");
+        Check(!CleanerScanner.TargetIsVerifiablyMissing(@"Q:app.exe", _ => (DriveType.Fixed, true), _ => true), "a drive-relative path is never missing");
+        Check(!CleanerScanner.TargetIsVerifiablyMissing(@"app.exe", _ => (DriveType.Fixed, true), _ => true), "a relative path is never missing");
+        Check(!CleanerScanner.TargetIsVerifiablyMissing(@"\Windows\x.exe", _ => (DriveType.Fixed, true), _ => true), "a rooted path without a drive is never missing");
+        Check(CleanerScanner.ExecutableOf(@"C:\Program Files\X\run.vbs /s") is null, "an unquoted path with spaces and an unknown extension is not reported");
+        Check(CleanerScanner.ExecutableOf(@"C:\Program Files\X\run.exe /s") == @"C:\Program Files\X\run.exe", "a known extension is still found");
+        Check(CleanerScanner.ExecutableOf("\"C:\\Program Files\\X\\run.vbs\" /s") == @"C:\Program Files\X\run.vbs", "a quoted path is still found");
         Check(!CleanerScanner.TargetIsVerifiablyMissing(path, _ => (DriveType.Removable, true)), "removable is never missing");
         Check(!CleanerScanner.TargetIsVerifiablyMissing(path, _ => (DriveType.Network, true)), "network is never missing");
         Check(!CleanerScanner.TargetIsVerifiablyMissing(path, _ => (DriveType.CDRom, true)), "optical is never missing");
@@ -125,6 +151,38 @@ internal static class CleanerChecks
         {
             Directory.Delete(dir, true);
         }
+    }
+
+    private static void Recycling()
+    {
+        var t = CleanerModel.TallyRecycle([(RecycleResult.NotRecyclable, 100), (RecycleResult.NotRecyclable, 50)]);
+        Check(t.Freed == 0 && t.Failed == 2 && t.TooLarge == 2 && !t.RecycledAny, "only too-large items: failed, nothing freed, RecycledAny false");
+        t = CleanerModel.TallyRecycle([(RecycleResult.Recycled, 100), (RecycleResult.NotRecyclable, 50), (RecycleResult.Missing, 7), (RecycleResult.Failed, 1)]);
+        Check(t.Freed == 100 && t.Failed == 2 && t.TooLarge == 1 && t.RecycledAny, "mixed results are counted per kind");
+        t = CleanerModel.TallyRecycle([(RecycleResult.Missing, 5)]);
+        Check(t.Freed == 0 && t.Failed == 0 && !t.RecycledAny, "a missing path is neutral");
+    }
+
+    private static void Backups()
+    {
+        var run = new CleanerModel.CleanRun();
+        var a = new CleanItem { Kind = RemoveKind.RegistryValue, Hive = Microsoft.Win32.RegistryHive.CurrentUser, View = Microsoft.Win32.RegistryView.Registry64, SubKey = @"Software\X", ValueName = "v" };
+        var b = new CleanItem { Kind = RemoveKind.RegistryValue, Hive = Microsoft.Win32.RegistryHive.CurrentUser, View = Microsoft.Win32.RegistryView.Registry32, SubKey = @"Software\X", ValueName = "v" };
+        Check(!CleanerModel.MayDeleteRegistryValue(a, run), "no value is deleted before its key is saved");
+        run.SavedKeys.Add(CleanerModel.KeyId(a));
+        Check(CleanerModel.MayDeleteRegistryValue(a, run), "a value of a saved key may be deleted");
+        Check(!CleanerModel.MayDeleteRegistryValue(b, run), "the other registry view is a different key");
+    }
+
+    private static void Personal()
+    {
+        var docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+        var downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+        Check(CleanerScanner.IsInPersonalFolder(Path.Combine(docs, "Temp")), "Documents\\Temp is personal content");
+        Check(CleanerScanner.IsInPersonalFolder(Path.Combine(desktop, "Tmp")), "Desktop\\Tmp is personal content");
+        Check(CleanerScanner.IsInPersonalFolder(Path.Combine(downloads, "Temp")), "Downloads\\Temp is personal content");
+        Check(!CleanerScanner.IsInPersonalFolder(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Temp")), "the real user Temp is not personal content");
     }
 
     private static void Zone()

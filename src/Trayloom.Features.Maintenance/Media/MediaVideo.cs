@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows.Media.Imaging;
+using Trayloom.Core;
 using Windows.Media.Editing;
 using Windows.Media.MediaProperties;
 using Windows.Media.Transcoding;
@@ -264,7 +265,7 @@ internal static class MediaVideo
                 return beside;
             }
 
-            var local = Path.Combine(Trayloom.Core.AppPaths.LocalRoot,"tools", "ffmpeg.exe");
+            var local = Path.Combine(AppPaths.LocalRoot, "tools", "ffmpeg.exe");
             if (File.Exists(local))
             {
                 return local;

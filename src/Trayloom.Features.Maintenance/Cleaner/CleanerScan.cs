@@ -259,7 +259,7 @@ internal sealed class CleanerScanner
         var list = new List<CleanItem?>();
 
         // TEMP/TMP can point at the profile or a data folder; only a folder that really is a Temp folder is ever emptied.
-        var safeTemp = FileOps.SafeTemp;
+        var safeTemp = FileOps.SafeTemp is { } st && !IsInPersonalFolder(st) ? st : null;
         if (safeTemp is { } temp)
         {
             list.Add(Folder(CleanerGroup.SafeCaches, "Temporary files", temp, "Temp", true, RemoveKind.PermanentContents, temp, false, 1));
@@ -272,7 +272,7 @@ internal sealed class CleanerScanner
         var localTemp = Path.Combine(local, "Temp");
         if (safeTemp is null || !string.Equals(Path.GetFullPath(safeTemp), Path.GetFullPath(localTemp), StringComparison.OrdinalIgnoreCase))
         {
-            if (FileOps.IsSafeTempRoot(localTemp))
+            if (FileOps.IsSafeTempRoot(localTemp) && !IsInPersonalFolder(localTemp))
             {
                 list.Add(Folder(CleanerGroup.SafeCaches, "Local temporary files", localTemp, "Temp", true, RemoveKind.PermanentContents, localTemp, false, 1));
             }
@@ -392,6 +392,33 @@ internal sealed class CleanerScanner
             {
                 yield return item;
             }
+        }
+    }
+
+    /// <summary>True when a folder lies inside the user's own content (Documents, Desktop, Downloads, Pictures, Music, Videos, OneDrive, Public).</summary>
+    internal static bool IsInPersonalFolder(string path)
+    {
+        var roots = new List<string>
+        {
+            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+            Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
+            Path.Combine(FileOps.Profile, "Downloads"),
+            Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
+            Environment.GetFolderPath(Environment.SpecialFolder.MyMusic),
+            Environment.GetFolderPath(Environment.SpecialFolder.MyVideos),
+            FileOps.Env("OneDrive"),
+            FileOps.Env("OneDriveConsumer"),
+            FileOps.Env("OneDriveCommercial"),
+            FileOps.Env("PUBLIC"),
+        };
+        try
+        {
+            var full = Path.GetFullPath(path);
+            return roots.Any(r => r.Length > 0 && FileOps.IsUnder(full, Path.GetFullPath(r)));
+        }
+        catch
+        {
+            return true;
         }
     }
 
@@ -820,15 +847,21 @@ internal sealed class CleanerScanner
         || target.StartsWith(FileOps.Windows, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// True only when the target is certainly gone: a drive-letter path on a fixed, ready drive where neither a file nor a folder
-    /// exists. Removable, network, optical, unready, UNC or unreadable roots are never treated as missing.
+    /// True only when the target is certainly gone: a fully qualified drive-letter path on a fixed, ready drive whose parent folder
+    /// can be read and holds neither a file nor a folder of that name. Removable, network, optical, unready, UNC, drive-relative,
+    /// access-denied or otherwise unreadable cases are never treated as missing.
     /// </summary>
-    internal static bool TargetIsVerifiablyMissing(string path, Func<string, (DriveType Type, bool Ready)?>? probe = null)
+    internal static bool TargetIsVerifiablyMissing(string path, Func<string, (DriveType Type, bool Ready)?>? probe = null, Func<string, bool>? parentReadable = null)
     {
         try
         {
+            if (!Path.IsPathFullyQualified(path))
+            {
+                return false;
+            }
+
             var root = Path.GetPathRoot(path);
-            if (string.IsNullOrEmpty(root) || root.StartsWith(@"\\", StringComparison.Ordinal) || root.Length < 2 || !char.IsAsciiLetter(root[0]) || root[1] != ':')
+            if (string.IsNullOrEmpty(root) || root.Length != 3 || !char.IsAsciiLetter(root[0]) || root[1] != ':' || root[2] != '\\')
             {
                 return false;
             }
@@ -839,7 +872,27 @@ internal sealed class CleanerScanner
                 return false;
             }
 
+            var parent = Path.GetDirectoryName(path.TrimEnd('\\'));
+            if (string.IsNullOrEmpty(parent) || !(parentReadable ?? DefaultParentReadable)(parent))
+            {
+                return false;
+            }
+
             return !File.Exists(path) && !Directory.Exists(path);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool DefaultParentReadable(string parent)
+    {
+        try
+        {
+            using var entries = Directory.EnumerateFileSystemEntries(parent).GetEnumerator();
+            entries.MoveNext();
+            return true;
         }
         catch
         {
@@ -874,8 +927,8 @@ internal sealed class CleanerScanner
             return match.Groups[1].Value;
         }
 
-        var space = text.IndexOf(' ');
-        return Path.IsPathRooted(text[..(space < 0 ? text.Length : space)]) ? text[..(space < 0 ? text.Length : space)] : null;
+        // an unquoted path with spaces and an unknown extension is ambiguous, so it is not reported (the entry is kept)
+        return text.Contains(' ') || !Path.IsPathRooted(text) ? null : text;
     }
 
     private IEnumerable<CleanItem> StartupItems()
