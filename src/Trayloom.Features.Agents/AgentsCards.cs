@@ -59,7 +59,11 @@ internal static class AgentCardViews
         FrameworkElement icon;
         if (customIcon is not null)
         {
-            icon = new Grid { Width = 13, Children = { customIcon } };
+            // A custom mark standing in for a provider's mark takes the same 17 by 17 slot, so the title does not move with the setting.
+            // It is centred in the slot rather than stretched, so it lines up with the title.
+            customIcon.HorizontalAlignment = HorizontalAlignment.Center;
+            customIcon.VerticalAlignment = VerticalAlignment.Center;
+            icon = provider is null ? new Grid { Width = 13, Children = { customIcon } } : new Grid { Width = 17, Height = 17, Children = { customIcon } };
         }
         else if (provider is { } p)
         {
@@ -199,7 +203,11 @@ internal static class AgentCardViews
         }
 
         // The header is only the agent and its plan; the account (an email can be long) is its own quieter line, never cut to fit beside the plan.
-        var header = Header(provider.DisplayName(), "", provider.Tint(), provider, accessory);
+        // The mascot stands in for Claude's mark when the setting is on; it fills the same slot as the classic mark and is centred in it.
+        FrameworkElement? mascot = provider == AgentProvider.Claude && c.Runtime.Settings.ClaudeMascot()
+            ? AgentSymbol.Create(provider, 9, snapshot.Working(provider).Any() ? MascotMood.Working : MascotMood.Idle, true)
+            : null;
+        var header = Header(provider.DisplayName(), "", provider.Tint(), provider, accessory, mascot);
         var body = Body();
         body.Children.Add(header);
         if (accountName is not null)

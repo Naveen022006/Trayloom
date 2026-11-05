@@ -71,6 +71,8 @@ public sealed class AgentSettings
         app.Register(AgentKeys.DailyBudget, 0.0);
         app.Register(AgentKeys.PriceUpdates, true);
         app.Register(AgentKeys.Attention, true);
+        app.Register(AgentKeys.ClaudeSymbol, "mascot");
+        app.Register(AgentKeys.Linger, true);
     }
 
     /// <summary>The island is installed, the AI section is switched on and not hidden from the island.</summary>
@@ -132,6 +134,12 @@ public sealed class AgentSettings
     public AgentLimitFocus Focus() => _app.Get(AgentKeys.LimitFocus, "mostUsed") switch { "session" => AgentLimitFocus.Session, "weekly" => AgentLimitFocus.Weekly, _ => AgentLimitFocus.MostUsed };
 
     public bool ShowsLiveActivity() => IsEnabled() && _app.Get(AgentKeys.LiveActivity, true);
+
+    /// <summary>Whether Claude is drawn as the pixel mascot; any stored word but "spark" counts as the mascot, the default.</summary>
+    public bool ClaudeMascot() => _app.Get(AgentKeys.ClaudeSymbol, "mascot") != "spark";
+
+    /// <summary>Whether the closed island keeps showing a Claude session for a few minutes after it answers.</summary>
+    public bool Linger() => _app.Get(AgentKeys.Linger, true);
 
     public AgentReadout Readout() => ParseReadout(_app.Get(AgentKeys.Readout, DefaultReadout));
 

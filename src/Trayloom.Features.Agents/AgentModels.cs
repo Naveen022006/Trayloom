@@ -481,6 +481,8 @@ public static class AgentKeys
     public const string DailyBudget = "notchAgentsDailyBudget";
     public const string PriceUpdates = "notchAgentsPriceUpdates";
     public const string Attention = "notchAgentsAttention";
+    public const string ClaudeSymbol = "notchAgentsClaudeSymbol";
+    public const string Linger = "notchAgentsLinger";
     public const string IdleContent = "notchIdleContent";
     public const string HiddenModules = "notchHiddenModules";
     public const string FeatureId = "notch-agents";

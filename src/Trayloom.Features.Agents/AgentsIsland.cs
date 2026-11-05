@@ -21,6 +21,17 @@ public sealed class AgentStripView : StackPanel
     private string _tip = "";
     private string _names = "";
     private readonly bool _waiting;
+    private readonly Brush _baseBrush;
+    private DispatcherTimer? _lingerTimer;
+
+    /// <summary>How long a Claude session stays in the closed island after it answered, when "keep agents" is on.</summary>
+    internal static readonly TimeSpan LingerFor = TimeSpan.FromMinutes(3);
+
+    /// <summary>Claude sessions that answered a moment ago and are kept in the strip between prompts.</summary>
+    internal static List<AgentSession> Lingering(AgentsRuntime runtime, DateTime now) =>
+        runtime.Settings.Linger()
+            ? runtime.Sessions.Current.Where(s => s.Provider == AgentProvider.Claude && s.State == AgentSessionState.Idle && now - s.LastActivity <= LingerFor).ToList()
+            : [];
 
     /// <summary>
     /// Creates the strip from the latest snapshot. <paramref name="snapshotOverride"/> and <paramref name="providerOverride"/> let the settings sample
@@ -34,10 +45,15 @@ public sealed class AgentStripView : StackPanel
         var snapshot = snapshotOverride ?? runtime.Service.Snapshot;
         var live = snapshot.Live;
         var sessions = snapshotOverride is null ? runtime.Sessions.Current.Where(s => s.State != AgentSessionState.Idle).ToList() : [];
+        var lingering = snapshotOverride is null ? Lingering(runtime, DateTime.UtcNow) : [];
         _waiting = sessions.Any(s => s.IsWaiting);
-        var working = AgentProviders.All.Where(p => live.Any(l => l.Provider == p) || sessions.Any(s => s.Provider == p)).ToList();
+        var working = AgentProviders.All.Where(p => live.Any(l => l.Provider == p) || sessions.Any(s => s.Provider == p) || lingering.Any(s => s.Provider == p)).ToList();
         _readout = runtime.Settings.Readout();
         var tint = _waiting ? AgentColors.Orange : working.Count > 0 ? working[0].Tint() : Colors.White;
+        _baseBrush = AgentColors.Of(tint);
+        var mascot = runtime.Settings.ClaudeMascot();
+        var claudeWaiting = sessions.Any(s => s.Provider == AgentProvider.Claude && s.IsWaiting);
+        var claudeWorking = live.Any(l => l.Provider == AgentProvider.Claude) || sessions.Any(s => s.Provider == AgentProvider.Claude);
         var size = working.Count > 1 ? 10.0 : 12.0;
         var marks = new StackPanel { Orientation = Orientation.Horizontal };
         if (_waiting)
@@ -48,11 +64,13 @@ public sealed class AgentStripView : StackPanel
 
         foreach (var p in working)
         {
-            marks.Children.Add(new AgentGlyph(p, size));
+            // Only Claude can wait or rest here; the others have no mascot and keep their working glyph.
+            var mood = p != AgentProvider.Claude ? MascotMood.Working : claudeWaiting ? MascotMood.Waiting : claudeWorking ? MascotMood.Working : MascotMood.Idle;
+            marks.Children.Add(AgentSymbol.Create(p, size, mood, mascot));
         }
 
         Children.Add(marks);
-        _reading = AU.Text("", textSize, FontWeights.SemiBold, AgentColors.Of(tint), TextTrimming.None, false, true);
+        _reading = AU.Text("", textSize, FontWeights.SemiBold, _baseBrush, TextTrimming.None, false, true);
         _reading.Margin = new Thickness(6, 0, 0, 0);
         Children.Add(_reading);
         Update(snapshotOverride);
@@ -67,14 +85,36 @@ public sealed class AgentStripView : StackPanel
             }
 
             runtime.Service.Changed += OnChanged;
+            ArmLingerTimer(lingering);
         };
         Unloaded += (_, _) =>
         {
             _timer.Stop();
             _timer.Tick -= OnTick;
             runtime.Service.Changed -= OnChanged;
+            _lingerTimer?.Stop();
+            _lingerTimer = null;
         };
         Cursor = System.Windows.Input.Cursors.Hand;
+    }
+
+    /// <summary>One shot at the moment the earliest lingering session expires, so the island drops the strip without waiting for another event.</summary>
+    private void ArmLingerTimer(List<AgentSession> lingering)
+    {
+        if (lingering.Count == 0)
+        {
+            return;
+        }
+
+        var left = lingering.Min(s => s.LastActivity) + LingerFor - DateTime.UtcNow;
+        _lingerTimer = new DispatcherTimer { Interval = left < TimeSpan.FromMilliseconds(250) ? TimeSpan.FromMilliseconds(250) : left };
+        _lingerTimer.Tick += (_, _) =>
+        {
+            _lingerTimer?.Stop();
+            _lingerTimer = null;
+            _runtime.IslandContext?.Invalidate();
+        };
+        _lingerTimer.Start();
     }
 
     private AgentUsageSnapshot? _fixed;
@@ -118,6 +158,17 @@ public sealed class AgentStripView : StackPanel
             }
         }
 
+        // Between prompts there is nothing to count: the project says whose session is kept, quietly.
+        var resting = false;
+        if (snapshotOverride is null && snapshot.Live.Count == 0 && !_waiting
+            && !_runtime.Sessions.Current.Any(s => s.State != AgentSessionState.Idle)
+            && AgentStripView.Lingering(_runtime, now).OrderByDescending(s => s.LastActivity).FirstOrDefault() is { } kept)
+        {
+            resting = true;
+            info = new StripText(kept.Project.Length == 0 ? kept.Provider.DisplayName() : kept.Project, null, null, null);
+        }
+
+        _reading.Foreground = resting ? AgentColors.White(0.6) : _baseBrush;
         _reading.Inlines.Clear();
         if (info.Lead.Length > 0)
         {
@@ -169,14 +220,14 @@ public sealed class AgentStripView : StackPanel
 /// <summary>A notice for the closed island: mark + title and detail (text 11 medium, mono digits).</summary>
 public sealed class AgentNoticeView : StackPanel
 {
-    public AgentNoticeView(AgentNotice notice)
+    public AgentNoticeView(AgentNotice notice, bool mascot = false)
     {
         Orientation = Orientation.Horizontal;
         VerticalAlignment = VerticalAlignment.Center;
         var tint = AgentColors.Of(notice.Tint);
         if (notice.Provider is { } provider && notice.Glyph.Length == 0)
         {
-            Children.Add(new AgentGlyph(provider, 11, false));
+            Children.Add(AgentSymbol.Create(provider, 11, MascotMood.Idle, mascot));
         }
         else
         {
@@ -309,7 +360,8 @@ public sealed class AgentsLiveStrip : IIslandStrip
 
         runtime.IslandContext = context;
         if (!runtime.Settings.ShowsLiveActivity()
-            || (runtime.Service.Snapshot.Live.Count == 0 && !runtime.Sessions.Current.Any(s => s.State != AgentSessionState.Idle)))
+            || (runtime.Service.Snapshot.Live.Count == 0 && !runtime.Sessions.Current.Any(s => s.State != AgentSessionState.Idle)
+                && AgentStripView.Lingering(runtime, DateTime.UtcNow).Count == 0))
         {
             return null;
         }
@@ -335,7 +387,7 @@ public sealed class AgentsAttentionStrip : IIslandStrip
         }
 
         runtime.IslandContext = context;
-        return new AgentAttentionView(attention, () => runtime.FocusSession(attention));
+        return new AgentAttentionView(attention, () => runtime.FocusSession(attention), runtime.Settings.ClaudeMascot());
     }
 }
 
@@ -356,7 +408,7 @@ public sealed class AgentsNoticeStrip : IIslandStrip
         }
 
         runtime.IslandContext = context;
-        return runtime.Notice is { } notice && runtime.Settings.IsEnabled() ? new AgentNoticeView(notice) : null;
+        return runtime.Notice is { } notice && runtime.Settings.IsEnabled() ? new AgentNoticeView(notice, runtime.Settings.ClaudeMascot()) : null;
     }
 }
 

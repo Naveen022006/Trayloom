@@ -49,9 +49,15 @@ internal static class AgentSessionCard
         }
 
         var body = new StackPanel { Orientation = Orientation.Vertical, VerticalAlignment = VerticalAlignment.Top };
-        FrameworkElement? claudeMark = sessions.Any(s => s.Provider == AgentProvider.Claude)
-            ? new AgentGlyph(AgentProvider.Claude, 8, sessions.Any(s => s.Provider == AgentProvider.Claude && s.State == AgentSessionState.Working)) { HorizontalAlignment = HorizontalAlignment.Center }
-            : null;
+        FrameworkElement? claudeMark = null;
+        if (sessions.Any(s => s.Provider == AgentProvider.Claude))
+        {
+            var claude = sessions.Where(s => s.Provider == AgentProvider.Claude).ToList();
+            var mood = claude.Any(s => s.IsWaiting) ? MascotMood.Waiting : claude.Any(s => s.State == AgentSessionState.Working) ? MascotMood.Working : MascotMood.Idle;
+            claudeMark = AgentSymbol.Create(AgentProvider.Claude, 8, mood, c.Runtime.Settings.ClaudeMascot());
+            claudeMark.HorizontalAlignment = HorizontalAlignment.Center;
+        }
+
         body.Children.Add(AgentCardViews.Header(AgentStrings.LiveCard, AgentCard.Live.Glyph(), waiting > 0 ? AgentColors.Orange : sessions.Count > 0 ? sessions[0].Provider.Tint() : null, null, accessory, claudeMark));
         var rows = new StackPanel { Margin = new Thickness(0, 7, 0, 0) };
         var clocks = new List<(TextBlock Block, DateTime Started, string Prefix)>();
@@ -119,7 +125,10 @@ internal static class AgentSessionCard
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(22) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var glyph = new AgentGlyph(session.Provider, 9, session.State == AgentSessionState.Working) { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
+        var mood = session.IsWaiting && session.Provider == AgentProvider.Claude ? MascotMood.Waiting : session.State == AgentSessionState.Working ? MascotMood.Working : MascotMood.Idle;
+        var glyph = AgentSymbol.Create(session.Provider, 9, mood, c.Runtime.Settings.ClaudeMascot());
+        glyph.HorizontalAlignment = HorizontalAlignment.Left;
+        glyph.VerticalAlignment = VerticalAlignment.Center;
         grid.Children.Add(glyph);
 
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
@@ -220,13 +229,13 @@ internal static class AgentSessionCard
 /// <summary>The closed-island notice "Claude needs your permission": the mark, the words, and the project and tool in amber.</summary>
 public sealed class AgentAttentionView : StackPanel
 {
-    public AgentAttentionView(AgentAttention attention, Action? onClick = null)
+    public AgentAttentionView(AgentAttention attention, Action? onClick = null, bool mascot = false)
     {
         Orientation = Orientation.Horizontal;
         VerticalAlignment = VerticalAlignment.Center;
         var amber = AgentColors.Orange;
         Children.Add(new AgentPulse(amber, 5) { Margin = new Thickness(0, 0, 2, 0) });
-        Children.Add(new AgentGlyph(attention.Provider, 11, true, spin: false));
+        Children.Add(AgentSymbol.Create(attention.Provider, 11, MascotMood.Waiting, mascot));
         var title = AU.Text(attention.Title, 11, FontWeights.Medium, AgentColors.Primary, TextTrimming.CharacterEllipsis, false, true);
         title.Margin = new Thickness(4, 0, 8, 0);
         title.MaxWidth = 160;

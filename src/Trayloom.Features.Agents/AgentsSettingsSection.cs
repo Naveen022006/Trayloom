@@ -157,6 +157,15 @@ internal sealed class AgentsSettingsView
         card.AddDivider();
         card.Add(Subheading(AgentStrings.LiveTitle));
         card.Add(Switch(AgentCard.Live.Glyph(), AgentStrings.LiveActivity, AgentKeys.LiveActivity, true, rebuild: true));
+        // The symbol also shows in notices and cards, so it is not tied to the live strip being on.
+        card.Add(Menu("", MascotStrings.Symbol, [("mascot", MascotStrings.Mascot), ("spark", MascotStrings.Spark)], _app.Get(AgentKeys.ClaudeSymbol, "mascot"), v =>
+        {
+            _app.Set(AgentKeys.ClaudeSymbol, v);
+            _runtime?.IslandContext?.Invalidate();
+            _context.RequestRebuild();
+        }));
+        card.AddCaption(MascotStrings.SymbolCaption);
+        card.Add(Switch("", MascotStrings.Linger, AgentKeys.Linger, true, MascotStrings.LingerCaption));
         if (_app.Get(AgentKeys.LiveActivity, true))
         {
             card.Add(Indent(Menu("", AgentStrings.Readout,
@@ -555,7 +564,10 @@ internal sealed class AgentsSettingsView
             var sample = AgentSettings.StripSampleSnapshot(real, provider, focus, now);
             var working = AgentProviders.All.FirstOrDefault(p => sample.Live.Any(l => l.Provider == p));
             grid.Children.Clear();
-            var glyph = new AgentGlyph(working, 11) { HorizontalAlignment = HorizontalAlignment.Left };
+            // The sample shows the same mark the closed island will: the pixel mascot for Claude when that is chosen.
+            var glyph = AgentSymbol.Create(working, 11, MascotMood.Working, _settings.ClaudeMascot());
+            glyph.HorizontalAlignment = HorizontalAlignment.Left;
+            glyph.VerticalAlignment = VerticalAlignment.Center;
             grid.Children.Add(glyph);
             var info = AgentSettings.Strip(sample, readout, used, focus, now);
             reading.Inlines.Clear();

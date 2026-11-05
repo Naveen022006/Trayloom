@@ -32,6 +32,7 @@ internal static partial class Program
         TranscriptFilter();
         SessionReportedRule();
         DesktopAccount(args.Length > 0 ? args[0] : null);
+        Mascot();
         Console.WriteLine($"{s_checks - s_failed}/{s_checks} checks passed");
         return s_failed == 0 ? 0 : 1;
     }
