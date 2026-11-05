@@ -151,6 +151,11 @@ internal static class FormUi
 
     private static void RestartAsAdmin()
     {
+        if (!ElevationPolicy.CanOfferElevation)
+        {
+            return;
+        }
+
         try
         {
             var exe = Environment.ProcessPath;

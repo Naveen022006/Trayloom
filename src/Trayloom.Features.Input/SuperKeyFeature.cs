@@ -70,6 +70,10 @@ public sealed class SuperKeyFeature : InputFeatureBase
     private System.Threading.Timer? _pausePoll;
     private string? _markerPath;
     private int _watchdogBusy;
+    private int _missingSamples;
+
+    // Modifiers whose key-ups were sent where Windows drops them (elevated window, secure desktop). Guarded by lock (this).
+    private ushort[]? _pendingUps;
     private readonly SuperKeyForeground _foreground = new();
 
     public override string Id => "super-key";
@@ -109,6 +113,7 @@ public sealed class SuperKeyFeature : InputFeatureBase
         SystemEvents.SessionSwitch -= OnSessionSwitch;
         AppDomain.CurrentDomain.ProcessExit -= OnProcessExit;
         ReleaseNow();
+        TryFlushPending(_foreground.Sample());
         DisarmMarker();
         SuperKeyStatus.Set(SuperKeyState.Off);
     }
@@ -178,22 +183,24 @@ public sealed class SuperKeyFeature : InputFeatureBase
 
         Volatile.Write(ref _lastEvent, Environment.TickCount64);
         INPUT[]? release;
+        ushort[]? vks;
         Action? solo;
         bool swallow;
         lock (this)
         {
-            swallow = HandleKey(e, out release, out solo);
+            swallow = HandleKey(e, out release, out vks, out solo);
         }
 
         // Injecting can block on a slow foreground app: never while holding the lock.
-        Flush(release, solo);
+        Flush(release, vks, solo, forcePending: false);
         return swallow;
     }
 
     // Caller holds the lock.
-    private bool HandleKey(KeyboardHookEvent e, out INPUT[]? release, out Action? solo)
+    private bool HandleKey(KeyboardHookEvent e, out INPUT[]? release, out ushort[]? vks, out Action? solo)
     {
         release = null;
+        vks = null;
         solo = null;
         {
             // AltGr layouts send a fake left Ctrl with scan code 0x21D before Right Alt: it must not leak.
@@ -219,7 +226,7 @@ public sealed class SuperKeyFeature : InputFeatureBase
 
                 if (_held)
                 {
-                    release = TakeRelease(solo: true, out solo);
+                    release = TakeRelease(solo: true, out solo, out vks);
                 }
 
                 return true;
@@ -237,6 +244,7 @@ public sealed class SuperKeyFeature : InputFeatureBase
             }
 
             _active = true;
+            _pendingUps = null; // the new chord owns those keys now
             _activeModifiers = _modifiers;
             var inputs = new List<INPUT>(_activeModifiers.Length + 1);
             foreach (var modifier in _activeModifiers)
@@ -286,6 +294,7 @@ public sealed class SuperKeyFeature : InputFeatureBase
                 _ => e.XButton == 1 ? System.Windows.Input.MouseButton.XButton1 : System.Windows.Input.MouseButton.XButton2,
             };
             _active = true;
+            _pendingUps = null; // the new chord owns those keys now
             _activeModifiers = _modifiers;
             var inputs = new List<INPUT>(_activeModifiers.Length + 1);
             foreach (var modifier in _activeModifiers)
@@ -303,9 +312,10 @@ public sealed class SuperKeyFeature : InputFeatureBase
     /// Caller holds the lock. Resets the state and returns the modifier key-ups to inject (null when none are down); the caller
     /// sends them, and runs <paramref name="soloAction"/>, after leaving the lock.
     /// </summary>
-    private INPUT[]? TakeRelease(bool solo, out Action? soloAction)
+    private INPUT[]? TakeRelease(bool solo, out Action? soloAction, out ushort[]? vks)
     {
         soloAction = null;
+        vks = null;
         if (!_held && !_active)
         {
             return null;
@@ -319,16 +329,19 @@ public sealed class SuperKeyFeature : InputFeatureBase
         {
             var modifiers = _activeModifiers;
             inputs = new INPUT[modifiers.Length];
+            vks = new ushort[modifiers.Length];
             for (var i = 0; i < modifiers.Length; i++)
             {
-                inputs[i] = KeySender.KeyInput(modifiers[^(i + 1)], true);
+                vks[i] = modifiers[^(i + 1)];
+                inputs[i] = KeySender.KeyInput(vks[i], true);
             }
 
             _active = false;
             _activeModifiers = [];
         }
 
-        if (solo && !wasUsed)
+        // While key-ups are still pending a solo action would run with modifiers stuck down: skip it, the watchdog finishes the release.
+        if (solo && !wasUsed && _pendingUps is null)
         {
             var mode = _solo;
             soloAction = () => RunSolo(mode, heldMs);
@@ -337,33 +350,76 @@ public sealed class SuperKeyFeature : InputFeatureBase
         return inputs;
     }
 
-    private static void Flush(INPUT[]? release, Action? solo)
+    /// <summary>
+    /// Sends the key-ups. When <paramref name="forcePending"/> is set (elevated foreground, secure desktop) or Windows took fewer
+    /// than all of them, the keys are remembered and released again once the foreground is normal.
+    /// </summary>
+    private void Flush(INPUT[]? release, ushort[]? vks, Action? solo, bool forcePending)
     {
         try
         {
             if (release is { Length: > 0 })
             {
-                InputSender.Send(release);
+                var sent = InputSender.Send(release);
+                if (vks is not null && (forcePending || sent < release.Length))
+                {
+                    lock (this)
+                    {
+                        if (!_active)
+                        {
+                            _pendingUps = vks;
+                        }
+                    }
+                }
             }
 
             solo?.Invoke();
         }
         catch
         {
-            // best effort: the next watchdog tick releases again if modifiers are still tracked
+            // best effort: the watchdog keeps retrying while keys are pending
         }
     }
 
     /// <summary>Releases anything held (no solo action), sending outside the lock. Safe from any thread.</summary>
-    private void ReleaseNow()
+    private void ReleaseNow(bool forcePending = false)
     {
         INPUT[]? release;
+        ushort[]? vks;
         lock (this)
         {
-            release = TakeRelease(solo: false, out _);
+            release = TakeRelease(solo: false, out _, out vks);
         }
 
-        Flush(release, null);
+        Flush(release, vks, null, forcePending);
+    }
+
+    /// <summary>Retries pending key-ups once the foreground is normal and no chord is active. Only keys still reported down are sent.</summary>
+    private void TryFlushPending(ForegroundSnapshot snapshot)
+    {
+        ushort[]? vks;
+        lock (this)
+        {
+            vks = _pendingUps;
+            if (vks is null || !SuperKeyMath.ShouldFlushPending(true, _active, snapshot.Missing, snapshot.Elevated, snapshot.InputDesktopNotDefault))
+            {
+                return;
+            }
+        }
+
+        var inputs = vks.Where(vk => (NativeMethods.GetAsyncKeyState(vk) & 0x8000) != 0).Select(vk => KeySender.KeyInput(vk, true)).ToArray();
+        if (inputs.Length > 0 && InputSender.Send(inputs) < inputs.Length)
+        {
+            return; // try again on the next tick
+        }
+
+        lock (this)
+        {
+            if (!_active && ReferenceEquals(_pendingUps, vks))
+            {
+                _pendingUps = null;
+            }
+        }
     }
 
     private static void RunSolo(string mode, long heldMs)
@@ -392,8 +448,13 @@ public sealed class SuperKeyFeature : InputFeatureBase
 
     private void OnSessionSwitch(object? sender, SessionSwitchEventArgs e)
     {
-        if (e.Reason is SessionSwitchReason.SessionLock or SessionSwitchReason.SessionUnlock or SessionSwitchReason.ConsoleDisconnect
-            or SessionSwitchReason.RemoteDisconnect or SessionSwitchReason.SessionLogoff)
+        if (e.Reason is SessionSwitchReason.SessionLock or SessionSwitchReason.ConsoleDisconnect or SessionSwitchReason.RemoteDisconnect
+            or SessionSwitchReason.SessionLogoff)
+        {
+            // The secure desktop is active now, so the key-ups are dropped: keep them pending until the user is back.
+            ReleaseNow(forcePending: true);
+        }
+        else if (e.Reason == SessionSwitchReason.SessionUnlock)
         {
             ReleaseNow();
         }
@@ -402,6 +463,7 @@ public sealed class SuperKeyFeature : InputFeatureBase
     private void OnProcessExit(object? sender, EventArgs e)
     {
         ReleaseNow();
+        TryFlushPending(_foreground.Sample());
         DisarmMarker();
     }
 
@@ -422,6 +484,14 @@ public sealed class SuperKeyFeature : InputFeatureBase
     {
         try
         {
+            lock (this)
+            {
+                if (_pendingUps is not null)
+                {
+                    return; // keys may still be down: the marker lets the next start finish the release
+                }
+            }
+
             if (_markerPath is not null)
             {
                 File.Delete(_markerPath);
@@ -444,23 +514,35 @@ public sealed class SuperKeyFeature : InputFeatureBase
         try
         {
             bool active;
+            bool pending;
             lock (this)
             {
                 active = _active;
+                pending = _pendingUps is not null;
             }
 
-            if (!active)
+            if (!active && !pending)
             {
+                _missingSamples = 0;
                 return;
             }
 
+            var snapshot = _foreground.Sample();
+            if (!active)
+            {
+                TryFlushPending(snapshot);
+                return;
+            }
+
+            // A window closing or minimising leaves no foreground for a moment: only the second sample in a row counts.
+            _missingSamples = snapshot.Missing ? _missingSamples + 1 : 0;
             var idleMs = Environment.TickCount64 - Volatile.Read(ref _lastEvent);
             var hooks = Context?.Hooks;
             var hookLost = hooks is null || !hooks.KeyboardHookInstalled;
-            var snapshot = _foreground.Sample();
-            if (hookLost || SuperKeyMath.ShouldRelease(true, idleMs, snapshot.Missing, snapshot.Elevated, snapshot.InputDesktopNotDefault, false))
+            var unsafeContext = snapshot.Elevated || snapshot.InputDesktopNotDefault;
+            if (hookLost || SuperKeyMath.ShouldRelease(true, idleMs, SuperKeyMath.MissingConfirmed(_missingSamples), snapshot.Elevated, snapshot.InputDesktopNotDefault, false))
             {
-                ReleaseNow();
+                ReleaseNow(forcePending: unsafeContext || hookLost);
             }
         }
         catch

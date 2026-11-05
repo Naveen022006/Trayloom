@@ -33,16 +33,14 @@ internal static class AutoQuitRules
         }
 
         var file = Path.GetFileName(path);
-        return Listed.Any(l => string.Equals(l, file, StringComparison.OrdinalIgnoreCase)) || Silent.Contains(file) || IsInstallerName(file);
+        return Listed.Any(l => string.Equals(l, file, StringComparison.OrdinalIgnoreCase)) || Silent.Contains(file) || AutoQuitPolicy.IsNeverQuit(path, TempRoots());
     }
 
-    /// <summary>Installers and updaters often show no window for a while but are mid-work: msiexec, setup*, *install*, *update*, *updater*, unins*.</summary>
-    internal static bool IsInstallerName(string fileName)
-    {
-        var name = Path.GetFileNameWithoutExtension(fileName).ToLowerInvariant();
-        return name == "msiexec" || name.StartsWith("setup", StringComparison.Ordinal) || name.Contains("install", StringComparison.Ordinal)
-            || name.Contains("update", StringComparison.Ordinal) || name.StartsWith("unins", StringComparison.Ordinal);
-    }
+    private static string[] TempRoots() =>
+    [
+        System.IO.Path.GetTempPath(),
+        System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Temp"),
+    ];
 
     public static bool IsListed(string identity) => Listed.Any(l => string.Equals(l, Path.GetFileName(identity), StringComparison.OrdinalIgnoreCase));
 }
@@ -159,6 +157,11 @@ public sealed class AutoQuitFeature : IFeature
         // destroy / hide of a window we know: look at its app again shortly
         if (_windowOwner.Remove(hwnd, out var pid))
         {
+            if (_watched.TryGetValue(pid, out var gone))
+            {
+                gone.Windows.Remove(hwnd);
+            }
+
             Schedule(pid);
         }
     }
@@ -177,13 +180,18 @@ public sealed class AutoQuitFeature : IFeature
         }
 
         _windowOwner[hwnd] = owner.Pid;
-        if (!_watched.TryGetValue(owner.Pid, out var watched))
+
+        // A reused pid is a different program: judge it by its own path, not the old one.
+        // (AppIdentity caches paths per pid, so ask Windows directly.)
+        var freshPath = WinApi.GetProcessPath(owner.Pid)?.ToLowerInvariant() ?? owner.Path;
+        if (!_watched.TryGetValue(owner.Pid, out var watched) || !string.Equals(watched.Path, freshPath, StringComparison.OrdinalIgnoreCase))
         {
-            watched = new Watched { Path = owner.Path };
+            watched = new Watched { Path = freshPath };
             _watched[owner.Pid] = watched;
         }
 
         watched.Windows.Add(hwnd);
+        watched.Stamp++; // a window is showing: any pending quit look for this app is void
     }
 
     /// <summary>A normal top-level window of an app: visible (or minimized), unowned, not a tool window or shell surface.</summary>
@@ -235,55 +243,50 @@ public sealed class AutoQuitFeature : IFeature
         }
 
         var stamp = ++watched.Stamp;
-        foreach (var delay in new[] { 250, 550, 1100 })
-        {
-            var d = delay;
-            _ = _context?.Ui.InvokeAsync(async () =>
-            {
-                await Task.Delay(d);
-                Check(pid, stamp, final: d == 1100);
-            });
-        }
+        _ = _context?.Ui.InvokeAsync(() => SettleAsync(pid, stamp));
     }
 
-    private void Check(uint pid, int stamp, bool final)
+    // Looks at the app every few seconds. It is asked to quit only after 15 s without any visible top-level window (owned ones
+    // included), and every look re-checks everything right before acting. Any new window or a later close restarts the loop.
+    private async Task SettleAsync(uint pid, int stamp)
     {
-        if (_context is null || !_watched.TryGetValue(pid, out var watched) || watched.Stamp != stamp)
+        try
         {
-            return;
-        }
-
-        if (CountWindows(pid) > 0 || HasVisibleWindow(pid))
-        {
-            return;
-        }
-
-        if (!final)
-        {
-            return; // settle looks: quit only when the last look still finds nothing
-        }
-
-        if (!ShouldQuit(pid, watched))
-        {
-            return;
-        }
-
-        Quit(pid, watched);
-    }
-
-    private static int CountWindows(uint pid)
-    {
-        var count = 0;
-        WinApi.EnumWindows((hwnd, _) =>
-        {
-            if (IsRealWindow(hwnd) && AppIdentity.OwnerOf(hwnd).Pid == pid)
+            var since = Environment.TickCount64;
+            long askedAt = -1;
+            for (var look = 0; look < 200; look++)
             {
-                count++;
+                await Task.Delay(AutoQuitPolicy.SampleMs);
+                if (_context is null || !_watched.TryGetValue(pid, out var watched) || watched.Stamp != stamp)
+                {
+                    return;
+                }
+
+                var now = Environment.TickCount64;
+                var step = AutoQuitPolicy.Decide(!ShouldQuit(pid, watched), HasVisibleWindow(pid), now - since, askedAt < 0 ? -1 : now - askedAt);
+                switch (step)
+                {
+                    case QuitStep.Abort:
+                        return;
+                    case QuitStep.Reset:
+                        since = now;
+                        askedAt = -1;
+                        break;
+                    case QuitStep.AskClose:
+                        AskClose(pid, watched);
+                        askedAt = now;
+                        break;
+                    case QuitStep.PostQuit:
+                        PostQuit(pid, watched);
+                        _watched.Remove(pid);
+                        return;
+                }
             }
-
-            return true;
-        }, 0);
-        return count;
+        }
+        catch (Exception ex)
+        {
+            _context?.Log.Error("Quit on close look failed", ex);
+        }
     }
 
     /// <summary>True when the process owns any visible top-level window, owned ones (save prompts, dialogs) included.</summary>
@@ -320,6 +323,13 @@ public sealed class AutoQuitFeature : IFeature
         var app = _context!.App;
         var path = watched.Path ?? AppIdentity.PathOf(pid);
         if (path is null || AutoQuitRules.IsMandatory(path, pid))
+        {
+            return false;
+        }
+
+        // The pid may have been reused by another program since the app was watched.
+        var current = WinApi.GetProcessPath(pid);
+        if (current is null || !string.Equals(current, path, StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
@@ -386,12 +396,11 @@ public sealed class AutoQuitFeature : IFeature
         }
     }
 
-    private void Quit(uint pid, Watched watched)
+    private void AskClose(uint pid, Watched watched)
     {
         _context?.Log.Info(Loc.F("Quit on close: asking {0} (pid {1}) to quit", System.IO.Path.GetFileName(watched.Path), pid));
 
-        // Only windows this app really showed while watched, and only if they still exist and still belong to the app.
-        // There is no fallback: an app that stays alive (a save prompt, a background task) is left alone.
+        // Only windows this app showed while watched, and only if they still exist and still belong to the app.
         foreach (var hwnd in watched.Windows)
         {
             if (!WinApi.IsWindow(hwnd))
@@ -405,7 +414,37 @@ public sealed class AutoQuitFeature : IFeature
                 WinApi.PostMessageW(hwnd, WinApi.WM_CLOSE, 0, 0);
             }
         }
+    }
 
-        _watched.Remove(pid);
+    // Last polite step: WM_QUIT to the main GUI thread only (the oldest thread), never to every thread and never a Kill.
+    private void PostQuit(uint pid, Watched watched)
+    {
+        try
+        {
+            using var process = Process.GetProcessById((int)pid);
+            if (process.HasExited)
+            {
+                return;
+            }
+
+            ProcessThread? main = null;
+            foreach (ProcessThread thread in process.Threads)
+            {
+                if (main is null || thread.StartTime < main.StartTime)
+                {
+                    main = thread;
+                }
+            }
+
+            if (main is not null)
+            {
+                _context?.Log.Info(Loc.F("Quit on close: {0} (pid {1}) ignored the close request, ending its main thread's message loop", System.IO.Path.GetFileName(watched.Path), pid));
+                WinApi.PostThreadMessageW((uint)main.Id, WinApi.WM_QUIT, 0, 0);
+            }
+        }
+        catch (Exception)
+        {
+            // already gone, or not accessible
+        }
     }
 }

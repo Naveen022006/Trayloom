@@ -5,6 +5,9 @@
     <RootNamespace>Trayloom.Input.Harness</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\..\src\Trayloom.Features.Windows\AutoQuitPolicy.cs" Link="AutoQuitPolicy.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Trayloom.Features.Input\Trayloom.Features.Input.csproj" />
   </ItemGroup>
 </Project>

@@ -13,6 +13,13 @@ internal static class SuperKeyMath
     /// <summary>Idle time after which injected modifiers are released.</summary>
     public const long IdleLimitMs = 20_000;
 
+    /// <summary>The foreground counts as missing only after two samples in a row (a closing window leaves none for a moment).</summary>
+    public static bool MissingConfirmed(int consecutiveMissingSamples) => consecutiveMissingSamples >= 2;
+
+    /// <summary>True when pending key-ups may be retried: nothing active, a normal foreground window and the normal desktop.</summary>
+    public static bool ShouldFlushPending(bool pending, bool active, bool foregroundMissing, bool foregroundElevated, bool inputDesktopNotDefault) =>
+        pending && !active && !foregroundMissing && !foregroundElevated && !inputDesktopNotDefault;
+
     /// <summary>
     /// True when modifiers are down (<paramref name="active"/>) and any reason to let go applies: idle too long, no foreground window,
     /// an elevated foreground window (Windows blocks our key-ups there), a secure or non-default input desktop, or a locked session.
@@ -188,13 +195,22 @@ public sealed class SuperKeyRecovery : IStartupRecovery
             }
         }
 
+        var complete = true;
         if (inputs.Count > 0)
         {
-            InputSender.Send([.. inputs]);
-            log.Info($"super key: released {inputs.Count} modifier(s) left down by a previous run");
+            var sent = InputSender.Send([.. inputs]);
+            complete = sent == inputs.Count;
+            if (complete)
+            {
+                log.Info($"super key: released {inputs.Count} modifier(s) left down by a previous run");
+            }
+            else
+            {
+                log.Warn("super key: release failed, will retry at next start");
+            }
         }
 
-        if (stage == RecoveryStage.Startup)
+        if (stage == RecoveryStage.Startup && complete)
         {
             try
             {

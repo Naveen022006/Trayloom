@@ -17,8 +17,6 @@ namespace Trayloom.Features.Input;
 /// </summary>
 internal static class SnippetTyper
 {
-    private const int PasteThreshold = 200;
-
     /// <summary>Waits (15 ms steps, at most 1.5 s) until no modifier key is physically down, then settles for 60 ms.</summary>
     public static void WaitForModifiersReleased()
     {
@@ -47,7 +45,7 @@ internal static class SnippetTyper
         InputSender.Send(inputs);
     }
 
-    /// <summary>Inserts text at the caret (typed or pasted).</summary>
+    /// <summary>Inserts text at the caret: short single-line text is typed, everything else is pasted. Line breaks are never typed.</summary>
     public static void Insert(string text, Dispatcher ui, ILog? log)
     {
         if (text.Length == 0)
@@ -55,15 +53,13 @@ internal static class SnippetTyper
             return;
         }
 
-        if (text.Contains('\n') || text.Contains('\r') || text.Length > PasteThreshold)
+        if (!SnippetPastePolicy.NeedsPaste(text))
         {
-            if (TryPaste(text, ui, log))
-            {
-                return;
-            }
+            KeySender.TypeText(text);
+            return;
         }
 
-        KeySender.TypeText(text);
+        Paste(text, ui, log);
     }
 
     /// <summary>Reads the clipboard text (empty when none), on the UI thread.</summary>
@@ -94,64 +90,71 @@ internal static class SnippetTyper
         }
     }
 
-    private static bool TryPaste(string text, Dispatcher ui, ILog? log)
+    private static void Paste(string text, Dispatcher ui, ILog? log)
     {
         (bool Complete, Dictionary<string, object> Map) snapshot = (false, []);
-        var restoreDue = false;
+        var mode = SnippetInsertMode.Skip;
         uint seqAfterSet = 0;
         try
         {
             snapshot = ui.Invoke(Snapshot);
-            if (!snapshot.Complete)
-            {
-                // A busy clipboard or an unreadable format: replacing it could lose the user's data, so type instead.
-                log?.Info("snippet: clipboard could not be saved, typing instead of pasting");
-                return false;
-            }
-
             var set = ui.Invoke(() =>
             {
                 var ok = SetTransient(text);
                 seqAfterSet = GetClipboardSequenceNumber();
                 return ok;
             });
-            if (!set)
+            mode = SnippetPastePolicy.Decide(text, snapshot.Complete, set);
+            if (mode == SnippetInsertMode.Skip)
             {
-                return false;
+                log?.Info("snippet skipped: the clipboard is busy");
+                return;
             }
 
-            restoreDue = true;
             Thread.Sleep(30);
             KeySender.SendChord([0x11, 0x56]);
 
             // Slow targets read the clipboard late; restoring earlier would paste the old contents.
             Thread.Sleep(1500);
-            return true;
         }
         catch (Exception ex)
         {
             log?.Error("Pasting a snippet failed", ex);
-            return false;
         }
         finally
         {
-            if (restoreDue)
+            if (mode == SnippetInsertMode.PasteAndRestore)
             {
-                var map = snapshot.Map;
-                var complete = snapshot.Complete;
-                var expected = seqAfterSet;
-                ui.BeginInvoke(() =>
-                {
-                    if (ClipboardRestorePolicy.ShouldRestore(expected, GetClipboardSequenceNumber(), complete))
-                    {
-                        Restore(map);
-                    }
-                    else
-                    {
-                        log?.Info("snippet: clipboard changed, not restored");
-                    }
-                });
+                RestoreIfUnchanged(snapshot.Map, seqAfterSet, snapshot.Complete, ui, log);
             }
+            else if (mode == SnippetInsertMode.PasteKeepSnippet)
+            {
+                // The clipboard could not be saved completely (Office delayed formats and the like): leave the snippet on it.
+                log?.Info("snippet: clipboard could not be saved, the snippet stays on the clipboard");
+            }
+        }
+    }
+
+    // Synchronous on purpose: the next snippet must see the user's clipboard, not this snippet's transient copy.
+    private static void RestoreIfUnchanged(Dictionary<string, object> map, uint expected, bool complete, Dispatcher ui, ILog? log)
+    {
+        try
+        {
+            ui.Invoke(() =>
+            {
+                if (ClipboardRestorePolicy.ShouldRestore(expected, GetClipboardSequenceNumber(), complete))
+                {
+                    Restore(map);
+                }
+                else
+                {
+                    log?.Info("snippet: clipboard changed, not restored");
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            log?.Error("Restoring the clipboard failed", ex);
         }
     }
 
@@ -261,4 +264,46 @@ internal static class ClipboardRestorePolicy
 {
     /// <summary>True only when the saved copy is complete and nobody changed the clipboard since Trayloom set the snippet.</summary>
     public static bool ShouldRestore(uint seqAfterSet, uint seqNow, bool complete) => complete && seqAfterSet == seqNow;
+}
+
+/// <summary>What to do with a snippet's text.</summary>
+internal enum SnippetInsertMode
+{
+    /// <summary>Type it as key events (short, single-line text only).</summary>
+    Type,
+
+    /// <summary>Paste through the clipboard, then put the user's clipboard back.</summary>
+    PasteAndRestore,
+
+    /// <summary>Paste, but the clipboard could not be saved completely: leave the snippet on it.</summary>
+    PasteKeepSnippet,
+
+    /// <summary>Do nothing: pasting is impossible and typing the text would press Enter or flood the app.</summary>
+    Skip,
+}
+
+/// <summary>The paste, type or skip decision for a snippet.</summary>
+internal static class SnippetPastePolicy
+{
+    /// <summary>Longest text typed as key events.</summary>
+    public const int PasteThreshold = 200;
+
+    /// <summary>True for text with a line break or longer than the threshold. Typing a line break presses Enter, which sends chat messages.</summary>
+    public static bool NeedsPaste(string text) => text.Contains('\n') || text.Contains('\r') || text.Length > PasteThreshold;
+
+    /// <summary>Decides how to insert <paramref name="text"/> given whether the clipboard was saved completely and could be written.</summary>
+    public static SnippetInsertMode Decide(string text, bool snapshotComplete, bool clipboardWritable)
+    {
+        if (!NeedsPaste(text))
+        {
+            return SnippetInsertMode.Type;
+        }
+
+        if (!clipboardWritable)
+        {
+            return SnippetInsertMode.Skip;
+        }
+
+        return snapshotComplete ? SnippetInsertMode.PasteAndRestore : SnippetInsertMode.PasteKeepSnippet;
+    }
 }
