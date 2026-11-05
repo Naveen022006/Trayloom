@@ -203,6 +203,12 @@ internal sealed partial class IslandWindow
     {
         _core.ResetStrips();
         _core.PollExternalNotices();
+        if (_mode == IslandMode.Open && _choreo == Choreo.None)
+        {
+            // The closed layer is hidden behind the open page; Collapse rebuilds it before it returns, so skip the work now.
+            return;
+        }
+
         RefreshClosed();
     }
 
@@ -306,6 +312,7 @@ internal sealed partial class IslandWindow
             }
 
             _closedHost.IsHitTestVisible = true;
+            SyncClosedVisibility();
         }
 
         LayoutHosts();

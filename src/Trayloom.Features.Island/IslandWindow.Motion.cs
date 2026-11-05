@@ -107,6 +107,13 @@ internal sealed partial class IslandWindow
     internal static Point OpenZoomOrigin(double pillCx, double openCx, double openW, bool opensUp) =>
         new(Math.Clamp(0.5 + ((pillCx - openCx) / Math.Max(openW, 1)), 0, 1), opensUp ? 1 : 0);
 
+    /// <summary>
+    /// Hides the closed layer while the open page is fully shown, so its glyph and pulse animations stop drawing. It is Hidden, not
+    /// Collapsed, so it stays measured and the cross-fade back to the strip has the right size from its first frame.
+    /// </summary>
+    private void SyncClosedVisibility() =>
+        _closedHost.Visibility = _mode == IslandMode.Open && _choreo == Choreo.None ? Visibility.Hidden : Visibility.Visible;
+
     private void BeginOpening()
     {
         _openHost.IsHitTestVisible = true;
@@ -124,6 +131,7 @@ internal sealed partial class IslandWindow
             _openHost.Opacity = 1;
             _openHost.RenderTransform = Transform.Identity;
             _closedHost.Opacity = 0;
+            SyncClosedVisibility();
             return;
         }
 
@@ -135,11 +143,13 @@ internal sealed partial class IslandWindow
         _openHost.RenderTransform = _openScale;
         _openHost.Opacity = 0;
         _closedHost.Opacity = 1;
+        SyncClosedVisibility();
         StartRendering();
     }
 
     private void BeginClosing(bool immediate)
     {
+        SyncClosedVisibility();
         _openHost.IsHitTestVisible = false;
         _closedHost.IsHitTestVisible = true;
         if (immediate || D.ReduceMotion)
@@ -183,6 +193,7 @@ internal sealed partial class IslandWindow
                     _openHost.CacheMode = null;
                     _openHost.RenderTransform = Transform.Identity;
                     _closedHost.Opacity = 0;
+                    SyncClosedVisibility();
                 }
 
                 break;
@@ -258,6 +269,7 @@ internal sealed partial class IslandWindow
             _openHost.Opacity = 1;
             _openHost.RenderTransform = Transform.Identity;
             _closedHost.Opacity = 0;
+            SyncClosedVisibility();
         }
 
         EndSwap();

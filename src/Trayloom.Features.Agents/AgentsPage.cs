@@ -18,17 +18,35 @@ namespace Trayloom.Features.Agents;
 /// </summary>
 public sealed class AgentsPageView : Grid, IIslandTopRowHost
 {
+    /// <summary>Height of the soft fade at the top and bottom scroll edges.</summary>
+    private const double FadeHeight = 18;
+
+    /// <summary>How long after the last wheel step a data-driven rebuild keeps waiting, so cards never change under the reader.</summary>
+    private const double ScrollQuietMs = 600;
+
     private readonly AgentsRuntime _runtime;
     private readonly Border _topRow = new();
     private FrameworkElement? _bar;
-    private Grid? _root;
+
+    // The layout is built once: only the card grid inside _scroll is swapped, so the scroll viewer (and its offset) survives a rebuild.
+    private readonly Grid _root = new();
+    private readonly Border _barSlot = new();
+    private readonly Grid _listHost = new();
+    private readonly Trayloom.Core.Ui.SmoothScrollViewer _scroll = new() { VerticalScrollBarVisibility = ScrollBarVisibility.Hidden };
+    private readonly Border _scrollIndicator = NewIndicator();
+    private readonly DispatcherTimer _deferred = new(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(250) };
+    private readonly GradientStop _topEdge = new(Colors.Black, 0);
+    private readonly GradientStop _topInner = new(Colors.Black, 0);
+    private readonly GradientStop _bottomInner = new(Colors.Black, 1);
+    private readonly GradientStop _bottomEdge = new(Colors.Black, 1);
+    private LinearGradientBrush? _mask;
+    private bool _dirty;
+    private DateTime _lastScroll = DateTime.MinValue;
     private bool _topRowClaimed;
     private readonly bool _preview;
     private readonly DispatcherTimer _refresh = new() { Interval = TimeSpan.FromSeconds(15) };
-    private Border _scrollIndicator = NewIndicator();
 
-    private static Border NewIndicator() => new() { Width = 3, CornerRadius = new CornerRadius(1.5), Background = AgentColors.White(0.28), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, IsHitTestVisible = false, Visibility = Visibility.Collapsed, Margin = new Thickness(0, 0, 1, 0) };
-    private ScrollViewer? _scroll;
+    private static Border NewIndicator() => new() { Width = 3, CornerRadius = new CornerRadius(1.5), Background = AgentColors.White(0.28), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, IsHitTestVisible = false, Visibility = Visibility.Collapsed, Margin = new Thickness(0) };
     private bool _subscribed;
     private readonly Action _onChanged;
     private Popup? _menu;
@@ -38,11 +56,58 @@ public sealed class AgentsPageView : Grid, IIslandTopRowHost
     {
         _runtime = runtime;
         _preview = preview;
-        _onChanged = () => Dispatcher.BeginInvoke(Rebuild);
+        _onChanged = () => Dispatcher.BeginInvoke(RequestRebuild);
         Loaded += (_, _) => Attach();
         Unloaded += (_, _) => Detach();
-        _refresh.Tick += (_, _) => Rebuild();
+        _refresh.Tick += (_, _) => RequestRebuild();
+        _deferred.Tick += (_, _) => FlushRebuild();
         Background = Brushes.Transparent;
+
+        _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        _root.Children.Add(_barSlot);
+        _listHost.Children.Add(_scroll);
+        _listHost.Children.Add(_scrollIndicator);
+        SetRow(_listHost, 1);
+        _root.Children.Add(_listHost);
+        _scroll.ScrollChanged += (_, e) =>
+        {
+            if (e.VerticalChange != 0)
+            {
+                _lastScroll = DateTime.UtcNow;
+            }
+
+            UpdateIndicator();
+        };
+        _scroll.SizeChanged += (_, _) => UpdateIndicator();
+        Rebuild();
+    }
+
+    /// <summary>Asks for a rebuild with fresh data; it runs once the reader has stopped scrolling and no menu is open.</summary>
+    private void RequestRebuild()
+    {
+        _dirty = true;
+        if (!_deferred.IsEnabled)
+        {
+            _deferred.Start();
+        }
+    }
+
+    private void FlushRebuild()
+    {
+        if (!_dirty)
+        {
+            _deferred.Stop();
+            return;
+        }
+
+        // Never swap the cards under a glide, right after a wheel step or under the open period menu: try again next tick.
+        if (SmoothScroll.IsAnimating(_scroll) || (DateTime.UtcNow - _lastScroll).TotalMilliseconds < ScrollQuietMs || _menu?.IsOpen == true)
+        {
+            return;
+        }
+
+        _deferred.Stop();
         Rebuild();
     }
 
@@ -52,9 +117,9 @@ public sealed class AgentsPageView : Grid, IIslandTopRowHost
         if (!_topRowClaimed)
         {
             _topRowClaimed = true;
-            if (_bar is not null && _root is not null)
+            if (_bar is not null)
             {
-                _root.Children.Remove(_bar);
+                _barSlot.Child = null;
                 _bar.Margin = new Thickness(0);
                 _topRow.Child = _bar;
             }
@@ -98,6 +163,12 @@ public sealed class AgentsPageView : Grid, IIslandTopRowHost
         _runtime.Sessions.SetWatching(false);
         _runtime.Services.App.Changed -= OnSetting;
         _refresh.Stop();
+        _deferred.Stop();
+        if (_menu is { IsOpen: true })
+        {
+            _menu.IsOpen = false;
+        }
+
         if (!_preview)
         {
             _runtime.Service.PageDidDisappear();
@@ -109,7 +180,7 @@ public sealed class AgentsPageView : Grid, IIslandTopRowHost
     {
         if (key.StartsWith("notchAgents", StringComparison.Ordinal))
         {
-            Dispatcher.BeginInvoke(Rebuild);
+            Dispatcher.BeginInvoke(RequestRebuild);
         }
     }
 
@@ -119,14 +190,10 @@ public sealed class AgentsPageView : Grid, IIslandTopRowHost
         var snapshot = _runtime.Service.Snapshot;
         var accounts = settings.ShowsCodexAccounts() ? _runtime.Accounts.States : [];
         var status = _runtime.Service.Status;
-        // a refresh (new reading, a session starting) must not throw the reader back to the top of the list
-        var keepOffset = _scroll?.VerticalOffset ?? 0;
-        Children.Clear();
-        _scroll = null;
-        _bar = null;
-        _root = null;
+        _dirty = false;
+        _barSlot.Child = null;
         _topRow.Child = null;
-        _scrollIndicator = NewIndicator();
+        _bar = null;
 
         // Only agents that left something on this PC, or whose accounts were added, get cards.
         var providers = settings.Providers()
@@ -134,13 +201,13 @@ public sealed class AgentsPageView : Grid, IIslandTopRowHost
 
         if (!snapshot.Loaded && accounts.Count == 0)
         {
-            Children.Add(Loading());
+            ShowMessage(Loading());
             return;
         }
 
         if (providers.Count == 0)
         {
-            Children.Add(EmptyView("sparkles", AgentStrings.Empty));
+            ShowMessage(EmptyView("sparkles", AgentStrings.Empty));
             return;
         }
 
@@ -148,7 +215,7 @@ public sealed class AgentsPageView : Grid, IIslandTopRowHost
         var tiles = AgentSettings.Tiles(cards, providers, accounts.Select(a => a.Id).ToList(), status.ClaudeProfile.IsDefault ? null : status.ClaudeProfile.Id);
         if (tiles.Count == 0)
         {
-            Children.Add(EmptyView("grid", AgentStrings.NoCards));
+            ShowMessage(EmptyView("grid", AgentStrings.NoCards));
             return;
         }
 
@@ -179,7 +246,8 @@ public sealed class AgentsPageView : Grid, IIslandTopRowHost
             AgentCard.Limits when t.Provider is not null => t with { HeightHint = AgentCardViews.LimitsHeight(context, t) },
             _ => t,
         }).ToList();
-        var grid = new AgentCardGrid();
+        // The cards stop short of the right edge so the scroll indicator does not draw over them.
+        var grid = new AgentCardGrid { Margin = new Thickness(0, 0, 6, 0) };
         foreach (var tile in tiles)
         {
             var view = BuildCard(context, tile);
@@ -187,13 +255,8 @@ public sealed class AgentsPageView : Grid, IIslandTopRowHost
             grid.Children.Add(view);
         }
 
-        var root = new Grid();
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-
         // The period drives several cards, so it sits in the island's top row while any of them shows (in the page itself when the
         // island did not claim the row, as in the Settings preview).
-        _root = root;
         if (tiles.Any(t => t.Card.FollowsPeriod()))
         {
             var bar = PeriodMenu(period);
@@ -205,35 +268,38 @@ public sealed class AgentsPageView : Grid, IIslandTopRowHost
             else
             {
                 bar.Margin = new Thickness(0, 0, 0, 8);
-                root.Children.Add(bar);
+                _barSlot.Child = bar;
             }
         }
 
-        var scroll = new Trayloom.Core.Ui.SmoothScrollViewer
+        // Swap only the cards: the viewer, its offset and any glide in flight stay, so a refresh never jumps the list to the top.
+        var keep = _scroll.VerticalOffset;
+        if (Children.Count != 1 || !ReferenceEquals(Children[0], _root))
         {
-            VerticalScrollBarVisibility = ScrollBarVisibility.Hidden,
-            Content = grid,
-        };
-        _scroll = scroll;
-        if (keepOffset > 0)
-        {
-            Dispatcher.BeginInvoke(() => scroll.ScrollToVerticalOffset(keepOffset), DispatcherPriority.Loaded);
+            Children.Clear();
+            Children.Add(_root);
         }
 
-        scroll.ScrollChanged += (_, _) => UpdateIndicator();
-        scroll.SizeChanged += (_, _) => UpdateIndicator();
-        var host = new Grid { Children = { scroll, _scrollIndicator } };
-        Grid.SetRow(host, 1);
-        root.Children.Add(host);
-        Children.Add(root);
+        _scroll.Content = grid;
+        // Synchronous: the offset is applied in the same layout pass, before anything is rendered with the new cards at the top.
+        _scroll.ScrollToVerticalOffset(keep);
         Dispatcher.BeginInvoke(UpdateIndicator, DispatcherPriority.Loaded);
+    }
+
+    /// <summary>Shows a loading or empty message in place of the list and drops the stale cards.</summary>
+    private void ShowMessage(UIElement element)
+    {
+        _scroll.Content = null;
+        Children.Clear();
+        Children.Add(element);
     }
 
     private void UpdateIndicator()
     {
-        if (_scroll is null || _scroll.ScrollableHeight <= 0.5)
+        if (_scroll.ScrollableHeight <= 0.5)
         {
             _scrollIndicator.Visibility = Visibility.Collapsed;
+            UpdateFade();
             return;
         }
 
@@ -241,8 +307,31 @@ public sealed class AgentsPageView : Grid, IIslandTopRowHost
         var content = _scroll.ExtentHeight;
         var height = Math.Max(24, viewport * viewport / content);
         _scrollIndicator.Height = height;
-        _scrollIndicator.Margin = new Thickness(0, (viewport - height) * _scroll.VerticalOffset / _scroll.ScrollableHeight, 1, 0);
+        _scrollIndicator.Margin = new Thickness(0, (viewport - height) * _scroll.VerticalOffset / _scroll.ScrollableHeight, 0, 0);
         _scrollIndicator.Visibility = Visibility.Visible;
+        UpdateFade();
+    }
+
+    /// <summary>
+    /// Fades the content out over the last few pixels at each edge it can still scroll towards, instead of cutting it off flat.
+    /// An opacity mask on the viewer only, so the island's own clip and the other pages are untouched.
+    /// </summary>
+    private void UpdateFade()
+    {
+        var height = _scroll.ActualHeight;
+        if (_scroll.ScrollableHeight <= 0.5 || height <= 1)
+        {
+            _scroll.OpacityMask = null;
+            return;
+        }
+
+        _mask ??= new LinearGradientBrush(new GradientStopCollection { _topEdge, _topInner, _bottomInner, _bottomEdge }, new Point(0, 0), new Point(0, 1));
+        var fraction = Math.Min(0.25, FadeHeight / height);
+        _topInner.Offset = fraction;
+        _bottomInner.Offset = 1 - fraction;
+        _topEdge.Color = _scroll.VerticalOffset > 0.5 ? Colors.Transparent : Colors.Black;
+        _bottomEdge.Color = _scroll.VerticalOffset < _scroll.ScrollableHeight - 0.5 ? Colors.Transparent : Colors.Black;
+        _scroll.OpacityMask = _mask;
     }
 
     private FrameworkElement BuildCard(AgentCardContext c, AgentTile tile)

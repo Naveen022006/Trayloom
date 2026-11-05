@@ -122,6 +122,7 @@ internal sealed class SmoothScroller
     private double _ownedUntil;
     private bool _active;
     private bool _pushed;
+    private double _ppd = 1;
 
     public SmoothScroller(ScrollViewer viewer, ScrollAxis axis)
     {
@@ -246,6 +247,7 @@ internal sealed class SmoothScroller
         }
 
         _active = true;
+        _ppd = DevicePixelsPerDip();
         _last = Now;
         _applied = _pos;
         CompositionTarget.Rendering += OnFrame;
@@ -294,15 +296,42 @@ internal sealed class SmoothScroller
             return;
         }
 
-        _applied = Math.Clamp(_pos, 0, Math.Max(0, max));
+        _applied = Snap(Math.Clamp(_pos, 0, Math.Max(0, max)));
         Push(_applied);
     }
 
+    /// <summary>Device pixels per DIP as drawn: the monitor DPI times any scale above the viewer (the island zoom).</summary>
+    private double DevicePixelsPerDip()
+    {
+        var dpi = VisualTreeHelper.GetDpi(_viewer).PixelsPerDip;
+        if (PresentationSource.FromVisual(_viewer)?.RootVisual is not Visual root)
+        {
+            return dpi;
+        }
+
+        try
+        {
+            var transform = _viewer.TransformToAncestor(root);
+            var origin = transform.Transform(new Point(0, 0));
+            var probe = transform.Transform(Axis == ScrollAxis.Vertical ? new Point(0, 100) : new Point(100, 0));
+            var scale = (Axis == ScrollAxis.Vertical ? Math.Abs(probe.Y - origin.Y) : Math.Abs(probe.X - origin.X)) / 100;
+            return scale > 0.01 ? dpi * scale : dpi;
+        }
+        catch (InvalidOperationException)
+        {
+            // the viewer is not connected to the root (being torn down): the monitor DPI alone is the best answer
+            return dpi;
+        }
+    }
+
+    /// <summary>Rounds an offset to a whole device pixel at the current scale, so the content never rests between pixels.</summary>
+    private double Snap(double value) => Math.Round(value * _ppd) / _ppd;
+
     private void Apply(double offset)
     {
-        // land on whole device pixels so text is crisp at rest
-        var ppd = VisualTreeHelper.GetDpi(_viewer).PixelsPerDip;
-        offset = Math.Round(offset * ppd) / ppd;
+        // land on whole device pixels (zoom included) so text is crisp at rest
+        _ppd = DevicePixelsPerDip();
+        offset = Snap(offset);
         _pos = _applied = offset;
         Push(offset);
     }
