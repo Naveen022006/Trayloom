@@ -342,7 +342,7 @@ internal static class Output
     }
 
     /// <summary>Keeps a cache folder small: files older than 24 h, beyond the newest 100 or beyond 256 MB go (<paramref name="keep"/> always stays).</summary>
-    internal static void PruneCopied(string folder, string? keep, string searchPattern = "*")
+    internal static void PruneCopied(string folder, string? keep, string searchPattern = "*", Func<string, bool>? isReferenced = null)
     {
         try
         {
@@ -358,7 +358,7 @@ internal static class Output
             {
                 count++;
                 total += f.Length;
-                if (keep is not null && string.Equals(f.FullName, keep, StringComparison.OrdinalIgnoreCase))
+                if ((keep is not null && string.Equals(f.FullName, keep, StringComparison.OrdinalIgnoreCase)) || isReferenced?.Invoke(f.FullName) == true)
                 {
                     continue;
                 }
@@ -380,6 +380,46 @@ internal static class Output
         {
             // cache housekeeping only
         }
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex s_partial = new(@"^\.trayloom-partial-[0-9a-f]{10}\.(mp4|gif)(\.mux\.mp4)?$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>True for the exact name of a staging file an export leaves behind when it is cut short.</summary>
+    internal static bool IsPartialName(string fileName) => s_partial.IsMatch(fileName);
+
+    /// <summary>Deletes leftover export staging files older than <paramref name="minAge"/> in a recordings folder; nothing else is touched.</summary>
+    internal static int SweepPartials(string folder, TimeSpan minAge)
+    {
+        var removed = 0;
+        try
+        {
+            if (!Directory.Exists(folder))
+            {
+                return 0;
+            }
+
+            foreach (var file in new DirectoryInfo(folder).EnumerateFiles(".trayloom-partial-*"))
+            {
+                try
+                {
+                    if (IsPartialName(file.Name) && DateTime.UtcNow - file.LastWriteTimeUtc > minAge)
+                    {
+                        file.Delete();
+                        removed++;
+                    }
+                }
+                catch
+                {
+                    // in use
+                }
+            }
+        }
+        catch
+        {
+            // housekeeping only
+        }
+
+        return removed;
     }
 
     /// <summary>Moves a file to the Recycle Bin.</summary>

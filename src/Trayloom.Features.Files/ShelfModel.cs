@@ -469,11 +469,7 @@ internal sealed class ShelfStore
                 DeleteImage(leaf);
             }
 
-            foreach (var leaf in item.Leaves().Where(l => l.Kind == ShelfKinds.File))
-            {
-                DeleteDropped(leaf);
-            }
-
+            // dropped copies are not deleted here: the app that took the drop may still be reading the file (see SweepUnreferenced)
             return true;
         }
 
@@ -503,11 +499,6 @@ internal sealed class ShelfStore
             foreach (var leaf in item.Leaves().Where(l => l.Kind == ShelfKinds.Image))
             {
                 DeleteImage(leaf);
-            }
-
-            foreach (var leaf in item.Leaves().Where(l => l.Kind == ShelfKinds.File))
-            {
-                DeleteDropped(leaf);
             }
         }
 
@@ -708,25 +699,38 @@ internal sealed class ShelfStore
         }
     }
 
-    /// <summary>Deletes a file Trayloom wrote itself (a browser or mail drop kept under the shelf folder) when nothing else uses it.</summary>
-    private void DeleteDropped(ShelfItem leaf)
+    /// <summary>
+    /// Deletes files in the shelf's own folder that no item refers to any more and that are older than <paramref name="minAge"/>.
+    /// A dropped copy outlives its item for a while because the receiving app (a browser upload, an Electron app) may read it later.
+    /// </summary>
+    public void SweepUnreferenced(TimeSpan minAge)
+    {
+        var referenced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var leaf in _items.SelectMany(Flatten))
+        {
+            if (leaf.Kind == ShelfKinds.File && leaf.Path is not null)
+            {
+                referenced.Add(SafeFull(leaf.Path));
+            }
+            else if (leaf.Kind == ShelfKinds.Image && leaf.ImageFile is not null)
+            {
+                referenced.Add(SafeFull(ImagePath(leaf)));
+            }
+        }
+
+        var dir = ImageDirectory;
+        _ = Task.Run(() => ShelfDrops.SweepUnreferenced(dir, referenced, minAge));
+    }
+
+    private static string SafeFull(string path)
     {
         try
         {
-            var path = leaf.Path;
-            if (path is null || !ShelfDrops.IsUnder(ImageDirectory, path))
-            {
-                return;
-            }
-
-            if (File.Exists(path) && !_items.SelectMany(Flatten).Any(i => i != leaf && i.Kind == ShelfKinds.File && string.Equals(i.Path, path, StringComparison.OrdinalIgnoreCase)))
-            {
-                File.Delete(path);
-            }
+            return System.IO.Path.GetFullPath(path);
         }
         catch (Exception)
         {
-            // best effort
+            return path;
         }
     }
 
@@ -898,6 +902,43 @@ internal static class ShelfDrops
         // Windows drops a trailing dot or space from a name, so "x.exe." is x.exe
         var ext = string.IsNullOrEmpty(path) ? string.Empty : System.IO.Path.GetExtension(path.TrimEnd('.', ' '));
         return ext.Length > 0 && s_risky.Contains(ext);
+    }
+
+    /// <summary>Deletes unreferenced files older than <paramref name="minAge"/> directly inside <paramref name="dir"/>; returns how many went.</summary>
+    internal static int SweepUnreferenced(string dir, ISet<string> referencedFullPaths, TimeSpan minAge)
+    {
+        var removed = 0;
+        try
+        {
+            if (!Directory.Exists(dir))
+            {
+                return 0;
+            }
+
+            var cutoff = DateTime.UtcNow - minAge;
+            foreach (var file in new DirectoryInfo(dir).EnumerateFiles())
+            {
+                try
+                {
+                    var newest = file.LastWriteTimeUtc > file.CreationTimeUtc ? file.LastWriteTimeUtc : file.CreationTimeUtc;
+                    if (newest < cutoff && !referencedFullPaths.Contains(file.FullName))
+                    {
+                        file.Delete();
+                        removed++;
+                    }
+                }
+                catch (Exception)
+                {
+                    // in use or gone
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // housekeeping only
+        }
+
+        return removed;
     }
 
     /// <summary>True when <paramref name="path"/> lies inside <paramref name="dir"/>.</summary>

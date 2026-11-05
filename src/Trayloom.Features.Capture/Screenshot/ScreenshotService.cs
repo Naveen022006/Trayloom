@@ -29,7 +29,19 @@ internal sealed class ScreenshotService
     }
 
     /// <summary>Keeps the cached shelf copies (<c>Cache\capture-*.png</c>) to a day, 100 files and 256 MB.</summary>
-    private static void PruneCache() => Output.PruneCopied(CacheDir, null, "capture-*.png");
+    private void PruneCache()
+    {
+        // Shelf items point at these files, so anything the shelf still lists stays. When the shelf is not running yet nothing is
+        // known about its items, so the prune waits for the next capture instead of risking a file it still uses.
+        var shelf = CaptureHost.Services.Services.Get<IShelfService>();
+        if (shelf is null)
+        {
+            return;
+        }
+
+        var referenced = new HashSet<string>(shelf.Paths, StringComparer.OrdinalIgnoreCase);
+        Output.PruneCopied(CacheDir, null, "capture-*.png", referenced.Contains);
+    }
 
     public IAppSettings App => _ctx.App;
 

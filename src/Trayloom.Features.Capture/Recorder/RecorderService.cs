@@ -48,6 +48,8 @@ internal sealed class RecorderService
         N.QueryPerformanceFrequency(out _freq);
         Take.Sweep(Array.Empty<string>());
         SystemEvents.SessionEnding += OnSessionEnding;
+        var saveFolder = Output.BaseFolder(_ctx.App.Get<string>(K.RecSaveFolder));
+        _ = Task.Run(() => Output.SweepPartials(saveFolder, TimeSpan.FromHours(1)));
         if (Take.Recoverable(Array.Empty<string>()).Count > 0)
         {
             _ctx.Notifier.Show(Loc.T("A recording wasn’t saved"), Loc.T("Open Screen recording in Settings to recover it."), NotificationLevel.Info);

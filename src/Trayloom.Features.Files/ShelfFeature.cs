@@ -97,6 +97,8 @@ public sealed class ShelfFeature : IFeature, IShelfHost, IShelfService
 
     public bool Pinned { get; set; }
 
+    private DispatcherTimer? _sweepTimer;
+
     internal static void RegisterDefaults(IAppSettings app)
     {
         app.Register("shelfEnabled", false);
@@ -123,6 +125,9 @@ public sealed class ShelfFeature : IFeature, IShelfHost, IShelfService
         context.Shortcuts.Bind("shelf", () => OnShortcut());
         context.Services.Provide<IShelfService>(this);
         context.App.Changed += OnSettingChanged;
+        _store.SweepUnreferenced(TimeSpan.FromMinutes(10));
+        _sweepTimer = new DispatcherTimer(TimeSpan.FromMinutes(10), DispatcherPriority.Background, (_, _) => _store?.SweepUnreferenced(TimeSpan.FromMinutes(10)), context.Ui);
+        _sweepTimer.Start();
         Hub.Shelf = this;
         Hub.Settings = context.App;
         Apply();
@@ -141,6 +146,8 @@ public sealed class ShelfFeature : IFeature, IShelfHost, IShelfService
             Hub.Shelf = null;
         }
 
+        _sweepTimer?.Stop();
+        _sweepTimer = null;
         StopMonitor();
         _afterDrag?.Stop();
         _afterDrag = null;

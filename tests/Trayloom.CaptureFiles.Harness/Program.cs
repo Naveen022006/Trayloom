@@ -31,6 +31,7 @@ internal static class Program
             Dropped(dir);
             Links();
             Unique(dir);
+            Housekeeping(dir);
         }
         finally
         {
@@ -220,6 +221,63 @@ internal static class Program
         Check(OcrSupport.OpenableUrl("https://a.b/c") is "https://a.b/c", "QR https opens");
         Check(OcrSupport.OpenableUrl("https://a.b/x%20y") is "https://a.b/x%20y", "QR keeps escapes");
         Check(OcrSupport.OpenableUrl("mailto:a@b.c") is null && OcrSupport.OpenableUrl("file:///C:/x") is null && OcrSupport.OpenableUrl("C:\\x.exe") is null, "QR refuses mailto, file and paths");
+    }
+
+    private static void Housekeeping(string dir)
+    {
+        var shelf = Path.Combine(dir, "sweep");
+        Directory.CreateDirectory(shelf);
+        var kept = Path.Combine(shelf, "kept.txt");
+        var old = Path.Combine(shelf, "old.txt");
+        var fresh = Path.Combine(shelf, "fresh.txt");
+        foreach (var f in new[] { kept, old, fresh })
+        {
+            File.WriteAllText(f, "x");
+        }
+
+        foreach (var f in new[] { kept, old })
+        {
+            File.SetCreationTimeUtc(f, DateTime.UtcNow.AddHours(-1));
+            File.SetLastWriteTimeUtc(f, DateTime.UtcNow.AddHours(-1));
+        }
+
+        var referenced = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { kept };
+        var n = ShelfDrops.SweepUnreferenced(shelf, referenced, TimeSpan.FromMinutes(10));
+        Check(n == 1 && !File.Exists(old), "an old unreferenced shelf file is deleted");
+        Check(File.Exists(kept), "a referenced shelf file is never deleted");
+        Check(File.Exists(fresh), "a recent unreferenced shelf file is kept for now");
+
+        var cache = Path.Combine(dir, "cache");
+        Directory.CreateDirectory(cache);
+        var pinned = Path.Combine(cache, "capture-1.png");
+        var stale = Path.Combine(cache, "capture-2.png");
+        foreach (var f in new[] { pinned, stale })
+        {
+            File.WriteAllText(f, "x");
+            File.SetLastWriteTimeUtc(f, DateTime.UtcNow.AddDays(-3));
+        }
+
+        Output.PruneCopied(cache, null, "capture-*.png", p => string.Equals(p, pinned, StringComparison.OrdinalIgnoreCase));
+        Check(File.Exists(pinned) && !File.Exists(stale), "cache prune skips files the shelf references");
+
+        var rec = Path.Combine(dir, "rec");
+        Directory.CreateDirectory(rec);
+        var partialOld = Path.Combine(rec, ".trayloom-partial-0123456789.mp4");
+        var partialNew = Path.Combine(rec, ".trayloom-partial-abcdef0123.gif");
+        var lookalike = Path.Combine(rec, ".trayloom-partial-notmine.mp4");
+        var normal = Path.Combine(rec, "Screen Recording.mp4");
+        foreach (var f in new[] { partialOld, partialNew, lookalike, normal })
+        {
+            File.WriteAllText(f, "x");
+        }
+
+        foreach (var f in new[] { partialOld, lookalike, normal })
+        {
+            File.SetLastWriteTimeUtc(f, DateTime.UtcNow.AddHours(-3));
+        }
+
+        Check(Output.SweepPartials(rec, TimeSpan.FromHours(1)) == 1, "one old partial file is swept");
+        Check(!File.Exists(partialOld) && File.Exists(partialNew) && File.Exists(lookalike) && File.Exists(normal), "only old exact-pattern partials go");
     }
 
     private static void Unique(string dir)
