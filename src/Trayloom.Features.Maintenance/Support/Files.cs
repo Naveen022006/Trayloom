@@ -158,6 +158,22 @@ internal static class Fmt
 /// <summary>Result of a deletion.</summary>
 internal readonly record struct DeleteResult(long Freed, bool Failed);
 
+/// <summary>Outcome of <see cref="FileOps.TryRecycle"/>.</summary>
+internal enum RecycleResult
+{
+    /// <summary>Moved to the Recycle Bin.</summary>
+    Recycled,
+
+    /// <summary>The path did not exist.</summary>
+    Missing,
+
+    /// <summary>Not moved: the bin would delete it for good (disabled, too large, removable or network drive).</summary>
+    NotRecyclable,
+
+    /// <summary>The shell operation failed.</summary>
+    Failed,
+}
+
 /// <summary>File-system helpers: recycle bin, permanent delete, sizes, identity, reveal.</summary>
 internal static class FileOps
 {
@@ -189,21 +205,7 @@ internal static class FileOps
     public static string Temp => Path.GetTempPath().TrimEnd('\\');
 
     /// <summary>True when the current process is elevated.</summary>
-    public static bool IsElevated
-    {
-        get
-        {
-            try
-            {
-                using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
-                return new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
-            }
-            catch
-            {
-                return false;
-            }
-        }
-    }
+    public static bool IsElevated => ElevationPolicy.IsElevated;
 
     /// <summary>Folder size (sum of file lengths, reparse points skipped); cancellable.</summary>
     public static long DirectorySize(string path, CancellationToken ct = default)
@@ -328,12 +330,9 @@ internal static class FileOps
                 return false;
             }
 
-            foreach (var critical in CriticalRoots())
+            if (SafePaths.IsCriticalOrAncestor(full))
             {
-                if (!string.IsNullOrEmpty(critical) && string.Equals(full, critical.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
-                {
-                    return false;
-                }
+                return false;
             }
 
             if (full.EndsWith(".localized", StringComparison.OrdinalIgnoreCase))
@@ -349,52 +348,147 @@ internal static class FileOps
         }
     }
 
-    private static IEnumerable<string> CriticalRoots()
+    /// <summary>The folders that must never be removed as a whole (see <see cref="SafePaths.CriticalRoots"/>).</summary>
+    private static IEnumerable<string> CriticalRoots() => SafePaths.CriticalRoots();
+
+    /// <summary>True for a drive root, a critical folder, or a folder containing one.</summary>
+    public static bool IsCriticalOrAncestor(string p) => SafePaths.IsCriticalOrAncestor(p);
+
+    /// <summary>
+    /// True when <paramref name="path"/> is a folder the Cleaner may treat as a temp root: not a link, not critical, at least three
+    /// segments deep, named <c>Temp</c> or <c>Tmp</c> (or an all-digit RDP session folder directly below a <c>Temp</c>).
+    /// </summary>
+    internal static bool IsSafeTempRoot(string path)
     {
-        yield return Windows;
-        yield return Path.Combine(Windows, "System32");
-        yield return ProgramFiles;
-        yield return ProgramFilesX86;
-        yield return ProgramData;
-        yield return @"C:\Users";
-        yield return Profile;
-        yield return AppData;
-        yield return LocalAppData;
-        yield return Path.Combine(LocalAppData, "Packages");
-        yield return Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-        yield return Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-        yield return Path.Combine(Profile, "Downloads");
-        yield return Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
-        yield return Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
-        yield return Environment.GetFolderPath(Environment.SpecialFolder.MyVideos);
-        foreach (var key in new[] { "OneDrive", "OneDriveConsumer", "OneDriveCommercial" })
+        try
         {
-            yield return Env(key);
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+
+            var full = SafePaths.Normalize(path);
+            if (Win32.IsReparsePoint(full) || SafePaths.IsCriticalOrAncestor(full) || SafePaths.SegmentCount(full) < 3)
+            {
+                return false;
+            }
+
+            var leaf = Path.GetFileName(full);
+            if (leaf.Equals("Temp", StringComparison.OrdinalIgnoreCase) || leaf.Equals("Tmp", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            var parent = Path.GetFileName(Path.GetDirectoryName(full) ?? string.Empty);
+            return leaf.Length > 0 && leaf.All(char.IsAsciiDigit) && parent.Equals("Temp", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
         }
     }
 
-    /// <summary>Moves a file or folder to the Recycle Bin. Returns false when it could not be moved.</summary>
-    public static bool Recycle(string path)
+    /// <summary><see cref="Temp"/> when it passes <see cref="IsSafeTempRoot"/>, else null. Use this instead of <see cref="Temp"/> to scan or clean.</summary>
+    public static string? SafeTemp
+    {
+        get
+        {
+            var temp = Temp;
+            return IsSafeTempRoot(temp) ? temp : null;
+        }
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool GetVolumeNameForVolumeMountPointW(string mountPoint, StringBuilder volumeName, uint length);
+
+    /// <summary>True when sending <paramref name="path"/> to the Recycle Bin will really keep it recoverable.</summary>
+    public static bool CanRecycle(string path, long size)
+    {
+        try
+        {
+            var full = Path.GetFullPath(path);
+            var root = Path.GetPathRoot(full);
+            if (string.IsNullOrEmpty(root) || root.StartsWith(@"\\", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            var drive = new DriveInfo(root);
+            if (drive.DriveType != DriveType.Fixed)
+            {
+                return false;
+            }
+
+            long? maxBytes = null;
+            var volumeName = new StringBuilder(64);
+            if (GetVolumeNameForVolumeMountPointW(root, volumeName, (uint)volumeName.Capacity))
+            {
+                var guid = volumeName.ToString();
+                var open = guid.IndexOf('{');
+                var close = guid.IndexOf('}');
+                if (open >= 0 && close > open)
+                {
+                    using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\BitBucket\Volume\" + guid[open..(close + 1)]);
+                    if (key is not null)
+                    {
+                        if (key.GetValue("NukeOnDelete") is int nuke && nuke != 0)
+                        {
+                            return false;
+                        }
+
+                        if (key.GetValue("MaxCapacity") is int megabytes && megabytes > 0)
+                        {
+                            maxBytes = (long)megabytes * 1024 * 1024;
+                        }
+                    }
+                }
+            }
+
+            maxBytes ??= drive.TotalSize / 20;
+            return size <= maxBytes;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Moves a file or folder to the Recycle Bin. Returns false when it could not be moved or would not stay recoverable.</summary>
+    public static bool Recycle(string path) => TryRecycle(path) is RecycleResult.Recycled or RecycleResult.Missing;
+
+    /// <summary>
+    /// Sends a path to the Recycle Bin only when that keeps it recoverable (<see cref="CanRecycle"/>); the shell would otherwise
+    /// delete it for good. <paramref name="knownSize"/> saves a size walk.
+    /// </summary>
+    public static RecycleResult TryRecycle(string path, long? knownSize = null)
     {
         try
         {
             if (!File.Exists(path) && !Directory.Exists(path))
             {
-                return true;
+                return RecycleResult.Missing;
+            }
+
+            var size = knownSize ?? DirectorySize(path);
+            if (!CanRecycle(path, size))
+            {
+                return RecycleResult.NotRecyclable;
             }
 
             var op = new Win32.SHFILEOPSTRUCT
             {
                 wFunc = Win32.FO_DELETE,
                 pFrom = path + "\0\0",
-                fFlags = (ushort)(Win32.FOF_ALLOWUNDO | Win32.FOF_NOCONFIRMATION | Win32.FOF_NOERRORUI | Win32.FOF_SILENT),
+                fFlags = (ushort)(Win32.FOF_ALLOWUNDO | Win32.FOF_NOCONFIRMATION | Win32.FOF_NOERRORUI | Win32.FOF_SILENT | Win32.FOF_WANTNUKEWARNING),
             };
             var result = Win32.SHFileOperationW(ref op);
-            return result == 0 && !op.fAnyOperationsAborted && !File.Exists(path) && !Directory.Exists(path);
+            return result == 0 && !op.fAnyOperationsAborted && !File.Exists(path) && !Directory.Exists(path)
+                ? RecycleResult.Recycled
+                : RecycleResult.Failed;
         }
         catch
         {
-            return false;
+            return RecycleResult.Failed;
         }
     }
 
@@ -630,15 +724,211 @@ internal static class Icons
     }
 }
 
-/// <summary>Runs a short PowerShell script elevated (one UAC prompt) and reads the paths it reports back as failed.</summary>
+/// <summary>
+/// Runs short PowerShell scripts elevated (one UAC prompt) and reads the paths a removal reports back as failed. A removal
+/// is guarded twice: C# refuses items that fail <see cref="IsAllowed"/>, and the script repeats the same rule (a PowerShell copy,
+/// kept in step by a harness) on a manifest whose SHA-256 is fixed inside the encoded command, so a file swapped after the UAC
+/// prompt is never acted on.
+/// </summary>
 internal static class Elevated
 {
+    private static readonly System.Text.RegularExpressions.RegexOptions s_options =
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant;
+
+    private static readonly System.Text.RegularExpressions.Regex s_regKey = new(
+        @"^Registry::HKEY_(LOCAL_MACHINE|CURRENT_USER)\\SOFTWARE\\(WOW6432Node\\)?(?<seg>[^\\]+)(\\.*)?$", s_options);
+
+    private static readonly System.Text.RegularExpressions.Regex s_runKey = new(
+        @"^Registry::HKEY_(LOCAL_MACHINE|CURRENT_USER)\\SOFTWARE\\(WOW6432Node\\)?Microsoft\\Windows\\CurrentVersion\\Run(Once)?$", s_options);
+
+    private static readonly System.Text.RegularExpressions.Regex s_serviceName = new(@"^[A-Za-z0-9_.\- ]{1,128}$");
+
+    private static readonly string[] s_bannedSegments = ["Microsoft", "Classes", "Policies", "Wow6432Node", "RegisteredApplications"];
+
+    private const string FirewallRules = @"Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters\FirewallPolicy\FirewallRules";
+
+    /// <summary>
+    /// The PowerShell copy of <see cref="IsAllowed"/> plus the service check. The caller defines <c>$CriticalRoots</c> (array) and
+    /// <c>$WinDir</c> first (see <see cref="ScriptPreamble"/>). <c>Test-Allowed</c> is pure (it only reads the item itself) so a harness can
+    /// compare it with <see cref="IsAllowed"/>; <c>Test-ServiceSafe</c> reads the service registry key and is used by the removal script only.
+    /// </summary>
+    internal const string ValidationScript = """
+        $RegKeyRe = '^Registry::HKEY_(LOCAL_MACHINE|CURRENT_USER)\\SOFTWARE\\(WOW6432Node\\)?(?<seg>[^\\]+)(\\.*)?$'
+        $RunKeyRe = '^Registry::HKEY_(LOCAL_MACHINE|CURRENT_USER)\\SOFTWARE\\(WOW6432Node\\)?Microsoft\\Windows\\CurrentVersion\\Run(Once)?$'
+        $FirewallKey = 'Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters\FirewallPolicy\FirewallRules'
+
+        function Test-RegKeyPath([string]$path) {
+          if (($path -split '\\') -contains '..' -or ($path -split '\\') -contains '.') { return $false }
+          $m = [regex]::Match($path, $RegKeyRe, 'IgnoreCase')
+          if (-not $m.Success) { return $false }
+          $seg = $m.Groups['seg'].Value
+          if (@('Microsoft', 'Classes', 'Policies', 'Wow6432Node', 'RegisteredApplications') -contains $seg) { return $false }
+          return $true
+        }
+
+        function Test-Allowed([string]$kind, [string]$path, [string]$name) {
+          try {
+            if ([string]::IsNullOrEmpty($kind) -or [string]::IsNullOrEmpty($path)) { return $false }
+            if ($path -match '[\x00-\x1f\x7f]' -or $name -match '[\x00-\x1f\x7f]') { return $false }
+            if ($kind -ceq 'file') {
+              if ($path -notmatch '^[A-Za-z]:\\') { return $false }
+              $full = [IO.Path]::GetFullPath($path).TrimEnd('\')
+              $root = [IO.Path]::GetPathRoot($full)
+              $segs = @($full.Substring($root.Length).Split('\') | Where-Object { $_ -ne '' })
+              if ($segs.Count -lt 3) { return $false }
+              $win = $WinDir.TrimEnd('\')
+              if ($full -ieq $win -or $full.StartsWith($win + '\', [StringComparison]::OrdinalIgnoreCase)) { return $false }
+              foreach ($c in $CriticalRoots) {
+                $cc = ([string]$c).TrimEnd('\')
+                if ($cc.Length -eq 0) { continue }
+                if ($full -ieq $cc -or $cc.StartsWith($full + '\', [StringComparison]::OrdinalIgnoreCase)) { return $false }
+              }
+              $it = Get-Item -LiteralPath $full -Force -ErrorAction SilentlyContinue
+              if ($null -ne $it -and ($it.Attributes -band [IO.FileAttributes]::ReparsePoint)) { return $false }
+              return $true
+            }
+            if ($kind -ceq 'reg') { return (Test-RegKeyPath $path) }
+            if ($kind -ceq 'regvalue') {
+              if ([string]::IsNullOrEmpty($name)) { return $false }
+              if (Test-RegKeyPath $path) { return $true }
+              if ($path -match $RunKeyRe) { return $true }
+              if ($path -ieq $FirewallKey) { return $true }
+              return $false
+            }
+            if ($kind -ceq 'task') {
+              if ($path.Length -lt 2 -or -not $path.StartsWith('\')) { return $false }
+              if ($path.StartsWith('\Microsoft\', [StringComparison]::OrdinalIgnoreCase)) { return $false }
+              if ($path.Contains('..') -or $path.Contains('"')) { return $false }
+              return $true
+            }
+            if ($kind -ceq 'service') { return ($path -match '^[A-Za-z0-9_.\- ]{1,128}$') }
+            return $false
+          } catch { return $false }
+        }
+
+        function Test-ServiceSafe([string]$name) {
+          try {
+            $key = Get-ItemProperty -LiteralPath ('HKLM:\SYSTEM\CurrentControlSet\Services\' + $name) -ErrorAction Stop
+            if ($null -eq $key) { return $false }
+            if ($null -ne $key.Type -and (([int]$key.Type) -band 3) -ne 0) { return $false }
+            if ($null -ne $key.Start -and ([int]$key.Start -eq 0 -or [int]$key.Start -eq 1)) { return $false }
+            if ($null -eq $key.ImagePath) { return $false }
+            $img = ([Environment]::ExpandEnvironmentVariables([string]$key.ImagePath)).Trim().TrimStart('"')
+            if ($img.StartsWith($env:windir, [StringComparison]::OrdinalIgnoreCase)) { return $false }
+            if ($img.StartsWith('\SystemRoot', [StringComparison]::OrdinalIgnoreCase)) { return $false }
+            if ($img -match 'svchost') { return $false }
+            return $true
+          } catch { return $false }
+        }
+        """;
+
+    /// <summary>
+    /// The start of the removal script: refuses a link as the manifest folder (exit 4), reads the manifest bytes once into
+    /// <c>$bytes</c> and exits with code 3 unless their SHA-256 equals <c>$expectedHash</c>. Needs <c>$manifestPath</c> and <c>$expectedHash</c>.
+    /// </summary>
+    internal const string HashPrologue = """
+        function Test-DirSafe([string]$file) {
+          $d = Get-Item -LiteralPath (Split-Path -Parent $file) -Force
+          return (-not ($d.Attributes -band [IO.FileAttributes]::ReparsePoint))
+        }
+        if (-not (Test-DirSafe $manifestPath)) { exit 4 }
+        $bytes = [IO.File]::ReadAllBytes($manifestPath)
+        $sha = [Security.Cryptography.SHA256]::Create()
+        $actual = [BitConverter]::ToString($sha.ComputeHash($bytes)).Replace('-', '')
+        if ($actual -ne $expectedHash) { exit 3 }
+        """;
+
     /// <summary>One item of an elevated removal manifest.</summary>
     public sealed record Item(string Kind, string Path, string? Name = null, bool Recycle = false);
 
     /// <summary>
-    /// Removes the items in one elevated PowerShell process. Returns the failed paths, or null when the user declined the prompt.
-    /// Items are re-validated by the script (no reparse points).
+    /// The allow-list for elevated removals; the script repeats it. See the plan, section WP-0, for the rule per kind. Never throws.
+    /// </summary>
+    internal static bool IsAllowed(Item i)
+    {
+        try
+        {
+            var path = i.Path;
+            if (string.IsNullOrEmpty(i.Kind) || string.IsNullOrEmpty(path) || HasControl(path) || HasControl(i.Name))
+            {
+                return false;
+            }
+
+            switch (i.Kind)
+            {
+                case "file":
+                {
+                    if (!System.Text.RegularExpressions.Regex.IsMatch(path, @"^[A-Za-z]:\\"))
+                    {
+                        return false;
+                    }
+
+                    var full = SafePaths.Normalize(path);
+                    return SafePaths.SegmentCount(full) >= 3
+                        && !SafePaths.IsUnderWindows(full)
+                        && !SafePaths.IsCriticalOrAncestor(full)
+                        && !Win32.IsReparsePoint(full);
+                }
+
+                case "reg":
+                    return IsAllowedRegKey(path);
+
+                case "regvalue":
+                    return !string.IsNullOrEmpty(i.Name)
+                        && (IsAllowedRegKey(path) || s_runKey.IsMatch(path) || string.Equals(path, FirewallRules, StringComparison.OrdinalIgnoreCase));
+
+                case "task":
+                    return path.Length >= 2
+                        && path[0] == '\\'
+                        && !path.StartsWith(@"\Microsoft\", StringComparison.OrdinalIgnoreCase)
+                        && !path.Contains("..", StringComparison.Ordinal)
+                        && !path.Contains('"');
+
+                case "service":
+                    return s_serviceName.IsMatch(path);
+
+                default:
+                    return false;
+            }
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool HasControl(string? text) => text is not null && text.Any(c => c < 0x20 || c == 0x7f);
+
+    private static bool IsAllowedRegKey(string path)
+    {
+        var parts = path.Split('\\');
+        if (parts.Contains("..") || parts.Contains("."))
+        {
+            return false;
+        }
+
+        var m = s_regKey.Match(path);
+        return m.Success && !s_bannedSegments.Contains(m.Groups["seg"].Value, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>The manifest bytes (UTF-8, no BOM) for these items.</summary>
+    internal static byte[] BuildManifest(IEnumerable<Item> items) =>
+        JsonSerializer.SerializeToUtf8Bytes(new { items = items.Select(i => new { kind = i.Kind, path = i.Path, name = i.Name, recycle = i.Recycle }) });
+
+    /// <summary>Upper-case hex SHA-256 of the bytes.</summary>
+    internal static string HashHex(byte[] bytes) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+
+    /// <summary>The script lines that define <c>$CriticalRoots</c> (the user's critical folders) and <c>$WinDir</c> for <see cref="ValidationScript"/>.</summary>
+    internal static string ScriptPreamble()
+    {
+        static string Q(string s) => "'" + s.Replace("'", "''") + "'";
+        var roots = string.Join(",", SafePaths.CriticalRoots().Select(Q));
+        return $"$CriticalRoots = @({roots})\n$WinDir = {Q(Environment.GetFolderPath(Environment.SpecialFolder.Windows))}\n";
+    }
+
+    /// <summary>
+    /// Removes the items in one elevated PowerShell process. Items that fail <see cref="IsAllowed"/> are refused (and count as failed).
+    /// Returns the failed paths, or null when the user declined the prompt.
     /// </summary>
     public static List<string>? Remove(IReadOnlyList<Item> items)
     {
@@ -647,47 +937,89 @@ internal static class Elevated
             return [];
         }
 
+        var failed = new List<string>();
+        var allowed = new List<Item>();
+        foreach (var item in items)
+        {
+            if (IsAllowed(item))
+            {
+                allowed.Add(item);
+            }
+            else
+            {
+                failed.Add(item.Path);
+                Host.Log($"Elevated removal refused an item of kind '{item.Kind}'");
+            }
+        }
+
+        if (allowed.Count == 0)
+        {
+            return failed;
+        }
+
         var dir = Path.Combine(Path.GetTempPath(), "trayloom-elevated-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         var manifest = Path.Combine(dir, "manifest.json");
         var result = Path.Combine(dir, "result.json");
         try
         {
-            File.WriteAllText(manifest, JsonSerializer.Serialize(new { items = items.Select(i => new { kind = i.Kind, path = i.Path, name = i.Name, recycle = i.Recycle }) }), new UTF8Encoding(false));
+            var bytes = BuildManifest(allowed);
+            File.WriteAllBytes(manifest, bytes);
+            var hash = HashHex(bytes);
             var script = $$"""
                 $ErrorActionPreference = 'Stop'
-                $m = Get-Content -LiteralPath '{{manifest.Replace("'", "''")}}' -Raw | ConvertFrom-Json
+                $manifestPath = '{{manifest.Replace("'", "''")}}'
+                $resultPath = '{{result.Replace("'", "''")}}'
+                $expectedHash = '{{hash}}'
+                {{ScriptPreamble()}}
+                {{ValidationScript}}
+                {{HashPrologue}}
                 Add-Type -AssemblyName Microsoft.VisualBasic
-                $failed = @()
-                foreach ($i in $m.items) {
+                $m = [Text.Encoding]::UTF8.GetString($bytes) | ConvertFrom-Json
+                $failed = New-Object System.Collections.Generic.List[string]
+                foreach ($i in @($m.items)) {
+                  $p = [string]$i.path
                   try {
-                    if ($i.kind -eq 'reg') { Remove-Item -LiteralPath $i.path -Recurse -Force }
-                    elseif ($i.kind -eq 'regvalue') { Remove-ItemProperty -LiteralPath $i.path -Name $i.name }
-                    elseif ($i.kind -eq 'task') { schtasks.exe /delete /tn $i.path /f | Out-Null; if ($LASTEXITCODE -ne 0) { throw 'task' } }
-                    elseif ($i.kind -eq 'service') { sc.exe delete $i.path | Out-Null; if ($LASTEXITCODE -ne 0) { throw 'service' } }
-                    else {
-                      $item = Get-Item -LiteralPath $i.path -Force
+                    $kind = [string]$i.kind
+                    if (-not (Test-Allowed $kind $p ([string]$i.name))) { throw 'denied' }
+                    if ($kind -ceq 'reg') { Remove-Item -LiteralPath $p -Recurse -Force }
+                    elseif ($kind -ceq 'regvalue') { Remove-ItemProperty -LiteralPath $p -Name ([WildcardPattern]::Escape([string]$i.name)) }
+                    elseif ($kind -ceq 'task') { & "$env:SystemRoot\System32\schtasks.exe" /delete /tn $p /f | Out-Null; if ($LASTEXITCODE -ne 0) { throw 'task' } }
+                    elseif ($kind -ceq 'service') {
+                      if (-not (Test-ServiceSafe $p)) { throw 'service' }
+                      & "$env:SystemRoot\System32\sc.exe" delete $p | Out-Null; if ($LASTEXITCODE -ne 0) { throw 'service' }
+                    }
+                    elseif ($kind -ceq 'file') {
+                      $full = [IO.Path]::GetFullPath($p)
+                      $item = Get-Item -LiteralPath $full -Force
                       if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'reparse' }
                       if ($i.recycle) {
-                        if ($item.PSIsContainer) { [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($i.path, 'OnlyErrorDialogs', 'SendToRecycleBin') }
-                        else { [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($i.path, 'OnlyErrorDialogs', 'SendToRecycleBin') }
-                      } else { Remove-Item -LiteralPath $i.path -Recurse -Force }
+                        if ($item.PSIsContainer) { [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($full, 'OnlyErrorDialogs', 'SendToRecycleBin') }
+                        else { [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($full, 'OnlyErrorDialogs', 'SendToRecycleBin') }
+                      } else { Remove-Item -LiteralPath $full -Recurse -Force }
                     }
-                  } catch { $failed += $i.path }
+                    else { throw 'kind' }
+                  } catch { $failed.Add($p) }
                 }
-                ConvertTo-Json -InputObject @($failed) -Compress | Set-Content -LiteralPath '{{result.Replace("'", "''")}}' -Encoding UTF8
+                if (-not (Test-DirSafe $resultPath)) { exit 4 }
+                $json = ConvertTo-Json -InputObject @($failed.ToArray()) -Compress
+                $out = [IO.File]::Open($resultPath, 'CreateNew', 'Write')
+                try { $b = (New-Object System.Text.UTF8Encoding($false)).GetBytes($json); $out.Write($b, 0, $b.Length) } finally { $out.Dispose() }
                 """;
             if (!RunScript(script))
             {
                 return null;
             }
 
-            if (!File.Exists(result))
+            if (!File.Exists(result) || Win32.IsReparsePoint(result))
             {
-                return items.Select(i => i.Path).ToList();
+                failed.AddRange(allowed.Select(i => i.Path));
+                return failed;
             }
 
-            var failed = JsonSerializer.Deserialize<List<string>>(File.ReadAllText(result)) ?? [];
+            var reported = JsonSerializer.Deserialize<List<string>>(File.ReadAllText(result)) ?? [];
+            var known = allowed.Select(i => i.Path).ToHashSet(StringComparer.Ordinal);
+            failed.AddRange(reported.Where(known.Contains));
             return failed;
         }
         catch
@@ -732,7 +1064,8 @@ internal static class Elevated
         try
         {
             var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
-            var info = new ProcessStartInfo("powershell.exe", $"-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -EncodedCommand {encoded}")
+            var powershell = Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe");
+            var info = new ProcessStartInfo(powershell, $"-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -EncodedCommand {encoded}")
             {
                 UseShellExecute = true,
                 Verb = "runas",
@@ -748,9 +1081,18 @@ internal static class Elevated
         }
     }
 
-    /// <summary>Relaunches the current executable elevated and exits this process.</summary>
+    /// <summary>
+    /// Relaunches the current executable elevated and exits this process. Does nothing (returns false) unless
+    /// <see cref="ElevationPolicy.CanOfferElevation"/>: from a per-user folder an elevated copy would run files an unprivileged
+    /// process could have replaced.
+    /// </summary>
     public static bool RelaunchAsAdministrator()
     {
+        if (!ElevationPolicy.CanOfferElevation)
+        {
+            return false;
+        }
+
         try
         {
             var exe = Environment.ProcessPath;
@@ -762,7 +1104,8 @@ internal static class Elevated
             // The running instance is single-instance: an elevated helper waits for it to quit, then starts the elevated copy.
             var script = $"Start-Sleep -Seconds 2; Start-Process -FilePath '{exe.Replace("'", "''")}'";
             var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
-            using var helper = Process.Start(new ProcessStartInfo("powershell.exe", $"-NoProfile -WindowStyle Hidden -EncodedCommand {encoded}")
+            var powershell = Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe");
+            using var helper = Process.Start(new ProcessStartInfo(powershell, $"-NoProfile -WindowStyle Hidden -EncodedCommand {encoded}")
             {
                 UseShellExecute = true,
                 Verb = "runas",

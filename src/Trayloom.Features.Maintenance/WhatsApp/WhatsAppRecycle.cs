@@ -14,63 +14,11 @@ namespace Trayloom.Features.Maintenance;
 /// </summary>
 internal static class WaRecycle
 {
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern bool GetVolumeNameForVolumeMountPointW(string mountPoint, StringBuilder volumeName, uint length);
-
     /// <summary>A moved item: where its content now lives in the bin and where it came from.</summary>
     public sealed record Receipt(string BinPath, string OriginalPath);
 
     /// <summary>True when sending <paramref name="path"/> to the Recycle Bin will really keep it recoverable.</summary>
-    public static bool CanRecycle(string path, long size)
-    {
-        try
-        {
-            var full = Path.GetFullPath(path);
-            var root = Path.GetPathRoot(full);
-            if (string.IsNullOrEmpty(root) || root.StartsWith(@"\\", StringComparison.Ordinal))
-            {
-                return false;
-            }
-
-            var drive = new DriveInfo(root);
-            if (drive.DriveType != DriveType.Fixed)
-            {
-                return false;
-            }
-
-            long? maxBytes = null;
-            var volumeName = new StringBuilder(64);
-            if (GetVolumeNameForVolumeMountPointW(root, volumeName, (uint)volumeName.Capacity))
-            {
-                var guid = volumeName.ToString();
-                var open = guid.IndexOf('{');
-                var close = guid.IndexOf('}');
-                if (open >= 0 && close > open)
-                {
-                    using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\BitBucket\Volume\" + guid[open..(close + 1)]);
-                    if (key is not null)
-                    {
-                        if (key.GetValue("NukeOnDelete") is int nuke && nuke != 0)
-                        {
-                            return false;
-                        }
-
-                        if (key.GetValue("MaxCapacity") is int megabytes && megabytes > 0)
-                        {
-                            maxBytes = (long)megabytes * 1024 * 1024;
-                        }
-                    }
-                }
-            }
-
-            maxBytes ??= drive.TotalSize / 20;
-            return size <= maxBytes;
-        }
-        catch
-        {
-            return false;
-        }
-    }
+    public static bool CanRecycle(string path, long size) => FileOps.CanRecycle(path, size);
 
     private static string? BinFolder(string path)
     {

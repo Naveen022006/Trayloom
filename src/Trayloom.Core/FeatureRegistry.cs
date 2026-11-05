@@ -158,13 +158,13 @@ public sealed class FeatureRegistry : IActionCatalog, IDisposable
 
     /// <summary>
     /// Finds all non-abstract <see cref="IFeature"/> types with a public parameterless constructor in loaded
-    /// <c>Trayloom.Features.*</c> assemblies. Assemblies of that name found next to the executable are loaded first.
+    /// <c>Trayloom.Features.*</c> assemblies. Nothing is loaded from disk here: the App loads its named
+    /// <c>App.FeatureAssemblies</c>, so a stray DLL next to the executable is never picked up.
     /// </summary>
     public void Discover()
     {
         OnUi(() =>
         {
-            LoadFeatureAssembliesFromDisk();
             foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
                 var name = assembly.GetName().Name;
@@ -401,31 +401,6 @@ public sealed class FeatureRegistry : IActionCatalog, IDisposable
         else
         {
             _ui.Invoke(action);
-        }
-    }
-
-    private void LoadFeatureAssembliesFromDisk()
-    {
-        var loaded = AppDomain.CurrentDomain.GetAssemblies()
-            .Select(a => a.GetName().Name)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var file in Directory.EnumerateFiles(AppContext.BaseDirectory, FeatureAssemblyPrefix + "*.dll"))
-        {
-            var name = Path.GetFileNameWithoutExtension(file);
-            if (loaded.Contains(name))
-            {
-                continue;
-            }
-
-            try
-            {
-                Assembly.LoadFrom(file);
-            }
-            catch (Exception ex)
-            {
-                _log.Error($"Could not load {file}", ex);
-                Report(Path.GetFileName(file), ex);
-            }
         }
     }
 

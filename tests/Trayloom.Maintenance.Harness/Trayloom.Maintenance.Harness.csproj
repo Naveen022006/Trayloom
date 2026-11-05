@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Console harness for the Maintenance support code (FileOps, the elevated allow-list and its PowerShell copy). Not part of Trayloom.sln; run it with dotnet run on this project. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Trayloom.Maintenance.Harness</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Trayloom.Features.Maintenance\Trayloom.Features.Maintenance.csproj" />
+  </ItemGroup>
+</Project>

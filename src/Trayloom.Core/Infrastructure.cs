@@ -13,6 +13,12 @@ public static class AppPaths
     /// <summary><c>%APPDATA%\Trayloom</c> (overridable for tests with the TRAYLOOM_DATA environment variable).</summary>
     public static string Root { get; } = ResolveRoot();
 
+    /// <summary>
+    /// Per-machine data root (<c>%LOCALAPPDATA%\Trayloom</c>): <c>TRAYLOOM_LOCALDATA</c> if set, else <c>TRAYLOOM_DATA\local</c> when
+    /// <c>TRAYLOOM_DATA</c> is set, so tests and dev instances never touch the real folder.
+    /// </summary>
+    public static string LocalRoot { get; } = ResolveLocalRoot();
+
     /// <summary>The settings JSON file.</summary>
     public static string SettingsFile => Path.Combine(Root, "settings.json");
 
@@ -28,6 +34,23 @@ public static class AppPaths
         var path = Path.Combine(Root, featureId);
         Directory.CreateDirectory(path);
         return path;
+    }
+
+    private static string ResolveLocalRoot()
+    {
+        var local = Environment.GetEnvironmentVariable("TRAYLOOM_LOCALDATA");
+        if (!string.IsNullOrWhiteSpace(local))
+        {
+            return local;
+        }
+
+        var data = Environment.GetEnvironmentVariable("TRAYLOOM_DATA");
+        if (!string.IsNullOrWhiteSpace(data))
+        {
+            return Path.Combine(data, "local");
+        }
+
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Trayloom");
     }
 
     private static string ResolveRoot()
@@ -193,7 +216,7 @@ public sealed class Notifier : INotifier
     /// <inheritdoc />
     public void Show(string title, string message, NotificationLevel level = NotificationLevel.Info)
     {
-        _log.Info($"Notification ({level}): {title} - {message}");
+        _log.Info($"Notification ({level}): {title}");
         var sink = Sink;
         if (sink is null)
         {

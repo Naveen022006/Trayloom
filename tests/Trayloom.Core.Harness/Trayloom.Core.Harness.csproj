@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Console harness for the Core safety helpers (SafePaths, SafeLinks, ElevationPolicy, AtomicFile, StartupRecovery). Not part of Trayloom.sln; run it with dotnet run on this project. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Trayloom.Core.Harness</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Trayloom.Core\Trayloom.Core.csproj" />
+  </ItemGroup>
+</Project>

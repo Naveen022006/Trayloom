@@ -327,9 +327,39 @@ public static class UiKit
         }
     }
 
-    /// <summary>Opens a URL in the default browser (best effort).</summary>
+    /// <summary>
+    /// Opens a web URL (or mailto) in the default program, only when <see cref="SafeLinks.IsWebUrl"/> accepts it. Returns false,
+    /// opening nothing, otherwise.
+    /// </summary>
+    public static bool OpenWebUrl(string url)
+    {
+        if (!SafeLinks.IsWebUrl(url, out var uri) || uri is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Opens a URL in the default browser (best effort). Refuses anything but a web URL or one of the fixed
+    /// <c>ms-settings:</c>, <c>windowsdefender:</c> and <c>ms-windows-store:</c> schemes.
+    /// </summary>
     public static void OpenUrl(string url)
     {
+        if (!SafeLinks.IsAllowedShellUri(url))
+        {
+            return;
+        }
+
         try
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });

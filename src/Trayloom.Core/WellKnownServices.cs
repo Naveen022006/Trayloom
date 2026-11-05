@@ -120,6 +120,13 @@ public interface IRecordingState
 
     /// <summary>Raised when the state changed (any thread).</summary>
     event Action? Changed;
+
+    /// <summary>
+    /// Stops the recording and finalises the file, called on the UI thread before quit or uninstall. True when the take is safely
+    /// written within <paramref name="budget"/>. The default only reports "nothing to finish" (true when not recording); the
+    /// Capture feature overrides it.
+    /// </summary>
+    Task<bool> StopAndFinishAsync(TimeSpan budget) => Task.FromResult(!IsRecording);
 }
 
 /// <summary>A running process offered by <see cref="IProcessKillService"/>.</summary>

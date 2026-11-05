@@ -4,6 +4,9 @@
     <RootNamespace>Trayloom.Features.Maintenance</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Trayloom.Maintenance.Harness" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Trayloom.Core\Trayloom.Core.csproj" />
   </ItemGroup>
 </Project>

@@ -100,6 +100,7 @@ internal static class Win32
     public const ushort FOF_NOCONFIRMATION = 0x0010;
     public const ushort FOF_ALLOWUNDO = 0x0040;
     public const ushort FOF_NOERRORUI = 0x0400;
+    public const ushort FOF_WANTNUKEWARNING = 0x4000;
 
     public const uint SHERB_NOCONFIRMATION = 1;
     public const uint SHERB_NOPROGRESSUI = 2;
