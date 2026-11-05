@@ -105,6 +105,7 @@ internal static class InstallManager
         var source = CurrentDirectory;
         var destination = InstallRoot;
         log.Info($"Installing from {source} to {destination}");
+        CheckSourceFolder(source);
 
         // a window guardian is a Trayloom.exe of its own and would keep the installed executable locked
         WindowGuardianClient.StopAndWait(10_000);
@@ -170,6 +171,39 @@ internal static class InstallManager
 
         log.Info("Install finished");
         return exe;
+    }
+
+    /// <summary>
+    /// Refuses a source folder that is not a Trayloom release folder (no Trayloom.Core.dll) or that holds far more than Trayloom
+    /// (a zip extracted straight into Downloads would copy the whole folder).
+    /// </summary>
+    private static void CheckSourceFolder(string source)
+    {
+        var message = Loc.T("This folder has more than Trayloom in it. Extract the zip into its own folder and run Trayloom.exe from there.");
+        if (!File.Exists(Path.Combine(source, "Trayloom.Core.dll")))
+        {
+            throw new InvalidOperationException(message);
+        }
+
+        long total = 0;
+        var count = 0;
+        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        {
+            count++;
+            try
+            {
+                total += new FileInfo(file).Length;
+            }
+            catch (IOException)
+            {
+                // unreadable: counted anyway
+            }
+
+            if (count > 3000 || total > 1L * 1024 * 1024 * 1024)
+            {
+                throw new InvalidOperationException(message);
+            }
+        }
     }
 
     private static void CopyFile(string from, string to, ILog log)
@@ -270,15 +304,70 @@ internal static class InstallManager
         var later = new List<string>();
         if (Directory.Exists(InstallRoot))
         {
-            later.Add(InstallRoot);
+            if (LooksLikeOurs(InstallRoot, FolderKind.Install))
+            {
+                later.Add(InstallRoot);
+            }
+            else
+            {
+                log.Warn("Not deleting " + InstallRoot + ": it does not look like a Trayloom install folder");
+            }
         }
 
-        if (options.RemoveSettings && Directory.Exists(AppPaths.Root))
+        if (options.RemoveSettings)
         {
-            later.Add(AppPaths.Root);
+            foreach (var (folder, kind) in new[] { (AppPaths.Root, FolderKind.Data), (AppPaths.LocalRoot, FolderKind.Local) })
+            {
+                if (!Directory.Exists(folder))
+                {
+                    continue;
+                }
+
+                if (LooksLikeOurs(folder, kind))
+                {
+                    later.Add(folder);
+                }
+                else
+                {
+                    log.Warn("Not deleting " + folder + ": it does not look like a Trayloom data folder");
+                }
+            }
         }
 
         return later;
+    }
+
+    private enum FolderKind
+    {
+        Install,
+        Data,
+        Local,
+    }
+
+    /// <summary>
+    /// A last check before a folder is handed to the recursive delete: it must not be a system folder (or hold one), must be at least
+    /// three levels deep and, for the install and data folders, must contain Trayloom's own marker files.
+    /// </summary>
+    private static bool LooksLikeOurs(string folder, FolderKind kind)
+    {
+        try
+        {
+            if (SafePaths.IsCriticalOrAncestor(folder) || SafePaths.SegmentCount(folder) < 3)
+            {
+                return false;
+            }
+
+            return kind switch
+            {
+                FolderKind.Install => File.Exists(Path.Combine(folder, ExeName)) && File.Exists(Path.Combine(folder, ManifestName)),
+                FolderKind.Data => File.Exists(Path.Combine(folder, "settings.json")) || Directory.Exists(Path.Combine(folder, "logs")),
+                _ => true, // the local root is the default %LOCALAPPDATA%\Trayloom or came from TRAYLOOM_LOCALDATA / TRAYLOOM_DATA
+            };
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     /// <summary>

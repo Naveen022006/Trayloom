@@ -92,7 +92,10 @@ internal static class GitCli
 
     private static string? _path;
 
-    /// <summary>The first existing git.exe on PATH, then in the usual install folders.</summary>
+    /// <summary>
+    /// The first existing git.exe in the Git for Windows folders under Program Files (which an unprivileged process cannot replace),
+    /// then in a per-user install, and only then on PATH.
+    /// </summary>
     public static string? Find(bool refresh = false)
     {
         if (!refresh && _path is not null && File.Exists(_path))
@@ -101,6 +104,20 @@ internal static class GitCli
         }
 
         var candidates = new List<string>();
+        foreach (var programs in new[]
+        {
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+            Environment.GetEnvironmentVariable("ProgramW6432") ?? "",
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+        })
+        {
+            if (programs.Length > 0)
+            {
+                candidates.Add(Path.Combine(programs, "Git", "cmd", "git.exe"));
+            }
+        }
+
+        candidates.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Git", "cmd", "git.exe"));
         foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
         {
             try
@@ -113,8 +130,6 @@ internal static class GitCli
             }
         }
 
-        candidates.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Git", "cmd", "git.exe"));
-        candidates.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Git", "cmd", "git.exe"));
         _path = candidates.FirstOrDefault(File.Exists);
         return _path;
     }
@@ -141,7 +156,8 @@ internal static class GitCli
         };
 
         // The built-in file system monitor would leave a daemon running beside the repository; a status without it is only slower.
-        foreach (var a in new[] { "-C", root, "--no-optional-locks", "-c", "core.fsmonitor=false" })
+        // A repository's own config can name a hooks folder, an external diff tool or a pager; status needs none of them.
+        foreach (var a in new[] { "-C", root, "--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=NUL", "-c", "diff.external=", "-c", "core.pager=cat" })
         {
             psi.ArgumentList.Add(a);
         }

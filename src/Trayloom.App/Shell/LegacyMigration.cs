@@ -23,6 +23,20 @@ internal static class LegacyMigration
     public static void Run()
     {
         var notes = new List<(bool Warn, string Text)>();
+        var marker = Path.Combine(AppPaths.Root, "legacy-migrated");
+        try
+        {
+            if (File.Exists(marker))
+            {
+                return; // done on an earlier start
+            }
+        }
+        catch (Exception)
+        {
+            // unreadable: run the migration, it is idempotent
+        }
+
+        var completed = false;
         try
         {
             QuitLegacyInstance(notes);
@@ -30,7 +44,7 @@ internal static class LegacyMigration
             if (!dataOverridden)
             {
                 var old = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), LegacyNames.FolderName);
-                if (MoveFolder(old, AppPaths.Root, notes))
+                if (LooksLikeOldSettingsFolder(old, notes) && MoveFolder(old, AppPaths.Root, notes))
                 {
                     RenameLegacyLogs(notes);
                     RewriteMovedPaths(old, AppPaths.Root, notes);
@@ -40,10 +54,15 @@ internal static class LegacyMigration
             if (!dataOverridden && Env("TRAYLOOM_LOCALDATA") is null)
             {
                 var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-                MoveFolder(Path.Combine(local, LegacyNames.FolderName), Path.Combine(local, "Trayloom"), notes);
+                var oldLocal = Path.Combine(local, LegacyNames.FolderName);
+                if (LooksLikeOldLocalFolder(oldLocal, notes))
+                {
+                    MoveFolder(oldLocal, Path.Combine(local, "Trayloom"), notes);
+                }
             }
 
             MigrateAutoStart(notes, null);
+            completed = true;
         }
         catch (Exception ex)
         {
@@ -52,6 +71,73 @@ internal static class LegacyMigration
         finally
         {
             Write(notes, new FileLog());
+        }
+
+        if (completed)
+        {
+            try
+            {
+                Directory.CreateDirectory(AppPaths.Root);
+                File.WriteAllText(marker, DateTime.UtcNow.ToString("o"));
+            }
+            catch (Exception)
+            {
+                // the next start repeats the (idempotent) migration
+            }
+        }
+    }
+
+    /// <summary>Only a folder whose settings.json is a Trayloom-style settings object (with "scopes") is moved: a folder that merely has the old name is not ours.</summary>
+    private static bool LooksLikeOldSettingsFolder(string folder, List<(bool Warn, string Text)> notes)
+    {
+        try
+        {
+            var file = Path.Combine(folder, "settings.json");
+            if (!File.Exists(file))
+            {
+                return false;
+            }
+
+            var ok = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(file)) is System.Text.Json.Nodes.JsonObject root && root["scopes"] is System.Text.Json.Nodes.JsonObject;
+            if (!ok)
+            {
+                notes.Add((true, $"{folder} has a settings.json that is not a settings file; it was not moved."));
+            }
+
+            return ok;
+        }
+        catch (Exception ex)
+        {
+            notes.Add((true, $"could not check {folder}: {ex.Message}"));
+            return false;
+        }
+    }
+
+    /// <summary>Only a local data folder with one of the known children is moved.</summary>
+    private static bool LooksLikeOldLocalFolder(string folder, List<(bool Warn, string Text)> notes)
+    {
+        try
+        {
+            if (!Directory.Exists(folder))
+            {
+                return false;
+            }
+
+            var known = File.Exists(Path.Combine(folder, "clipboard.json"))
+                || Directory.Exists(Path.Combine(folder, "Clipboard"))
+                || Directory.Exists(Path.Combine(folder, "RecentCaptures"))
+                || Directory.Exists(Path.Combine(folder, "Recordings"));
+            if (!known)
+            {
+                notes.Add((true, $"{folder} holds none of the known data folders; it was not moved."));
+            }
+
+            return known;
+        }
+        catch (Exception ex)
+        {
+            notes.Add((true, $"could not check {folder}: {ex.Message}"));
+            return false;
         }
     }
 
@@ -129,10 +215,25 @@ internal static class LegacyMigration
             }
 
             notes.Add((true, "the old instance did not quit in time; closing it."));
+            var oldProgramFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", LegacyNames.FolderName);
             foreach (var process in Process.GetProcessesByName(LegacyNames.ProcessName).Where(p => p.Id != Environment.ProcessId))
             {
-                process.Kill();
-                process.WaitForExit(5_000);
+                try
+                {
+                    // only the old installed copy: a development build or another program with that name is not ours to kill
+                    var image = process.MainModule?.FileName;
+                    if (image is null || !SafePaths.IsUnder(image, oldProgramFolder))
+                    {
+                        continue;
+                    }
+
+                    process.Kill();
+                    process.WaitForExit(5_000);
+                }
+                catch (Exception)
+                {
+                    // access denied or already gone
+                }
             }
         }
         catch (Exception ex)
@@ -254,7 +355,7 @@ internal static class LegacyMigration
                 .Replace(oldRoot, newRoot, StringComparison.OrdinalIgnoreCase);
             if (!string.Equals(text, rewritten, StringComparison.Ordinal))
             {
-                File.WriteAllText(file, rewritten, new System.Text.UTF8Encoding(false));
+                AtomicFile.WriteAllText(file, rewritten);
                 notes.Add((false, "updated paths in settings.json that pointed into the old folder."));
             }
         }

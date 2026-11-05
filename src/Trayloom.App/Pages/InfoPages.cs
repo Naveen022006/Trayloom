@@ -92,37 +92,81 @@ internal static class AboutPage
         identity.Add(col);
         stack.AddSpaced(identity, 20);
 
-        // Updates.
+        // Updates. Notify only: Trayloom asks GitHub about a newer version and links to the release page.
         var updates = new SettingsCard(Loc.T("Updates"));
         updates.Add(Toggle(s, AppKeys.AutoCheckUpdates, Loc.T("Check for updates automatically")));
-        var beta2 = Toggle(s, AppKeys.IncludeBetaUpdates, Loc.T("Receive beta updates"));
-        updates.Add(beta2);
+        updates.Add(Toggle(s, AppKeys.IncludeBetaUpdates, Loc.T("Receive beta updates")));
         updates.AddCaption(Loc.T("Beta versions include features in development and may contain bugs or incomplete behavior."));
-        updates.Add(Toggle(s, AppKeys.ShowReleaseNotesBeforeUpdate, Loc.T("Show what’s new before updating")));
-        if (s.App.Get<bool>(AppKeys.ReleaseNotesOnUpdate))
-        {
-            updates.AddCaption(Loc.T("What changed in your features still appears after each update."));
-        }
-
-        updates.Add(Toggle(s, AppKeys.ReleaseNotesOnUpdate, Loc.T("Show what’s new after updating")));
+        updates.AddCaption(Loc.T("Trayloom asks GitHub about once a day whether a newer version exists. Nothing is downloaded or installed; you get a link to the release page."));
         var status = new StackPanel { Orientation = Orientation.Horizontal };
-        var last = s.App.Get<string>("updateLastChecked") ?? string.Empty;
         var checkButton = UiKit.Button(Loc.T("Check now"), ButtonKind.Bordered, 13);
-        checkButton.Click += (_, _) =>
+        var lastChecked = new TextBlock();
+        void Refresh()
         {
             status.Children.Clear();
-            status.Children.Add(UiKit.Icon("", 13, ThemeKeys.Green));
-            var text = UiKit.Text(Loc.T("You’re on the latest version."), 12.5, FontWeights.Normal, ThemeKeys.TextPrimary);
-            text.Margin = new Thickness(6, 0, 0, 0);
-            status.Children.Add(text);
-            s.App.Set("updateLastChecked", DateTime.Now.ToString("g"));
+            var service = s.Updates;
+            if (service is null)
+            {
+                return;
+            }
+
+            checkButton.IsEnabled = service.State != UpdateState.Checking;
+            switch (service.State)
+            {
+                case UpdateState.Checking:
+                    status.Children.Add(UiKit.Text(Loc.T("Checking…"), 12.5, FontWeights.Normal, ThemeKeys.TextPrimary));
+                    break;
+                case UpdateState.UpToDate:
+                    status.Children.Add(UiKit.Icon("\uE930", 13, ThemeKeys.Green));
+                    var ok = UiKit.Text(Loc.T("You’re on the latest version."), 12.5, FontWeights.Normal, ThemeKeys.TextPrimary);
+                    ok.Margin = new Thickness(6, 0, 0, 0);
+                    status.Children.Add(ok);
+                    break;
+                case UpdateState.Available:
+                    status.Children.Add(UiKit.Text(Loc.F("Update available: {0}", service.LatestVersion), 12.5, FontWeights.SemiBold, ThemeKeys.TextPrimary));
+                    var url = service.ReleaseUrl;
+                    var view = UiKit.Button(Loc.T("View release"), ButtonKind.Bordered, 13, onClick: () =>
+                    {
+                        if (url is not null)
+                        {
+                            UiKit.OpenUrl(url);
+                        }
+                    });
+                    view.Margin = new Thickness(10, 0, 0, 0);
+                    status.Children.Add(view);
+                    break;
+                case UpdateState.Failed:
+                    status.Children.Add(UiKit.Text(Loc.F("Couldn’t check: {0}", service.FailureText ?? string.Empty), 12.5, FontWeights.Normal, ThemeKeys.TextPrimary));
+                    break;
+            }
+
+            lastChecked.Text = service.LastCheckedUtc is { } when
+                ? Loc.F("Last checked: {0}", when.ToLocalTime().ToString("g"))
+                : string.Empty;
+            lastChecked.Visibility = lastChecked.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        checkButton.Click += (_, _) =>
+        {
+            if (s.Updates is { } service)
+            {
+                _ = service.CheckAsync(manual: true);
+            }
         };
+        if (s.Updates is { } svc)
+        {
+            svc.Changed += Refresh;
+            stack.Unloaded += (_, _) => svc.Changed -= Refresh;
+        }
+
+        lastChecked.FontSize = 11;
+        lastChecked.TextWrapping = TextWrapping.Wrap;
+        lastChecked.Margin = new Thickness(0, 4, 0, 0);
+        lastChecked.SetResourceReference(TextBlock.ForegroundProperty, ThemeKeys.TextTertiary);
         updates.Add(status);
         updates.Add(checkButton);
-        if (last.Length > 0)
-        {
-            updates.AddCaption(Loc.F("Last checked: {0}", last));
-        }
+        updates.Add(lastChecked);
+        Refresh();
 
         stack.AddSpaced(updates, 20);
         return stack;

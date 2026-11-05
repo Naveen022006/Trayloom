@@ -21,7 +21,13 @@ so `Trayloom-Setup.cmd` is the setup equivalent.
 
 ## Developer flags
 
-A second launch hands these to the running copy.
+A second launch hands these to the running copy. **Every flag below needs `TRAYLOOM_DEV=1`** in the environment of the
+running copy, except `--open-settings`, `--open-panel` and `--open-menu` (they only open Trayloom's own windows) and the
+installer flags (`--install`, `--uninstall`, `--quit`, `--relaunch`, `--just-installed`, `--no-onboarding`). Without it the
+running copy logs `Developer flag ignored: <flag> (set TRAYLOOM_DEV=1)` once per flag and does nothing. A copy running as
+administrator ignores the hand-over file (`devcmd.txt`) altogether, and a stale `devcmd.txt` is deleted at start. `--dump-*`
+and `--shot*` accept any output path on purpose (the screenshot scripts write into the repository's `screenshots/`); the gate
+and the never-elevated rule are what keep that safe.
 
 `--open-settings <page#anchor>`, `--open-panel [tab]`, `--open-menu`, `--search <text>`, `--action <feature> <action>`,
 `--dev-install <id>`, `--dev-uninstall <id>`, `--close-panel`, `--dump-info <file>` (features, actions, panel utilities,
@@ -60,6 +66,17 @@ displays) and `dev-place-reset`.
 ## Isolating experiments
 
 * `TRAYLOOM_DATA` moves the settings and logs folder (default `%APPDATA%\Trayloom`).
+* `TRAYLOOM_LOCALDATA` moves the local data folder (default `%LOCALAPPDATA%\Trayloom`, or `TRAYLOOM_DATA\local` when
+  `TRAYLOOM_DATA` is set). `CLAUDE_CONFIG_DIR` redirects the Claude Code `settings.json` the hook is written to, so a test never
+  touches the real `~\.claude`.
+* `TRAYLOOM_DEV=1` enables the developer flags (above) and the dev-only feature actions; a development build (running from
+  `bin\Debug` or `bin\Release`) never checks for updates by itself.
+* `TRAYLOOM_UNINSTALLER_TEST_KEY` (Uninstaller tests) and `auto-quit-only.txt` (Quit on close tests) are described with those
+  features' test notes.
+* Recovery hooks: a class that implements `IStartupRecovery` (public, parameterless constructor) is found by reflection in the
+  loaded `Trayloom*` assemblies and run by `StartupRecovery.RunAll` at start (`RecoveryStage.Startup`, 3 s budget), on a
+  terminating crash (`Crash`, 3 s) and during uninstall (`Uninstall`, 10 s; both `Trayloom.exe --uninstall` and Advanced >
+  Uninstall completely). A hook may change Windows only when a journal written by Trayloom says Trayloom changed it.
 * `TRAYLOOM_INSTANCE=<name>` (with `TRAYLOOM_DATA`) lets a development copy run beside the installed one; flags and `--quit` go to
   the copy with the same name.
 * `TRAYLOOM_NO_INSTALL_PROMPT=1` hides the install offer; builds run from `bin\Debug` / `bin\Release` never show it.

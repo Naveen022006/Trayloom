@@ -196,8 +196,11 @@ internal sealed class UninstallWindow : Window
         text.Margin = new Thickness(0, 8, 0, 14);
         body.Children.Add(text);
         var card = new SettingsCard();
-        card.Add(new SettingsRow("", Loc.T("Also delete my settings"), Loc.T("Your feature choices, shortcuts and Scratchpad notes. Keep them if you might reinstall later."), new MacSwitch(false, SwitchSize.Regular, on => _removeSettings = on)));
+        card.Add(new SettingsRow("", Loc.T("Also delete my data"), Loc.T("Settings, Scratchpad notes, clipboard history, recent screenshots, unsaved recordings and caches. Keep them if you might reinstall later."), new MacSwitch(false, SwitchSize.Regular, on => _removeSettings = on)));
         body.Children.Add(card);
+        var restore = UiParts.Paragraph(Loc.T("Changes Trayloom made to Windows, such as the lid setting or a muted microphone, are put back. Its Claude Code hook is removed."), 12, ThemeKeys.TextTertiary, 14);
+        restore.Margin = new Thickness(0, 12, 0, 0);
+        body.Children.Add(restore);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
         var cancel = UiKit.Button(Loc.T("Cancel"), ButtonKind.Bordered, 13, onClick: Close);
         cancel.Padding = new Thickness(16, 6, 16, 6);

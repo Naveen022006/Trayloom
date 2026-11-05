@@ -137,6 +137,10 @@ internal static class OpenCodeDatabase
             using var busy = connection.CreateCommand();
             busy.CommandText = "PRAGMA busy_timeout = 2000";
             busy.ExecuteNonQuery();
+            // The file belongs to another program: never let SQL stored inside it (views, triggers, generated columns) call functions.
+            using var trust = connection.CreateCommand();
+            trust.CommandText = "PRAGMA trusted_schema = OFF";
+            trust.ExecuteNonQuery();
             using var probe = connection.CreateCommand();
             probe.CommandText = "SELECT 1 FROM sqlite_master LIMIT 1";
             probe.ExecuteScalar();
@@ -189,6 +193,14 @@ internal static class OpenCodeDatabase
 
     private static string FieldOf(string column, string path) => $"(CASE WHEN json_valid({column}) THEN json_extract({column}, '{path}') END)";
 
+    private static bool IsPlainTable(SqliteConnection db, string name)
+    {
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = "SELECT type FROM sqlite_master WHERE name = $n";
+        cmd.Parameters.AddWithValue("$n", name);
+        return cmd.ExecuteScalar() as string == "table";
+    }
+
     private static bool Exists(SqliteConnection db, string query)
     {
         using var cmd = db.CreateCommand();
@@ -203,6 +215,12 @@ internal static class OpenCodeDatabase
         var version2 = Exists(db, "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'session_v2'");
         var messageTable = version2 ? "session_message" : "message";
         var sessionTable = version2 ? "session_v2" : "session";
+        if (!IsPlainTable(db, messageTable) || !IsPlainTable(db, sessionTable))
+        {
+            // A view in place of a table could run arbitrary queries of the other program's choosing: read nothing.
+            return;
+        }
+
         if (!Resumes(db, cursor, messageTable))
         {
             Restart(cursor, true, line);

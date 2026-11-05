@@ -27,4 +27,7 @@ internal sealed class ShellServices
     public IShortcutService Shortcuts => Host.Shortcuts;
 
     public ILog Log => Host.Log;
+
+    /// <summary>The update notifier (set when the shell starts).</summary>
+    public UpdateService? Updates { get; set; }
 }

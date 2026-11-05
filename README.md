@@ -321,7 +321,19 @@ What to expect:
 ## Privacy
 
 * No account, no sign-in, no telemetry, no ads.
-* Clipboard history, snippets, scratchpads, captures and settings are stored in `%APPDATA%\Trayloom` on your PC.
+* Clipboard history, snippets, scratchpads, captures and settings are stored in `%APPDATA%\Trayloom` on your PC; things too big or
+  too private for a settings file (recent captures, **unsaved recordings**, clipboard history, caches) are in `%LOCALAPPDATA%\Trayloom`.
+  Both folders stay on your PC. Notification text is never saved; at most a notification’s title appears in the log.
+* **Update check.** About once a day Trayloom sends one request to `api.github.com` (the public list of this project’s releases) to
+  see whether a newer version exists. It sends no account, no identifier and no list of what you have installed, only the usual
+  web headers and the program name and version. Nothing is downloaded or installed: you get a link to the release page. Turn it off in
+  Settings › About › Updates.
+* **Other programs’ update feeds.** The *App updates* tool reads the public update feeds of Electron apps you have installed
+  (for example `latest.yml` on the vendor’s server) and asks `winget` for package updates, when you use that tool.
+* **YouTube Music search** uses an unofficial web service of music.youtube.com (see below) and **GitHub** answers are cached in
+  `%APPDATA%\Trayloom\notch-github\cache.json` (the last snapshot of your notifications and pull requests; no token in it, the token is `token.bin` next to it, encrypted for your Windows account).
+* **Logs.** `%APPDATA%\Trayloom\logs\trayloom.log` holds feature names, counts and error messages, not the contents of your
+  clipboard, notes or captures. Look through it before you post it in an issue.
 * The only online features are ones you switch on yourself: lyrics lookup, Spotify and YouTube Music search, GitHub status
   (after you connect), app and package updates, and links you choose to open. Feedback opens a GitHub issue in your browser.
 * Tools that need a Windows permission (screen capture, microphone, camera, calendar, notifications) list it on the
@@ -348,7 +360,10 @@ What to expect:
   works around that setting. You can sign the files yourself, use a PC where Smart App Control is off or in evaluation mode,
   or build Trayloom on that PC.
 * **Elevated windows.** Tools that work with input (smooth scrolling, focus follows mouse, Super key, snippets, protection,
-  the switcher) cannot affect windows running as administrator unless Trayloom also runs as administrator.
+  the switcher) cannot affect windows of programs running as administrator. Trayloom does not offer to run as administrator,
+  because the folder it is installed in can be changed without administrator rights, and a copy started with administrator
+  rights would run whatever is in that folder. If you start it as administrator by hand it restarts itself without those
+  rights. Work that needs administrator rights (the cleaner, the uninstaller) asks Windows for permission one task at a time.
 * **First start.** The first start after a fresh copy can take around 10 seconds while Windows scans the new files. Later
   starts take about a second.
 * **Something not working?** Right-click the tray icon > **Report a problem...** opens the folder with the log

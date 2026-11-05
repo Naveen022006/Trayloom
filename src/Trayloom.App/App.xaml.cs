@@ -42,6 +42,18 @@ public partial class App : Application
         "Trayloom.Features.Maintenance",
     ];
 
+    /// <summary>
+    /// Developer flags (<c>--action</c>, <c>--shot</c>, <c>--dump-*</c> ...) work only when <c>TRAYLOOM_DEV=1</c> is set in the environment
+    /// of the running copy. They can write files and invoke feature actions, so a stranger-installed copy must not obey them.
+    /// </summary>
+    private static bool DevMode => Environment.GetEnvironmentVariable("TRAYLOOM_DEV") == "1";
+
+    /// <summary>The flags that stay available without <c>TRAYLOOM_DEV</c>: they only open Trayloom's own windows.</summary>
+    private static readonly string[] AlwaysAllowed = ["--open-settings", "--open-panel", "--open-menu"];
+
+    /// <summary>True when Trayloom runs elevated from a user-writable folder and could not restart itself without administrator rights.</summary>
+    internal static bool RestrictedElevated { get; private set; }
+
     private Mutex? _mutex;
     private EventWaitHandle? _activateEvent;
     private RegisteredWaitHandle? _activateWait;
@@ -66,6 +78,29 @@ public partial class App : Application
         {
             Start(e);
         }
+        catch (Exception ex)
+        {
+            try
+            {
+                _host?.Log.Error("Trayloom could not start", ex);
+            }
+            catch (Exception)
+            {
+                // the log itself may be what failed
+            }
+
+            StartupSplash.Disarm();
+            try
+            {
+                Dialogs.Show(null, Loc.T("Trayloom couldn’t start"), ex.Message, [Loc.T("OK")]);
+            }
+            catch (Exception)
+            {
+                // nothing more can be shown
+            }
+
+            Shutdown();
+        }
         finally
         {
             StartupSplash.Disarm();
@@ -80,8 +115,21 @@ public partial class App : Application
             return;
         }
 
+        // An administrator copy started by hand from a folder an unprivileged user can write to would run code a normal process could
+        // have replaced: start again without administrator rights (through Explorer) and leave. Development builds are excepted.
+        if (ElevationPolicy.IsElevated && !ElevationPolicy.IsAdminOwnedInstall && !InstallManager.IsDevelopmentBuild)
+        {
+            if (TryRestartWithoutElevation())
+            {
+                Shutdown();
+                return;
+            }
+
+            RestrictedElevated = true;
+        }
+
         // Developer flag: pretend start-up is slow (to see the "Starting Trayloom…" toast): --slow-start <milliseconds>.
-        var slowIndex = Array.FindIndex(e.Args, a => a == "--slow-start");
+        var slowIndex = DevMode ? Array.FindIndex(e.Args, a => a == "--slow-start") : -1;
         if (slowIndex >= 0 && slowIndex + 1 < e.Args.Length && int.TryParse(e.Args[slowIndex + 1], out var slowMs))
         {
             Thread.Sleep(Math.Clamp(slowMs, 0, 30_000));
@@ -118,9 +166,9 @@ public partial class App : Application
             // Ask the running instance to quit (--quit) or to recover (show the panel / Settings), then leave.
             try
             {
-                if (!quitRequested && e.Args.Any(a => DevFlags.Contains(a)))
+                if (!quitRequested && e.Args.Any(a => DevFlags.Contains(a)) && (DevMode || e.Args.Where(a => DevFlags.Contains(a)).All(a => AlwaysAllowed.Contains(a))))
                 {
-                    // Hand the developer flags to the running instance.
+                    // Hand the developer flags to the running instance (only the always-allowed ones unless TRAYLOOM_DEV=1).
                     File.WriteAllLines(DevCommandFile, e.Args);
                 }
 
@@ -136,6 +184,16 @@ public partial class App : Application
             _mutex = null;
             Shutdown();
             return;
+        }
+
+        // A command file left behind by an earlier run must not be run by this one.
+        try
+        {
+            File.Delete(DevCommandFile);
+        }
+        catch (Exception)
+        {
+            // not there, or locked: the activation handler checks again
         }
 
         // Created before the (possibly slow, cold-disk) feature loading so --quit / activation requests from a second
@@ -198,7 +256,23 @@ public partial class App : Application
             args.Handled = true;
         };
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+        {
             log.Error("Unhandled exception" + (args.IsTerminating ? " (terminating)" : string.Empty), args.ExceptionObject as Exception);
+            if (args.IsTerminating)
+            {
+                // The process is going down: put back what Trayloom changed in Windows. No UI thread is needed for this.
+                try
+                {
+                    StartupRecovery.RunAll(RecoveryStage.Crash, log, TimeSpan.FromSeconds(3));
+                    var stopper = Task.Run(() => _host?.Features.StopAll());
+                    stopper.Wait(TimeSpan.FromSeconds(2));
+                }
+                catch (Exception)
+                {
+                    // nothing more can be done while crashing
+                }
+            }
+        };
         TaskScheduler.UnobservedTaskException += (_, args) =>
         {
             log.Error("Unobserved task exception", args.Exception);
@@ -220,11 +294,18 @@ public partial class App : Application
         _host.Features.ProblemReported += _problems.Add;
         log.Info(SmartAppControl.Describe(SmartAppControl.GetState()));
         LoadFeatureAssemblies(log, _problems);
+
+        // Undo anything a previous run left behind (lid action, muted microphone, pending Bluetooth ...), each hook driven by its journal.
+        StartupRecovery.RunAll(RecoveryStage.Startup, log, TimeSpan.FromSeconds(3));
         _shell = new AppShell(_host) { InstallOffer = manual => OfferInstall(manual, null) };
         _host.Contributions.Discover();
         _host.Runtime.Initialize();
         MigratePanelKeys();
         _shell.Start();
+        if (_host.Store.WasReset)
+        {
+            _host.Notifier.Show(Loc.T("Settings were reset"), Loc.T("Trayloom couldn’t read its settings file and started with defaults. A copy was kept as settings.json.bad."));
+        }
 
         var justInstalled = e.Args.Any(a => string.Equals(a, "--just-installed", StringComparison.OrdinalIgnoreCase));
         var forceInstall = e.Args.Any(a => string.Equals(a, "--install", StringComparison.OrdinalIgnoreCase));
@@ -373,6 +454,11 @@ public partial class App : Application
         List<string> later;
         try
         {
+            // Give back any window a killed run left hidden, then undo every Windows change Trayloom made (lid, microphone, Bluetooth,
+            // the Claude Code hook) before the program files go. Feature load errors are only logged: the uninstall must still work.
+            GiveBackStaleWindows(log);
+            LoadFeatureAssemblies(log, null);
+            StartupRecovery.RunAll(RecoveryStage.Uninstall, log, TimeSpan.FromSeconds(10));
             later = InstallManager.Uninstall(options, log);
         }
         catch (Exception ex)
@@ -386,12 +472,36 @@ public partial class App : Application
         if (!quiet)
         {
             Dialogs.Show(null, Loc.T("Trayloom was uninstalled"), options.RemoveSettings
-                ? Loc.T("The program files, shortcuts and your settings are being removed.")
+                ? Loc.T("The program files, shortcuts and your data are being removed.")
                 : Loc.T("The program files and shortcuts are being removed. Your settings were kept, so a later install picks up where you left off."), [Loc.T("OK")]);
         }
 
         InstallManager.ScheduleDeletion(later, log);
         Shutdown();
+    }
+
+    /// <summary>Gives back foreign windows a killed run left hidden or parked (bounded at 5 s, on a worker).</summary>
+    private static void GiveBackStaleWindows(ILog log)
+    {
+        try
+        {
+            var task = Task.Run(() =>
+            {
+                if (WindowGuardianState.TakeStale() is { } stale)
+                {
+                    var left = WindowRescue.RescueAll(stale, new PrefixedLog(log, "guardian"), heuristics: true);
+                    WindowGuardianState.ReleaseStale(stale, left);
+                }
+            });
+            if (!task.Wait(TimeSpan.FromSeconds(5)))
+            {
+                log.Warn("Giving the windows back took too long; the guardian record was kept");
+            }
+        }
+        catch (Exception ex)
+        {
+            log.Warn("Giving the windows back failed: " + ex.Message);
+        }
     }
 
     /// <summary>Asks a running Trayloom to quit and waits for it (the single-instance mutex is free again).</summary>
@@ -429,9 +539,21 @@ public partial class App : Application
             else
             {
                 log.Warn("The running Trayloom did not quit in time; closing it");
+                // Only a copy that runs from the install folder: a separate development or portable copy is not ours to kill.
                 foreach (var process in Process.GetProcessesByName("Trayloom").Where(p => p.Id != Environment.ProcessId && !WindowGuardianClient.IsGuardian(p.Id)))
                 {
-                    process.Kill();
+                    try
+                    {
+                        var image = process.MainModule?.FileName;
+                        if (image is not null && SafePaths.IsUnder(image, InstallManager.InstallRoot))
+                        {
+                            process.Kill();
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        // access denied: not ours, or already gone
+                    }
                 }
             }
         }
@@ -476,6 +598,11 @@ public partial class App : Application
     /// </summary>
     private void RunDevFlags(string[] args, bool startup)
     {
+        if (!DevMode)
+        {
+            args = KeepAlwaysAllowed(args);
+        }
+
         var shell = _shell!;
         var priority = startup ? DispatcherPriority.ApplicationIdle : DispatcherPriority.Normal;
         string? Arg(string flag, int offset = 1)
@@ -641,6 +768,63 @@ public partial class App : Application
         }
     }
 
+    /// <summary>Drops every developer flag that needs TRAYLOOM_DEV (logging each once), keeping the always-allowed ones with their value.</summary>
+    private string[] KeepAlwaysAllowed(string[] args)
+    {
+        var kept = new List<string>();
+        var logged = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = 0; i < args.Length; i++)
+        {
+            var arg = args[i];
+            if (AlwaysAllowed.Contains(arg))
+            {
+                kept.Add(arg);
+                if (i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal))
+                {
+                    kept.Add(args[++i]);
+                }
+            }
+            else if ((DevFlags.Contains(arg) || arg == "--slow-start") && logged.Add(arg))
+            {
+                _host?.Log.Warn($"Developer flag ignored: {arg} (set TRAYLOOM_DEV=1)");
+            }
+        }
+
+        return kept.ToArray();
+    }
+
+    /// <summary>
+    /// Starts this exe again through Explorer, which runs it with the normal user's rights, so an administrator copy started by hand from
+    /// a user-writable folder does not keep running with elevated rights. False (and nothing started) when Explorer is not running.
+    /// </summary>
+    private static bool TryRestartWithoutElevation()
+    {
+        try
+        {
+            var session = Process.GetCurrentProcess().SessionId;
+            var explorerRunning = Process.GetProcessesByName("explorer").Any(p => p.SessionId == session);
+            var exe = Environment.ProcessPath;
+            if (!explorerRunning || string.IsNullOrEmpty(exe))
+            {
+                return false;
+            }
+
+            var explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+            if (!File.Exists(explorer))
+            {
+                return false;
+            }
+
+            new FileLog().Info("Restarting without administrator rights");
+            Process.Start(new ProcessStartInfo(explorer, "\"" + exe + "\"") { UseShellExecute = false });
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
     private static readonly string[] DevFlags = ["--open-settings", "--open-panel", "--open-menu", "--search", "--dev-uninstall", "--dev-install", "--action", "--dump-info", "--close-panel", "--open-onboarding", "--open-install", "--show-toast", "--simulate-problem", "--dev-key", "--shot", "--set-language", "--set-appearance", "--shot-delay", "--shot-full", "--dump-text", "--scroll-to", "--host-utility"];
 
     /// <summary>Raises a PreviewKeyDown for <paramref name="name"/> (e.g. "escape") on the active window, as if it had been typed there.</summary>
@@ -671,7 +855,13 @@ public partial class App : Application
     {
         try
         {
-            if (File.Exists(DevCommandFile))
+            if ((ElevationPolicy.IsElevated || RestrictedElevated) && File.Exists(DevCommandFile))
+            {
+                // An elevated copy never runs commands from a file a normal process can write.
+                File.Delete(DevCommandFile);
+                _host?.Log.Warn("Ignored a developer command file because Trayloom is running as administrator");
+            }
+            else if (File.Exists(DevCommandFile))
             {
                 var lines = File.ReadAllLines(DevCommandFile);
                 File.Delete(DevCommandFile);
@@ -710,15 +900,20 @@ public partial class App : Application
             _host?.App.Set(AppKeys.StartupDidNotFinish, false);
             _shell?.Dispose();
             _host?.Dispose();
-            if (_shell?.DeleteDataOnExit == true)
+            if (_shell?.DeleteDataOnExit == true && _host is not null)
             {
-                try
+                // "Uninstall completely": put back every Windows change Trayloom made and remove its Claude Code hook, then delete the data.
+                StartupRecovery.RunAll(RecoveryStage.Uninstall, _host.Log, TimeSpan.FromSeconds(10));
+                foreach (var folder in new[] { AppPaths.Root, AppPaths.LocalRoot })
                 {
-                    Directory.Delete(AppPaths.Root, recursive: true);
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine(ex);
+                    try
+                    {
+                        Directory.Delete(folder, recursive: true);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine(ex);
+                    }
                 }
             }
         }
@@ -844,7 +1039,7 @@ public partial class App : Application
         File.WriteAllText(path, sb.ToString());
     }
 
-    private static void LoadFeatureAssemblies(ILog log, ProblemReporter problems)
+    private static void LoadFeatureAssemblies(ILog log, ProblemReporter? problems)
     {
         foreach (var name in FeatureAssemblies)
         {
@@ -855,7 +1050,7 @@ public partial class App : Application
             catch (Exception ex)
             {
                 log.Error($"Could not load feature assembly {name}", ex);
-                problems.Add(new StartupProblem(name + ".dll", ex.Message, ex, SmartAppControl.LooksBlocked(ex)));
+                problems?.Add(new StartupProblem(name + ".dll", ex.Message, ex, SmartAppControl.LooksBlocked(ex)));
             }
         }
     }

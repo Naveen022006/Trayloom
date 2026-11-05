@@ -60,6 +60,9 @@ public sealed class SettingsStore : IDisposable
     /// <summary>Writes pending changes immediately.</summary>
     public void Flush() => SaveIfDirty();
 
+    /// <summary>True when settings.json existed but could not be used: a copy was kept as <c>settings.json.bad</c> and defaults apply.</summary>
+    public bool WasReset { get; private set; }
+
     /// <summary>Stops every further write (used right before the settings file is replaced by an import / deleted).</summary>
     public void SuspendSaving() => _suspended = true;
 
@@ -166,11 +169,15 @@ public sealed class SettingsStore : IDisposable
                     root.Remove("scopes");
                     return scopes;
                 }
+
+                // valid JSON that is not a settings file (a list, a number, no "scopes"): the same as a damaged file
+                throw new InvalidDataException("settings.json is not a settings object");
             }
         }
         catch (Exception ex)
         {
             _log.Error("settings.json is unreadable; starting with defaults", ex);
+            WasReset = true;
             try
             {
                 File.Copy(_path, _path + ".bad", overwrite: true);
@@ -208,10 +215,7 @@ public sealed class SettingsStore : IDisposable
         {
             try
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-                var temp = _path + ".tmp";
-                File.WriteAllText(temp, json);
-                File.Move(temp, _path, overwrite: true);
+                AtomicFile.WriteAllText(_path, json);
             }
             catch (Exception ex)
             {

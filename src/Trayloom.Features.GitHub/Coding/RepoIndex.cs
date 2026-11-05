@@ -224,10 +224,49 @@ internal sealed class RepoIndex
         return null;
     }
 
+    /// <summary>
+    /// True for a UNC path (<c>\\server\share</c>, <c>\\?\UNC\...</c>) or a path on a mapped network drive. Such a repository is never
+    /// probed or watched: a slow or hostile share must not stall the island, and its config is not ours to trust.
+    /// </summary>
+    internal static bool IsNetworkPath(string path)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+
+            var normalized = path.Replace('/', '\\');
+            if (normalized.StartsWith(@"\\", StringComparison.Ordinal))
+            {
+                return !normalized.StartsWith(@"\\?\", StringComparison.Ordinal) || normalized.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase);
+            }
+
+            var full = Path.GetFullPath(path);
+            if (full.StartsWith(@"\\", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            var drive = Path.GetPathRoot(full);
+            return drive is { Length: >= 2 } && new DriveInfo(drive).DriveType == DriveType.Network;
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            return true; // cannot tell: treat as unsafe
+        }
+    }
+
     private static bool HasGit(string root)
     {
         try
         {
+            if (IsNetworkPath(root))
+            {
+                return false;
+            }
+
             var git = Path.Combine(root, ".git");
             return Directory.Exists(git) || File.Exists(git);
         }
@@ -249,6 +288,11 @@ internal sealed class RepoIndex
     {
         try
         {
+            if (IsNetworkPath(root))
+            {
+                return null;
+            }
+
             var git = Path.Combine(root, ".git");
             if (Directory.Exists(git))
             {
@@ -263,7 +307,7 @@ internal sealed class RepoIndex
                     {
                         var target = line["gitdir:".Length..].Trim();
                         var full = Path.GetFullPath(Path.IsPathRooted(target) ? target : Path.Combine(root, target));
-                        return Directory.Exists(full) ? full : null;
+                        return !IsNetworkPath(full) && Directory.Exists(full) ? full : null;
                     }
                 }
             }
@@ -319,7 +363,7 @@ internal sealed class RepoIndex
             try
             {
                 var top = Path.GetFullPath(raw);
-                if (Directory.Exists(top))
+                if (!IsNetworkPath(top) && Directory.Exists(top))
                 {
                     Scan(top, 0, ref budget);
                 }

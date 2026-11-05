@@ -39,8 +39,17 @@ Write-Host 'Creating the zip...'
 if (Test-Path $zip) { Remove-Item $zip -Force }
 Compress-Archive -Path (Join-Path $app '*') -DestinationPath $zip -CompressionLevel Optimal
 
+Write-Host 'Writing SHA256SUMS.txt...'
+$sums = Join-Path $OutDir 'SHA256SUMS.txt'
+$lines = foreach ($f in @($zip, (Join-Path $OutDir 'Trayloom-Setup.cmd'))) {
+    $h = (Get-FileHash -LiteralPath $f -Algorithm SHA256).Hash.ToLowerInvariant()
+    "$h  $(Split-Path -Leaf $f)"
+}
+[IO.File]::WriteAllText($sums, (($lines -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding($false)))
+
 Write-Host ''
 Write-Host 'Done:'
 Write-Host "  $zip"
 Write-Host "  $(Join-Path $OutDir 'Trayloom-Setup.cmd')   (double-click next to the zip, or inside the unzipped folder)"
+Write-Host "  $sums   (SHA-256 of the zip and the setup script; publish it with the release)"
 Write-Host "  $app\Trayloom.exe   (runs directly; offers Install / Just run it)"

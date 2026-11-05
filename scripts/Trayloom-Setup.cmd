@@ -18,10 +18,18 @@ if not exist "%~dp0Trayloom-win-x64.zip" (
   exit /b 1
 )
 
-set "DEST=%TEMP%\Trayloom-Setup"
+rem A folder name nobody can guess, so another program cannot plant files in it first. The paths go to PowerShell through
+rem environment variables, never inside the command text.
+set "DEST=%TEMP%\Trayloom-Setup-%RANDOM%%RANDOM%"
+set "TL_ZIP=%~dp0Trayloom-win-x64.zip"
+set "TL_DEST=%DEST%"
 echo Unpacking Trayloom, one moment...
-if exist "%DEST%" rmdir /s /q "%DEST%"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath '%~dp0Trayloom-win-x64.zip' -DestinationPath '%DEST%' -Force" >> "%LOG%" 2>&1
+if exist "%DEST%" (
+  echo The folder %DEST% already exists; run this again.
+  pause
+  exit /b 1
+)
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath $env:TL_ZIP -DestinationPath $env:TL_DEST" >> "%LOG%" 2>&1
 if not exist "%DEST%\Trayloom.exe" (
   echo Could not unpack Trayloom. Details: %LOG%
   pause

@@ -110,7 +110,7 @@ internal static class PermissionService
                 case AppPermission.Accessibility:
                     return IsElevated
                         ? new PermissionStatus(PermissionState.Granted)
-                        : new PermissionStatus(PermissionState.Granted, Loc.T("Limited: running without administrator rights. Windows that run as administrator ignore Trayloom until it is elevated too."));
+                        : new PermissionStatus(PermissionState.Granted, Loc.T("Apps that run as administrator ignore Trayloom. Trayloom doesn’t offer to run as administrator, because its folder can be changed without administrator rights."));
                 case AppPermission.ScreenRecording:
                 case AppPermission.AudioCapture:
                     return new PermissionStatus(PermissionState.Granted);
@@ -143,7 +143,8 @@ internal static class PermissionService
 
     /// <summary>True when a request flow exists for a not-granted row.</summary>
     public static bool CanRequest(AppPermission p, PermissionStatus status) =>
-        status.State != PermissionState.Granted && p is AppPermission.Accessibility or AppPermission.FullDiskAccess or AppPermission.AppManagement;
+        ElevationPolicy.CanOfferElevation
+        && status.State != PermissionState.Granted && p is AppPermission.Accessibility or AppPermission.FullDiskAccess or AppPermission.AppManagement;
 
     public static string RequestLabel(AppPermission p) => p is AppPermission.Accessibility or AppPermission.FullDiskAccess or AppPermission.AppManagement
         ? Loc.T("Restart as administrator")
@@ -180,8 +181,9 @@ internal static class PermissionService
     /// <summary>Relaunches Trayloom with a UAC prompt (the current instance keeps running until the new one starts).</summary>
     public static void RestartElevated()
     {
+        // Only from a folder an unprivileged user cannot write to (Program Files); no current install qualifies.
         var exe = Environment.ProcessPath;
-        if (exe is null)
+        if (exe is null || !ElevationPolicy.CanOfferElevation)
         {
             return;
         }

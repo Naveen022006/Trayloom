@@ -26,6 +26,7 @@ internal sealed class AppShell : IShell
     private OnboardingWindow? _onboarding;
     private DispatcherTimer? _trayTimer;
     private bool _deleteDataOnExit;
+    private UpdateService? _updates;
     private ITrayMetricsState? _hookedMetrics;
     private IKeepAwakeService? _hookedKeepAwake;
     private IMicMuteState? _hookedMic;
@@ -50,6 +51,10 @@ internal sealed class AppShell : IShell
 
     public void Start()
     {
+        _updates = new UpdateService(_s.App, _host.Log, _host.Notifier, Application.Current.Dispatcher);
+        _s.Updates = _updates;
+        _updates.Changed += UpdateTrayState;
+        _updates.Start();
         _tray = new TrayController(_host.Log) { GlyphCode = _s.App.Get<string>(AppKeys.MenuBarIconSymbol) };
         _tray.LeftClick += TogglePanel;
         _tray.RightClick += ShowMenu;
@@ -111,6 +116,7 @@ internal sealed class AppShell : IShell
     public void Dispose()
     {
         _trayTimer?.Stop();
+        _updates?.Dispose();
         _tray?.Dispose();
     }
 
@@ -181,7 +187,7 @@ internal sealed class AppShell : IShell
     /// <summary>Developer flag <c>--host-utility &lt;id&gt;</c>: shows a hosted utility panel inside the open flyout (screenshots).</summary>
     public void HostUtilityForDevelopment(string id) => _panel?.HostUtility(id);
 
-    public void Quit() => Application.Current.Dispatcher.BeginInvoke(() => Application.Current.Shutdown());
+    public void Quit() => Application.Current.Dispatcher.BeginInvoke(() => ConfirmThen(() => Application.Current.Shutdown()));
 
     public void Restart() => Restart(false);
 
@@ -193,30 +199,85 @@ internal sealed class AppShell : IShell
             return;
         }
 
-        if (skipSave)
+        ConfirmThen(() =>
         {
-            _host.Store.SuspendSaving();
-        }
+            if (skipSave)
+            {
+                _host.Store.SuspendSaving();
+            }
 
-        try
-        {
-            // The new process waits (<= 20 s) for this one to exit, then starts normally.
-            Process.Start(new ProcessStartInfo(exe, $"--relaunch {Environment.ProcessId}") { UseShellExecute = false });
-        }
-        catch (Exception ex)
-        {
-            _host.Log.Error("Relaunch failed", ex);
-            return;
-        }
+            try
+            {
+                // The new process waits (<= 20 s) for this one to exit, then starts normally.
+                Process.Start(new ProcessStartInfo(exe, $"--relaunch {Environment.ProcessId}") { UseShellExecute = false });
+            }
+            catch (Exception ex)
+            {
+                _host.Log.Error("Relaunch failed", ex);
+                return;
+            }
 
-        Application.Current.Dispatcher.BeginInvoke(() => Application.Current.Shutdown());
+            Application.Current.Dispatcher.BeginInvoke(() => Application.Current.Shutdown());
+        });
     }
 
     public void QuitAndDeleteData()
     {
-        _host.Store.SuspendSaving();
-        _deleteDataOnExit = true;
-        Application.Current.Dispatcher.BeginInvoke(() => Application.Current.Shutdown());
+        ConfirmThen(() =>
+        {
+            _host.Store.SuspendSaving();
+            _deleteDataOnExit = true;
+            Application.Current.Dispatcher.BeginInvoke(() => Application.Current.Shutdown());
+        });
+    }
+
+    /// <summary>
+    /// Runs <paramref name="proceed"/> (on the UI thread) unless a recording is in progress and the user cancels. "Stop and quit" stops
+    /// the recording and waits (up to 15 s) until the take is saved, so quitting never loses it.
+    /// </summary>
+    private void ConfirmThen(Action proceed)
+    {
+        IRecordingState? rec = null;
+        try
+        {
+            rec = _host.Services.Get<IRecordingState>();
+        }
+        catch (Exception ex)
+        {
+            _host.Log.Warn("Could not ask the recorder: " + ex.Message);
+        }
+
+        if (rec is not { IsRecording: true })
+        {
+            proceed();
+            return;
+        }
+
+        var choice = Dialogs.Show(null, Loc.T("A recording is in progress"), Loc.T("Quitting stops the recording and saves it first."),
+            [Loc.T("Stop and quit"), Loc.T("Cancel")]);
+        if (choice != 0)
+        {
+            return;
+        }
+
+        _ = StopThenAsync(rec, proceed);
+    }
+
+    private async Task StopThenAsync(IRecordingState rec, Action proceed)
+    {
+        try
+        {
+            if (!await rec.StopAndFinishAsync(TimeSpan.FromSeconds(15)))
+            {
+                _host.Log.Warn("The recording did not finish within 15 s; quitting anyway");
+            }
+        }
+        catch (Exception ex)
+        {
+            _host.Log.Error("Stopping the recording before quitting failed", ex);
+        }
+
+        proceed();
     }
 
     public void ReshowTray()
@@ -601,7 +662,9 @@ internal sealed class AppShell : IShell
             }));
         }
 
-        menu.Items.Add(Item(Loc.T("Check for updates…"), () => OpenSettings(SettingsPages.About)));
+        menu.Items.Add(Item(_updates is { State: UpdateState.Available, LatestVersion: { } latest }
+            ? Loc.F("Update available: {0}…", latest)
+            : Loc.T("Check for updates…"), () => OpenSettings(SettingsPages.About)));
         menu.Items.Add(Item(Loc.T("Report a problem…"), ReportProblem));
         if (!InstallManager.IsInstalledCopy && !InstallManager.IsDevelopmentBuild)
         {

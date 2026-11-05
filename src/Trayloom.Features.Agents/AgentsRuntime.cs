@@ -105,6 +105,20 @@ public sealed class AgentsRuntime : IDisposable
             _context.Log.Info("Claude hook: " + repair.Message);
         }
 
+        try
+        {
+            // An older script (before the prune line) is replaced by the current one; only when the hook is installed at all.
+            if (AgentHooks.Status(AgentHooks.SettingsPath(AgentLogRoot.Home)).Installed && AgentHooks.ScriptIsStale())
+            {
+                AgentHooks.WriteScript();
+                _context.Log.Info("Claude hook: updated the hook script");
+            }
+        }
+        catch (Exception ex)
+        {
+            _context.Log.Warn("Claude hook: could not update the script: " + ex.Message);
+        }
+
         Service.Alert += OnAlert;
         Service.LiveChanged += OnLiveChanged;
         Service.Changed += OnServiceChanged;

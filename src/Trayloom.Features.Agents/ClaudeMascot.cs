@@ -3,6 +3,7 @@
 
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Trayloom.Core;
 using Trayloom.Core.Ui;
 
@@ -528,6 +529,32 @@ internal static class ClaudeMascotArt
         }
     }
 
+    /// <summary>
+    /// How long until the picture of <paramref name="mood"/> changes again, so an idle or waiting mascot can sleep instead of ticking
+    /// 30 times a second. A working mascot (and a wink in progress) steps every frame. Never less than one frame.
+    /// </summary>
+    public static double SecondsUntilChange(MascotMood mood, double seconds, int seed)
+    {
+        const double frame = 1.0 / 30;
+        const double margin = 0.002;
+        switch (mood)
+        {
+            case MascotMood.Working:
+                return frame;
+            case MascotMood.Waiting:
+                return Math.Max(frame, WaveSeconds - (seconds % WaveSeconds) + margin);
+            default:
+                if (seconds <= 1)
+                {
+                    return Math.Max(frame, 1 - seconds + margin);
+                }
+
+                var period = 4.0 + (((seed % 1500) + 1500) % 1500) / 1000.0;
+                var phase = seconds % period;
+                return phase < s_winkSeconds ? frame : Math.Max(frame, period - phase + margin);
+        }
+    }
+
     /// <summary>Every distinct picture the mascot can show, for the harness and for anything that wants to check them all.</summary>
     public static IEnumerable<string[]> AllFrames() =>
         new[] { s_front, s_wave }
@@ -602,6 +629,7 @@ internal sealed class ClaudeMascotView : FrameworkElement
     private string[] _frame;
     private int _cell = 1;
     private IDisposable? _subscription;
+    private DispatcherTimer? _sleepTimer;
     private double _start;
     private bool _leaving;
     private double _leaveStart;
@@ -669,7 +697,7 @@ internal sealed class ClaudeMascotView : FrameworkElement
     }
 
     /// <summary>True when the mascot is animating right now.</summary>
-    public bool IsAnimating => _subscription is not null;
+    public bool IsAnimating => _subscription is not null || _sleepTimer is not null;
 
     private static Brush Frozen(Color color)
     {
@@ -705,7 +733,35 @@ internal sealed class ClaudeMascotView : FrameworkElement
         }
 
         SetFrame(ClaudeMascotArt.FrameAt(_mood, now - _start, _seed, false));
-        _subscription = AgentClock.Instance.Subscribe(Step);
+        if (_mood == MascotMood.Working)
+        {
+            _subscription = AgentClock.Instance.Subscribe(Step);
+        }
+        else
+        {
+            Sleep(now);
+        }
+    }
+
+    /// <summary>
+    /// Standing and waiting poses change rarely: a one-shot timer wakes the mascot just when the picture changes (a wink, a wave)
+    /// instead of keeping the shared 30 Hz clock running for a picture that does not move.
+    /// </summary>
+    private void Sleep(double now)
+    {
+        _sleepTimer ??= new DispatcherTimer(DispatcherPriority.Render);
+        _sleepTimer.Stop();
+        _sleepTimer.Interval = TimeSpan.FromSeconds(ClaudeMascotArt.SecondsUntilChange(_mood, now - _start, _seed));
+        _sleepTimer.Tick -= OnSleepTick;
+        _sleepTimer.Tick += OnSleepTick;
+        _sleepTimer.Start();
+    }
+
+    private void OnSleepTick(object? sender, EventArgs e)
+    {
+        var now = AgentClock.Instance.Time;
+        SetFrame(ClaudeMascotArt.FrameAt(_mood, now - _start, _seed, false));
+        Sleep(now);
     }
 
     private void Unsubscribe()
@@ -713,6 +769,13 @@ internal sealed class ClaudeMascotView : FrameworkElement
         _leaving = false;
         _subscription?.Dispose();
         _subscription = null;
+        if (_sleepTimer is not null)
+        {
+            _sleepTimer.Stop();
+            _sleepTimer.Tick -= OnSleepTick;
+            _sleepTimer = null;
+        }
+
         SetFrame(ClaudeMascotArt.FrameAt(_mood, 0, _seed, true));
     }
 
@@ -736,6 +799,13 @@ internal sealed class ClaudeMascotView : FrameworkElement
         }
 
         SetFrame(ClaudeMascotArt.FrameAt(_mood, time - _start, _seed, false));
+        if (_mood != MascotMood.Working && !_leaving)
+        {
+            // The laptop is away: from here on the picture changes rarely, so leave the shared clock.
+            _subscription?.Dispose();
+            _subscription = null;
+            Sleep(time);
+        }
     }
 
     /// <summary>Redraws only when the picture changed; the art hands out the same array for the same pose, so a reference check is enough.</summary>

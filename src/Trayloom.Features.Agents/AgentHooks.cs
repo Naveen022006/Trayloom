@@ -69,6 +69,7 @@ public static class AgentHooks
                 $base = if ($env:TRAYLOOM_LOCALDATA) { $env:TRAYLOOM_LOCALDATA } else { Join-Path $env:LOCALAPPDATA 'Trayloom' }
                 $dir = Join-Path $base 'agent-events'
                 New-Item -ItemType Directory -Force -Path $dir | Out-Null
+                Get-ChildItem -LiteralPath $dir -Filter *.json -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTimeUtc -lt [DateTime]::UtcNow.AddHours(-1) } | Remove-Item -Force -ErrorAction SilentlyContinue
                 $file = Join-Path $dir ('{0}-{1}.json' -f [DateTime]::UtcNow.Ticks, [Guid]::NewGuid().ToString('N'))
                 [IO.File]::WriteAllText($file, ($o | ConvertTo-Json -Compress), (New-Object System.Text.UTF8Encoding($false)))
             }
@@ -259,9 +260,9 @@ public static class AgentHooks
             }
 
             root["hooks"] = hooks;
-            File.WriteAllText(ScriptPath, Script.Replace("\r\n", "\n").Replace("\n", "\r\n"), new System.Text.UTF8Encoding(true));
+            WriteScript();
             Directory.CreateDirectory(Path.GetDirectoryName(settingsPath)!);
-            File.WriteAllText(settingsPath, root.ToJsonString(Write) + "\n", new System.Text.UTF8Encoding(false));
+            AtomicFile.WriteAllText(settingsPath, root.ToJsonString(Write) + "\n");
             return new HookResult(true, "Installed. Claude Code reads settings when a session starts, so restart running sessions to use it.", backup);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
@@ -302,8 +303,8 @@ public static class AgentHooks
 
             Directory.CreateDirectory(Path.GetDirectoryName(ScriptPath)!);
             Directory.CreateDirectory(EventsFolder);
-            File.WriteAllText(ScriptPath, Script.Replace("\r\n", "\n").Replace("\n", "\r\n"), new System.Text.UTF8Encoding(true));
-            File.WriteAllText(settingsPath, root.ToJsonString(Write) + "\n", new System.Text.UTF8Encoding(false));
+            WriteScript();
+            AtomicFile.WriteAllText(settingsPath, root.ToJsonString(Write) + "\n");
             return new HookResult(true, $"Re-pointed {stale.Count} hook entr{(stale.Count == 1 ? "y" : "ies")} in settings.json at the renamed script folder.", backup);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
@@ -321,7 +322,8 @@ public static class AgentHooks
                 return new HookResult(File.Exists(settingsPath) is false, File.Exists(settingsPath) ? "settings.json has comments or is not plain JSON. Nothing was changed." : "Nothing to remove.");
             }
 
-            var backup = Backup(settingsPath);
+            var changed = false;
+            string? backup = null;
             if (root["hooks"] is JsonObject hooks)
             {
                 foreach (var e in Events)
@@ -337,6 +339,12 @@ public static class AgentHooks
                         {
                             foreach (var h in inner.OfType<JsonObject>().Where(IsOurs).ToList())
                             {
+                                if (!changed)
+                                {
+                                    backup = Backup(settingsPath);
+                                    changed = true;
+                                }
+
                                 inner.Remove(h);
                             }
 
@@ -359,7 +367,11 @@ public static class AgentHooks
                 }
             }
 
-            File.WriteAllText(settingsPath, root.ToJsonString(Write) + "\n", new System.Text.UTF8Encoding(false));
+            if (changed)
+            {
+                AtomicFile.WriteAllText(settingsPath, root.ToJsonString(Write) + "\n");
+            }
+
             TryDelete(ScriptPath);
             return new HookResult(true, "Removed. Your other settings were left as they were.", backup);
         }
@@ -406,11 +418,43 @@ public static class AgentHooks
         }
     }
 
+    /// <summary>Writes the hook script atomically, so a session starting at that moment never runs half of it.</summary>
+    internal static void WriteScript()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(ScriptPath)!);
+        AtomicFile.WriteAllText(ScriptPath, Script.Replace("\r\n", "\n").Replace("\n", "\r\n"));
+    }
+
+    /// <summary>True when the script on disk is not the current one (an older version, or missing).</summary>
+    internal static bool ScriptIsStale()
+    {
+        try
+        {
+            return !File.Exists(ScriptPath) || File.ReadAllText(ScriptPath).Replace("\r\n", "\n").TrimStart('\uFEFF') != Script.Replace("\r\n", "\n");
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Copies settings.json to a millisecond-named file in the backup folder; never overwrites an earlier backup.</summary>
     private static string Backup(string settingsPath)
     {
         Directory.CreateDirectory(BackupFolder);
-        var target = Path.Combine(BackupFolder, "settings.json." + DateTime.Now.ToString("yyyyMMdd-HHmmss"));
-        File.Copy(settingsPath, target, true);
-        return target;
+        var stem = Path.Combine(BackupFolder, "settings.json." + DateTime.Now.ToString("yyyyMMdd-HHmmss-fff"));
+        for (var n = 0; ; n++)
+        {
+            var target = n == 0 ? stem : stem + "-" + n;
+            try
+            {
+                File.Copy(settingsPath, target, false);
+                return target;
+            }
+            catch (IOException) when (File.Exists(target) && n < 100)
+            {
+                // taken: try the next number
+            }
+        }
     }
 }

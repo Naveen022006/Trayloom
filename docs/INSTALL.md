@@ -138,13 +138,39 @@ deletes the stored address and the cached copy of the calendar from this PC.
 
 ## Updating
 
-Download the new zip, unzip it and run `Trayloom.exe`. The installer sees the installed copy and offers **Update**, which
-replaces it and keeps the settings.
+Trayloom checks GitHub about once a day and tells you when a newer version exists (Settings > About > Updates; **Check now**
+works at any time). It only shows a link to the release page: download the new zip, unzip it and run `Trayloom.exe`. The
+installer sees the installed copy and offers **Update**, which replaces it and keeps the settings.
 
 ## Uninstalling
 
-Settings > Apps > Installed apps > **Trayloom** > Uninstall. Trayloom quits, removes its files, shortcuts and start-up entry,
-and asks whether to keep the settings (`%APPDATA%\Trayloom`).
+Settings > Apps > Installed apps > **Trayloom** > Uninstall. Trayloom quits and always:
+
+* removes its files, shortcuts and start-up entry;
+* puts back every change it made to Windows: the lid action, the dimmed lid brightness, a muted microphone and its 0 % fallback,
+  a Bluetooth switch-off waiting for sleep, and any window it had hidden or moved;
+* removes its Claude Code hook (the two entries in `~\.claude\settings.json`, or in `CLAUDE_CONFIG_DIR`; everything else in that
+  file is kept) together with the hook script and its event files.
+
+It also asks whether to **delete my data** (default: no): `%APPDATA%\Trayloom` (settings, Scratchpad notes) and
+`%LOCALAPPDATA%\Trayloom` (clipboard history, recent screenshots, **unsaved recordings**, caches). Keep them if you might reinstall.
+
+## Does Trayloom run as administrator?
+
+No, and it does not offer to. Work that needs administrator rights (cleaning system caches, removing a program for all users)
+goes through one Windows permission prompt for that task alone. Programs that run as administrator ignore Trayloom's window
+and input tools. Cleaning system caches can also be done in Windows Settings > System > Storage.
+
+## Checking your download
+
+Releases list the SHA-256 of each file in `SHA256SUMS.txt`. In PowerShell, from the folder with the download:
+
+```powershell
+Get-FileHash .\Trayloom-win-x64.zip -Algorithm SHA256
+```
+
+The long value must match the line for that file in `SHA256SUMS.txt` (compare it with the copy on the release page, not one
+that came with the download). Builds are not code-signed, so this only shows that the file was not changed in transit.
 
 ## If something goes wrong
 
@@ -164,16 +190,16 @@ Do this once per version so other people can download Trayloom from GitHub:
    powershell -ExecutionPolicy Bypass -File scripts\package.ps1
    ```
 
-   It writes `dist\Trayloom-win-x64.zip` and `dist\Trayloom-Setup.cmd`.
+   It writes `dist\Trayloom-win-x64.zip`, `dist\Trayloom-Setup.cmd` and `dist\SHA256SUMS.txt`.
 2. On GitHub, open the repository > **Releases** > **Draft a new release**.
 3. **Choose a tag** > type the version from `Directory.Build.props` with a `v` in front (for example `v0.2.0`) > *Create new
    tag*.
 4. Title it, for example *Trayloom 0.2.0*, and add a few lines about what changed.
-5. Drag `Trayloom-win-x64.zip` and `Trayloom-Setup.cmd` into the *Attach binaries* box and wait for both uploads.
+5. Drag `Trayloom-win-x64.zip`, `Trayloom-Setup.cmd` and `SHA256SUMS.txt` into the *Attach binaries* box and wait for both uploads.
 6. Click **Publish release**. The download link in the README now works.
 
 With the GitHub CLI signed in (`gh auth login`), steps 2 to 6 are one command:
 
 ```bash
-gh release create v0.2.0 dist/Trayloom-win-x64.zip dist/Trayloom-Setup.cmd --title "Trayloom 0.2.0" --notes "First public build"
+gh release create v0.2.0 dist/Trayloom-win-x64.zip dist/Trayloom-Setup.cmd dist/SHA256SUMS.txt --title "Trayloom 0.2.0" --notes "First public build"
 ```

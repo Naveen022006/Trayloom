@@ -63,7 +63,7 @@ internal static class AdvancedPage
 
         // Uninstall
         var uninstall = new SettingsCard(Loc.T("Uninstall"));
-        uninstall.AddCaption(Loc.T("Does all of the above, then removes the preferences and the app data folder, leaving nothing behind. The app quits when done. Delete the app folder afterwards to finish. You can reinstall anytime."));
+        uninstall.AddCaption(Loc.T("Does all of the above, puts back any Windows change Trayloom made and removes its Claude Code hook, then deletes your data: preferences, Scratchpad notes, clipboard history, recent screenshots, unsaved recordings and caches. The app quits when done. Delete the app folder afterwards to finish. You can reinstall anytime."));
         uninstall.Add(UiKit.Button(Loc.T("Uninstall Trayloom completely"), ButtonKind.Destructive, 13, "", () =>
         {
             var owner = Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault();
@@ -168,7 +168,7 @@ internal static class AdvancedPage
         try
         {
             s.Host.Store.Flush();
-            File.WriteAllText(AppPaths.SettingsFile, settings.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            AtomicFile.WriteAllText(AppPaths.SettingsFile, settings.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
             s.Shell.Restart(skipSave: true);
         }
         catch (Exception ex)

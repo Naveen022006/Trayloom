@@ -24,7 +24,7 @@ internal static class SettingsSearch
         ["features"] = ["Install", "Uninstall", "Permissions", "Bundle", "Essentials", Loc.T("Install all"), Loc.T("Uninstall all")],
         ["shortcuts"] = ["Shortcut", "Keyboard", "Hotkey", "Active", "Inactive", "Conflict"],
         ["advanced"] = ["Backup", "Export settings", "Import settings", "Reset", "Uninstall Trayloom", Loc.T("Clear all permissions")],
-        ["about"] = ["Version", "Check for updates", "Beta", Loc.T("Review introduction"), "GitHub", "Updates"],
+        ["about"] = ["Version", "Check for updates", "Update available", "Beta", Loc.T("Review introduction"), "GitHub", "Updates"],
         ["whats-new"] = ["Changelog", "Release notes", "Added", "Fixed", "Changed"],
         ["support"] = ["Star", "GitHub", "Donate", "Help"],
     });
