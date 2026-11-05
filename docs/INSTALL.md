@@ -123,6 +123,19 @@ key instead:
 With a key, the free daily allowance is about 100 searches. YouTube Music has no official playback API, so a song opens in your browser
 (or the YouTube Music app) and the island's controls then follow that player.
 
+## Google Calendar (optional)
+
+The Dynamic Island's calendar can show a Google calendar, read-only, with no Google sign-in. Nothing is sent until you add one.
+
+1. In Google Calendar on the web, open **Settings**, pick the calendar under *Settings for my calendars*, and open **Integrate
+   calendar**.
+2. Copy **Secret address in iCal format**.
+3. In Trayloom open **Settings > Dynamic Island > Content > Calendar**, click **Add Google calendar...** and paste the address.
+
+Treat the address like a password: anyone who has it can read that calendar. Trayloom stores it encrypted for your Windows
+account. Resetting the secret address in Google (**Integrate calendar > Reset**) cuts off access at once; **Remove** in Trayloom
+deletes the stored address and the cached copy of the calendar from this PC.
+
 ## Updating
 
 Download the new zip, unzip it and run `Trayloom.exe`. The installer sees the installed copy and offers **Update**, which

@@ -32,7 +32,9 @@ shortcut defaults, duplicate checks), `--open-onboarding [step]`, `--open-instal
 `--install`, `--uninstall [--quiet]`, `--no-onboarding`, `--quit`.
 
 Feature dev actions (most only with `TRAYLOOM_DEV=1`): `--action screen-time dump|flush|dev-add-minute|today`,
-`--action github refresh|open-notifications|dump|connect-cli|simulate-notice`, `--action wifi scan|state|dump` (never
+`--action github refresh|open-notifications|dump|connect-cli|simulate-notice|log-coding|simulate-checks-finished`
+(the last two are the coding log and a simulated finished-checks notice), `--action bluetooth dump|simulate-connect|simulate-low` (they
+only read or queue a notice; `toggle-radio` switches the real radio, so never use it in automation), `--action wifi scan|state|dump` (never
 `toggle-radio` or `disconnect` in automation: they cut the machine's network), and `--action away-mode
 simulate-away|simulate-return|simulate-face|dump`. Away mode's `simulate-away` only touches windows of the processes listed in
 `away-mode-only.txt` in its data folder (the `tests\AwayDummy` test process); `TRAYLOOM_AWAY_NO_CAMERA=1` keeps the camera off.

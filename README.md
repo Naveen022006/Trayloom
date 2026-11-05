@@ -159,19 +159,20 @@ need it. Its layout, size, buttons and pages are all yours to arrange.
 | Extension | What it does |
 | --- | --- |
 | **Dynamic Island** | Music, volume, brightness and your everyday tools in one place at the top of the screen. |
-| **Calendar** | Browse the month and your upcoming appointments. |
+| **Calendar** | Browse the month and your upcoming appointments, from Google Calendar or Windows Calendar. Join Google Meet and other video calls in one click. |
 | **Notifications** | New system notifications appear in the island. |
 | **Gestures** | Open and close the island by scrolling; swipe to change tracks. |
 | **Timer** | Timers, a stopwatch and focused work sessions. |
 | **Screen time** | How long you used the PC today and which apps, with an hour-by-hour chart. App names and times stay on your PC. |
 | **Accessory alerts** | See connected accessories and get one warning when a battery drops to 20%. |
+| **Bluetooth** | See your Bluetooth devices and their battery in the island and the tray, turn Bluetooth on or off, and get one alert when a device runs low. |
 | **Lyrics** | Follow the lyrics of the current song (online lookup is **off** until you turn it on). |
 | **Up next** | The real upcoming songs your player shares. |
 | **Bars follow the music** | The island's bars move with the sound your player makes. |
 | **Downloads** | Watch files arrive in a folder you choose. |
 | **Watch** | Turn any part of any window into a live activity, with an alert when it changes, finishes or shows what you are waiting for. |
 | **AI Agents** | Plan limits, tokens, API value and live sessions of Claude, Codex, OpenCode and GitHub Copilot (see below). |
-| **GitHub** | Unread notifications, your pull requests, reviews waiting for you, failing checks and latest releases (online only after you connect, through the GitHub CLI or an encrypted token). |
+| **GitHub** | Unread notifications, your pull requests, reviews waiting for you, failing checks and latest releases (online only after you connect, through the GitHub CLI or an encrypted token). While you code, the island follows the repository in front of you: branch, changes, pull request and checks, with an alert when checks finish. |
 | **Wi-Fi** | Your network and signal, the Wi-Fi switch, nearby networks with join and disconnect. |
 | **Companion** | A small friend in the island who says hello now and then and reacts to what happens on your PC. |
 
@@ -219,6 +220,7 @@ browser tab.
 * **Permission alerts:** when a Claude Code session waits for your permission, the island pops out to tell you which one.
   This uses a small, optional hook that only reports the event; it is added only when you switch it on (after a backup of
   your settings) and removed when you switch it off.
+* **Mascot:** Claude Code’s pixel mascot opens a laptop and types on it in the island while Claude works, as it does in Claude Code, and waves when it needs you.
 * Everything is read from local files and local services. No passwords or login tokens are read.
 
 ## Who it is for
@@ -329,6 +331,8 @@ What to expect:
   never sent anywhere, and nothing is kept unless you save the mode (then the addresses are stored in `modes.json` on your PC).
   Page titles are not read, and private windows are never in that file.
 * **Spotify and YouTube Music (optional).** Nothing is sent until you turn a service on in Settings › Dynamic Island › Content › Now Playing. Spotify sign-in happens on Spotify’s own page in your browser (Trayloom never sees your password); Trayloom asks only to read your playlists, liked and recently played songs and what’s playing, and to control playback, and never changes your library or playlists. The sign-in is stored encrypted for your Windows account in `%APPDATA%\Trayloom\music`; Disconnect deletes it, and spotify.com/account/apps removes access. YouTube Music needs no account and no key: when you press Enter in its search box, Trayloom sends the search text to music.youtube.com’s own web service (the one the YouTube Music website uses), with no cookies and no sign-in, and shows the results in the island. That service is not an official API, so it may stop working if YouTube changes it. If you add your own YouTube Data API key (optional, stored encrypted the same way), searches go to Google’s official YouTube Data API instead. YouTube’s Terms of Service and Google’s Privacy Policy apply to those searches. Results are kept in memory only.
+* **Google Calendar (optional).** Nothing is sent until you add a calendar in Settings › Dynamic Island › Content › Calendar. Trayloom then downloads that calendar’s secret iCal address from calendar.google.com every 15 minutes (you can change this) and shows its events in the island. It is read-only: Trayloom never signs in to Google and never changes your calendar. The address works like a password, so Trayloom stores it, and a copy of the downloaded calendar, encrypted for your Windows account in `%APPDATA%\Trayloom\calendar`; removing the calendar deletes both. Resetting the secret address in Google Calendar cuts off access at once.
+* **GitHub while you code** reads the title of the editor or terminal window in front, Claude Code’s session files and the `.git` folders of your projects, all on this PC, to know which repository you are working in. It runs read-only Git commands with optional locks turned off, so it never changes your repository. Only when GitHub is connected does it ask GitHub for that branch’s pull request and checks.
 
 ## Requirements
 

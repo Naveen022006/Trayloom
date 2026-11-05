@@ -156,6 +156,10 @@ internal static class WhatsNewPage
             Loc.T("Away mode can also close the apps you choose when you leave and open them again when you’re back. Chrome and Edge come back with the same windows and tabs; an app that asks to save something is left open, so nothing is lost."),
             Loc.T("Away mode can start when the camera stops seeing you, after a 10-second notice that any movement cancels. Off until you turn it on."),
             Loc.T("Modes: one-click workspaces for coding, studying and more. Save what’s open now as a mode and start it from the island, the tray, the Command Bar or a shortcut."),
+            Loc.T("Bluetooth: see your devices and their battery in the Dynamic Island and the tray, turn Bluetooth on or off and get one alert when a device runs low."),
+            Loc.T("GitHub while you code: the island follows the repository in front of you, with branch, changes, pull request and checks, and tells you when checks finish."),
+            Loc.T("Claude Code’s pixel mascot opens a laptop and types on it in the Dynamic Island while Claude works, as it does in Claude Code, and waves when it needs you."),
+            Loc.T("Google Calendar in the island: add your calendar’s secret address, see your events and join a Google Meet call in one click."),
         ]),
         new("Changed",
         [
