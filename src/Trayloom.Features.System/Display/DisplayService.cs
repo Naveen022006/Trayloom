@@ -66,6 +66,7 @@ internal sealed class DisplayService : IDisposable
     private bool _disposed;
     private BrightnessWatcher? _watcher;
     private long _lastWriteTicks;
+    private readonly HashSet<string> _switchedOff = [];
 
     public DisplayService(IFeatureContext ctx)
     {
@@ -166,6 +167,7 @@ internal sealed class DisplayService : IDisposable
         }
 
         _disposed = true;
+        SwitchBackOn();
         SystemEvents.DisplaySettingsChanged -= OnTopology;
         SystemEvents.PowerModeChanged -= OnPower;
         _watcher?.Dispose();
@@ -183,6 +185,44 @@ internal sealed class DisplayService : IDisposable
         foreach (var item in old)
         {
             item.Device?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Gives back every display this run switched off: a screen left off would stay off after Trayloom quits. Best effort, bounded
+    /// to three seconds. One call extends the whole desktop, so one call is enough.
+    /// </summary>
+    private void SwitchBackOn()
+    {
+        bool any;
+        lock (_switchedOff)
+        {
+            any = _switchedOff.Count > 0;
+        }
+
+        if (!any)
+        {
+            return;
+        }
+
+        try
+        {
+            var task = Task.Run(() => DisplayTopology.SwitchOn());
+            if (task.Wait(3000) && task.Result)
+            {
+                lock (_switchedOff)
+                {
+                    _switchedOff.Clear();
+                }
+            }
+            else
+            {
+                _ctx.Log.Warn("A display Trayloom switched off could not be switched back on when it stopped.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _ctx.Log.Warn($"Switching displays back on failed: {ex.Message}");
         }
     }
 
@@ -293,6 +333,7 @@ internal sealed class DisplayService : IDisposable
         }
         else
         {
+            percent = DisplayMath.ClampHardware(percent);
             item.RequestedLevel = percent;
             _pending[item.Key] = percent;
             item.Pending = true;
@@ -492,6 +533,22 @@ internal sealed class DisplayService : IDisposable
         Changed?.Invoke();
         var ok = await Task.Run(() => on ? DisplayTopology.SwitchOn() : DisplayTopology.SwitchOff(item.Info));
         item.Pending = false;
+        if (ok)
+        {
+            lock (_switchedOff)
+            {
+                if (on)
+                {
+                    // SwitchOn extends every display, so none is left off by us.
+                    _switchedOff.Clear();
+                }
+                else
+                {
+                    _switchedOff.Add(item.Key);
+                }
+            }
+        }
+
         if (!ok)
         {
             Changed?.Invoke();

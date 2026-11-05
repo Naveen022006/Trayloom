@@ -170,8 +170,13 @@ internal static class DiskBlocks
         EjectState[letter] = "ejecting";
         Task.Run(() => StorageReader.Eject(letter)).ContinueWith(t =>
         {
-            EjectState[letter] = t.IsCompletedSuccessfully && t.Result ? "ready" : "failed";
-            Application.Current?.Dispatcher.BeginInvoke(() => MonitorService.RequestNow());
+            // EjectState is read while the panel draws on the UI thread, so it is only written there.
+            var state = t.IsCompletedSuccessfully && t.Result ? "ready" : "failed";
+            Application.Current?.Dispatcher.BeginInvoke(() =>
+            {
+                EjectState[letter] = state;
+                MonitorService.RequestNow();
+            });
         });
     }
 

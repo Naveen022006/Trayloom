@@ -229,6 +229,21 @@ internal static class AppRouting
 
     private sealed record Verdict(string Build, bool Ok, string Detail, string Checked);
 
+    /// <summary>The folder of the in-progress marker (the mixer's data folder).</summary>
+    private static string MarkerDir => AppPaths.FeatureData("mixer");
+
+    private static void SaveVerdict(string key, bool ok, string detail)
+    {
+        try
+        {
+            AtomicFile.WriteAllText(VerdictFile, JsonSerializer.Serialize(new Verdict(key, ok, detail, DateTime.Now.ToString("s"))));
+        }
+        catch (Exception)
+        {
+            // Not persisted: the test just runs again next start.
+        }
+    }
+
     private static void BeginVerdict()
     {
         var key = BuildKey();
@@ -248,6 +263,28 @@ internal static class AppRouting
         catch (Exception)
         {
             // Unreadable verdict: test again.
+        }
+
+        // A marker without a verdict means an earlier self-test never finished: the raw call crashed or hung the process. Do not run it
+        // again on this build; route picking stays off.
+        string markerDir;
+        try
+        {
+            markerDir = MarkerDir;
+        }
+        catch (Exception)
+        {
+            markerDir = string.Empty;
+        }
+
+        if (markerDir.Length > 0 && RoutingSelfTestMarker.IsPending(markerDir, key))
+        {
+            const string interrupted = "an earlier self-test did not finish";
+            _verdictOk = false;
+            SaveVerdict(key, false, interrupted);
+            RoutingSelfTestMarker.Clear(markerDir, key);
+            Log?.Warn($"Per-app output routing is turned off on build {key}: {interrupted}.");
+            return;
         }
 
         _selfTestTask = Task.Run(() => SelfTest(key));
@@ -293,6 +330,8 @@ internal static class AppRouting
                 player = null;
             }
 
+            // Marked before the first raw call: if the process dies inside it, the next start skips the test.
+            RoutingSelfTestMarker.Begin(MarkerDir, key);
             var before = GetCore(pid);
             var set = SetCore(pid, deviceId);
             var back = GetCore(pid);
@@ -338,14 +377,13 @@ internal static class AppRouting
             Log?.Warn($"Per-app output routing is turned off on build {key}: {detail}.");
         }
 
+        SaveVerdict(key, ok, detail);
         try
         {
-            Directory.CreateDirectory(AppPaths.Root);
-            File.WriteAllText(VerdictFile, JsonSerializer.Serialize(new Verdict(key, ok, detail, DateTime.Now.ToString("s"))));
+            RoutingSelfTestMarker.Clear(MarkerDir, key);
         }
         catch (Exception)
         {
-            // Not persisted: the test just runs again next start.
         }
     }
 
@@ -402,4 +440,41 @@ internal static class AppRouting
 
     [DllImport("combase.dll")]
     private static extern int RoGetActivationFactory(nint classId, ref Guid iid, out nint factory);
+}
+
+/// <summary>
+/// The "self-test in progress" marker of the audio routing check (<c>audio-routing-selftest-&lt;build&gt;.inprogress</c>), kept apart from
+/// the native calls so the decision can be tested.
+/// </summary>
+internal static class RoutingSelfTestMarker
+{
+    public static string PathFor(string dir, string build) => Path.Combine(dir, $"audio-routing-selftest-{build}.inprogress");
+
+    /// <summary>True when a self-test for this build started and never reported a verdict.</summary>
+    public static bool IsPending(string dir, string build) => File.Exists(PathFor(dir, build));
+
+    /// <summary>Records that the self-test is about to make its first raw call.</summary>
+    public static void Begin(string dir, string build)
+    {
+        try
+        {
+            AtomicFile.WriteAllText(PathFor(dir, build), DateTime.Now.ToString("s"));
+        }
+        catch (Exception)
+        {
+            // Without the marker the test still runs; only the crash protection is lost.
+        }
+    }
+
+    /// <summary>Removes the marker once the verdict is saved.</summary>
+    public static void Clear(string dir, string build)
+    {
+        try
+        {
+            File.Delete(PathFor(dir, build));
+        }
+        catch (Exception)
+        {
+        }
+    }
 }

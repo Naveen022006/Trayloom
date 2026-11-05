@@ -21,6 +21,30 @@ internal static class SpeedTest
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(30) };
 
+    /// <summary>
+    /// True when the current connection is metered, roaming or over its data limit, where a test of several hundred megabytes can
+    /// cost money. False when Windows cannot tell.
+    /// </summary>
+    public static bool IsMetered()
+    {
+        try
+        {
+            var cost = Windows.Networking.Connectivity.NetworkInformation.GetInternetConnectionProfile()?.GetConnectionCost();
+            if (cost is null)
+            {
+                return false;
+            }
+
+            return cost.NetworkCostType is Windows.Networking.Connectivity.NetworkCostType.Fixed or Windows.Networking.Connectivity.NetworkCostType.Variable
+                   || cost.Roaming
+                   || cost.OverDataLimit;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
     public static async Task<SpeedResult?> RunAsync(CancellationToken cancel)
     {
         try
@@ -282,6 +306,12 @@ internal static class NetworkBlocks
 
         async void Start()
         {
+            if (SpeedTest.IsMetered()
+                && MessageBox.Show(Loc.T("The speed test can use several hundred megabytes. Run it anyway?"), Loc.T("This connection is metered"), MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK)
+            {
+                return;
+            }
+
             ran = true;
             cts?.Cancel();
             cts = new CancellationTokenSource();

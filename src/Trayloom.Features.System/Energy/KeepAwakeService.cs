@@ -3,7 +3,6 @@
 
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Text.Json;
 using System.Windows.Interop;
 using System.Windows.Threading;
 using Microsoft.Win32;
@@ -34,8 +33,6 @@ internal enum LidState
 /// </summary>
 internal sealed class KeepAwakeService : IKeepAwakeService, IDisposable
 {
-    private static readonly Guid ButtonSubgroup = new("4f971e89-eebd-4455-a8de-9e59040e7347");
-    private static readonly Guid LidAction = new("5ca83367-6e45-459f-a27b-476b1d01c936");
     private static readonly Guid LidSwitchState = new("BA3E0F4D-B817-4094-A86D-D0DD7A5A3B8F");
 
     private readonly IFeatureContext _ctx;
@@ -43,7 +40,8 @@ internal sealed class KeepAwakeService : IKeepAwakeService, IDisposable
     private readonly DispatcherTimer _battery;
     private readonly DispatcherTimer _jiggle;
     private readonly DispatcherTimer _appPoll;
-    private readonly string _journal;
+    private readonly string _dataDir;
+    private readonly LidJournal _lidJournal;
     private nint _request;
     private nint _reason;
     private HwndSource? _lidWindow;
@@ -61,7 +59,8 @@ internal sealed class KeepAwakeService : IKeepAwakeService, IDisposable
     public KeepAwakeService(IFeatureContext ctx)
     {
         _ctx = ctx;
-        _journal = Path.Combine(ctx.DataDirectory, "lid-journal.json");
+        _dataDir = ctx.DataDirectory;
+        _lidJournal = new LidJournal(_dataDir, new Win32LidPower(), ctx.Log);
         _tick = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, (_, _) => OnTick(), ctx.Ui) { IsEnabled = false };
         _battery = new DispatcherTimer(TimeSpan.FromSeconds(30), DispatcherPriority.Background, (_, _) => CheckBattery(), ctx.Ui) { IsEnabled = false };
         _jiggle = new DispatcherTimer(DispatcherPriority.Background, ctx.Ui) { IsEnabled = false };
@@ -88,6 +87,9 @@ internal sealed class KeepAwakeService : IKeepAwakeService, IDisposable
     public bool UntilSession { get; private set; }
 
     public LidState Lid { get; private set; }
+
+    /// <summary>True when putting the user's own lid action back failed (the journal keeps it for a retry).</summary>
+    public bool LidRestorePending => Lid == LidState.Failed && _lidApplied;
 
     public bool IsActive => Kind != SessionKind.None;
 
@@ -256,12 +258,12 @@ internal sealed class KeepAwakeService : IKeepAwakeService, IDisposable
     public void SetClamshellPreferred(bool on)
     {
         _ctx.App.Set("clamshellPreferred", on);
-        if (!on)
+        ApplyLid();
+        if (!on && !_lidApplied)
         {
             Lid = LidState.Off;
         }
 
-        ApplyLid();
         Raise();
     }
 
@@ -372,7 +374,11 @@ internal sealed class KeepAwakeService : IKeepAwakeService, IDisposable
         _jiggle.Stop();
         ReleaseRequest();
         RestoreLid();
-        Lid = LidState.Off;
+        if (!_lidApplied)
+        {
+            Lid = LidState.Off;
+        }
+
         if (was)
         {
             _ctx.Log.Info("Keep awake off");
@@ -758,114 +764,50 @@ internal sealed class KeepAwakeService : IKeepAwakeService, IDisposable
     {
         UnregisterLidWatch();
         RestoreBrightnessAfterLid(wait: true);
-        if (!_lidApplied)
+        if (!_lidApplied && !_lidJournal.Exists)
         {
             return;
         }
 
-        WriteLidAction(doNothing: false);
-        _lidApplied = false;
+        if (WriteLidAction(doNothing: false))
+        {
+            _lidApplied = false;
+        }
+        else
+        {
+            // _lidApplied stays true so a later ApplyLid or Stop tries again; the journal keeps the user's own values meanwhile.
+            Lid = LidState.Failed;
+            _ctx.Log.Warn("Closed-lid mode: the lid action could not be put back; it is retried later and at the next start.");
+            Raise();
+        }
     }
 
-    private sealed record LidJournal(Guid Scheme, uint Ac, uint Dc);
-
+    /// <summary>Runs the lid override (or its undo) under the gate the recovery hook shares, so the two never interleave.</summary>
     private bool WriteLidAction(bool doNothing)
     {
-        try
+        lock (LidJournal.Gate)
         {
-            if (PowerGetActiveScheme(0, out var schemePtr) != 0)
-            {
-                return false;
-            }
-
-            var scheme = Marshal.PtrToStructure<Guid>(schemePtr);
-            LocalFree(schemePtr);
-            var sub = ButtonSubgroup;
-            var action = LidAction;
-            if (doNothing)
-            {
-                if (PowerReadACValueIndex(0, ref scheme, ref sub, ref action, out var ac) != 0 || PowerReadDCValueIndex(0, ref scheme, ref sub, ref action, out var dc) != 0)
-                {
-                    return false;
-                }
-
-                Directory.CreateDirectory(Path.GetDirectoryName(_journal)!);
-                File.WriteAllText(_journal, JsonSerializer.Serialize(new LidJournal(scheme, ac, dc)));
-                var ok = PowerWriteACValueIndex(0, ref scheme, ref sub, ref action, 0) == 0
-                         && PowerWriteDCValueIndex(0, ref scheme, ref sub, ref action, 0) == 0
-                         && PowerSetActiveScheme(0, ref scheme) == 0;
-                if (!ok)
-                {
-                    RestoreFromJournal();
-                }
-
-                return ok;
-            }
-
-            return RestoreFromJournal();
-        }
-        catch (Exception ex)
-        {
-            _ctx.Log.Warn($"Closed-lid mode failed: {ex.Message}");
-            return false;
+            return doNothing ? _lidJournal.TryOverride() : _lidJournal.TryRestore();
         }
     }
 
-    private bool RestoreFromJournal()
-    {
-        if (!File.Exists(_journal))
-        {
-            return true;
-        }
-
-        try
-        {
-            var journal = JsonSerializer.Deserialize<LidJournal>(File.ReadAllText(_journal));
-            if (journal is null)
-            {
-                return false;
-            }
-
-            var scheme = journal.Scheme;
-            var sub = ButtonSubgroup;
-            var action = LidAction;
-            var ok = PowerWriteACValueIndex(0, ref scheme, ref sub, ref action, journal.Ac) == 0
-                     && PowerWriteDCValueIndex(0, ref scheme, ref sub, ref action, journal.Dc) == 0;
-            if (PowerGetActiveScheme(0, out var activePtr) == 0)
-            {
-                var active = Marshal.PtrToStructure<Guid>(activePtr);
-                LocalFree(activePtr);
-                if (active == scheme)
-                {
-                    PowerSetActiveScheme(0, ref scheme);
-                }
-            }
-
-            if (ok)
-            {
-                File.Delete(_journal);
-            }
-
-            return ok;
-        }
-        catch (Exception ex)
-        {
-            _ctx.Log.Warn($"Could not restore the lid action: {ex.Message}");
-            return false;
-        }
-    }
-
-    /// <summary>After a crash while the lid action was overridden, the next start puts the original values back.</summary>
+    /// <summary>
+    /// After a crash while the lid action was overridden, the next start puts the original values back. The recovery hook does the same
+    /// before any feature starts; this also covers the older settings-based brightness record.
+    /// </summary>
     private void RecoverLid()
     {
-        if (File.Exists(_journal))
+        lock (LidJournal.Gate)
         {
-            RestoreFromJournal();
+            if (_lidJournal.Exists)
+            {
+                _lidJournal.TryRestore();
+            }
         }
 
         // A crash while the lid was closed with lid dimming on leaves the panel at 0 %, and no lid watch exists yet to undo it
         // on opening. Nothing is dimmed at start, so any saved level is stale and is put back now.
-        if (_ctx.App.Get<int>("dimmedDisplaySavedBrightness", 0) > 0)
+        if (LidBrightnessJournal.Exists(_dataDir) || _ctx.App.Get<int>("dimmedDisplaySavedBrightness", 0) > 0)
         {
             RestoreBrightnessAfterLid(wait: false);
         }
@@ -929,8 +871,10 @@ internal sealed class KeepAwakeService : IKeepAwakeService, IDisposable
                 var level = rows.Count > 0 ? Wmi.ToInt(rows[0]["CurrentBrightness"], -1) : -1;
                 if (level > 0)
                 {
+                    // The level goes to disk before the panel is dimmed, and an existing record is never overwritten, so a crash
+                    // or a second close can never lose the user's real level.
+                    LidBrightnessJournal.TryRecord(_dataDir, level);
                     _savedBrightness = level;
-                    _ctx.App.Set("dimmedDisplaySavedBrightness", level);
                     BrightnessWrites.MarkOwn();
                     Wmi.ForEach(@"root\WMI", "SELECT * FROM WmiMonitorBrightnessMethods WHERE Active=TRUE", o => Wmi.Invoke(o, "WmiSetBrightness", 1, 0));
                     BrightnessWrites.MarkOwn();
@@ -970,17 +914,33 @@ internal sealed class KeepAwakeService : IKeepAwakeService, IDisposable
     {
         var task = QueueLidWork(() =>
         {
-            var level = _savedBrightness > 0 ? _savedBrightness : _ctx.App.Get<int>("dimmedDisplaySavedBrightness", 0);
+            var level = LidBrightnessJournal.TryRead(_dataDir);
             if (level <= 0)
             {
+                level = _savedBrightness > 0 ? _savedBrightness : _ctx.App.Get<int>("dimmedDisplaySavedBrightness", 0);
+            }
+
+            if (level <= 0)
+            {
+                // Nothing was dimmed. A record that is present but unreadable would otherwise stay forever.
+                if (LidBrightnessJournal.Exists(_dataDir))
+                {
+                    LidBrightnessJournal.Delete(_dataDir);
+                }
+
                 return;
             }
 
-            _savedBrightness = -1;
-            _ctx.App.Set("dimmedDisplaySavedBrightness", 0);
+            level = LidBrightnessJournal.RestoreLevel(level);
             BrightnessWrites.MarkOwn();
-            Wmi.ForEach(@"root\WMI", "SELECT * FROM WmiMonitorBrightnessMethods WHERE Active=TRUE", o => Wmi.Invoke(o, "WmiSetBrightness", 1, level));
+            var ok = Wmi.ForEach(@"root\WMI", "SELECT * FROM WmiMonitorBrightnessMethods WHERE Active=TRUE", o => Wmi.Invoke(o, "WmiSetBrightness", 1, level));
             BrightnessWrites.MarkOwn();
+            if (ok)
+            {
+                _savedBrightness = -1;
+                _ctx.App.Set("dimmedDisplaySavedBrightness", 0);
+                LidBrightnessJournal.Delete(_dataDir);
+            }
         });
         if (wait)
         {
@@ -1025,30 +985,9 @@ internal sealed class KeepAwakeService : IKeepAwakeService, IDisposable
     [DllImport("kernel32.dll")]
     private static extern uint SetThreadExecutionState(uint flags);
 
-    [DllImport("kernel32.dll")]
-    private static extern nint LocalFree(nint handle);
-
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetCursorPos(out Point point);
-
-    [DllImport("powrprof.dll")]
-    private static extern uint PowerGetActiveScheme(nint root, out nint scheme);
-
-    [DllImport("powrprof.dll")]
-    private static extern uint PowerSetActiveScheme(nint root, ref Guid scheme);
-
-    [DllImport("powrprof.dll")]
-    private static extern uint PowerReadACValueIndex(nint root, ref Guid scheme, ref Guid subgroup, ref Guid setting, out uint value);
-
-    [DllImport("powrprof.dll")]
-    private static extern uint PowerReadDCValueIndex(nint root, ref Guid scheme, ref Guid subgroup, ref Guid setting, out uint value);
-
-    [DllImport("powrprof.dll")]
-    private static extern uint PowerWriteACValueIndex(nint root, ref Guid scheme, ref Guid subgroup, ref Guid setting, uint value);
-
-    [DllImport("powrprof.dll")]
-    private static extern uint PowerWriteDCValueIndex(nint root, ref Guid scheme, ref Guid subgroup, ref Guid setting, uint value);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern nint RegisterPowerSettingNotification(nint recipient, ref Guid setting, uint flags);

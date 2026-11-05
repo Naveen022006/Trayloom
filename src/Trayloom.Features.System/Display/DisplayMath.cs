@@ -17,6 +17,12 @@ internal static class DisplayMath
     }
 
     /// <summary>
+    /// The level a hardware write may use: never below 5 %, so no key press or slider drag can turn the panel black with no way
+    /// to see the controls again. The software overlay keeps its own 5..100 range.
+    /// </summary>
+    public static int ClampHardware(int percent) => Math.Clamp(percent, 5, 100);
+
+    /// <summary>
     /// True when a hardware control id belongs to the monitor with this GDI name. Ids are either the bare GDI name (WMI panel)
     /// or the name followed by "#index" (DDC/CI), so a plain prefix test would let \\.\DISPLAY1 claim \\.\DISPLAY10.
     /// </summary>

@@ -141,6 +141,12 @@ internal sealed class BluetoothPageView : Grid, IIslandTopRowHost
 
     private void RadioChange(bool on) => BtGuard.FireAndLog(async () =>
     {
+        if (!on && !_service.ConfirmRadioOff())
+        {
+            Rebuild();
+            return;
+        }
+
         var status = await _service.SetRadioAsync(on);
         if (status != RadioAccessStatus.Allowed)
         {

@@ -216,12 +216,13 @@ internal static class KeepAwakeViews
             lidCaption.Text = service.Lid switch
             {
                 LidState.Configuring => Strings.KeepAwake.LidConfiguring,
+                LidState.Failed when service.LidRestorePending => Loc.T("Couldn’t put back what closing the lid does. Trayloom tries again at the next start."),
                 LidState.Failed => Strings.KeepAwake.LidFailed,
                 _ when service.IsActive && app.Get<bool>("clamshellPreferred") => Strings.KeepAwake.LidOn,
                 _ when app.Get<bool>("clamshellPreferred") => Strings.KeepAwake.LidNeedsSession,
                 _ => Strings.KeepAwake.LidReady,
             };
-            lidCaption.SetResourceReference(TextBlock.ForegroundProperty, service.Lid == LidState.Failed ? ThemeKeys.Red : ThemeKeys.TextSecondary);
+            lidCaption.SetResourceReference(TextBlock.ForegroundProperty, service.Lid == LidState.Failed ? (service.LidRestorePending ? ThemeKeys.Orange : ThemeKeys.Red) : ThemeKeys.TextSecondary);
             if (lidSwitch.IsOn != app.Get<bool>("clamshellPreferred"))
             {
                 lidSwitch.IsOn = app.Get<bool>("clamshellPreferred");
@@ -777,6 +778,14 @@ internal static class KeepAwakeViews
         var lidSwitch = new MacSwitch(app.Get<bool>("clamshellPreferred"), SwitchSize.Regular, on => service?.SetClamshellPreferred(on));
         var lidRowFull = new SettingsRow(Gl.Laptop, Strings.KeepAwake.LidClosed, Strings.KeepAwake.LidExplanation, lidSwitch);
         lidHost.Children.Add(lidRowFull);
+        var lidNote = UiKit.Text(
+            Loc.T("While a session runs, closing the lid does nothing. Your own setting comes back when the session ends, or at the next start if Trayloom was closed unexpectedly."),
+            11.5,
+            FontWeights.Normal,
+            ThemeKeys.TextSecondary,
+            wrap: true);
+        lidNote.Margin = new Thickness(SettingsRow.TextInset, 6, 0, 0);
+        lidHost.Children.Add(lidNote);
         var failure = UiKit.Text(Strings.KeepAwake.LidFailed, 11.5, FontWeights.Normal, ThemeKeys.Red, wrap: true);
         failure.Margin = new Thickness(SettingsRow.TextInset, 6, 0, 0);
         failure.Visibility = service?.Lid == LidState.Failed ? Visibility.Visible : Visibility.Collapsed;
@@ -793,6 +802,17 @@ internal static class KeepAwakeViews
         void Refresh()
         {
             failure.Visibility = service?.Lid == LidState.Failed ? Visibility.Visible : Visibility.Collapsed;
+            if (service?.LidRestorePending == true)
+            {
+                failure.Text = Loc.T("Couldn’t put back what closing the lid does. Trayloom tries again at the next start.");
+                failure.SetResourceReference(TextBlock.ForegroundProperty, ThemeKeys.Orange);
+            }
+            else
+            {
+                failure.Text = Strings.KeepAwake.LidFailed;
+                failure.SetResourceReference(TextBlock.ForegroundProperty, ThemeKeys.Red);
+            }
+
             lidSwitch.IsEnabled = service?.Lid != LidState.Configuring;
             if (lidSwitch.IsOn != app.Get<bool>("clamshellPreferred"))
             {

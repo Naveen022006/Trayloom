@@ -300,18 +300,36 @@ internal sealed class ProcessList : StackPanel
             if (_forceQuit)
             {
                 var pid = row.Pid;
-                var menu = new ContextMenu();
-                var item = new MenuItem { Header = Loc.T("Force Quit") };
-                item.Click += (_, _) => ForceQuit(pid, row.Name);
-                menu.Items.Add(item);
-                grid.ContextMenu = menu;
+                var started = StartTimeOf(pid);
+                if (started is not null)
+                {
+                    var menu = new ContextMenu();
+                    var item = new MenuItem { Header = Loc.T("Force Quit") };
+                    item.Click += (_, _) => ForceQuit(pid, row.Name, started.Value);
+                    menu.Items.Add(item);
+                    grid.ContextMenu = menu;
+                }
             }
 
             Children.Add(grid);
         }
     }
 
-    private static void ForceQuit(int pid, string name)
+    /// <summary>When the process started, or null when it is gone or protected. Taken with the row so a reused PID is recognised.</summary>
+    private static DateTime? StartTimeOf(int pid)
+    {
+        try
+        {
+            using var p = System.Diagnostics.Process.GetProcessById(pid);
+            return ProcessSafety.IsProtectedName(p.ProcessName) ? null : p.StartTime;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static void ForceQuit(int pid, string name, DateTime started)
     {
         if (MessageBox.Show(Loc.F("Force quit {0}?", name), Loc.T("Force Quit"), MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK)
         {
@@ -321,6 +339,13 @@ internal sealed class ProcessList : StackPanel
         try
         {
             using var p = System.Diagnostics.Process.GetProcessById(pid);
+
+            // The PID may belong to another program by now: only the process the row showed (same start time) is ended.
+            if (p.StartTime != started || ProcessSafety.IsProtectedName(p.ProcessName))
+            {
+                return;
+            }
+
             p.Kill();
         }
         catch (Exception)

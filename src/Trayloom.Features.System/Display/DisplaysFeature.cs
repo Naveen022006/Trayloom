@@ -138,10 +138,22 @@ public sealed class BluetoothSleepFeature : IFeature
                     var radio = await FindBluetoothAsync();
                     if (radio is not null && radio.State == RadioState.On)
                     {
+                        var restore = ctx.App.Get<bool>("bluetoothSleepRestoreOnWake");
+
+                        // On disk before the radio goes off: a crash or a shutdown while asleep must not leave Bluetooth off for good.
+                        if (restore)
+                        {
+                            BluetoothSleepJournal.Write();
+                        }
+
                         var result = await radio.SetStateAsync(RadioState.Off);
                         if (result == RadioAccessStatus.Allowed)
                         {
-                            ctx.App.Set("bluetoothSleepRestorePending", ctx.App.Get<bool>("bluetoothSleepRestoreOnWake"));
+                            ctx.App.Set("bluetoothSleepRestorePending", restore);
+                        }
+                        else
+                        {
+                            BluetoothSleepJournal.Delete();
                         }
                     }
                 }).Wait(1800);
@@ -160,17 +172,27 @@ public sealed class BluetoothSleepFeature : IFeature
     private async Task PayDebtAsync()
     {
         var ctx = _ctx;
-        if (ctx is null || !ctx.App.Get<bool>("bluetoothSleepRestorePending"))
+        if (ctx is null || !(ctx.App.Get<bool>("bluetoothSleepRestorePending") || BluetoothSleepJournal.Exists()))
         {
             return;
         }
 
+        await BluetoothSleepJournal.Gate.WaitAsync();
         try
         {
             var radio = await FindBluetoothAsync();
-            if (radio is not null && radio.State == RadioState.Off)
+            if (radio is not null)
             {
-                await radio.SetStateAsync(RadioState.On);
+                if (radio.State == RadioState.Off)
+                {
+                    await radio.SetStateAsync(RadioState.On);
+                }
+
+                // Back on (or switched on by the user meanwhile): the debt is paid.
+                if (radio.State == RadioState.On)
+                {
+                    BluetoothSleepJournal.Delete();
+                }
             }
         }
         catch (Exception ex)
@@ -179,12 +201,13 @@ public sealed class BluetoothSleepFeature : IFeature
         }
         finally
         {
-            // Bluetooth the user switched on meanwhile cancels the debt; the flag is always cleared.
+            // The flag is always cleared; a journal that is still there makes the next start try again.
             ctx.App.Set("bluetoothSleepRestorePending", false);
+            BluetoothSleepJournal.Gate.Release();
         }
     }
 
-    private static async Task<Radio?> FindBluetoothAsync()
+    internal static async Task<Radio?> FindBluetoothAsync()
     {
         var access = await Radio.RequestAccessAsync();
         if (access != RadioAccessStatus.Allowed)
@@ -194,6 +217,117 @@ public sealed class BluetoothSleepFeature : IFeature
 
         var radios = await Radio.GetRadiosAsync();
         return radios.FirstOrDefault(r => r.Kind == RadioKind.Bluetooth);
+    }
+}
+
+/// <summary>The record that Trayloom switched Bluetooth off for sleep (<c>bt-pending.json</c>); cleared once the radio is back on.</summary>
+internal static class BluetoothSleepJournal
+{
+    public const string FileName = "bt-pending.json";
+
+    /// <summary>Shared by the wake-up payment and the recovery hook so the two never switch the radio at the same time.</summary>
+    public static readonly SemaphoreSlim Gate = new(1, 1);
+
+    public static string PathIn(string dir) => Path.Combine(dir, FileName);
+
+    public static bool Exists() => File.Exists(PathIn(AppPaths.FeatureData("bluetooth-sleep")));
+
+    public static void Write()
+    {
+        try
+        {
+            AtomicFile.WriteAllText(PathIn(AppPaths.FeatureData("bluetooth-sleep")), "{\"off\":true}");
+        }
+        catch (Exception)
+        {
+            // The pending flag in the settings still covers a normal wake.
+        }
+    }
+
+    public static void Delete()
+    {
+        try
+        {
+            File.Delete(PathIn(AppPaths.FeatureData("bluetooth-sleep")));
+        }
+        catch (Exception)
+        {
+        }
+    }
+}
+
+/// <summary>
+/// Switches Bluetooth back on when the journal says Trayloom turned it off for sleep and never turned it back on (a crash, a kill, or a
+/// shutdown while asleep), at the next start and on uninstall. Without a journal it does nothing. Bounded to five seconds.
+/// </summary>
+public sealed class BluetoothRecovery : IStartupRecovery
+{
+    private readonly Func<string> _dataDir;
+    private readonly Func<Task<bool>> _turnOn;
+
+    public BluetoothRecovery()
+        : this(() => AppPaths.FeatureData("bluetooth-sleep"), TurnRadioOnAsync)
+    {
+    }
+
+    internal BluetoothRecovery(Func<string> dataDir, Func<Task<bool>> turnOn)
+    {
+        _dataDir = dataDir;
+        _turnOn = turnOn;
+    }
+
+    public string Id => "bluetooth-sleep";
+
+    public void Recover(RecoveryStage stage, ILog log)
+    {
+        var path = BluetoothSleepJournal.PathIn(_dataDir());
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        if (!BluetoothSleepJournal.Gate.Wait(5000))
+        {
+            log.Warn("bluetooth-sleep: busy; Bluetooth is switched back on at the next start.");
+            return;
+        }
+
+        try
+        {
+            var task = Task.Run(_turnOn);
+            if (task.Wait(5000) && task.Result)
+            {
+                File.Delete(path);
+            }
+            else
+            {
+                log.Warn("bluetooth-sleep: Bluetooth could not be switched back on; it is tried again at the next start.");
+            }
+        }
+        catch (Exception ex)
+        {
+            log.Warn($"bluetooth-sleep: {ex.Message}");
+        }
+        finally
+        {
+            BluetoothSleepJournal.Gate.Release();
+        }
+    }
+
+    private static async Task<bool> TurnRadioOnAsync()
+    {
+        var radio = await BluetoothSleepFeature.FindBluetoothAsync();
+        if (radio is null)
+        {
+            return false;
+        }
+
+        if (radio.State == RadioState.On)
+        {
+            return true;
+        }
+
+        return radio.State == RadioState.Off && await radio.SetStateAsync(RadioState.On) == RadioAccessStatus.Allowed;
     }
 }
 

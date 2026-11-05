@@ -219,9 +219,12 @@ public sealed class MusicBlockFeature : IFeature
         try
         {
             ctx.Log.Info($"Music blocker closed {process.ProcessName} after a media key");
-            if (!process.CloseMainWindow() || !process.WaitForExit(1000))
+
+            // Politely only: the app is asked to close, never ended. Waiting here would block the UI thread, and a force kill could lose
+            // the user's work in an app they opened on purpose.
+            if (!process.CloseMainWindow())
             {
-                process.Kill();
+                ctx.Log.Info($"{process.ProcessName} has no window to close; it is left running");
             }
         }
         catch (Exception ex)

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Trayloom — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
 
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using NAudio.CoreAudioApi;
@@ -84,6 +85,7 @@ public sealed class MicMuteFeature : IFeature, IMicMuteState
 
             _muted = false;
             ctx.App.Set("micMuteActive", false);
+            MicMuteJournal.Write(false, ctx.App.Get<Dictionary<string, double>>("micMuteSavedLevels"));
         }
 
         _shortcut?.Dispose();
@@ -125,6 +127,7 @@ public sealed class MicMuteFeature : IFeature, IMicMuteState
         }
 
         ctx.App.Set("micMuteActive", _muted);
+        MicMuteJournal.Write(_muted, ctx.App.Get<Dictionary<string, double>>("micMuteSavedLevels"));
         Changed?.Invoke();
         if (ok < total)
         {
@@ -190,6 +193,9 @@ public sealed class MicMuteFeature : IFeature, IMicMuteState
                             {
                                 levels[device.ID] = level;
                                 levelsChanged = true;
+
+                                // On disk before the level is touched, so an uninstall can give it back even after a crash.
+                                MicMuteJournal.Write(true, levels);
                             }
 
                             volume.Mute = true;
@@ -232,6 +238,7 @@ public sealed class MicMuteFeature : IFeature, IMicMuteState
         if (levelsChanged)
         {
             ctx.App.Set("micMuteSavedLevels", levels);
+            MicMuteJournal.Write(mute || _muted, levels);
         }
 
         return (ok, total);
@@ -325,5 +332,188 @@ public sealed class MicMuteSettingsSection : ISettingsSection
         }
 
         return card;
+    }
+}
+
+/// <summary>The record of a mute Trayloom applied (<c>mic-mute.json</c>), so uninstall can give the microphone back.</summary>
+internal static class MicMuteJournal
+{
+    public const string FileName = "mic-mute.json";
+
+    /// <summary>The file in the feature's data folder.</summary>
+    public static string PathIn(string dataDir) => Path.Combine(dataDir, FileName);
+
+    /// <summary>Writes the record into the real data folder; best effort. Nothing to remember deletes it.</summary>
+    public static void Write(bool active, IReadOnlyDictionary<string, double> levels)
+    {
+        try
+        {
+            Write(AppPaths.FeatureData("mic-mute"), active, levels);
+        }
+        catch
+        {
+            // the setting still holds the same state; the journal is the safety net
+        }
+    }
+
+    /// <summary>Writes the record into <paramref name="dataDir"/>; nothing to remember deletes it.</summary>
+    public static void Write(string dataDir, bool active, IReadOnlyDictionary<string, double> levels)
+    {
+        var path = PathIn(dataDir);
+        if (!active && levels.Count == 0)
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+
+            return;
+        }
+
+        AtomicFile.WriteAllText(path, JsonSerializer.Serialize(new Entry(active, new Dictionary<string, double>(levels))));
+    }
+
+    /// <summary>The record, or null when there is none or it is unreadable.</summary>
+    public static (bool Active, Dictionary<string, double> Levels)? Read(string dataDir)
+    {
+        try
+        {
+            var path = PathIn(dataDir);
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
+            var entry = JsonSerializer.Deserialize<Entry>(File.ReadAllText(path));
+            return entry is null ? null : (entry.Active, entry.Levels ?? []);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private sealed record Entry(bool Active, Dictionary<string, double>? Levels);
+}
+
+/// <summary>One capture endpoint as the mic recovery sees it (a seam so the decision can be tested).</summary>
+internal interface IMicEndpoint
+{
+    string Id { get; }
+
+    bool Mute { get; set; }
+
+    float Level { get; set; }
+}
+
+/// <summary>
+/// On uninstall, un-mutes every microphone and gives back a level Trayloom set to zero. Acts only when the mic journal says a mute was
+/// applied. Startup does nothing: the mute persists across restarts by design.
+/// </summary>
+public sealed class MicMuteRecovery : IStartupRecovery
+{
+    private readonly Func<string> _dataDir;
+    private readonly Func<IReadOnlyList<IMicEndpoint>> _endpoints;
+
+    public MicMuteRecovery()
+        : this(() => AppPaths.FeatureData("mic-mute"), NAudioEndpoints.Capture)
+    {
+    }
+
+    internal MicMuteRecovery(Func<string> dataDir, Func<IReadOnlyList<IMicEndpoint>> endpoints)
+    {
+        _dataDir = dataDir;
+        _endpoints = endpoints;
+    }
+
+    public string Id => "mic-mute";
+
+    public void Recover(RecoveryStage stage, ILog log)
+    {
+        if (stage != RecoveryStage.Uninstall)
+        {
+            return;
+        }
+
+        var dir = _dataDir();
+        var journal = MicMuteJournal.Read(dir);
+        if (journal is not { } record || (!record.Active && record.Levels.Count == 0))
+        {
+            return;
+        }
+
+        var failed = false;
+        foreach (var endpoint in _endpoints())
+        {
+            try
+            {
+                endpoint.Mute = false;
+                if (record.Levels.TryGetValue(endpoint.Id, out var saved) && endpoint.Level < 0.01f)
+                {
+                    endpoint.Level = (float)Math.Clamp(saved, 0.01, 1);
+                }
+            }
+            catch (Exception ex)
+            {
+                failed = true;
+                log.Warn($"mic-mute: a microphone could not be given back: {ex.Message}");
+            }
+        }
+
+        if (!failed)
+        {
+            try
+            {
+                File.Delete(MicMuteJournal.PathIn(dir));
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+    }
+}
+
+/// <summary>The real capture endpoints.</summary>
+internal sealed class NAudioEndpoints : IMicEndpoint
+{
+    private readonly MMDevice _device;
+
+    private NAudioEndpoints(MMDevice device)
+    {
+        _device = device;
+    }
+
+    public string Id => _device.ID;
+
+    public bool Mute
+    {
+        get => _device.AudioEndpointVolume.Mute;
+        set => _device.AudioEndpointVolume.Mute = value;
+    }
+
+    public float Level
+    {
+        get => _device.AudioEndpointVolume.MasterVolumeLevelScalar;
+        set => _device.AudioEndpointVolume.MasterVolumeLevelScalar = value;
+    }
+
+    public static IReadOnlyList<IMicEndpoint> Capture()
+    {
+        var list = new List<IMicEndpoint>();
+        try
+        {
+            using var enumerator = new MMDeviceEnumerator();
+            foreach (var device in enumerator.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active))
+            {
+                list.Add(new NAudioEndpoints(device));
+            }
+        }
+        catch
+        {
+            // none
+        }
+
+        return list;
     }
 }

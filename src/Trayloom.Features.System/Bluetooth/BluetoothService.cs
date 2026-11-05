@@ -121,6 +121,12 @@ internal sealed class BluetoothService : IBluetoothState, IDisposable
 
     public void SetRadio(bool on) => BtGuard.FireAndLog(async () =>
     {
+        if (!on && !ConfirmRadioOff())
+        {
+            Changed?.Invoke();
+            return;
+        }
+
         var status = await SetRadioAsync(on);
         if (status != RadioAccessStatus.Allowed)
         {
@@ -282,6 +288,38 @@ internal sealed class BluetoothService : IBluetoothState, IDisposable
         _radioState = MapRadio(sender.State);
         ScheduleMerge();
     });
+
+    /// <summary>
+    /// Asks before the radio goes off while a Bluetooth keyboard or mouse is connected, because turning it off would cut the person off
+    /// from this PC. The radio state is read fresh (an already-off radio needs no question). Returns false when the person cancels.
+    /// Call on the UI thread.
+    /// </summary>
+    public bool ConfirmRadioOff()
+    {
+        try
+        {
+            var radio = _radio;
+            if (radio is null || radio.State != RadioState.On)
+            {
+                return true;
+            }
+
+            if (!Snapshot.Devices.Any(d => d.Connected && d.Kind is BtKind.Keyboard or BtKind.Mouse))
+            {
+                return true;
+            }
+
+            return System.Windows.MessageBox.Show(
+                       Loc.T("A keyboard or mouse is connected over Bluetooth. Turning Bluetooth off disconnects it, and you may lose control of this PC."),
+                       Loc.T("Turn Bluetooth off?"),
+                       System.Windows.MessageBoxButton.OKCancel,
+                       System.Windows.MessageBoxImage.Warning) == System.Windows.MessageBoxResult.OK;
+        }
+        catch (Exception)
+        {
+            return true;
+        }
+    }
 
     /// <summary>Switches the radio. Windows answers with an access status; anything but Allowed means it refused.</summary>
     public async Task<RadioAccessStatus> SetRadioAsync(bool on)
