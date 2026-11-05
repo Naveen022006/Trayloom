@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Console harness for the pure Input decisions (super key release, clipboard restore policy, modifier parsing). Never injects input. Not part of Trayloom.sln; run it with dotnet run on this project. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Trayloom.Input.Harness</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Trayloom.Features.Input\Trayloom.Features.Input.csproj" />
+  </ItemGroup>
+</Project>

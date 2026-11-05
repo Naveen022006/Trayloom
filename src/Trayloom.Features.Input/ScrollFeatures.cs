@@ -172,14 +172,23 @@ public sealed class ScrollZoomFeature : WheelFeatureBase
             };
             const ushort ctrl = 0x11;
             const ushort none = Win32.VK_UNASSIGNED;
-            InputSender.Send(
+            // The user may let go of the modifier while this burst is being built: pressing it again then would leave it stuck.
+            var stillHeld = (NativeMethods.GetAsyncKeyState(held) & 0x8000) != 0;
+            var inputs = new List<INPUT>(7)
+            {
                 KeySender.KeyInput(ctrl, false),
                 KeySender.KeyInput(none, false),
                 KeySender.KeyInput(none, true),
                 KeySender.KeyInput(held, true),
                 KeySender.WheelInput(e.Delta, e.Horizontal),
-                KeySender.KeyInput(held, false),
-                KeySender.KeyInput(ctrl, true));
+            };
+            if (stillHeld)
+            {
+                inputs.Add(KeySender.KeyInput(held, false));
+            }
+
+            inputs.Add(KeySender.KeyInput(ctrl, true));
+            InputSender.Send([.. inputs]);
             return StageResult.Consumed;
         }
     }

@@ -389,11 +389,20 @@ public sealed class CloseProtectionFeature : InputFeatureBase
                 _swallowUp[vk] = true;
             }
 
-            InputSender.Send(
+            // The user may have released the extra modifier meanwhile: pressing it again would leave it stuck down.
+            var extraStillHeld = (NativeMethods.GetAsyncKeyState(extra) & 0x8000) != 0;
+            var replay = new List<INPUT>(4)
+            {
                 KeySender.KeyInput(extra, true),
                 KeySender.KeyInput((ushort)vk, false),
                 KeySender.KeyInput((ushort)vk, true),
-                KeySender.KeyInput(extra, false));
+            };
+            if (extraStillHeld)
+            {
+                replay.Add(KeySender.KeyInput(extra, false));
+            }
+
+            InputSender.Send([.. replay]);
             HideHud();
             return true;
         }

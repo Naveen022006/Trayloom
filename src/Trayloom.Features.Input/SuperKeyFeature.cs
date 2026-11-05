@@ -2,6 +2,7 @@
 // Trayloom — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
 
 using System.Diagnostics;
+using Microsoft.Win32;
 using Trayloom.Core;
 using Trayloom.Core.Native;
 
@@ -41,12 +42,17 @@ internal static class SuperKeyStatus
 /// switch input language (a long hold toggles Caps Lock) or press Escape. While any app of the "Apps to leave alone"
 /// list is running, even in the background, the feature pauses and the key behaves normally.
 /// Windows reports no physical state for swallowed keys (measured: GetAsyncKeyState stays 0), so the watchdog is
-/// event-based: modifiers still held after 20 s without any keyboard or mouse event are released.
+/// event-based: modifiers still held after 20 s without any keyboard or mouse event are released. A second check every
+/// 500 ms does not wait for idleness: it also releases when the foreground window is missing or elevated, when the input
+/// desktop is not the normal one (UAC, lock screen) and when the hook is lost; the session locking and Trayloom exiting
+/// release too. While the feature is on a marker file lets the next start release modifiers a crash left down
+/// (<see cref="SuperKeyRecovery"/>).
 /// </summary>
 public sealed class SuperKeyFeature : InputFeatureBase
 {
     private const int HoldForCapsMs = 500;
-    private const int WatchdogMs = 20_000;
+    private const int WatchdogMs = 500;
+    private const string MarkerName = "superkey-armed";
 
     private volatile int _source = 0x14;
     private volatile ushort[] _modifiers = [0xA2, 0xA4, 0xA0, 0x5B];
@@ -62,6 +68,9 @@ public sealed class SuperKeyFeature : InputFeatureBase
     private ushort[] _activeModifiers = [];
     private System.Threading.Timer? _watchdog;
     private System.Threading.Timer? _pausePoll;
+    private string? _markerPath;
+    private int _watchdogBusy;
+    private readonly SuperKeyForeground _foreground = new();
 
     public override string Id => "super-key";
 
@@ -73,8 +82,11 @@ public sealed class SuperKeyFeature : InputFeatureBase
         _active = false;
         SubscribeKeyboard(OnKey, HookPriorities.SuperKey);
         SubscribeMouse(OnMouse, HookPriorities.SuperKey);
+        ArmMarker();
+        SystemEvents.SessionSwitch += OnSessionSwitch;
+        AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
         _pausePoll = new System.Threading.Timer(_ => PollPause(), null, 0, 1500);
-        _watchdog = new System.Threading.Timer(_ => Watchdog(), null, 2000, 2000);
+        _watchdog = new System.Threading.Timer(_ => Watchdog(), null, WatchdogMs, WatchdogMs);
         SuperKeyStatus.Set(SuperKeyState.Working);
         var hooks = Context!.Hooks;
         _ = Task.Delay(500).ContinueWith(_ =>
@@ -83,6 +95,7 @@ public sealed class SuperKeyFeature : InputFeatureBase
             if (IsEngaged && !hooks.KeyboardHookInstalled)
             {
                 SuperKeyStatus.Set(SuperKeyState.HookFailed);
+                ReleaseNow();
             }
         });
     }
@@ -93,11 +106,10 @@ public sealed class SuperKeyFeature : InputFeatureBase
         _pausePoll = null;
         _watchdog?.Dispose();
         _watchdog = null;
-        lock (this)
-        {
-            Release(solo: false);
-        }
-
+        SystemEvents.SessionSwitch -= OnSessionSwitch;
+        AppDomain.CurrentDomain.ProcessExit -= OnProcessExit;
+        ReleaseNow();
+        DisarmMarker();
         SuperKeyStatus.Set(SuperKeyState.Off);
     }
 
@@ -164,8 +176,25 @@ public sealed class SuperKeyFeature : InputFeatureBase
             return false;
         }
 
-        _lastEvent = Environment.TickCount64;
+        Volatile.Write(ref _lastEvent, Environment.TickCount64);
+        INPUT[]? release;
+        Action? solo;
+        bool swallow;
         lock (this)
+        {
+            swallow = HandleKey(e, out release, out solo);
+        }
+
+        // Injecting can block on a slow foreground app: never while holding the lock.
+        Flush(release, solo);
+        return swallow;
+    }
+
+    // Caller holds the lock.
+    private bool HandleKey(KeyboardHookEvent e, out INPUT[]? release, out Action? solo)
+    {
+        release = null;
+        solo = null;
         {
             // AltGr layouts send a fake left Ctrl with scan code 0x21D before Right Alt: it must not leak.
             if (_source == 0xA5 && e.VkCode == 0xA2 && e.ScanCode == 0x21D)
@@ -190,7 +219,7 @@ public sealed class SuperKeyFeature : InputFeatureBase
 
                 if (_held)
                 {
-                    Release(solo: true);
+                    release = TakeRelease(solo: true, out solo);
                 }
 
                 return true;
@@ -235,7 +264,7 @@ public sealed class SuperKeyFeature : InputFeatureBase
             return false;
         }
 
-        _lastEvent = Environment.TickCount64;
+        Volatile.Write(ref _lastEvent, Environment.TickCount64);
         lock (this)
         {
             if (!_held)
@@ -270,40 +299,76 @@ public sealed class SuperKeyFeature : InputFeatureBase
         }
     }
 
-    // Caller holds the lock (or is stopping).
-    private void Release(bool solo)
+    /// <summary>
+    /// Caller holds the lock. Resets the state and returns the modifier key-ups to inject (null when none are down); the caller
+    /// sends them, and runs <paramref name="soloAction"/>, after leaving the lock.
+    /// </summary>
+    private INPUT[]? TakeRelease(bool solo, out Action? soloAction)
     {
+        soloAction = null;
         if (!_held && !_active)
         {
-            return;
+            return null;
         }
 
         var wasUsed = _used;
         var heldMs = Environment.TickCount64 - _downTick;
         _held = false;
+        INPUT[]? inputs = null;
         if (_active)
         {
             var modifiers = _activeModifiers;
-            var inputs = new INPUT[modifiers.Length];
+            inputs = new INPUT[modifiers.Length];
             for (var i = 0; i < modifiers.Length; i++)
             {
                 inputs[i] = KeySender.KeyInput(modifiers[^(i + 1)], true);
             }
 
-            InputSender.Send(inputs);
             _active = false;
             _activeModifiers = [];
         }
 
         if (solo && !wasUsed)
         {
-            RunSolo(heldMs);
+            var mode = _solo;
+            soloAction = () => RunSolo(mode, heldMs);
+        }
+
+        return inputs;
+    }
+
+    private static void Flush(INPUT[]? release, Action? solo)
+    {
+        try
+        {
+            if (release is { Length: > 0 })
+            {
+                InputSender.Send(release);
+            }
+
+            solo?.Invoke();
+        }
+        catch
+        {
+            // best effort: the next watchdog tick releases again if modifiers are still tracked
         }
     }
 
-    private void RunSolo(long heldMs)
+    /// <summary>Releases anything held (no solo action), sending outside the lock. Safe from any thread.</summary>
+    private void ReleaseNow()
     {
-        switch (_solo)
+        INPUT[]? release;
+        lock (this)
+        {
+            release = TakeRelease(solo: false, out _);
+        }
+
+        Flush(release, null);
+    }
+
+    private static void RunSolo(string mode, long heldMs)
+    {
+        switch (mode)
         {
             case "capsLock":
                 KeySender.Tap(0x14);
@@ -325,14 +390,86 @@ public sealed class SuperKeyFeature : InputFeatureBase
         }
     }
 
+    private void OnSessionSwitch(object? sender, SessionSwitchEventArgs e)
+    {
+        if (e.Reason is SessionSwitchReason.SessionLock or SessionSwitchReason.SessionUnlock or SessionSwitchReason.ConsoleDisconnect
+            or SessionSwitchReason.RemoteDisconnect or SessionSwitchReason.SessionLogoff)
+        {
+            ReleaseNow();
+        }
+    }
+
+    private void OnProcessExit(object? sender, EventArgs e)
+    {
+        ReleaseNow();
+        DisarmMarker();
+    }
+
+    private void ArmMarker()
+    {
+        try
+        {
+            _markerPath = Path.Combine(Context!.DataDirectory, MarkerName);
+            AtomicFile.WriteAllText(_markerPath, "armed");
+        }
+        catch (Exception ex)
+        {
+            Context?.Log.Warn($"super key: could not write the crash marker: {ex.Message}");
+        }
+    }
+
+    private void DisarmMarker()
+    {
+        try
+        {
+            if (_markerPath is not null)
+            {
+                File.Delete(_markerPath);
+            }
+        }
+        catch
+        {
+            // the next start cleans it up
+        }
+    }
+
+    // Runs on a timer thread, never on the hook thread: the foreground checks call into other processes.
     private void Watchdog()
     {
-        lock (this)
+        if (Interlocked.Exchange(ref _watchdogBusy, 1) == 1)
         {
-            if (_active && Environment.TickCount64 - _lastEvent > WatchdogMs)
+            return;
+        }
+
+        try
+        {
+            bool active;
+            lock (this)
             {
-                Release(solo: false);
+                active = _active;
             }
+
+            if (!active)
+            {
+                return;
+            }
+
+            var idleMs = Environment.TickCount64 - Volatile.Read(ref _lastEvent);
+            var hooks = Context?.Hooks;
+            var hookLost = hooks is null || !hooks.KeyboardHookInstalled;
+            var snapshot = _foreground.Sample();
+            if (hookLost || SuperKeyMath.ShouldRelease(true, idleMs, snapshot.Missing, snapshot.Elevated, snapshot.InputDesktopNotDefault, false))
+            {
+                ReleaseNow();
+            }
+        }
+        catch
+        {
+            // a failed probe must not stop the watchdog
+        }
+        finally
+        {
+            Volatile.Write(ref _watchdogBusy, 0);
         }
     }
 
@@ -374,10 +511,7 @@ public sealed class SuperKeyFeature : InputFeatureBase
                 _paused = paused;
                 if (paused)
                 {
-                    lock (this)
-                    {
-                        Release(solo: false);
-                    }
+                    ReleaseNow();
                 }
 
                 SuperKeyStatus.Set(paused ? SuperKeyState.Paused : SuperKeyState.Working);

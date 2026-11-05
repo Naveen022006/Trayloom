@@ -96,19 +96,36 @@ internal static class SnippetTyper
 
     private static bool TryPaste(string text, Dispatcher ui, ILog? log)
     {
-        Dictionary<string, object>? snapshot = null;
+        (bool Complete, Dictionary<string, object> Map) snapshot = (false, []);
+        var restoreDue = false;
+        uint seqAfterSet = 0;
         try
         {
             snapshot = ui.Invoke(Snapshot);
-            var set = ui.Invoke(() => SetTransient(text));
+            if (!snapshot.Complete)
+            {
+                // A busy clipboard or an unreadable format: replacing it could lose the user's data, so type instead.
+                log?.Info("snippet: clipboard could not be saved, typing instead of pasting");
+                return false;
+            }
+
+            var set = ui.Invoke(() =>
+            {
+                var ok = SetTransient(text);
+                seqAfterSet = GetClipboardSequenceNumber();
+                return ok;
+            });
             if (!set)
             {
                 return false;
             }
 
+            restoreDue = true;
             Thread.Sleep(30);
             KeySender.SendChord([0x11, 0x56]);
-            Thread.Sleep(450);
+
+            // Slow targets read the clipboard late; restoring earlier would paste the old contents.
+            Thread.Sleep(1500);
             return true;
         }
         catch (Exception ex)
@@ -118,14 +135,31 @@ internal static class SnippetTyper
         }
         finally
         {
-            if (snapshot is not null)
+            if (restoreDue)
             {
-                ui.BeginInvoke(() => Restore(snapshot));
+                var map = snapshot.Map;
+                var complete = snapshot.Complete;
+                var expected = seqAfterSet;
+                ui.BeginInvoke(() =>
+                {
+                    if (ClipboardRestorePolicy.ShouldRestore(expected, GetClipboardSequenceNumber(), complete))
+                    {
+                        Restore(map);
+                    }
+                    else
+                    {
+                        log?.Info("snippet: clipboard changed, not restored");
+                    }
+                });
             }
         }
     }
 
-    private static Dictionary<string, object> Snapshot()
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern uint GetClipboardSequenceNumber();
+
+    /// <summary>Reads every clipboard format. <c>Complete</c> is false when the clipboard was busy or any format could not be read.</summary>
+    private static (bool Complete, Dictionary<string, object> Map) Snapshot()
     {
         var map = new Dictionary<string, object>();
         try
@@ -133,9 +167,10 @@ internal static class SnippetTyper
             var data = Clipboard.GetDataObject();
             if (data is null)
             {
-                return map;
+                return (false, map);
             }
 
+            var complete = true;
             foreach (var format in data.GetFormats(false))
             {
                 try
@@ -144,19 +179,23 @@ internal static class SnippetTyper
                     {
                         map[format] = value;
                     }
+                    else
+                    {
+                        complete = false;
+                    }
                 }
                 catch
                 {
-                    // skip formats that cannot be read
+                    complete = false;
                 }
             }
+
+            return (complete, map);
         }
         catch
         {
-            // clipboard busy
+            return (false, map);
         }
-
-        return map;
     }
 
     private static bool SetTransient(string text)
@@ -188,6 +227,7 @@ internal static class SnippetTyper
         {
             if (snapshot.Count == 0)
             {
+                // The snapshot was complete and the clipboard was empty before the paste.
                 Clipboard.Clear();
                 return;
             }
@@ -214,4 +254,11 @@ internal static class SnippetTyper
             // best effort
         }
     }
+}
+
+/// <summary>When a snippet paste may put the saved clipboard back.</summary>
+internal static class ClipboardRestorePolicy
+{
+    /// <summary>True only when the saved copy is complete and nobody changed the clipboard since Trayloom set the snippet.</summary>
+    public static bool ShouldRestore(uint seqAfterSet, uint seqNow, bool complete) => complete && seqAfterSet == seqNow;
 }

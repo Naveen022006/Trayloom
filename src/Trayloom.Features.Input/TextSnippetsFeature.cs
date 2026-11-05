@@ -43,7 +43,7 @@ public sealed class TextSnippetsFeature : InputFeatureBase, ISnippetsService
     private IDisposable? _libraryBind;
     private SnippetLibraryWindow? _library;
 
-    private readonly record struct Job(int Backspaces, string Text, string? Trailing, bool Expansion);
+    private readonly record struct Job(int Backspaces, string Text, string? Trailing, bool Expansion, nint Window);
 
     public override string Id => "text-snippets";
 
@@ -341,7 +341,7 @@ public sealed class TextSnippetsFeature : InputFeatureBase, ISnippetsService
             // The earlier characters of the trigger already reached the app; the last one is held back.
             _length = 0;
             _swallowUpVk = vk;
-            _jobs?.Add(new Job(snippet.Trigger.Length - 1, snippet.Replacement, null, true));
+            _jobs?.Add(new Job(snippet.Trigger.Length - 1, snippet.Replacement, null, true, NativeMethods.GetForegroundWindow()));
             return true;
         }
 
@@ -374,7 +374,7 @@ public sealed class TextSnippetsFeature : InputFeatureBase, ISnippetsService
         // Hold the delimiter back: erase the trigger, insert the text, then type the delimiter after it.
         _swallowUpVk = vk;
         var trailing = vk switch { 0x09 => "\t", 0x0D => "\n", _ => " " };
-        _jobs?.Add(new Job(match.Trigger.Length, match.Replacement, trailing, true));
+        _jobs?.Add(new Job(match.Trigger.Length, match.Replacement, trailing, true, NativeMethods.GetForegroundWindow()));
         return true;
     }
 
@@ -462,6 +462,14 @@ public sealed class TextSnippetsFeature : InputFeatureBase, ISnippetsService
 
                     SnippetTyper.WaitForModifiersReleased();
                     var text = SnippetVariables.Expand(job.Text, () => SnippetTyper.ClipboardText(context.Ui));
+
+                    // The user may have switched windows while the modifiers settled: erasing there would delete their text.
+                    if (job.Window != 0 && NativeMethods.GetForegroundWindow() != job.Window)
+                    {
+                        context.Log.Info("snippet skipped: window changed");
+                        continue;
+                    }
+
                     SnippetTyper.Backspaces(job.Backspaces);
                     SnippetTyper.Insert(text, context.Ui, context.Log);
                     if (job.Trailing is { } trailing)

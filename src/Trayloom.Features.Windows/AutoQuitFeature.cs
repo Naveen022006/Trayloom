@@ -33,7 +33,15 @@ internal static class AutoQuitRules
         }
 
         var file = Path.GetFileName(path);
-        return Listed.Any(l => string.Equals(l, file, StringComparison.OrdinalIgnoreCase)) || Silent.Contains(file);
+        return Listed.Any(l => string.Equals(l, file, StringComparison.OrdinalIgnoreCase)) || Silent.Contains(file) || IsInstallerName(file);
+    }
+
+    /// <summary>Installers and updaters often show no window for a while but are mid-work: msiexec, setup*, *install*, *update*, *updater*, unins*.</summary>
+    internal static bool IsInstallerName(string fileName)
+    {
+        var name = Path.GetFileNameWithoutExtension(fileName).ToLowerInvariant();
+        return name == "msiexec" || name.StartsWith("setup", StringComparison.Ordinal) || name.Contains("install", StringComparison.Ordinal)
+            || name.Contains("update", StringComparison.Ordinal) || name.StartsWith("unins", StringComparison.Ordinal);
     }
 
     public static bool IsListed(string identity) => Listed.Any(l => string.Equals(l, Path.GetFileName(identity), StringComparison.OrdinalIgnoreCase));
@@ -50,6 +58,9 @@ public sealed class AutoQuitFeature : IFeature
         public string? Path { get; init; }
 
         public int Stamp { get; set; }
+
+        /// <summary>Windows of this app that passed <see cref="IsRealWindow"/> while watched: the only ones Quit may ask to close.</summary>
+        public HashSet<nint> Windows { get; } = [];
     }
 
     private IFeatureContext? _context;
@@ -166,10 +177,13 @@ public sealed class AutoQuitFeature : IFeature
         }
 
         _windowOwner[hwnd] = owner.Pid;
-        if (!_watched.ContainsKey(owner.Pid))
+        if (!_watched.TryGetValue(owner.Pid, out var watched))
         {
-            _watched[owner.Pid] = new Watched { Path = owner.Path };
+            watched = new Watched { Path = owner.Path };
+            _watched[owner.Pid] = watched;
         }
+
+        watched.Windows.Add(hwnd);
     }
 
     /// <summary>A normal top-level window of an app: visible (or minimized), unowned, not a tool window or shell surface.</summary>
@@ -239,7 +253,7 @@ public sealed class AutoQuitFeature : IFeature
             return;
         }
 
-        if (CountWindows(pid) > 0)
+        if (CountWindows(pid) > 0 || HasVisibleWindow(pid))
         {
             return;
         }
@@ -272,8 +286,31 @@ public sealed class AutoQuitFeature : IFeature
         return count;
     }
 
+    /// <summary>True when the process owns any visible top-level window, owned ones (save prompts, dialogs) included.</summary>
+    private static bool HasVisibleWindow(uint pid)
+    {
+        var found = false;
+        WinApi.EnumWindows((hwnd, _) =>
+        {
+            NativeMethods.GetWindowThreadProcessId(hwnd, out var windowPid);
+            if (windowPid == pid && WinApi.IsWindowVisible(hwnd))
+            {
+                found = true;
+                return false;
+            }
+
+            return true;
+        }, 0);
+        return found;
+    }
+
     private bool ShouldQuit(uint pid, Watched watched)
     {
+        if (!DevAllows(watched.Path))
+        {
+            return false;
+        }
+
         // A window another feature of Trayloom has hidden on purpose (Apple Music kept out of sight by the island) is not a closed window.
         if (WindowGuardianState.IsPidTracked(pid))
         {
@@ -324,42 +361,51 @@ public sealed class AutoQuitFeature : IFeature
         return true;
     }
 
+    // Development only: with TRAYLOOM_DEV=1 and auto-quit-only.txt in the feature's data folder, act on the listed process names only.
+    private bool DevAllows(string? path)
+    {
+        if (Environment.GetEnvironmentVariable("TRAYLOOM_DEV") != "1" || _context is null)
+        {
+            return true;
+        }
+
+        try
+        {
+            var file = System.IO.Path.Combine(_context.DataDirectory, "auto-quit-only.txt");
+            if (!File.Exists(file))
+            {
+                return true;
+            }
+
+            var name = System.IO.Path.GetFileNameWithoutExtension(path ?? string.Empty);
+            return File.ReadAllLines(file).Select(l => System.IO.Path.GetFileNameWithoutExtension(l.Trim())).Any(l => l.Length > 0 && string.Equals(l, name, StringComparison.OrdinalIgnoreCase));
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
     private void Quit(uint pid, Watched watched)
     {
-        _context?.Log.Info(Loc.F("Quit on close: asking {0} (pid {1}) to quit", Path.GetFileName(watched.Path), pid));
-        WinApi.EnumWindows((hwnd, _) =>
+        _context?.Log.Info(Loc.F("Quit on close: asking {0} (pid {1}) to quit", System.IO.Path.GetFileName(watched.Path), pid));
+
+        // Only windows this app really showed while watched, and only if they still exist and still belong to the app.
+        // There is no fallback: an app that stays alive (a save prompt, a background task) is left alone.
+        foreach (var hwnd in watched.Windows)
         {
+            if (!WinApi.IsWindow(hwnd))
+            {
+                continue;
+            }
+
             NativeMethods.GetWindowThreadProcessId(hwnd, out var windowPid);
             if (windowPid == pid)
             {
                 WinApi.PostMessageW(hwnd, WinApi.WM_CLOSE, 0, 0);
             }
-
-            return true;
-        }, 0);
+        }
 
         _watched.Remove(pid);
-        _ = _context?.Ui.InvokeAsync(async () =>
-        {
-            await Task.Delay(5000);
-            try
-            {
-                using var process = Process.GetProcessById((int)pid);
-                if (process.HasExited || CountWindows(pid) > 0)
-                {
-                    return;
-                }
-
-                // Still alive and still windowless: close every UI thread's message queue politely. Never Kill().
-                foreach (ProcessThread thread in process.Threads)
-                {
-                    WinApi.PostThreadMessageW((uint)thread.Id, WinApi.WM_QUIT, 0, 0);
-                }
-            }
-            catch (Exception)
-            {
-                // already gone
-            }
-        });
     }
 }

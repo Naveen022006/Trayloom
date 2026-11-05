@@ -75,8 +75,8 @@ public sealed class SmoothScrollFeature : WheelFeatureBase
                 return StageResult.Continue;
             }
 
-            animator.Add(e.Delta * owner._step / 40.0, e.Horizontal, e.X, e.Y);
-            return StageResult.Consumed;
+            // A stopped animator (its loop failed) must not swallow the wheel: pass the event through.
+            return animator.Add(e.Delta * owner._step / 40.0, e.Horizontal, e.X, e.Y) ? StageResult.Consumed : StageResult.Continue;
         }
     }
 
@@ -107,8 +107,14 @@ public sealed class SmoothScrollFeature : WheelFeatureBase
             _thread.Start();
         }
 
-        public void Add(double units, bool horizontal, int x, int y)
+        /// <summary>Queues scroll units. False when the animator is not running, so the caller lets the event through.</summary>
+        public bool Add(double units, bool horizontal, int x, int y)
         {
+            if (!_running)
+            {
+                return false;
+            }
+
             var axis = horizontal ? 1 : 0;
             var wake = false;
             lock (_gate)
@@ -142,6 +148,8 @@ public sealed class SmoothScrollFeature : WheelFeatureBase
             {
                 _wake.Set();
             }
+
+            return true;
         }
 
         public void Dispose()
@@ -160,6 +168,35 @@ public sealed class SmoothScrollFeature : WheelFeatureBase
         }
 
         private void Loop()
+        {
+            try
+            {
+                RunLoop();
+            }
+            catch (Exception ex)
+            {
+                // Stop animating and let the wheel pass through untouched rather than swallowing it with nobody to emit it.
+                _running = false;
+                lock (_gate)
+                {
+                    _active = false;
+                    _remaining[0] = _remaining[1] = 0;
+                    _carry[0] = _carry[1] = 0;
+                    _glide[0] = _glide[1] = 0;
+                }
+
+                try
+                {
+                    owner.Context?.Log.Error("Smooth scrolling stopped after an error", ex);
+                }
+                catch
+                {
+                    // logging must not break the thread
+                }
+            }
+        }
+
+        private void RunLoop()
         {
             var clock = Stopwatch.StartNew();
             while (_running)

@@ -142,8 +142,8 @@ internal static class FormUi
     public static FrameworkElement AdminCard(Func<bool> needed)
     {
         var card = new SettingsCard(Strings.PermissionRequired);
-        var row = new SettingsRow("", Strings.AdminCaption, null,
-            UiKit.Button(Strings.AdminButton, ButtonKind.Bordered, 11.5, null, RestartAsAdmin));
+        var row = new SettingsRow("", ElevationPolicy.CanOfferElevation ? Strings.AdminCaption : Loc.T("Apps that run as administrator ignore Trayloom. Trayloom doesn’t offer to run as administrator, because its folder can be changed without administrator rights."), null,
+            ElevationPolicy.CanOfferElevation ? UiKit.Button(Strings.AdminButton, ButtonKind.Bordered, 11.5, null, RestartAsAdmin) : null);
         card.Add(row);
         card.Visibility = needed() ? Visibility.Visible : Visibility.Collapsed;
         return card;

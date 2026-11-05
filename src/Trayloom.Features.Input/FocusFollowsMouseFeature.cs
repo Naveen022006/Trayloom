@@ -261,9 +261,12 @@ public sealed class FocusFollowsMouseFeature : InputFeatureBase
         {
             // Foreground lock refused: a tap of Alt with an unassigned key in between lets the next call through
             // without opening any menu.
-            KeySender.SendKeys([0x12], keyUp: false);
-            KeySender.Tap(Win32.VK_UNASSIGNED);
-            KeySender.SendKeys([0x12], keyUp: true);
+            // One array, so no other process can slip a key in between Alt down and Alt up.
+            InputSender.Send(
+                KeySender.KeyInput(0x12, false),
+                KeySender.KeyInput(Win32.VK_UNASSIGNED, false),
+                KeySender.KeyInput(Win32.VK_UNASSIGNED, true),
+                KeySender.KeyInput(0x12, true));
             NativeMethods.SetForegroundWindow(target);
         }
 

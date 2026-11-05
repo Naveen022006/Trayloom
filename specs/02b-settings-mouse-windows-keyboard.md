@@ -823,3 +823,9 @@ Opt-in (not installed by default): focusFollowsMouse, scrollHorizontal, scrollZo
 5. Window layout: complete action set (37 placements) with Remove/Reset/"try" rows, gaps (two pickers), margin maximize, side-repeat cycle, ignore list, pointer-to-display, directional trigger, gestures + edge snap with the zone map.
 6. Quit on close, Quit protection (per-shortcut), Debounce per-key, Super key page (diagram, solo actions), Snippets (model + editor + date builder + quick menu).
 7. Taskbar Preview / Taskbar clicks (new features).
+
+## Safety notes (WP-4)
+
+- Super key: injected modifiers are released on exit, hook loss, session lock, a missing or elevated foreground window and a non-default input desktop (checked every 500 ms), and after 20 s idle. A marker file lets the next start release modifiers a crash left down.
+- Snippets: the clipboard is saved completely or not at all (a busy or unreadable clipboard makes the snippet type instead of paste), and it is put back only if nothing else changed it during the paste.
+- Quit on close: only windows the app showed while watched receive WM_CLOSE; there is no WM_QUIT fallback; an app that still owns any visible window is left alone; installers and updaters (msiexec, setup*, *install*, *update*, unins*) are never quit.
