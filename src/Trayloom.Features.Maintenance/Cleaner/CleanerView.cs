@@ -178,17 +178,8 @@ internal sealed class CleanerView : ContentControl
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         var infoIcon = UiKit.Icon(G.Info, 13, ThemeKeys.TextSecondary); infoIcon.VerticalAlignment = VerticalAlignment.Top; infoIcon.HorizontalAlignment = HorizontalAlignment.Left; infoIcon.Margin = new Thickness(0, 1, 0, 0); head.Children.Add(infoIcon);
         var text = new StackPanel();
-        text.Children.Add(UiKit.Text(Loc.T("Run as administrator for a more thorough scan."), 12, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true));
-        var hint = V.Secondary(Loc.T("System caches such as Windows Update downloads, Prefetch and Windows\\Temp are only visible to an administrator. Nothing is changed until you review the list."), 10);
-        hint.Margin = new Thickness(0, 4, 0, 0);
-        text.Children.Add(hint);
-        var button = V.Mini(Loc.T("Relaunch as administrator"), () =>
-        {
-            if (Elevated.RelaunchAsAdministrator())
-            {
-                Host.Services.Shell.Quit();
-            }
-        });
+        text.Children.Add(UiKit.Text(Loc.T("System caches such as Windows Update downloads are cleaned by Windows itself."), 12, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true));
+        var button = V.Mini(Loc.T("Open Storage settings"), () => UiKit.OpenUrl("ms-settings:storagesense"));
         button.HorizontalAlignment = HorizontalAlignment.Left;
         button.Margin = new Thickness(0, 8, 0, 0);
         text.Children.Add(button);
@@ -618,12 +609,17 @@ internal sealed class CleanerView : ContentControl
 
         if (_m.DeletedAny)
         {
-            sentences.Add("Caches, logs and temporary files were deleted permanently.");
+            sentences.Add(Loc.T("Caches, logs and temporary files were deleted permanently."));
         }
 
         if (_m.BackupFolder is not null)
         {
-            sentences.Add($"Registry entries were saved to {Fmt.Home(_m.BackupFolder)} first.");
+            sentences.Add(Loc.F("Registry entries were saved to {0} first.", Fmt.Home(_m.BackupFolder)));
+        }
+
+        if (_m.TooLargeCount > 0)
+        {
+            sentences.Add(Loc.F("{0} items were too large for the Recycle Bin, so they were left in place.", _m.TooLargeCount));
         }
 
         if (sentences.Count > 0)

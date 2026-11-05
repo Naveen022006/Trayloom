@@ -258,13 +258,33 @@ internal sealed class CleanerScanner
         var roaming = FileOps.AppData;
         var list = new List<CleanItem?>();
 
-        list.Add(Folder(CleanerGroup.SafeCaches, "Temporary files", FileOps.Temp, "Temp", true, RemoveKind.PermanentContents, FileOps.Temp, false, 1));
-        if (!string.Equals(Path.GetFullPath(FileOps.Temp), Path.GetFullPath(Path.Combine(local, "Temp")), StringComparison.OrdinalIgnoreCase))
+        // TEMP/TMP can point at the profile or a data folder; only a folder that really is a Temp folder is ever emptied.
+        var safeTemp = FileOps.SafeTemp;
+        if (safeTemp is { } temp)
         {
-            list.Add(Folder(CleanerGroup.SafeCaches, "Local temporary files", Path.Combine(local, "Temp"), "Temp", true, RemoveKind.PermanentContents, Path.Combine(local, "Temp"), false, 1));
+            list.Add(Folder(CleanerGroup.SafeCaches, "Temporary files", temp, "Temp", true, RemoveKind.PermanentContents, temp, false, 1));
+        }
+        else
+        {
+            Host.Log("Cleaner: Temp folder skipped (not a Temp folder)");
         }
 
-        list.Add(Folder(CleanerGroup.SafeCaches, "Internet cache", Path.Combine(local, "Microsoft", "Windows", "INetCache"), "INetCache", true));
+        var localTemp = Path.Combine(local, "Temp");
+        if (safeTemp is null || !string.Equals(Path.GetFullPath(safeTemp), Path.GetFullPath(localTemp), StringComparison.OrdinalIgnoreCase))
+        {
+            if (FileOps.IsSafeTempRoot(localTemp))
+            {
+                list.Add(Folder(CleanerGroup.SafeCaches, "Local temporary files", localTemp, "Temp", true, RemoveKind.PermanentContents, localTemp, false, 1));
+            }
+        }
+
+        // Content.Outlook holds Outlook attachments that were opened from mail, so it is never offered.
+        var inet = Path.Combine(local, "Microsoft", "Windows", "INetCache");
+        if (Directory.Exists(inet) && !Win32.IsReparsePoint(inet))
+        {
+            list.Add(Multi(CleanerGroup.SafeCaches, "Internet cache", InternetCacheFolders(inet), "INetCache", true, inet));
+        }
+
         list.Add(Folder(CleanerGroup.SafeCaches, "Shader cache", Path.Combine(local, "D3DSCache"), "D3DSCache", true));
         list.Add(Thumbnails());
 
@@ -313,6 +333,11 @@ internal sealed class CleanerScanner
                     continue;
                 }
 
+                if (!IsElectronProfile(app))
+                {
+                    continue;
+                }
+
                 var paths = ElectronCaches.Select(c => Path.Combine(app, c)).Where(Directory.Exists).ToList();
                 if (paths.Count > 0 && !name.Equals("Mozilla", StringComparison.OrdinalIgnoreCase))
                 {
@@ -334,12 +359,17 @@ internal sealed class CleanerScanner
             ("Cypress", Path.Combine(local, "Cypress", "Cache"), false),
             ("puppeteer", Path.Combine(profile2, ".cache", "puppeteer"), true),
             ("typescript", Path.Combine(local, "Microsoft", "TypeScript"), true),
-            (Loc.T("winget"), Path.Combine(FileOps.Temp, "WinGet"), true),
+            (Loc.T("winget"), safeTemp is null ? string.Empty : Path.Combine(safeTemp, "WinGet"), true),
             (Loc.T("Microsoft Store"), Path.Combine(local, "Packages", "Microsoft.WindowsStore_8wekyb3d8bbwe", "LocalCache"), false),
             ("ms-playwright", Path.Combine(local, "ms-playwright"), false),
         };
         foreach (var (name, path, safe) in known)
         {
+            if (path.Length == 0)
+            {
+                continue;
+            }
+
             list.Add(Folder(safe ? CleanerGroup.SafeCaches : CleanerGroup.OtherCaches, name, path, "Package cache", safe));
         }
 
@@ -365,6 +395,23 @@ internal sealed class CleanerScanner
         }
     }
 
+    /// <summary>The child folders of INetCache that may be cleaned: everything except <c>Content.Outlook</c>.</summary>
+    internal static IEnumerable<string> InternetCacheFolders(string inet)
+    {
+        try
+        {
+            return Directory.EnumerateDirectories(inet).Where(d => !Path.GetFileName(d).Equals("Content.Outlook", StringComparison.OrdinalIgnoreCase)).ToList();
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    /// <summary>True when an <c>%APPDATA%\&lt;app&gt;</c> folder looks like a Chromium/Electron profile (has <c>Local State</c> or <c>Preferences</c>).</summary>
+    internal static bool IsElectronProfile(string appFolder) =>
+        File.Exists(Path.Combine(appFolder, "Local State")) || File.Exists(Path.Combine(appFolder, "Preferences"));
+
     private CleanItem? Thumbnails()
     {
         var folder = Path.Combine(FileOps.LocalAppData, "Microsoft", "Windows", "Explorer");
@@ -388,7 +435,7 @@ internal sealed class CleanerScanner
         var list = new List<CleanItem?>
         {
             Multi(CleanerGroup.Logs, "Windows error reports", new[] { "ReportArchive", "ReportQueue", "Temp" }.Select(d => Path.Combine(local, "Microsoft", "Windows", "WER", d)), "WER", true, Path.Combine(local, "Microsoft", "Windows", "WER")),
-            Folder(CleanerGroup.Logs, "Crash dumps", Path.Combine(local, "CrashDumps"), "CrashDumps", true),
+            Folder(CleanerGroup.Logs, "Crash dumps", Path.Combine(local, "CrashDumps"), "CrashDumps", false),
         };
         if (_elevated)
         {
@@ -772,23 +819,38 @@ internal sealed class CleanerScanner
         name.Contains("Microsoft", StringComparison.OrdinalIgnoreCase) || name.Contains("Windows", StringComparison.OrdinalIgnoreCase) || name.Contains("SecurityHealth", StringComparison.OrdinalIgnoreCase)
         || target.StartsWith(FileOps.Windows, StringComparison.OrdinalIgnoreCase);
 
-    private static bool DriveIsPresent(string path)
+    /// <summary>
+    /// True only when the target is certainly gone: a drive-letter path on a fixed, ready drive where neither a file nor a folder
+    /// exists. Removable, network, optical, unready, UNC or unreadable roots are never treated as missing.
+    /// </summary>
+    internal static bool TargetIsVerifiablyMissing(string path, Func<string, (DriveType Type, bool Ready)?>? probe = null)
     {
         try
         {
             var root = Path.GetPathRoot(path);
-            if (string.IsNullOrEmpty(root))
+            if (string.IsNullOrEmpty(root) || root.StartsWith(@"\\", StringComparison.Ordinal) || root.Length < 2 || !char.IsAsciiLetter(root[0]) || root[1] != ':')
             {
-                return true;
+                return false;
             }
 
-            var drive = new DriveInfo(root);
-            return drive.DriveType is DriveType.Fixed ? drive.IsReady : true;
+            var info = (probe ?? DefaultProbe)(root);
+            if (info is not { Type: DriveType.Fixed, Ready: true })
+            {
+                return false;
+            }
+
+            return !File.Exists(path) && !Directory.Exists(path);
         }
         catch
         {
-            return true;
+            return false;
         }
+    }
+
+    private static (DriveType Type, bool Ready)? DefaultProbe(string root)
+    {
+        var drive = new DriveInfo(root);
+        return (drive.DriveType, drive.IsReady);
     }
 
     /// <summary>First executable path of a command line (quoted or not).</summary>
@@ -847,7 +909,7 @@ internal sealed class CleanerScanner
                 {
                     var command = key.GetValue(name) as string ?? string.Empty;
                     var exe = ExecutableOf(command);
-                    if (exe is null || File.Exists(exe) || Directory.Exists(exe) || !DriveIsPresent(exe) || IsProtectedStartup(name, exe) || HasLivingOwner(name) || HasLivingOwner(Path.GetFileNameWithoutExtension(exe)))
+                    if (exe is null || !TargetIsVerifiablyMissing(exe) || IsProtectedStartup(name, exe) || HasLivingOwner(name) || HasLivingOwner(Path.GetFileNameWithoutExtension(exe)))
                     {
                         continue;
                     }
@@ -862,7 +924,7 @@ internal sealed class CleanerScanner
                         Paths = [command],
                         Size = 0,
                         Detail = name,
-                        Recommended = true,
+                        Recommended = _attended,
                         Hive = hive,
                         View = view,
                         SubKey = sub,
@@ -896,12 +958,12 @@ internal sealed class CleanerScanner
                     // unreadable shortcut
                 }
 
-                if (target is null || File.Exists(target) || Directory.Exists(target) || !DriveIsPresent(target) || IsProtectedStartup(Path.GetFileName(file), target) || HasLivingOwner(Path.GetFileNameWithoutExtension(file)))
+                if (target is null || !TargetIsVerifiablyMissing(target) || IsProtectedStartup(Path.GetFileName(file), target) || HasLivingOwner(Path.GetFileNameWithoutExtension(file)))
                 {
                     continue;
                 }
 
-                yield return new CleanItem { Group = CleanerGroup.LoginItems, Kind = RemoveKind.Recycle, Name = Path.GetFileNameWithoutExtension(file), Path = file, Paths = [file], Size = new FileInfo(file).Length, Detail = Path.GetFileName(file), Recommended = true, Root = folder, Identity = Win32.FileIdentity(file) };
+                yield return new CleanItem { Group = CleanerGroup.LoginItems, Kind = RemoveKind.Recycle, Name = Path.GetFileNameWithoutExtension(file), Path = file, Paths = [file], Size = new FileInfo(file).Length, Detail = Path.GetFileName(file), Recommended = _attended, Root = folder, Identity = Win32.FileIdentity(file) };
             }
         }
     }

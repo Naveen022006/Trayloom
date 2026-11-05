@@ -4807,6 +4807,14 @@ Elevation: every row whose root is outside the user profile is tagged `NeedsAdmi
 
 Windows `mayRemove` guard: not a drive root, not in {`%WINDIR%`, `%WINDIR%\System32`, `%PROGRAMFILES%`, `%PROGRAMFILES(X86)%`, `%ProgramData%`, `C:\Users`, `%USERPROFILE%`, `%APPDATA%`, `%LOCALAPPDATA%`, Documents, Desktop, Downloads, Pictures, Music, Videos, OneDrive roots, `%LOCALAPPDATA%\Packages`}, file identity (volume serial + 64-bit file index from `GetFileInformationByHandle`) unchanged since scan, the path and every ancestor up to the scan root is not a reparse point (`FILE_ATTRIBUTE_REPARSE_POINT`), `Path.GetFullPath(path)` is a descendant of an allowed root for its category, and at least 4 path segments after the drive.
 
+**Windows cleaner safety amendments (audit fixes).**
+* Temp rule: the `Temporary files` row is offered only when `%TEMP%` passes `FileOps.IsSafeTempRoot` (not a link, not critical, at least 3 segments, leaf `Temp`/`Tmp` or an all-digit session folder under `Temp`); otherwise it is skipped and `Cleaner: Temp folder skipped (not a Temp folder)` is logged. The winget cache uses the same safe temp.
+* `Validate` always refuses a critical folder or an ancestor of one. The only paths allowed to be shallower than `mayRemove` permits are `%WINDIR%\Temp`, `%WINDIR%\Prefetch` and `%WINDIR%\Minidump`, and only for the contents-only kind.
+* `Internet cache` lists the child folders of INetCache except `Content.Outlook`. `Crash dumps` is not pre-checked. Electron app caches are offered only for `%APPDATA%\<App>` folders holding `Local State` or `Preferences`.
+* Orphaned startup items: a target is missing only when its drive is a fixed, ready drive letter and nothing exists there; removable, network, optical, not-ready and UNC targets are never orphans. Unattended (automatic) runs do not pre-check startup items. An automatic run is skipped while Trayloom runs elevated.
+* Recycle: items go through `FileOps.TryRecycle`; an item the bin cannot keep is left in place, counted as failed and reported on the Done screen as `{0} items were too large for the Recycle Bin, so they were left in place.` The recycle sentence shows only when something was really recycled.
+* Registry backup: each clean writes to a new folder `%APPDATA%\Trayloom\cleanerackups\<yyyyMMdd-HHmmss-fff>`, exports every distinct (hive, view, key) once as `NNN-<key>.reg` before deleting any value, and leaves the values of a key whose export failed. Done text: `Registry entries were saved to {0} first.`
+
 ### 7.1.8 Gap vs Trayloom (`Trayloom.Features.Tools/Cleaner/CleanerFeature.cs`, 534 lines)
 
 Has: a separate `CleanerWindow` (640x640) with a flat checkbox list of fixed categories (user temp, `Windows\Temp`, thumbnail/icon cache, crash dumps, Chrome/Edge/Brave/Firefox caches, Recycle Bin), per-category size, scan, delete with a modal confirmation, optional hotkey, `IsSafeRoot` + prefix guard, 1-hour minimum age for temp.

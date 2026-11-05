@@ -46,6 +46,9 @@ internal sealed class CleanerModel
 
     public string? BackupFolder { get; private set; }
 
+    /// <summary>How many items the Recycle Bin could not keep, so they were left in place.</summary>
+    public int TooLargeCount { get; private set; }
+
     public DateTime? NextFire { get; private set; }
 
     public long SelectedSize => Items.Where(i => i.Include).Sum(i => i.Size);
@@ -74,6 +77,7 @@ internal sealed class CleanerModel
         Items = [];
         Removed = 0;
         Failed = 0;
+        TooLargeCount = 0;
         Raise();
         var days = SanitizedScreenshotDays(Host.App.Get<int>("cleanerScreenshotAgeDays"));
         _ = Task.Run(() =>
@@ -168,7 +172,7 @@ internal sealed class CleanerModel
             var failed = 0;
             var recycled = false;
             var deleted = false;
-            string? backup = null;
+            var run = new CleanRun();
             // the Recycle Bin first, so the clean does not empty what it just moved
             foreach (var item in selected.Where(i => i.Kind == RemoveKind.EmptyBin))
             {
@@ -183,14 +187,16 @@ internal sealed class CleanerModel
                 }
             }
 
+            // every registry key is exported once, before any of its values is deleted
+            BackupRegistryKeys(selected.Where(i => i.Kind == RemoveKind.RegistryValue).ToList(), run);
             foreach (var item in selected.Where(i => i.Kind != RemoveKind.EmptyBin))
             {
                 try
                 {
-                    var (freed, fail, wasRecycled) = Remove(item, ref backup);
+                    var (freed, fail, wasRecycled) = Remove(item, run);
                     removed += freed;
                     failed += fail;
-                    recycled |= wasRecycled && fail == 0;
+                    recycled |= wasRecycled;
                     deleted |= !wasRecycled && freed > 0 && item.Kind != RemoveKind.RegistryValue;
                 }
                 catch
@@ -205,7 +211,8 @@ internal sealed class CleanerModel
                 Failed = failed;
                 RecycledAny = recycled;
                 DeletedAny = deleted;
-                BackupFolder = backup;
+                BackupFolder = run.Backup;
+                TooLargeCount = run.TooLarge;
                 Items = [];
                 Phase = CleanerPhase.Done;
                 Raise();
@@ -213,9 +220,19 @@ internal sealed class CleanerModel
         });
     }
 
-    private static bool Validate(CleanItem item, string path)
+    /// <summary>
+    /// Last check before anything is removed. A critical folder (or one that contains one) is refused for every kind. The only
+    /// folders allowed to be shallower than <see cref="FileOps.MayRemove"/> permits are Windows\Temp, Prefetch and Minidump, and
+    /// only for <see cref="RemoveKind.PermanentContents"/> (their children are removed, never the folder).
+    /// </summary>
+    internal static bool Validate(CleanItem item, string path)
     {
-        if (!FileOps.MayRemove(path) && !(item.Kind == RemoveKind.PermanentContents && FileOps.SegmentCount(path) >= 2 && !Win32.IsReparsePoint(path)))
+        if (string.IsNullOrWhiteSpace(path) || SafePaths.IsCriticalOrAncestor(path))
+        {
+            return false;
+        }
+
+        if (!FileOps.MayRemove(path) && !(item.Kind == RemoveKind.PermanentContents && IsShallowSystemFolder(path) && !Win32.IsReparsePoint(path)))
         {
             return false;
         }
@@ -236,17 +253,43 @@ internal sealed class CleanerModel
         return true;
     }
 
-    private (long Freed, int Failed, bool Recycled) Remove(CleanItem item, ref string? backup)
+    private static readonly string[] ShallowSystemFolders = ["Temp", "Prefetch", "Minidump"];
+
+    private static bool IsShallowSystemFolder(string path)
+    {
+        try
+        {
+            var full = SafePaths.Normalize(path);
+            return ShallowSystemFolders.Any(name => string.Equals(full, SafePaths.Normalize(Path.Combine(FileOps.Windows, name)), StringComparison.OrdinalIgnoreCase));
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>State shared by the removals of one clean: the registry backup folder and the keys that could not be saved.</summary>
+    private sealed class CleanRun
+    {
+        public string? Backup { get; set; }
+
+        public int TooLarge { get; set; }
+
+        public HashSet<string> FailedKeys { get; } = new(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private (long Freed, int Failed, bool Recycled) Remove(CleanItem item, CleanRun run)
     {
         switch (item.Kind)
         {
             case RemoveKind.RegistryValue:
-                return (0, RemoveRegistryValue(item, ref backup) ? 0 : 1, false);
+                return (0, RemoveRegistryValue(item, run) ? 0 : 1, false);
 
             case RemoveKind.Recycle:
             {
                 var failed = 0;
                 long freed = 0;
+                var recycledAny = false;
                 foreach (var path in item.Paths)
                 {
                     if (!Validate(item, path) || (item.Identity is not null && Win32.FileIdentity(path) != item.Identity))
@@ -255,17 +298,27 @@ internal sealed class CleanerModel
                         continue;
                     }
 
-                    if (FileOps.Recycle(path))
+                    // never a silent permanent delete: what the bin cannot keep stays where it is
+                    var size = FileOps.DirectorySize(path);
+                    switch (FileOps.TryRecycle(path, size))
                     {
-                        freed += item.Size;
-                    }
-                    else
-                    {
-                        failed++;
+                        case RecycleResult.Recycled:
+                            freed += size;
+                            recycledAny = true;
+                            break;
+                        case RecycleResult.Missing:
+                            break;
+                        case RecycleResult.NotRecyclable:
+                            run.TooLarge++;
+                            failed++;
+                            break;
+                        default:
+                            failed++;
+                            break;
                     }
                 }
 
-                return (freed, failed, true);
+                return (freed, failed, recycledAny);
             }
 
             case RemoveKind.PermanentFiles:
@@ -363,29 +416,86 @@ internal sealed class CleanerModel
         }
     }
 
-    private static bool RemoveRegistryValue(CleanItem item, ref string? backup)
+    private static string RegExe => Path.Combine(Environment.SystemDirectory, "reg.exe");
+
+    private static string KeyId(CleanItem item) => $"{item.Hive}|{item.View}|{item.SubKey}";
+
+    /// <summary>
+    /// Exports each distinct (hive, view, key) once into a new folder for this run, before any value is deleted. A key whose export
+    /// fails is remembered so that none of its values are removed.
+    /// </summary>
+    private static void BackupRegistryKeys(List<CleanItem> items, CleanRun run)
+    {
+        if (items.Count == 0)
+        {
+            return;
+        }
+
+        string folder;
+        try
+        {
+            folder = Path.Combine(AppPaths.Root, "cleaner", "backups", $"{DateTime.Now:yyyyMMdd-HHmmss-fff}");
+            Directory.CreateDirectory(folder);
+        }
+        catch
+        {
+            foreach (var item in items)
+            {
+                run.FailedKeys.Add(KeyId(item));
+            }
+
+            return;
+        }
+
+        var number = 0;
+        foreach (var group in items.GroupBy(KeyId))
+        {
+            var first = group.First();
+            var ok = false;
+            try
+            {
+                number++;
+                var hive = first.Hive == RegistryHive.CurrentUser ? "HKCU" : "HKLM";
+                var safeName = new string(first.SubKey!.Select(c => char.IsAsciiLetterOrDigit(c) ? c : '_').ToArray());
+                var file = Path.Combine(folder, $"{number:000}-{hive}-{safeName}.reg");
+                var info = new ProcessStartInfo(RegExe) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+                info.ArgumentList.Add("export");
+                info.ArgumentList.Add($"{hive}\\{first.SubKey}");
+                info.ArgumentList.Add(file);
+                info.ArgumentList.Add(first.View == RegistryView.Registry32 ? "/reg:32" : "/reg:64");
+                using var process = Process.Start(info);
+                if (process is not null)
+                {
+                    process.StandardOutput.ReadToEnd();
+                    process.StandardError.ReadToEnd();
+                    ok = process.WaitForExit(15_000) && process.ExitCode == 0 && File.Exists(file);
+                }
+            }
+            catch
+            {
+                ok = false;
+            }
+
+            if (ok)
+            {
+                run.Backup = folder;
+            }
+            else
+            {
+                run.FailedKeys.Add(group.Key);
+            }
+        }
+    }
+
+    private static bool RemoveRegistryValue(CleanItem item, CleanRun run)
     {
         try
         {
-            var folder = Path.Combine(FileOps.AppData, "Trayloom", "cleaner", "backups");
-            Directory.CreateDirectory(folder);
-            var hive = item.Hive == RegistryHive.CurrentUser ? "HKCU" : "HKLM";
-            var file = Path.Combine(folder, $"{DateTime.Now:yyyyMMdd-HHmmss}.reg");
-            var info = new ProcessStartInfo("reg.exe") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
-            info.ArgumentList.Add("export");
-            info.ArgumentList.Add($"{hive}\\{item.SubKey}");
-            info.ArgumentList.Add(file);
-            info.ArgumentList.Add("/y");
-            using (var process = Process.Start(info))
+            if (run.FailedKeys.Contains(KeyId(item)) || run.Backup is null)
             {
-                process?.WaitForExit(15_000);
-                if (process is null || process.ExitCode != 0)
-                {
-                    return false;
-                }
+                return false;
             }
 
-            backup = folder;
             using var root = RegistryKey.OpenBaseKey(item.Hive, item.View);
             using var key = root.OpenSubKey(item.SubKey!, true);
             if (key is null || item.ValueName is null)
@@ -507,6 +617,15 @@ internal sealed class CleanerModel
 
     private void RunAutomaticCleanup()
     {
+        if (ElevationPolicy.IsElevated)
+        {
+            // an elevated copy never cleans on its own; try again later
+            Host.Log("Cleaner: automatic cleanup skipped while running as administrator");
+            _timer?.Dispose();
+            _timer = new System.Threading.Timer(_ => Ui(RunAutomaticCleanup), null, TimeSpan.FromSeconds(3600), Timeout.InfiniteTimeSpan);
+            return;
+        }
+
         if (Phase != CleanerPhase.Idle || _observingAutomatic)
         {
             _timer?.Dispose();

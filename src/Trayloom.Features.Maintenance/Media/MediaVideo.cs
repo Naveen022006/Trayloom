@@ -253,27 +253,39 @@ internal static class MediaVideo
 
     // ------------------------------------------------------------------ GIF
 
+    /// <summary>Finds ffmpeg: the app folder first, then Trayloom's tools folder, then absolute PATH entries only.</summary>
     public static string? FindFfmpeg()
     {
         try
         {
-            foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? string.Empty).Split(';', StringSplitOptions.RemoveEmptyEntries))
+            var beside = Path.Combine(AppContext.BaseDirectory, "ffmpeg.exe");
+            if (File.Exists(beside))
             {
-                var candidate = Path.Combine(dir.Trim(), "ffmpeg.exe");
+                return beside;
+            }
+
+            var local = Path.Combine(Trayloom.Core.AppPaths.LocalRoot,"tools", "ffmpeg.exe");
+            if (File.Exists(local))
+            {
+                return local;
+            }
+
+            foreach (var raw in (Environment.GetEnvironmentVariable("PATH") ?? string.Empty).Split(';', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var dir = raw.Trim().Trim('"');
+                if (dir.Length == 0 || dir == "." || !Path.IsPathFullyQualified(dir))
+                {
+                    continue;
+                }
+
+                var candidate = Path.Combine(dir, "ffmpeg.exe");
                 if (File.Exists(candidate))
                 {
                     return candidate;
                 }
             }
 
-            var local = Path.Combine(FileOps.LocalAppData, "Trayloom", "tools", "ffmpeg.exe");
-            if (File.Exists(local))
-            {
-                return local;
-            }
-
-            var beside = Path.Combine(AppContext.BaseDirectory, "ffmpeg.exe");
-            return File.Exists(beside) ? beside : null;
+            return null;
         }
         catch
         {

@@ -300,7 +300,7 @@ internal static class WaRules
         return h is "whatsapp.com" or "whatsapp.net" || h.EndsWith(".whatsapp.com", StringComparison.Ordinal) || h.EndsWith(".whatsapp.net", StringComparison.Ordinal);
     }
 
-    /// <summary>True when a Zone.Identifier text names a WhatsApp host as the HostUrl or the ReferrerUrl.</summary>
+    /// <summary>True when a Zone.Identifier text names a WhatsApp host as the HostUrl (the referrer is ignored, since any site can name one).</summary>
     public static bool ZoneTextIsWhatsApp(string zoneText)
     {
         foreach (var raw in zoneText.Split('\n'))
@@ -313,7 +313,7 @@ internal static class WaRules
             }
 
             var key = line[..eq].Trim();
-            if (!key.Equals("HostUrl", StringComparison.OrdinalIgnoreCase) && !key.Equals("ReferrerUrl", StringComparison.OrdinalIgnoreCase))
+            if (!key.Equals("HostUrl", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
