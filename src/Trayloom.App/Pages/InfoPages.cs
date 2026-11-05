@@ -161,6 +161,7 @@ internal static class WhatsNewPage
         [
             Loc.T("Every screen now follows the same look: cards, switches and the segmented tab bar."),
             Loc.T("Appearance can follow Windows or be forced to light or dark."),
+            Loc.T("The island’s music Library switches between Apple Music, Spotify and YouTube Music, shows playlist covers, has Albums and Artists tabs, and stays on its page when the song changes."),
         ]),
         new("Fixed",
         [
