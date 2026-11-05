@@ -61,6 +61,9 @@ public sealed class MicMuteFeature : IFeature, IMicMuteState
 
         // The mute persists across relaunch.
         _muted = context.App.Get<bool>("micMuteActive");
+
+        // A mute applied by an earlier version has no journal yet: write it now so an uninstall can still give the microphone back.
+        MicMuteJournal.Write(_muted, context.App.Get<Dictionary<string, double>>("micMuteSavedLevels"));
         if (_muted)
         {
             Reapply();
@@ -445,6 +448,12 @@ public sealed class MicMuteRecovery : IStartupRecovery
         var failed = false;
         foreach (var endpoint in _endpoints())
         {
+            // No active mute: only a microphone Trayloom silenced (it has a saved level) is touched, never one muted in Windows.
+            if (!record.Active && !record.Levels.ContainsKey(endpoint.Id))
+            {
+                continue;
+            }
+
             try
             {
                 endpoint.Mute = false;

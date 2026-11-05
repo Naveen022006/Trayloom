@@ -123,7 +123,7 @@ internal sealed class BluetoothPanelCard : Border
                 BtRadio.Disabled => BtStrings.TurnedOffByHardware,
                 _ => null,
             };
-        var toggle = new PanelToggleRow("", BtStrings.Title, caption, s.Radio == BtRadio.On, value => _service.SetRadio(value), true, s.AccessDenied)
+        var toggle = new PanelToggleRow("", BtStrings.Title, caption, s.Radio == BtRadio.On, value => _service.SetRadio(value, Window.GetWindow(this), _context.SetKeepOpen), true, s.AccessDenied)
         {
             IsEnabled = switchable,
         };

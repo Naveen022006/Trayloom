@@ -276,6 +276,29 @@ internal static class NetworkBlocks
         return row;
     }
 
+    /// <summary>
+    /// Asks before a speed test on a metered connection. The question has the panel as its owner and keeps the panel open; otherwise the
+    /// panel loses focus, closes, and the question goes with it.
+    /// </summary>
+    private static bool ConfirmMetered(IPanelContext c, DependencyObject anchor)
+    {
+        var owner = Window.GetWindow(anchor);
+        var text = Loc.T("The speed test can use several hundred megabytes. Run it anyway?");
+        var title = Loc.T("This connection is metered");
+        c.SetKeepOpen(true);
+        try
+        {
+            var result = owner is { IsLoaded: true }
+                ? MessageBox.Show(owner, text, title, MessageBoxButton.OKCancel, MessageBoxImage.Warning)
+                : MessageBox.Show(text, title, MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+            return result == MessageBoxResult.OK;
+        }
+        finally
+        {
+            c.SetKeepOpen(false);
+        }
+    }
+
     public static FrameworkElement? Test(IPanelContext c)
     {
         var stack = new StackPanel();
@@ -306,8 +329,7 @@ internal static class NetworkBlocks
 
         async void Start()
         {
-            if (SpeedTest.IsMetered()
-                && MessageBox.Show(Loc.T("The speed test can use several hundred megabytes. Run it anyway?"), Loc.T("This connection is metered"), MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK)
+            if (SpeedTest.IsMetered() && !ConfirmMetered(c, stack))
             {
                 return;
             }

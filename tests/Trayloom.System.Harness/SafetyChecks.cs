@@ -28,38 +28,70 @@ internal static class SafetyChecks
         public void Error(string message, Exception? exception = null) => Warnings++;
     }
 
+    /// <summary>Keeps the lid action per power plan; an unknown plan can be neither read nor written.</summary>
     private sealed class FakePower : ILidPower
     {
-        public Guid Scheme = Guid.NewGuid();
-        public uint Ac = 1;
-        public uint Dc = 2;
+        public readonly Dictionary<Guid, (uint Ac, uint Dc)> Plans = [];
+        private Guid _scheme;
         public bool FailWrites;
         public int Writes;
         public int Activated;
 
+        public FakePower()
+        {
+            Scheme = Guid.NewGuid();
+        }
+
+        public Guid Scheme
+        {
+            get => _scheme;
+            set
+            {
+                _scheme = value;
+                Plans.TryAdd(value, (1, 2));
+            }
+        }
+
+        public uint Ac
+        {
+            get => Plans[_scheme].Ac;
+            set => Plans[_scheme] = (value, Plans[_scheme].Dc);
+        }
+
+        public uint Dc
+        {
+            get => Plans[_scheme].Dc;
+            set => Plans[_scheme] = (Plans[_scheme].Ac, value);
+        }
+
         public bool TryGetActive(out Guid scheme)
         {
-            scheme = Scheme;
+            scheme = _scheme;
             return true;
         }
 
         public bool TryRead(Guid scheme, out uint ac, out uint dc)
         {
-            ac = Ac;
-            dc = Dc;
+            ac = 0;
+            dc = 0;
+            if (!Plans.TryGetValue(scheme, out var v))
+            {
+                return false;
+            }
+
+            (ac, dc) = v;
             return true;
         }
 
         public bool TryWrite(Guid scheme, uint ac, uint dc)
         {
             Writes++;
-            if (FailWrites)
+            if (FailWrites || !Plans.ContainsKey(scheme))
             {
                 return false;
             }
 
-            Ac = ac;
-            Dc = dc;
+            Plans[scheme] = (ac, dc);
             return true;
         }
 
@@ -153,6 +185,43 @@ internal static class SafetyChecks
         _check(journal3.TryOverride(), "lid: override after a corrupt journal works");
         _check(journal3.TryRestore() && power3 is { Ac: 1, Dc: 1 }, "lid: 0/0 after a corrupt journal is recorded as 1/1 and comes back as 1/1");
 
+        // Once a clean journal exists again, a later deliberate 0/0 is the user's own and is recorded as it is.
+        power3.Ac = 0;
+        power3.Dc = 0;
+        var journal3b = new LidJournal(dir3, power3, log);
+        _check(!journal3b.HadCorruptJournal, "lid: the .bad file no longer influences later overrides");
+        _check(journal3b.TryOverride() && journal3b.TryRestore() && power3 is { Ac: 0, Dc: 0 }, "lid: a deliberate 0/0 comes back as 0/0");
+
+        // M1: an unrestored record for plan S1 must not let plan S2 be overridden (its own value would be lost).
+        var s1 = new FakePower();
+        var firstPlan = s1.Scheme;
+        var journalS = new LidJournal(Fresh("lid5"), s1, log);
+        _check(journalS.TryOverride(), "lid: S1 overridden");
+        s1.FailWrites = true;
+        _check(!journalS.TryRestore() && journalS.Exists, "lid: S1 restore fails and keeps the record");
+        s1.Scheme = Guid.NewGuid();
+        _check(!journalS.TryOverride(), "lid: another plan is not overridden while S1's record is unrestored");
+        _check(s1 is { Ac: 1, Dc: 2 }, "lid: the other plan is untouched");
+        _check(journalS.Exists, "lid: S1's record is still there");
+        s1.FailWrites = false;
+        s1.Scheme = firstPlan;
+        _check(journalS.TryRestore() && s1 is { Ac: 1, Dc: 2 }, "lid: back on S1 the record restores");
+
+        // A record for a deleted plan is set aside as .orphan and is not a debt.
+        var s2 = new FakePower();
+        var dir6 = Fresh("lid6");
+        var journalO = new LidJournal(dir6, s2, log);
+        journalO.TryOverride();
+        s2.Plans.Remove(s2.Scheme);
+        s2.Scheme = Guid.NewGuid();
+        _check(journalO.TryRestore() && !journalO.Exists, "lid: a record for a deleted plan is dropped");
+        _check(File.Exists(Path.Combine(dir6, LidJournal.FileName + ".orphan")), "lid: ...and kept as .orphan");
+
+        // Out-of-range values are corrupt.
+        var dir7 = Fresh("lid7");
+        File.WriteAllText(Path.Combine(dir7, LidJournal.FileName), "{\"Scheme\":\"" + Guid.NewGuid() + "\",\"Ac\":9,\"Dc\":1}");
+        _check(!new LidJournal(dir7, new FakePower(), log).TryRestore() && File.Exists(Path.Combine(dir7, LidJournal.FileName + ".bad")), "lid: values above 3 go to .bad");
+
         // A journal written by an earlier version is still restored.
         var dir4 = Fresh("lid4");
         var scheme = Guid.NewGuid();
@@ -200,6 +269,18 @@ internal static class SafetyChecks
         _check(set.Count == 3 && set.All(l => l == 10), "recovery: a stale low brightness record is raised to the floor");
         _check(!LidBrightnessJournal.Exists(dir), "recovery: the brightness record is deleted after success");
 
+        // A corrupt journal at start leaves 0/0 behind: the default is put back, but only when the plan reads exactly 0/0.
+        var dir3 = Fresh("recovery3");
+        File.WriteAllText(Path.Combine(dir3, LidJournal.FileName), "garbage");
+        var power3 = new FakePower { Ac = 0, Dc = 0 };
+        new KeepAwakeRecovery(() => dir3, power3, _ => true).Recover(RecoveryStage.Startup, log);
+        _check(power3 is { Ac: 1, Dc: 1 }, "recovery: a lost journal and a stuck 0/0 end on the default (sleep)");
+        var dir4 = Fresh("recovery4");
+        File.WriteAllText(Path.Combine(dir4, LidJournal.FileName), "garbage");
+        var power4 = new FakePower { Ac = 0, Dc = 2 };
+        new KeepAwakeRecovery(() => dir4, power4, _ => true).Recover(RecoveryStage.Startup, log);
+        _check(power4 is { Ac: 0, Dc: 2 }, "recovery: a plan that is not 0/0 is left alone");
+
         // Failure keeps both for the next start.
         var dir2 = Fresh("recovery2");
         var power2 = new FakePower { Ac = 1, Dc = 2 };
@@ -233,6 +314,14 @@ internal static class SafetyChecks
         var untouched = new FakeMic { Mute = true };
         new MicMuteRecovery(() => dir2, () => [untouched]).Recover(RecoveryStage.Uninstall, log);
         _check(untouched.Mute, "mic: no journal means nothing is touched");
+
+        // No active mute and only a stale level: a microphone muted in Windows itself stays muted.
+        var dir3 = Fresh("mic3");
+        MicMuteJournal.Write(dir3, false, new Dictionary<string, double> { ["a"] = 0.6 });
+        var ours = new FakeMic { Id = "a", Mute = true, Level = 0f };
+        var theirs = new FakeMic { Id = "c", Mute = true, Level = 0.5f };
+        new MicMuteRecovery(() => dir3, () => [ours, theirs]).Recover(RecoveryStage.Uninstall, log);
+        _check(!ours.Mute && theirs.Mute, "mic: with no active mute only the microphone Trayloom silenced is given back");
 
         MicMuteJournal.Write(dir, true, new Dictionary<string, double> { ["a"] = 0.6 });
         MicMuteJournal.Write(dir, false, new Dictionary<string, double>());
@@ -272,6 +361,32 @@ internal static class SafetyChecks
         File.WriteAllText(path, "{}");
         new BluetoothRecovery(() => dir, () => Task.FromResult(false)).Recover(RecoveryStage.Uninstall, log);
         _check(File.Exists(path), "bluetooth: a failed turn-on keeps the journal for the next start");
+
+        calls = 0;
+        recovery.Recover(RecoveryStage.Crash, log);
+        _check(calls == 0 && File.Exists(path), "bluetooth: the crash stage does nothing");
+
+        // Wake: the debt is settled whatever happens, so a later wake or start never turns Bluetooth on unexpectedly.
+        var tries = 0;
+        BluetoothSleepJournal.SettleAsync(dir, () =>
+        {
+            tries++;
+            return Task.FromResult(false);
+        }, 3, TimeSpan.Zero, log).GetAwaiter().GetResult();
+        _check(tries == 3 && !File.Exists(path), "bluetooth: a radio that never shows up is retried, then the journal is dropped anyway");
+
+        File.WriteAllText(path, "{}");
+        tries = 0;
+        BluetoothSleepJournal.SettleAsync(dir, () =>
+        {
+            tries++;
+            return Task.FromResult(true);
+        }, 3, TimeSpan.Zero, log).GetAwaiter().GetResult();
+        _check(tries == 1 && !File.Exists(path), "bluetooth: a radio found at once is handled once and the journal dropped");
+
+        File.WriteAllText(path, "{}");
+        BluetoothSleepJournal.SettleAsync(dir, () => throw new InvalidOperationException("refused"), 2, TimeSpan.Zero, log).GetAwaiter().GetResult();
+        _check(!File.Exists(path), "bluetooth: a refused switch-on still drops the journal");
     }
 
     private static void Floor()

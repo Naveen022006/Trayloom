@@ -119,9 +119,15 @@ internal sealed class BluetoothService : IBluetoothState, IDisposable
 
     public IReadOnlyList<BluetoothDeviceInfo> Devices => Visible().Select(d => new BluetoothDeviceInfo(d.Key, d.Name, d.Connected, d.Battery)).ToList();
 
-    public void SetRadio(bool on) => BtGuard.FireAndLog(async () =>
+    public void SetRadio(bool on) => SetRadio(on, null, null);
+
+    /// <summary>
+    /// Switches the radio. From the tray panel pass the panel window and its keep-open switch: without them the question steals focus,
+    /// the panel closes and takes the question with it.
+    /// </summary>
+    public void SetRadio(bool on, System.Windows.Window? owner, Action<bool>? keepOpen) => BtGuard.FireAndLog(async () =>
     {
-        if (!on && !ConfirmRadioOff())
+        if (!on && !ConfirmRadioOff(owner, keepOpen))
         {
             Changed?.Invoke();
             return;
@@ -294,8 +300,9 @@ internal sealed class BluetoothService : IBluetoothState, IDisposable
     /// from this PC. The radio state is read fresh (an already-off radio needs no question). Returns false when the person cancels.
     /// Call on the UI thread.
     /// </summary>
-    public bool ConfirmRadioOff()
+    public bool ConfirmRadioOff(System.Windows.Window? owner = null, Action<bool>? keepOpen = null)
     {
+        var holding = false;
         try
         {
             var radio = _radio;
@@ -309,15 +316,25 @@ internal sealed class BluetoothService : IBluetoothState, IDisposable
                 return true;
             }
 
-            return System.Windows.MessageBox.Show(
-                       Loc.T("A keyboard or mouse is connected over Bluetooth. Turning Bluetooth off disconnects it, and you may lose control of this PC."),
-                       Loc.T("Turn Bluetooth off?"),
-                       System.Windows.MessageBoxButton.OKCancel,
-                       System.Windows.MessageBoxImage.Warning) == System.Windows.MessageBoxResult.OK;
+            keepOpen?.Invoke(true);
+            holding = true;
+            var text = Loc.T("A keyboard or mouse is connected over Bluetooth. Turning Bluetooth off disconnects it, and you may lose control of this PC.");
+            var title = Loc.T("Turn Bluetooth off?");
+            var result = owner is { IsLoaded: true }
+                ? System.Windows.MessageBox.Show(owner, text, title, System.Windows.MessageBoxButton.OKCancel, System.Windows.MessageBoxImage.Warning)
+                : System.Windows.MessageBox.Show(text, title, System.Windows.MessageBoxButton.OKCancel, System.Windows.MessageBoxImage.Warning);
+            return result == System.Windows.MessageBoxResult.OK;
         }
         catch (Exception)
         {
             return true;
+        }
+        finally
+        {
+            if (holding)
+            {
+                keepOpen?.Invoke(false);
+            }
         }
     }
 

@@ -110,7 +110,7 @@ public sealed class BluetoothSleepFeature : IFeature
             }
 
             // Pay the debt left by a previous run (also when the feature has since been turned off).
-            await PayDebtAsync();
+            await PayDebtAsync(atStart: true);
         });
     }
 
@@ -165,14 +165,18 @@ public sealed class BluetoothSleepFeature : IFeature
         }
         else if (e.Mode == PowerModes.Resume)
         {
-            _ = Task.Run(PayDebtAsync);
+            _ = Task.Run(() => PayDebtAsync());
         }
     }
 
-    private async Task PayDebtAsync()
+    /// <summary>
+    /// Switches Bluetooth back on after sleep. At wake only this run's pending flag counts; at start a journal left by a crash or a
+    /// shutdown while asleep counts too. Whatever happens, the debt for that sleep is settled and the journal is gone afterwards.
+    /// </summary>
+    private async Task PayDebtAsync(bool atStart = false)
     {
         var ctx = _ctx;
-        if (ctx is null || !(ctx.App.Get<bool>("bluetoothSleepRestorePending") || BluetoothSleepJournal.Exists()))
+        if (ctx is null || !(ctx.App.Get<bool>("bluetoothSleepRestorePending") || (atStart && BluetoothSleepJournal.Exists())))
         {
             return;
         }
@@ -180,31 +184,30 @@ public sealed class BluetoothSleepFeature : IFeature
         await BluetoothSleepJournal.Gate.WaitAsync();
         try
         {
-            var radio = await FindBluetoothAsync();
-            if (radio is not null)
-            {
-                if (radio.State == RadioState.Off)
-                {
-                    await radio.SetStateAsync(RadioState.On);
-                }
-
-                // Back on (or switched on by the user meanwhile): the debt is paid.
-                if (radio.State == RadioState.On)
-                {
-                    BluetoothSleepJournal.Delete();
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            ctx.Log.Warn($"Bluetooth could not be restored: {ex.Message}");
+            await BluetoothSleepJournal.SettleAsync(AppPaths.FeatureData("bluetooth-sleep"), TurnOnIfOffAsync, 3, TimeSpan.FromSeconds(3), ctx.Log);
         }
         finally
         {
-            // The flag is always cleared; a journal that is still there makes the next start try again.
             ctx.App.Set("bluetoothSleepRestorePending", false);
             BluetoothSleepJournal.Gate.Release();
         }
+    }
+
+    /// <summary>True when the radio was found (switched on if it was off); false when Windows has not listed it yet.</summary>
+    private static async Task<bool> TurnOnIfOffAsync()
+    {
+        var radio = await FindBluetoothAsync();
+        if (radio is null)
+        {
+            return false;
+        }
+
+        if (radio.State == RadioState.Off)
+        {
+            await radio.SetStateAsync(RadioState.On);
+        }
+
+        return true;
     }
 
     internal static async Task<Radio?> FindBluetoothAsync()
@@ -244,14 +247,51 @@ internal static class BluetoothSleepJournal
         }
     }
 
-    public static void Delete()
+    public static void Delete() => Delete(AppPaths.FeatureData("bluetooth-sleep"));
+
+    public static void Delete(string dir)
     {
         try
         {
-            File.Delete(PathIn(AppPaths.FeatureData("bluetooth-sleep")));
+            File.Delete(PathIn(dir));
         }
         catch (Exception)
         {
+        }
+    }
+
+    /// <summary>
+    /// Runs <paramref name="turnOn"/> up to <paramref name="attempts"/> times (the radio is often not listed for a moment after wake) and
+    /// then deletes the journal whatever the outcome: once this run has handled the wake, the user is back in control and a failed attempt
+    /// must never turn Bluetooth on at some later time.
+    /// </summary>
+    public static async Task SettleAsync(string dir, Func<Task<bool>> turnOn, int attempts, TimeSpan delay, ILog log)
+    {
+        try
+        {
+            for (var i = 0; i < attempts; i++)
+            {
+                try
+                {
+                    if (await turnOn())
+                    {
+                        break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    log.Warn($"Bluetooth could not be restored: {ex.Message}");
+                }
+
+                if (i < attempts - 1)
+                {
+                    await Task.Delay(delay);
+                }
+            }
+        }
+        finally
+        {
+            Delete(dir);
         }
     }
 }
@@ -280,13 +320,19 @@ public sealed class BluetoothRecovery : IStartupRecovery
 
     public void Recover(RecoveryStage stage, ILog log)
     {
+        // The crash stage has a 3 second budget and Bluetooth is not urgent: the next normal start does it.
+        if (stage == RecoveryStage.Crash)
+        {
+            return;
+        }
+
         var path = BluetoothSleepJournal.PathIn(_dataDir());
         if (!File.Exists(path))
         {
             return;
         }
 
-        if (!BluetoothSleepJournal.Gate.Wait(5000))
+        if (!BluetoothSleepJournal.Gate.Wait(1500))
         {
             log.Warn("bluetooth-sleep: busy; Bluetooth is switched back on at the next start.");
             return;
@@ -295,7 +341,7 @@ public sealed class BluetoothRecovery : IStartupRecovery
         try
         {
             var task = Task.Run(_turnOn);
-            if (task.Wait(5000) && task.Result)
+            if (task.Wait(1500) && task.Result)
             {
                 File.Delete(path);
             }

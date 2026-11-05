@@ -96,7 +96,8 @@ internal sealed class LidJournal
             return false;
         }
 
-        if (entry is null || entry.Scheme == Guid.Empty)
+        // Lid actions are 0..3 (nothing, sleep, hibernate, shut down): anything else is not something we wrote.
+        if (entry is null || entry.Scheme == Guid.Empty || entry.Ac > 3 || entry.Dc > 3)
         {
             SetAside();
             return false;
@@ -104,6 +105,14 @@ internal sealed class LidJournal
 
         try
         {
+            // The plan was deleted, and the user's value went with it: this record can never be restored. Keep it as evidence, not as a debt.
+            if (!_power.TryRead(entry.Scheme, out _, out _))
+            {
+                File.Move(_path, _path + ".orphan", overwrite: true);
+                _log.Warn("The lid journal belonged to a power plan that no longer exists; it was set aside as lid-journal.json.orphan.");
+                return true;
+            }
+
             if (!_power.TryWrite(entry.Scheme, entry.Ac, entry.Dc))
             {
                 _log.Warn("Could not put back the lid action; it is kept to retry.");
@@ -121,6 +130,56 @@ internal sealed class LidJournal
         }
     }
 
+    /// <summary>The power plan the journal belongs to; false when there is no readable journal.</summary>
+    internal bool TryPeek(out Guid scheme)
+    {
+        scheme = Guid.Empty;
+        try
+        {
+            if (!File.Exists(_path))
+            {
+                return false;
+            }
+
+            var entry = JsonSerializer.Deserialize<Entry>(File.ReadAllText(_path));
+            if (entry is null)
+            {
+                return false;
+            }
+
+            scheme = entry.Scheme;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// After a journal was lost, the lid may still be on Trayloom's 0/0. Puts Windows' default (sleep) back, but only when the active
+    /// plan reads exactly 0/0. Returns true when it wrote.
+    /// </summary>
+    internal bool ApplyDefaultIfStuck()
+    {
+        try
+        {
+            if (_power.TryGetActive(out var scheme) && _power.TryRead(scheme, out var ac, out var dc) && ac == 0 && dc == 0
+                && _power.TryWrite(scheme, DefaultLidAction, DefaultLidAction))
+            {
+                _power.SetActiveIfCurrent(scheme);
+                _log.Warn("The original lid action was lost; Windows' default (sleep) was put back.");
+                return true;
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Warn($"Could not put the default lid action back: {ex.Message}");
+        }
+
+        return false;
+    }
+
     /// <summary>
     /// Makes the lid do nothing. An existing journal is restored first (and kept if that fails); otherwise the current values are
     /// recorded before they are overwritten. Call under <see cref="Gate"/>.
@@ -136,6 +195,13 @@ internal sealed class LidJournal
 
             if (!_power.TryGetActive(out var scheme))
             {
+                return false;
+            }
+
+            if (Exists && (!TryPeek(out var recorded) || recorded != scheme))
+            {
+                // An unrestored record for another plan is the user's value for THAT plan; overriding this one would lose its own.
+                _log.Warn("An earlier lid record for another power plan could not be put back; the lid is left unchanged.");
                 return false;
             }
 
@@ -157,6 +223,8 @@ internal sealed class LidJournal
                 {
                     return false;
                 }
+
+                RetireBad();
             }
 
             // A journal that is still here after a failed restore is kept as it is; its values are the user's.
@@ -173,6 +241,23 @@ internal sealed class LidJournal
         {
             _log.Warn($"Closed-lid mode failed: {ex.Message}");
             return false;
+        }
+    }
+
+    // A clean record exists again, so the old unreadable one must not influence a later, deliberate "do nothing".
+    private void RetireBad()
+    {
+        _hadCorrupt = false;
+        try
+        {
+            if (File.Exists(_path + ".bad"))
+            {
+                File.Move(_path + ".bad", _path + ".bad.used", overwrite: true);
+            }
+        }
+        catch
+        {
+            // leave it
         }
     }
 
@@ -351,22 +436,30 @@ public sealed class KeepAwakeRecovery : IStartupRecovery
             var journal = new LidJournal(dir, _power, log);
             if (journal.Exists && !journal.TryRestore())
             {
+                // A journal that was unreadable is gone now, and a restore that can never work at uninstall will not be retried:
+                // in both cases do not leave the lid on "do nothing".
+                if (!journal.Exists || stage == RecoveryStage.Uninstall)
+                {
+                    journal.ApplyDefaultIfStuck();
+                }
+
                 log.Warn("keep-awake-lid: the lid action could not be put back; it will be retried at the next start.");
             }
+        }
 
-            if (LidBrightnessJournal.Exists(dir))
+        // Outside the gate: the WMI call can take up to two seconds and must not hold up the service's own start.
+        if (LidBrightnessJournal.Exists(dir))
+        {
+            var recorded = LidBrightnessJournal.TryRead(dir);
+            // An unreadable record still means the panel may be dark: bring it to a visible level.
+            var level = LidBrightnessJournal.RestoreLevel(recorded > 0 ? recorded : 50);
+            if (_setBrightness(level))
             {
-                var recorded = LidBrightnessJournal.TryRead(dir);
-                // An unreadable record still means the panel may be dark: bring it to a visible level.
-                var level = LidBrightnessJournal.RestoreLevel(recorded > 0 ? recorded : 50);
-                if (_setBrightness(level))
-                {
-                    LidBrightnessJournal.Delete(dir);
-                }
-                else
-                {
-                    log.Warn("keep-awake-lid: the panel brightness could not be put back; it will be retried at the next start.");
-                }
+                LidBrightnessJournal.Delete(dir);
+            }
+            else
+            {
+                log.Warn("keep-awake-lid: the panel brightness could not be put back; it will be retried at the next start.");
             }
         }
     }

@@ -50,6 +50,7 @@ internal sealed class KeepAwakeService : IKeepAwakeService, IDisposable
     private bool _paused;
     private bool _suppressAutomation;
     private bool _lidApplied;
+    private bool _restorePendingAtStart;
     private int _savedBrightness = -1;
     private bool _lidClosedNow;
     private readonly object _lidGate = new();
@@ -89,7 +90,7 @@ internal sealed class KeepAwakeService : IKeepAwakeService, IDisposable
     public LidState Lid { get; private set; }
 
     /// <summary>True when putting the user's own lid action back failed (the journal keeps it for a retry).</summary>
-    public bool LidRestorePending => Lid == LidState.Failed && _lidApplied;
+    public bool LidRestorePending => Lid == LidState.Failed && (_lidApplied || _restorePendingAtStart);
 
     public bool IsActive => Kind != SessionKind.None;
 
@@ -733,6 +734,7 @@ internal sealed class KeepAwakeService : IKeepAwakeService, IDisposable
             Raise();
             if (WriteLidAction(doNothing: true))
             {
+                _restorePendingAtStart = false;
                 _lidApplied = true;
                 Lid = LidState.Off;
             }
@@ -772,6 +774,7 @@ internal sealed class KeepAwakeService : IKeepAwakeService, IDisposable
         if (WriteLidAction(doNothing: false))
         {
             _lidApplied = false;
+            _restorePendingAtStart = false;
         }
         else
         {
@@ -799,9 +802,11 @@ internal sealed class KeepAwakeService : IKeepAwakeService, IDisposable
     {
         lock (LidJournal.Gate)
         {
-            if (_lidJournal.Exists)
+            if (_lidJournal.Exists && !_lidJournal.TryRestore())
             {
-                _lidJournal.TryRestore();
+                // Shown as the orange line; ApplyLid and Stop try again.
+                _restorePendingAtStart = true;
+                Lid = LidState.Failed;
             }
         }
 
@@ -873,11 +878,14 @@ internal sealed class KeepAwakeService : IKeepAwakeService, IDisposable
                 {
                     // The level goes to disk before the panel is dimmed, and an existing record is never overwritten, so a crash
                     // or a second close can never lose the user's real level.
-                    LidBrightnessJournal.TryRecord(_dataDir, level);
-                    _savedBrightness = level;
-                    BrightnessWrites.MarkOwn();
-                    Wmi.ForEach(@"root\WMI", "SELECT * FROM WmiMonitorBrightnessMethods WHERE Active=TRUE", o => Wmi.Invoke(o, "WmiSetBrightness", 1, 0));
-                    BrightnessWrites.MarkOwn();
+                    // Without a record on disk the panel is not dimmed: a crash would leave it black with no way back.
+                    if (LidBrightnessJournal.TryRecord(_dataDir, level) || LidBrightnessJournal.Exists(_dataDir))
+                    {
+                        _savedBrightness = level;
+                        BrightnessWrites.MarkOwn();
+                        Wmi.ForEach(@"root\WMI", "SELECT * FROM WmiMonitorBrightnessMethods WHERE Active=TRUE", o => Wmi.Invoke(o, "WmiSetBrightness", 1, 0));
+                        BrightnessWrites.MarkOwn();
+                    }
                 }
             });
         }

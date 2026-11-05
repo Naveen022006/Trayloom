@@ -300,15 +300,28 @@ internal sealed class ProcessList : StackPanel
             if (_forceQuit)
             {
                 var pid = row.Pid;
-                var started = StartTimeOf(pid);
-                if (started is not null)
+                var menu = new ContextMenu();
+                var item = new MenuItem { Header = Loc.T("Force Quit") };
+                DateTime? started = null;
+
+                // Looked up when the menu opens, not for every row on every refresh; protected processes get no menu at all.
+                grid.ContextMenuOpening += (_, e) =>
                 {
-                    var menu = new ContextMenu();
-                    var item = new MenuItem { Header = Loc.T("Force Quit") };
-                    item.Click += (_, _) => ForceQuit(pid, row.Name, started.Value);
-                    menu.Items.Add(item);
-                    grid.ContextMenu = menu;
-                }
+                    started = StartTimeOf(pid);
+                    if (started is null)
+                    {
+                        e.Handled = true;
+                    }
+                };
+                item.Click += (_, _) =>
+                {
+                    if (started is { } when)
+                    {
+                        ForceQuit(pid, row.Name, when);
+                    }
+                };
+                menu.Items.Add(item);
+                grid.ContextMenu = menu;
             }
 
             Children.Add(grid);
