@@ -79,7 +79,7 @@ internal sealed partial class IslandWindow : OverlayWindow
     /// <summary>Physical pixels per island unit: DPI times zoom. All screen-rect math of the island uses this.</summary>
     private double _scale => _dpi * _zoom;
 
-    /// <summary>The setting that scales the whole island (length and breadth) — clamped to 0.9 to 1.3.</summary>
+    /// <summary>The setting that scales the whole island (length and breadth) — clamped to 0.9 to 1.5 (<see cref="IslandSizes.MinZoom"/> to <see cref="IslandSizes.MaxZoom"/>).</summary>
     internal const string ZoomKey = "notchZoom";
 
     internal const double DefaultZoom = 1.10;
@@ -177,7 +177,7 @@ internal sealed partial class IslandWindow : OverlayWindow
     private double ReadZoom()
     {
         var z = _core.App.Get(ZoomKey, DefaultZoom);
-        return double.IsNaN(z) || double.IsInfinity(z) ? DefaultZoom : Math.Clamp(z, 0.9, 1.3);
+        return IslandSizes.ClampZoom(z, DefaultZoom);
     }
 
     /// <summary>Reads the zoom setting and scales the whole stage (layout transform: text stays sharp, hit tests follow).</summary>

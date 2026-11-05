@@ -399,6 +399,9 @@ internal sealed partial class IslandWindow
         IslandCore.ActMusic => "music",
         IslandCore.ActKeepAwake => "controls",
         IslandCore.ActMicrophone => "controls",
+
+        // A contributed activity "owner.part" (bluetooth.low, github.coding) opens the page of its owner.
+        _ when act.IndexOf('.') > 0 => act[..act.IndexOf('.')],
         _ => act,
     };
 
@@ -1106,14 +1109,9 @@ internal sealed partial class IslandWindow
 
     private (double W, double Budget, double Cap) OpenMetrics(IslandPage page)
     {
-        var preset = _core.App.Get<string>(K.Size);
-        double chosen = preset switch
-        {
-            "compact" => 480,
-            "custom" => Math.Clamp(_core.App.Get<double>(K.CustomWidth), 360, 600),
-            _ => 560,
-        };
-        if (preset != "custom" && page.NaturalWidth is { } nw)
+        var preset = IslandSizes.Preset(_core.App);
+        var chosen = IslandSizes.Width(_core.App);
+        if (preset != IslandSizes.Custom && page.NaturalWidth is { } nw)
         {
             chosen = Math.Min(chosen, nw + 56);
         }
@@ -1125,18 +1123,13 @@ internal sealed partial class IslandWindow
         // the quick-button row on the far side (the taskbar is not part of the work area, so a page never reaches under it)
         var cap = Math.Max(120, FarRoomDip(bottom));
         var chrome = page.HasTopRow ? (IsCapsule ? 12 : 0) + 64 : 32;
-        double budget = preset switch
+        var budget = IslandSizes.Budget(_core.App, chrome);
+        if (preset != IslandSizes.Custom && page is not (null))
         {
-            "compact" => 180,
-            "custom" => Math.Max(120, Math.Clamp(_core.App.Get<double>(K.CustomHeight), 260, 640) - chrome),
-            _ => 264,
-        };
-        if (preset != "custom" && page is not (null))
-        {
-            budget = page.ModuleId is "mixer" or "calendar" or "clipboard" or "captures" or "files" or "notifications" or "downloads" or "camera" or "scratchpad" or "watch" or "explore" ? budget : Math.Max(budget, 264);
+            budget = page.ModuleId is "mixer" or "calendar" or "clipboard" or "captures" or "files" or "notifications" or "downloads" or "camera" or "scratchpad" or "watch" or "explore" ? budget : Math.Max(budget, IslandSizes.SpaciousBudget);
         }
 
-        if (page is not null && page.GrowsBeyondBudget && preset != "custom")
+        if (page is not null && page.GrowsBeyondBudget && preset != IslandSizes.Custom)
         {
             budget = cap - chrome;
         }

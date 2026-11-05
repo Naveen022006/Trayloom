@@ -28,6 +28,7 @@ internal static class Program
         Ordering();
         Matching();
         Json();
+        IslandSizesChecks.Run(Check);
         PlacementChecks.Run(Check);
         OpeningDirectionChecks.Run(Check);
         AmDbChecks.Run(Check);
@@ -40,6 +41,7 @@ internal static class Program
         SpotifyChecks.Run(Check);
         YouTubeChecks.Run(Check);
         StreamListChecks.Run(Check);
+        GoogleCalendarChecks.Run(Check);
         Console.WriteLine($"{s_checks - s_failed}/{s_checks} checks passed");
         return s_failed == 0 ? 0 : 1;
     }

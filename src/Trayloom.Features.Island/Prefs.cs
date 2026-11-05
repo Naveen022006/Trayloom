@@ -155,7 +155,7 @@ internal static partial class K
         app.RegisterDefaults(new Dictionary<string, object?>
         {
             [Enabled] = false,
-            [Size] = "spacious",
+            [Size] = IslandSizes.DefaultPreset,
             [CustomWidth] = 440.0,
             [CustomHeight] = 480.0,
             [Outline] = false,

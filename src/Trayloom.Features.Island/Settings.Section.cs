@@ -179,22 +179,23 @@ internal static class SettingsTabs
 
         // Size
         var size = new SettingsCard(Loc.T("Size"));
-        var preset = app.Get<string>(K.Size);
-        if (preset is not ("compact" or "spacious" or "custom"))
+        var preset = IslandSizes.Preset(app);
+
+        size.Add(SUi.TileRow(4, 10,
+            SUi.ChoiceTile("", Loc.T("Compact"), preset == IslandSizes.Compact, () => { app.Set(K.Size, IslandSizes.Compact); rebuild(); }),
+            SUi.ChoiceTile("", Loc.T("Spacious"), preset == IslandSizes.Spacious, () => { app.Set(K.Size, IslandSizes.Spacious); rebuild(); }),
+            SUi.ChoiceTile("", Loc.T("Large"), preset == IslandSizes.Large, () => { app.Set(K.Size, IslandSizes.Large); rebuild(); }),
+            SUi.ChoiceTile("", Loc.T("Custom"), preset == IslandSizes.Custom, () => { app.Set(K.Size, IslandSizes.Custom); rebuild(); })));
+        if (preset == IslandSizes.Custom)
         {
-            preset = "spacious";
+            size.Add(SUi.SliderLine(Loc.T("Width"), IslandSizes.MinCustomWidth, IslandSizes.MaxCustomWidth, IslandSizes.ClampWidth(app.Get<double>(K.CustomWidth)), 10, v => ((int)v).ToString(), v => app.Set(K.CustomWidth, v)));
+            size.Add(SUi.SliderLine(Loc.T("Maximum height"), IslandSizes.MinCustomHeight, IslandSizes.MaxCustomHeight, IslandSizes.CustomHeight(app), 10, v => ((int)v).ToString(), v => app.Set(K.CustomHeight, v)));
+            size.AddCaption(Loc.T("Controls stay compact. Longer lists use up to this height. You can also drag the handle on the preview."));
         }
 
-        size.Add(SUi.TileRow(3, 10,
-            SUi.ChoiceTile("", Loc.T("Compact"), preset == "compact", () => { app.Set(K.Size, "compact"); rebuild(); }),
-            SUi.ChoiceTile("", Loc.T("Spacious"), preset == "spacious", () => { app.Set(K.Size, "spacious"); rebuild(); }),
-            SUi.ChoiceTile("", Loc.T("Custom"), preset == "custom", () => { app.Set(K.Size, "custom"); rebuild(); })));
-        if (preset == "custom")
-        {
-            size.Add(SUi.SliderLine(Loc.T("Width"), 360, 600, app.Get<double>(K.CustomWidth), 10, v => ((int)v).ToString(), v => app.Set(K.CustomWidth, v)));
-            size.Add(SUi.SliderLine(Loc.T("Maximum height"), 260, 640, app.Get<double>(K.CustomHeight), 10, v => ((int)v).ToString(), v => app.Set(K.CustomHeight, v)));
-            size.AddCaption(Loc.T("Controls stay compact. Longer lists use up to this height."));
-        }
+        // The zoom scales the whole island, text included; it sits beside the size because the two work together.
+        size.Add(SUi.SliderLine(Loc.T("Zoom"), IslandSizes.MinZoom, IslandSizes.MaxZoom, SettingsZoom(app), 0.05, v => $"{Math.Round(v * 100):0}%", v => app.Set(IslandWindow.ZoomKey, Math.Round(v, 2))));
+        size.AddCaption(Loc.T("Makes everything in the island larger, including text."));
 
         size.Add(SUi.SwitchRow(app, K.Translucent, "", Loc.T("Translucent background"), Loc.T("When open, Dynamic Island blurs what is behind it with the system’s own material.")));
         stack.AddSpaced(size, 20);
@@ -353,8 +354,12 @@ internal static class SettingsTabs
             cards.Add(Card(G.Battery, Loc.T("Battery"), K.Battery, rt.IsAvailable("monitor-power"), rt.IsAvailable("monitor-power") ? null : Missing("monitor-power"), () => c.Shell.OpenFeatures("monitor-power")));
         }
 
-        var accOk = rt.IsAvailable("notch-accessories") && rt.IsAvailable("monitor-power");
-        cards.Add(Card(G.Headphones, Loc.T("Accessory alerts"), K.Accessories, accOk, accOk ? null : (!rt.IsAvailable("notch-accessories") ? Missing("notch-accessories") : Missing("monitor-power")), () => c.Shell.OpenFeatures(rt.IsAvailable("notch-accessories") ? "monitor-power" : "notch-accessories")));
+        // The Bluetooth feature replaces the accessory alerts: its own card has the switches, so this one points there.
+        var btHandles = rt.IsAvailable("notch-bluetooth");
+        var accOk = !btHandles && rt.IsAvailable("notch-accessories") && rt.IsAvailable("monitor-power");
+        cards.Add(btHandles
+            ? Card(G.Headphones, Loc.T("Accessory alerts"), K.Accessories, false, Loc.T("Bluetooth shows these alerts now."), () => c.Shell.OpenSettings("island#bluetooth"))
+            : Card(G.Headphones, Loc.T("Accessory alerts"), K.Accessories, accOk, accOk ? null : (!rt.IsAvailable("notch-accessories") ? Missing("notch-accessories") : Missing("monitor-power")), () => c.Shell.OpenFeatures(rt.IsAvailable("notch-accessories") ? "monitor-power" : "notch-accessories")));
         var clipOk = rt.IsAvailable("clipboard-history") && app.Get<bool>(K.ClipboardHistoryEnabled) && (core?.ModuleVisible("clipboard") ?? false);
         cards.Add(Card(G.Clipboard, Loc.T("Clipboard"), K.Clipboard, clipOk, !rt.IsAvailable("clipboard-history") ? Missing("clipboard-history") : (!app.Get<bool>(K.ClipboardHistoryEnabled) ? Loc.T("Enable “Save clipboard history” in its settings.") : (clipOk ? null : Loc.T("Show “Clipboard” on the Content tab.")))));
         var capOk = rt.IsAvailable("screenshot") && (core?.ModuleVisible("captures") ?? false);
@@ -365,7 +370,7 @@ internal static class SettingsTabs
         ind.Add(SUi.CardGrid(cards, 116, 700));
         ind.AddDivider();
         ind.Add(SUi.SwitchRow(app, K.MicInUse, "", Loc.T("Show when an app uses the microphone"), Loc.T("While an app records from the microphone, the island shows a pulsing orange microphone with the app’s name, as the indicator on iPhone and Mac does.")));
-        if (app.Get<bool>(K.Accessories))
+        if (app.Get<bool>(K.Accessories) && !btHandles)
         {
             ind.AddCaption(Loc.T("Show connected accessories and warn once when their battery falls to 20%."));
         }
@@ -818,7 +823,7 @@ internal static class SettingsTabs
     private static double SettingsZoom(IAppSettings app)
     {
         var z = app.Get(IslandWindow.ZoomKey, IslandWindow.DefaultZoom);
-        return double.IsFinite(z) ? Math.Clamp(z, 0.9, 1.3) : IslandWindow.DefaultZoom;
+        return IslandSizes.ClampZoom(z, IslandWindow.DefaultZoom);
     }
 
     /// <summary>"Name — W × H" in physical pixels, with the main display marked.</summary>

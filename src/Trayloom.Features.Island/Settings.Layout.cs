@@ -64,16 +64,18 @@ internal sealed class LayoutEditor : Grid
         _canvas.Children.Clear();
         var cw = Math.Max(300, ActualWidth);
         var app = _ctx.App;
-        var preset = app.Get<string>(K.Size);
-        double w = preset switch { "compact" => 480, "custom" => Math.Clamp(app.Get<double>(K.CustomWidth), 360, 600), _ => 560 };
+        var custom = IslandSizes.IsCustom(app);
+        var w = IslandSizes.Width(app);
         var capsule = app.Get<string>(K.Silhouette) != "notch";
         // page + height
         IslandPage? page = _core is null ? null : new ControlsPage(_core, null) { IsPreview = true };
         var contentW = w - 56;
-        var budget = preset == "compact" ? 180 : (preset == "custom" ? Math.Clamp(app.Get<double>(K.CustomHeight), 260, 640) - 76 : 264);
+        var budget = IslandSizes.Budget(app, 76);
         var ch = page?.Height(contentW, budget) ?? 140;
-        var h = preset == "custom" ? Math.Clamp(app.Get<double>(K.CustomHeight), 260, 640) : (capsule ? 12 : 0) + 64 + ch;
-        _scale = Math.Min(0.5, Math.Max(0.2, (cw - 112) / w));
+        var h = custom ? IslandSizes.CustomHeight(app) : (capsule ? 12 : 0) + 64 + ch;
+        // The scale shrinks the island so that it and the buttons beside it fit the card; the floor keeps the widest custom size (960) inside
+        // the narrowest card (the Settings minimum width) instead of letting it overflow.
+        _scale = Math.Min(0.5, Math.Max(0.15, (cw - 112) / w));
         var iw = w * _scale;
         var ih = h * _scale;
         _island = new Rect((cw - iw) / 2, 20, iw, ih);
@@ -309,8 +311,8 @@ internal sealed class LayoutEditor : Grid
         {
             active = true;
             start = e.GetPosition(_canvas);
-            startW = Math.Clamp(_ctx.App.Get<double>(K.CustomWidth), 360, 600);
-            startH = Math.Clamp(_ctx.App.Get<double>(K.CustomHeight), 260, 640);
+            startW = IslandSizes.ClampWidth(_ctx.App.Get<double>(K.CustomWidth));
+            startH = IslandSizes.ClampHeight(_ctx.App.Get<double>(K.CustomHeight));
             el.CaptureMouse();
             e.Handled = true;
         };
@@ -327,9 +329,9 @@ internal sealed class LayoutEditor : Grid
                 return;
             }
 
-            _ctx.App.Set(K.Size, "custom");
-            _ctx.App.Set(K.CustomWidth, Math.Clamp(Math.Round((startW + ((p.X - start.X) / _scale)) / 10) * 10, 360, 600));
-            _ctx.App.Set(K.CustomHeight, Math.Clamp(Math.Round((startH + ((p.Y - start.Y) / _scale)) / 10) * 10, 260, 640));
+            _ctx.App.Set(K.Size, IslandSizes.Custom);
+            _ctx.App.Set(K.CustomWidth, IslandSizes.ClampWidth(Math.Round((startW + ((p.X - start.X) / _scale)) / 10) * 10));
+            _ctx.App.Set(K.CustomHeight, IslandSizes.ClampHeight(Math.Round((startH + ((p.Y - start.Y) / _scale)) / 10) * 10));
         };
         el.MouseLeftButtonUp += (_, _) =>
         {
