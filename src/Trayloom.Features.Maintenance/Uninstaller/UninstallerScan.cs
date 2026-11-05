@@ -312,14 +312,79 @@ internal static class UninstallerSupport
 
     private static readonly string[] MicrosoftOwnedProgramFolders =
     [
-        "Windows Defender", "Windows Defender Advanced Threat Protection", "Windows NT", "Windows Mail", "Windows Media Player", "Windows Photo Viewer", "Windows Sidebar",
-        "Windows Portable Devices", "Windows Security", "Windows Kits", "WindowsPowerShell", "Internet Explorer", "dotnet", "Reference Assemblies", "MSBuild", "Microsoft",
-        "Uninstall Information", "WindowsApps", "ModifiableWindowsApps", "Common Files",
+        "WindowsPowerShell", "Internet Explorer", "dotnet", "Reference Assemblies", "MSBuild", "Uninstall Information", "WindowsApps", "ModifiableWindowsApps", "Common Files",
     ];
 
-    /// <summary>Folders an installer must never be allowed to claim as its own (beyond the critical roots): shared, Microsoft-owned or temp.</summary>
-    private static bool IsBroadFolder(string full)
+    /// <summary>
+    /// True for a path inside a Microsoft-owned tree, at any depth: Windows, <c>%ProgramData%\Microsoft</c>, <c>%APPDATA%\Microsoft</c>,
+    /// <c>%LOCALAPPDATA%\Microsoft</c>, Common Files, and the Program Files folders named <c>Windows *</c>, <c>Microsoft *</c> or listed in
+    /// <see cref="MicrosoftOwnedProgramFolders"/>. A direct <c>Microsoft *</c> folder is allowed when <paramref name="ownMicrosoftApp"/> is
+    /// set (the entry's publisher is Microsoft); the bare <c>Microsoft</c> folder is refused only as a whole so its children stay usable.
+    /// </summary>
+    internal static bool IsMicrosoftOwned(string full, bool ownMicrosoftApp = false)
     {
+        string Special(Environment.SpecialFolder f) => Environment.GetFolderPath(f);
+        var roots = new List<string> { Special(Environment.SpecialFolder.Windows), Special(Environment.SpecialFolder.CommonProgramFiles), Special(Environment.SpecialFolder.CommonProgramFilesX86) };
+        foreach (var root in new[] { Special(Environment.SpecialFolder.CommonApplicationData), Special(Environment.SpecialFolder.ApplicationData), Special(Environment.SpecialFolder.LocalApplicationData) })
+        {
+            if (root.Length > 0)
+            {
+                roots.Add(Path.Combine(root, "Microsoft"));
+            }
+        }
+
+        if (roots.Any(r => r.Length > 0 && SafePaths.IsUnder(full, r)))
+        {
+            return true;
+        }
+
+        foreach (var pf in new[] { Special(Environment.SpecialFolder.ProgramFiles), Special(Environment.SpecialFolder.ProgramFilesX86) }.Where(p => p.Length > 0))
+        {
+            var root = SafePaths.Normalize(pf);
+            if (!SafePaths.IsUnder(full, root) || string.Equals(full, root, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var parts = full[(root.Length + 1)..].Split('\\', StringSplitOptions.RemoveEmptyEntries);
+            var first = parts.Length > 0 ? parts[0] : string.Empty;
+            if (first.Equals("Microsoft", StringComparison.OrdinalIgnoreCase))
+            {
+                if (parts.Length == 1)
+                {
+                    return true;
+                }
+
+                continue;
+            }
+
+            if (MicrosoftOwnedProgramFolders.Contains(first, StringComparer.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (first.StartsWith("Windows ", StringComparison.OrdinalIgnoreCase) || first.StartsWith("Microsoft ", StringComparison.OrdinalIgnoreCase))
+            {
+                if (ownMicrosoftApp && parts.Length == 1 && first.StartsWith("Microsoft ", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Folders an installer must never be allowed to claim as its own (beyond the critical roots): shared, Microsoft-owned or temp.</summary>
+    private static bool IsBroadFolder(string full, string publisher)
+    {
+        if (IsMicrosoftOwned(full, publisher.Contains("Microsoft", StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
         string Special(Environment.SpecialFolder f) => Environment.GetFolderPath(f);
         var programFiles = new[] { Special(Environment.SpecialFolder.ProgramFiles), Special(Environment.SpecialFolder.ProgramFilesX86) }.Where(p => p.Length > 0).ToList();
         var local = Special(Environment.SpecialFolder.LocalApplicationData);
@@ -374,15 +439,34 @@ internal static class UninstallerSupport
             {
                 return true;
             }
-
-            if (programFiles.Any(p => string.Equals(parent, SafePaths.Normalize(p), StringComparison.OrdinalIgnoreCase))
-                && MicrosoftOwnedProgramFolders.Contains(Path.GetFileName(full), StringComparer.OrdinalIgnoreCase))
-            {
-                return true;
-            }
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// True for a folder directly under Program Files or ProgramData that is named like the publisher rather than like the program
+    /// (<c>Program Files (x86)\Intel</c> for an Intel product): it holds other products of the same vendor whether or not they registered.
+    /// </summary>
+    internal static bool IsVendorFolder(InstalledProgram p, string full)
+    {
+        var publisher = Norm.Of(p.Publisher);
+        var leaf = Norm.Of(Path.GetFileName(full));
+        if (publisher.Length < 4 || leaf.Length < 4 || !(publisher == leaf || publisher.StartsWith(leaf, StringComparison.Ordinal)))
+        {
+            return false;
+        }
+
+        var parent = Path.GetDirectoryName(full) ?? string.Empty;
+        var roots = new[] { Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData) };
+        if (!roots.Any(r => r.Length > 0 && string.Equals(parent, SafePaths.Normalize(r), StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        // a folder named after the program itself ("Notepad++ (64-bit x64)" in "Notepad++") is the program's own
+        var ownName = Norm.Of(Regex.Replace(p.Name, @"\s*\([^)]*\)", string.Empty));
+        return ownName != leaf && Norm.Stripped(p.Name) != leaf;
     }
 
     /// <summary>The folders another program's registry entry points into: install location, icon folder, uninstaller folders.</summary>
@@ -471,9 +555,14 @@ internal static class UninstallerSupport
             return Refuse("critical folder");
         }
 
-        if (SafePaths.IsSharedSystemFolder(full) || IsBroadFolder(full))
+        if (SafePaths.IsSharedSystemFolder(full) || IsBroadFolder(full, p.Publisher))
         {
             return Refuse("shared system folder");
+        }
+
+        if (IsVendorFolder(p, full))
+        {
+            return Refuse("vendor folder");
         }
 
         if (SafePaths.SegmentCount(full) < 2)
@@ -532,12 +621,12 @@ internal sealed class LeftoverScanner
     /// <summary>The usable install folder; empty when the registry value was missing or too broad (see <see cref="UninstallerSupport.UsableInstallLocation"/>).</summary>
     public string InstallFolder => _install;
 
-    public LeftoverScanner(InstalledProgram program, List<InstalledProgram> all, CancellationToken ct)
+    public LeftoverScanner(InstalledProgram program, List<InstalledProgram> all, CancellationToken ct, IReadOnlyList<InstalledProgram>? claims = null)
     {
         _p = program;
         _ct = ct;
         _others = all.Where(o => !ReferenceEquals(o, program) && o.Identity != program.Identity).ToList();
-        _install = UninstallerSupport.UsableInstallLocation(program, all).TrimEnd('\\');
+        _install = UninstallerSupport.UsableInstallLocation(program, claims ?? all).TrimEnd('\\');
         _publisher = Norm.Of(program.Publisher);
 
         void Id(string? text)
@@ -658,7 +747,8 @@ internal sealed class LeftoverScanner
             Path = path,
             ValueName = value,
             Size = size >= 0 ? size : (isPath ? FileOps.DirectorySize(path, _ct) : 0),
-            Include = match == UnMatch.Exact,
+            // services, scheduled tasks and firewall rules are never pre-checked: the user has to tick them
+            Include = match == UnMatch.Exact && kind is not (UnKind.Service or UnKind.Task) && !path.Contains("FirewallPolicy", StringComparison.OrdinalIgnoreCase),
             Identity = isPath ? Win32.FileIdentity(path) : null,
             Root = root,
             NeedsAdmin = admin,
@@ -1086,7 +1176,7 @@ internal sealed class LeftoverScanner
                 // kernel and file-system drivers are never offered: Windows refuses to delete them and the script says no
                 var type = key?.GetValue("Type") is int t ? t : 0;
                 var image = CleanerScanner.ExecutableOf(key?.GetValue("ImagePath") as string ?? string.Empty) ?? (key?.GetValue("ImagePath") as string);
-                if ((type & 3) == 0 && UninstallerSupport.TargetUnder(image, _install))
+                if ((type & 3) == 0 && UninstallerSupport.TargetUnder(image, _install) && !UninstallerSupport.IsMicrosoftOwned(UninstallerSupport.NormalizeTarget(image)))
                 {
                     Add(UnCategory.Other, UnMatch.Exact, UnKind.Service, $"Service {name}", name, null, true, 0);
                 }

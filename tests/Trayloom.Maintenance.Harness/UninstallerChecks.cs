@@ -27,6 +27,8 @@ internal static class UninstallerChecks
         SharedVendors();
         Depth();
         Targets();
+        MicrosoftTrees();
+        HiddenSiblings();
         BroadLocationScan();
         Backups();
         ElevatedRows();
@@ -229,6 +231,119 @@ internal static class UninstallerChecks
         Check(UninstallerSupport.NormalizeTarget(@"\SystemRoot\System32\drivers\x.sys").StartsWith(windows, StringComparison.OrdinalIgnoreCase), "\\SystemRoot\\ maps to the Windows folder");
         Check(UninstallerSupport.NormalizeTarget(@"\\server\share\x.exe").Length == 0, "a UNC target is not a local path");
         Check(UninstallerSupport.NormalizeTarget("notepad.exe").Length == 0, "a bare name is not a local path");
+    }
+
+    private static void MicrosoftTrees()
+    {
+        string Env(Environment.SpecialFolder f) => Environment.GetFolderPath(f);
+        var programData = Env(Environment.SpecialFolder.CommonApplicationData);
+        var roaming = Env(Environment.SpecialFolder.ApplicationData);
+        var local = Env(Environment.SpecialFolder.LocalApplicationData);
+        var pf = Env(Environment.SpecialFolder.ProgramFiles);
+        var pf86 = Env(Environment.SpecialFolder.ProgramFilesX86);
+        var trees = new[]
+        {
+            Path.Combine(programData, "Microsoft", "Windows Defender"),
+            Path.Combine(programData, "Microsoft", "Windows Defender", "Platform"),
+            Path.Combine(programData, "Microsoft", "Crypto"),
+            Path.Combine(roaming, "Microsoft", "Protect"),
+            Path.Combine(roaming, "Microsoft", "Credentials"),
+            Path.Combine(local, "Microsoft", "OneDrive"),
+            Path.Combine(pf, "Windows Defender", "Offline"),
+            Path.Combine(pf, "Windows NT", "Accessories"),
+            Path.Combine(pf, "WindowsPowerShell", "Modules"),
+            Path.Combine(pf, "dotnet", "shared"),
+            Path.Combine(pf, "Common Files", "Anything"),
+            Path.Combine(pf86, "Microsoft SQL Server", "150"),
+            Path.Combine(pf86, "Windows Kits", "10"),
+        };
+        foreach (var tree in trees)
+        {
+            Check(UninstallerSupport.IsMicrosoftOwned(tree), $"'{Path.GetRelativePath(Path.GetPathRoot(tree)!, tree)}' is a Microsoft-owned tree");
+            if (Directory.Exists(tree))
+            {
+                Check(Usable(Program("MsTree", tree)).Length == 0, $"an existing Microsoft-owned folder ({Path.GetFileName(tree)}) is not used");
+            }
+        }
+
+        Check(!UninstallerSupport.IsMicrosoftOwned(Path.Combine(pf86, "Steam")), "Steam is not Microsoft-owned");
+        Check(!UninstallerSupport.IsMicrosoftOwned(Path.Combine(pf86, "Microsoft", "Edge")), "a child of the bare Microsoft folder stays usable");
+        Check(UninstallerSupport.IsMicrosoftOwned(Path.Combine(pf86, "Microsoft")), "the bare Microsoft folder itself is refused");
+        Check(UninstallerSupport.IsMicrosoftOwned(Path.Combine(pf, "Microsoft Office")), "Microsoft Office is refused for a stranger");
+        Check(!UninstallerSupport.IsMicrosoftOwned(Path.Combine(pf, "Microsoft Office"), true), "Microsoft Office is allowed for a Microsoft entry's own folder");
+        Check(UninstallerSupport.IsMicrosoftOwned(Path.Combine(pf, "Microsoft Office", "root"), true), "...but not a deeper folder");
+
+        // the Defender services: a forged location at the Defender folder offers no service row at all
+        var defender = Path.Combine(programData, "Microsoft", "Windows Defender");
+        if (Directory.Exists(defender))
+        {
+            var forged = Program("TrayloomTest Defender", defender);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+            var scanner = new LeftoverScanner(forged, [forged], cts.Token);
+            Check(scanner.InstallFolder.Length == 0, "a forged Defender location is not used by the scanner");
+            Check(!scanner.Scan().Any(i => i.Kind is UnKind.Service or UnKind.Task), "no service or task rows for a forged Defender location");
+        }
+    }
+
+    private static void HiddenSiblings()
+    {
+        // the Intel example: a vendor folder, a product that registered it as its location, and a hidden component below it
+        string pf86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+        var bluetooth = new InstalledProgram { Key = "bt", Name = "Intel(R) Wireless Bluetooth(R)", Publisher = "Intel Corporation", InstallLocation = Path.Combine(pf86, "Intel") };
+        Check(UninstallerSupport.IsVendorFolder(bluetooth, Path.Combine(pf86, "Intel")), "a publisher-named folder directly in Program Files (x86) is a vendor folder");
+        var epic = new InstalledProgram { Key = "ep", Name = "Epic Games Launcher", Publisher = "Epic Games, Inc.", InstallLocation = Path.Combine(pf86, "Epic Games") };
+        Check(UninstallerSupport.IsVendorFolder(epic, Path.Combine(pf86, "Epic Games")), "Epic Games is a vendor folder for the launcher");
+        var npp = new InstalledProgram { Key = "n", Name = "Notepad++ (64-bit x64)", Publisher = "Notepad++ Team", InstallLocation = Path.Combine(pf86, "Notepad++") };
+        Check(!UninstallerSupport.IsVendorFolder(npp, Path.Combine(pf86, "Notepad++")), "a folder named after the program itself is not a vendor folder");
+        Check(!UninstallerSupport.IsVendorFolder(bluetooth, Path.Combine(pf86, "Intel", "Bluetooth")), "only direct children count as vendor folders");
+
+        var root = Path.Combine(Path.GetTempPath(), "tl-wp1-hs-" + Guid.NewGuid().ToString("N"));
+        var oldDev = Environment.GetEnvironmentVariable("TRAYLOOM_DEV");
+        var oldKey = Environment.GetEnvironmentVariable("TRAYLOOM_UNINSTALLER_TEST_KEY");
+        try
+        {
+            var vendor = Path.Combine(root, "Vendor");
+            Directory.CreateDirectory(Path.Combine(vendor, "B"));
+            var a = Program("VendorA", vendor, "a");
+            var hidden = new InstalledProgram { Key = "hidden", Name = "Hidden component", InstallLocation = Path.Combine(vendor, "B") };
+            Check(Usable(a, hidden).Length == 0, "a hidden sibling in the claims list blocks the vendor folder");
+
+            // the claims reader keeps SystemComponent entries and entries without a display name that the visible list drops
+            using (var k = Registry.CurrentUser.CreateSubKey(TestKey + @"\Claims\Hidden"))
+            {
+                k.SetValue("DisplayName", "Hidden component");
+                k.SetValue("SystemComponent", 1);
+                k.SetValue("InstallLocation", Path.Combine(vendor, "B"));
+            }
+
+            using (var k = Registry.CurrentUser.CreateSubKey(TestKey + @"\Claims\NoName"))
+            {
+                k.SetValue("UninstallString", "\"" + Path.Combine(vendor, "C", "unins.exe") + "\"");
+            }
+
+            Environment.SetEnvironmentVariable("TRAYLOOM_DEV", "1");
+            Environment.SetEnvironmentVariable("TRAYLOOM_UNINSTALLER_TEST_KEY", TestKey + @"\Claims");
+            var visible = ProgramCatalog.Enumerate(includeAppx: false);
+            var claims = ProgramCatalog.EnumerateClaims(visible);
+            Check(visible.Count == 0, "the visible list drops the hidden and the nameless entries");
+            Check(claims.Count == 2 && claims.Any(c => c.Key == "Hidden") && claims.Any(c => c.Key == "NoName"), "the claims list keeps both");
+            Check(UninstallerSupport.UsableInstallLocation(a, [a, .. claims], _ => { }).Length == 0, "the claims list blocks the vendor folder");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("TRAYLOOM_DEV", oldDev);
+            Environment.SetEnvironmentVariable("TRAYLOOM_UNINSTALLER_TEST_KEY", oldKey);
+            try
+            {
+                Registry.CurrentUser.DeleteSubKeyTree(TestKey, false);
+            }
+            catch
+            {
+                // already gone
+            }
+
+            TryDelete(root);
+        }
     }
 
     private static bool MakeJunction(string link, string target)

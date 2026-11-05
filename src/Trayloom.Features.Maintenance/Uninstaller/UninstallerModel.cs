@@ -32,6 +32,7 @@ internal sealed class UninstallerModel
 {
     private CancellationTokenSource? _cts;
     private List<InstalledProgram> _programs = [];
+    private List<InstalledProgram> _claims = [];
 
     public static UninstallerModel Shared { get; } = new();
 
@@ -113,7 +114,9 @@ internal sealed class UninstallerModel
 
     public async Task<List<InstalledProgram>> LoadProgramsAsync()
     {
-        _programs = await Task.Run(() => ProgramCatalog.Enumerate()).ConfigureAwait(true);
+        var visible = await Task.Run(() => ProgramCatalog.Enumerate()).ConfigureAwait(true);
+        _claims = await Task.Run(() => ProgramCatalog.EnumerateClaims(visible)).ConfigureAwait(true);
+        _programs = visible;
         return _programs;
     }
 
@@ -172,7 +175,8 @@ internal sealed class UninstallerModel
         try
         {
             var all = _programs.Count > 0 ? _programs : await LoadProgramsAsync().ConfigureAwait(true);
-            var scan = Task.Run(() => new LeftoverScanner(program, all, cts.Token).Scan(), cts.Token);
+            var claims = _claims.Count > 0 ? _claims : null;
+            var scan = Task.Run(() => new LeftoverScanner(program, all, cts.Token, claims).Scan(), cts.Token);
             var check = WingetCli.IsAvailable ? CheckPackageAsync(program) : Task.CompletedTask;
             await Task.WhenAll(scan, check).ConfigureAwait(true);
             if (cts.IsCancellationRequested)
@@ -284,7 +288,7 @@ internal sealed class UninstallerModel
             Raise();
             try
             {
-                var programs = _programs;
+                var programs = _claims.Count > 0 ? _claims : _programs;
                 var running = await Task.Run(() =>
                 {
                     var location = UninstallerSupport.UsableInstallLocation(target, programs);
@@ -574,7 +578,8 @@ internal sealed class UninstallerModel
         var handle = Win32.OpenProcess(Win32.PROCESS_QUERY_LIMITED_INFORMATION | Win32.SYNCHRONIZE, false, app.Pid);
         if (handle == 0)
         {
-            return false;
+            // access denied means it is still there, just not ours to inspect
+            return System.Runtime.InteropServices.Marshal.GetLastWin32Error() == 5;
         }
 
         try
@@ -944,7 +949,7 @@ internal sealed class UninstallerModel
     private async Task<bool> UninstallProgramAsync(InstalledProgram program, bool silent)
     {
         // resolved before the uninstaller runs: afterwards the folder is gone and could no longer be validated
-        var programs = _programs;
+        var programs = _claims.Count > 0 ? _claims : _programs;
         var usableLocation = await Task.Run(() => UninstallerSupport.UsableInstallLocation(program, programs, _ => { })).ConfigureAwait(true);
         await Task.Delay(300).ConfigureAwait(true);
 

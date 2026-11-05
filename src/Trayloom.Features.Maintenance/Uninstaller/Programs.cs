@@ -181,6 +181,75 @@ internal static class ProgramCatalog
 
     private static readonly string[] ReleaseSkip = ["Update", "Hotfix", "Security Update", "Service Pack", "Update Rollup"];
 
+    /// <summary>
+    /// Every Uninstall entry of all four hive/view pairs with no filtering (system components, entries without a display name, updates
+    /// and shared runtimes included), plus the packaged apps. Used only to see which folders other products claim.
+    /// </summary>
+    public static List<InstalledProgram> EnumerateClaims(IReadOnlyList<InstalledProgram> visible)
+    {
+        var list = new List<InstalledProgram>(visible.Where(v => v.IsAppx));
+        void AddKeys(RegistryKey? uninstall, RegistryHive hive, RegistryView view, string pathBase)
+        {
+            if (uninstall is null)
+            {
+                return;
+            }
+
+            foreach (var name in uninstall.GetSubKeyNames())
+            {
+                try
+                {
+                    using var key = uninstall.OpenSubKey(name);
+                    if (key is null)
+                    {
+                        continue;
+                    }
+
+                    list.Add(new InstalledProgram
+                    {
+                        Key = name,
+                        RegistryPath = pathBase + @"\" + name,
+                        Hive = hive,
+                        View = view,
+                        Name = (key.GetValue("DisplayName") as string) is { Length: > 0 } display ? display : name,
+                        Publisher = key.GetValue("Publisher") as string ?? string.Empty,
+                        InstallLocation = (key.GetValue("InstallLocation") as string ?? string.Empty).Trim().Trim('"'),
+                        DisplayIcon = key.GetValue("DisplayIcon") as string ?? string.Empty,
+                        UninstallString = key.GetValue("UninstallString") as string ?? string.Empty,
+                        QuietUninstallString = key.GetValue("QuietUninstallString") as string ?? string.Empty,
+                    });
+                }
+                catch
+                {
+                    // unreadable entry
+                }
+            }
+        }
+
+        try
+        {
+            if (Environment.GetEnvironmentVariable("TRAYLOOM_DEV") == "1" && Environment.GetEnvironmentVariable("TRAYLOOM_UNINSTALLER_TEST_KEY") is { Length: > 0 } testKey)
+            {
+                using var testRoot = Registry.CurrentUser.OpenSubKey(testKey);
+                AddKeys(testRoot, RegistryHive.CurrentUser, RegistryView.Registry64, @"HKEY_CURRENT_USER\" + testKey);
+                return list;
+            }
+
+            foreach (var (hive, view) in new[] { (RegistryHive.LocalMachine, RegistryView.Registry64), (RegistryHive.LocalMachine, RegistryView.Registry32), (RegistryHive.CurrentUser, RegistryView.Registry64), (RegistryHive.CurrentUser, RegistryView.Registry32) })
+            {
+                using var root = RegistryKey.OpenBaseKey(hive, view);
+                using var uninstall = root.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall");
+                AddKeys(uninstall, hive, view, (hive == RegistryHive.LocalMachine ? "HKEY_LOCAL_MACHINE" : "HKEY_CURRENT_USER") + @"\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall");
+            }
+        }
+        catch
+        {
+            // hive unavailable
+        }
+
+        return list;
+    }
+
     /// <summary>Lists the programs (registry entries first, then packages).</summary>
     public static List<InstalledProgram> Enumerate(bool includeAppx = true)
     {
