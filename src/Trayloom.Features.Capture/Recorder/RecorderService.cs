@@ -3,6 +3,7 @@
 
 using System.Windows;
 using System.Windows.Threading;
+using Microsoft.Win32;
 using Trayloom.Core;
 
 namespace Trayloom.Features.Capture;
@@ -35,6 +36,9 @@ internal sealed class RecorderService
     private long _pauseStartQpc;
     private int _fps;
     private string? _stopReason;
+    private bool _opensEditor;
+    private Task? _finishTask;
+    private volatile int _exitMode; // 0 normal, 1 quitting (save the take to the folder), 2 session ending (keep it for recovery)
     private static long _freq;
 
     public RecorderService(IFeatureContext ctx)
@@ -42,6 +46,102 @@ internal sealed class RecorderService
         _ctx = ctx;
         N.QueryPerformanceFrequency(out _freq);
         Take.Sweep(Array.Empty<string>());
+        SystemEvents.SessionEnding += OnSessionEnding;
+        if (Take.Recoverable(Array.Empty<string>()).Count > 0)
+        {
+            _ctx.Notifier.Show(Loc.T("A recording wasn’t saved"), Loc.T("Open Screen recording in Settings to recover it."), NotificationLevel.Info);
+        }
+    }
+
+    /// <summary>Folders of the takes that are being recorded or edited right now (never swept, never offered for recovery).</summary>
+    public IReadOnlyList<string> OwnedFolders()
+    {
+        var owned = _editors.Select(e => e.Take.Folder).ToList();
+        if (_take is { } t)
+        {
+            owned.Add(t.Folder);
+        }
+
+        return owned;
+    }
+
+    /// <summary>Opens a take that an earlier run left behind in the editor; false when it cannot be read.</summary>
+    public bool OpenRecovered(string folder)
+    {
+        if (_editors.Any(e => string.Equals(e.Take.Folder, folder, StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        if (Take.Load(folder) is not { } take)
+        {
+            CaptureHost.Beep();
+            return false;
+        }
+
+        OpenEditor(take);
+        return true;
+    }
+
+    /// <summary>
+    /// Stops a running recording and waits (up to <paramref name="budget"/>) until the take is closed and saved to the recordings folder,
+    /// so quitting or uninstalling never loses it. True when nothing is left unfinished.
+    /// </summary>
+    public async Task<bool> StopAndFinishAsync(TimeSpan budget)
+    {
+        if (!IsRecording && !_finishing)
+        {
+            return true;
+        }
+
+        if (IsRecording)
+        {
+            _exitMode = 1;
+            Stop(null);
+        }
+        else
+        {
+            _generation++; // a recording that is already finishing is kept, not opened in an editor during the quit
+        }
+
+        var task = _finishTask;
+        if (task is null)
+        {
+            return !IsRecording;
+        }
+
+        var done = await Task.WhenAny(task, Task.Delay(budget)) == task;
+        if (!done)
+        {
+            CaptureHost.Log("recording not finished before exit; kept for recovery");
+        }
+
+        return done;
+    }
+
+    private void OnSessionEnding(object? sender, SessionEndingEventArgs e)
+    {
+        try
+        {
+            if (!IsRecording && !_finishing)
+            {
+                return;
+            }
+
+            CaptureHost.Ui.Invoke(() =>
+            {
+                if (IsRecording)
+                {
+                    _exitMode = 2;
+                    Stop(null);
+                }
+            }, DispatcherPriority.Send, CancellationToken.None, TimeSpan.FromSeconds(2));
+            _finishTask?.Wait(TimeSpan.FromSeconds(5));
+        }
+        catch (Exception ex)
+        {
+            CaptureHost.Log("finishing the recording at sign-out failed", ex);
+        }
     }
 
     public bool IsRecording { get; private set; }
@@ -378,19 +478,12 @@ internal sealed class RecorderService
     {
         _preparing = false;
         IsRecording = false;
-        try
-        {
-            _cap?.Dispose();
-            _writer?.Cancel();
-            _sys?.Stop();
-            _mic?.Stop();
-            _pointerRec?.Stop();
-        }
-        catch
-        {
-            // best effort
-        }
-
+        // each part in its own try: one that throws must not leave the audio files or the capture open
+        Quietly(() => _cap?.Dispose());
+        Quietly(() => _writer?.Cancel());
+        Quietly(() => _sys?.Stop());
+        Quietly(() => _mic?.Stop());
+        Quietly(() => _pointerRec?.Stop());
         _cap = null;
         _writer = null;
         _sys = _mic = null;
@@ -400,6 +493,18 @@ internal sealed class RecorderService
         _take = null;
         CaptureHost.SessionOnScreen = false;
         StateChanged?.Invoke();
+    }
+
+    private static void Quietly(Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch
+        {
+            // best effort
+        }
     }
 
     private void OnFrame(CapturedFrame frame)
@@ -530,30 +635,48 @@ internal sealed class RecorderService
         writer.Complete();
         IsRecording = false;
         StateChanged?.Invoke();
-        _ = FinishAsync(take, writer, duration);
+
+        // settings are read here, on the UI thread; the file work below never touches it
+        var s = _ctx.App;
+        _opensEditor = _exitMode == 0 && _stopReason is null && s.Get<bool>(K.RecOpenEditor);
+        take.Document = new EditDocument
+        {
+            Quality = RecorderSupport.SanitizedQuality(s.Get<string>(K.RecQuality)),
+            KeepsSystemAudio = s.Get<bool>(K.RecSystemAudio),
+            GifSize = s.Get<string>(K.RecGifSize) ?? "medium",
+            GifFrameRate = s.Get<int>(K.RecGifFps),
+            ZoomEnabled = _opensEditor && s.Get<bool>(K.RecAutoZoom),
+            ShowsPointer = _opensEditor,
+        };
+        var dest = Output.UniquePath(Output.BaseFolder(s.Get<string>(K.RecSaveFolder)), RecorderSupport.DefaultName(DateTime.Now), ".mp4");
+        _finishTask = FinishAsync(take, writer, duration, _generation, _sys, _mic, _pointerRec, dest);
     }
 
-    private async Task FinishAsync(Take take, VideoWriter writer, double duration)
+    /// <summary>
+    /// Closes the audio and video files and writes the take's index. Nothing in here waits for the UI thread (every await is
+    /// <c>ConfigureAwait(false)</c>), so quitting can wait on this task without a deadlock.
+    /// </summary>
+    private async Task FinishAsync(Take take, VideoWriter writer, double duration, int gen, WasapiCapture? sys, WasapiCapture? mic, PointerRecorder? pointer, string dest)
     {
         try
         {
             await Task.Run(() =>
             {
-                _sys?.Stop();
-                _mic?.Stop();
+                sys?.Stop();
+                mic?.Stop();
                 try
                 {
-                    _pointerRec?.Stop();
-                    _pointerRec?.Save(take.Folder);
+                    pointer?.Stop();
+                    pointer?.Save(take.Folder);
                 }
                 catch (Exception ex)
                 {
                     CaptureHost.Log("saving the pointer track failed", ex);
                 }
-            });
+            }).ConfigureAwait(false);
             if (writer.Completion is { } c)
             {
-                await c;
+                await c.ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -567,37 +690,56 @@ internal sealed class RecorderService
         _pointerRec = null;
         take.Duration = duration;
         var ok = writer.Failure is null && File.Exists(take.VideoPath) && new FileInfo(take.VideoPath).Length > 0;
-        await CaptureHost.Ui.InvokeAsync(() =>
+        var exit = _exitMode;
+        if (ok)
+        {
+            // meta.json marks the take as finished: from here on it can be recovered if nothing else happens to it
+            take.SaveDocument();
+        }
+        else
+        {
+            CaptureHost.Log("take failed: " + writer.Failure);
+            take.Delete();
+        }
+
+        if (ok && exit == 1)
+        {
+            try
+            {
+                await ExportToFolderAsync(take, dest).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                CaptureHost.Log("saving the recording before exit failed; kept for recovery", ex);
+            }
+        }
+
+        // BeginInvoke, never a wait: Shutdown blocks the UI thread on this very task
+        _ = CaptureHost.Ui.BeginInvoke(() =>
         {
             _finishing = false;
             _take = null;
             CaptureHost.SessionOnScreen = false;
             if (!ok)
             {
-                CaptureHost.Log("take failed: " + writer.Failure);
-                take.Delete();
-                QuickToolHud.Show(G.Record, Strings.Recorder.RecordFailed);
+                if (exit == 0)
+                {
+                    QuickToolHud.Show(G.Record, Strings.Recorder.RecordFailed);
+                }
+
                 return;
             }
 
-            Deliver(take);
+            if (exit == 0 && gen == _generation)
+            {
+                Deliver(take);
+            }
         });
     }
 
     private void Deliver(Take take)
     {
-        var s = _ctx.App;
-        var opensEditor = _stopReason is null && s.Get<bool>(K.RecOpenEditor);
-        take.Document = new EditDocument
-        {
-            Quality = RecorderSupport.SanitizedQuality(s.Get<string>(K.RecQuality)),
-            KeepsSystemAudio = s.Get<bool>(K.RecSystemAudio),
-            GifSize = s.Get<string>(K.RecGifSize) ?? "medium",
-            GifFrameRate = s.Get<int>(K.RecGifFps),
-            ZoomEnabled = opensEditor && s.Get<bool>(K.RecAutoZoom),
-            ShowsPointer = opensEditor,
-        };
-        if (opensEditor)
+        if (_opensEditor)
         {
             // the first set of zooms comes straight from the clicks, once; after that they belong to the person
             take.Document.RestoreAutomaticZooms(take.Pointer.Clicks, take.TypingTimes, take.Duration);
@@ -616,10 +758,19 @@ internal sealed class RecorderService
         editor.Closed += (_, _) =>
         {
             _editors.Remove(editor);
-            Take.Sweep(_editors.Select(e => e.Take.Folder));
+            Take.Sweep(OwnedFolders());
         };
         editor.Show();
         editor.Activate();
+    }
+
+    /// <summary>Renders the take into the recordings folder, records it in the history and removes the take. Safe off the UI thread.</summary>
+    private async Task ExportToFolderAsync(Take take, string dest)
+    {
+        await RecorderExporter.ExportMp4Async(take, dest, null, CancellationToken.None).ConfigureAwait(false);
+        take.MarkExported();
+        RecordInHistory(dest, take);
+        take.Delete();
     }
 
     private async Task DirectSaveAsync(Take take, string? reason)
@@ -628,6 +779,7 @@ internal sealed class RecorderService
         {
             var dest = Output.UniquePath(Output.BaseFolder(_ctx.App.Get<string>(K.RecSaveFolder)), RecorderSupport.DefaultName(DateTime.Now), ".mp4");
             await RecorderExporter.ExportMp4Async(take, dest, null, CancellationToken.None);
+            take.MarkExported();
             RecordInHistory(dest, take);
             QuickToolHud.Show(G.Record, reason ?? string.Format(Strings.Recorder.SavedFormat, Path.GetFileName(Path.GetDirectoryName(dest)) ?? Strings.Desktop));
             take.Delete();
@@ -670,9 +822,16 @@ internal sealed class RecorderService
     public void Shutdown()
     {
         _generation++;
+        SystemEvents.SessionEnding -= OnSessionEnding;
         if (IsRecording)
         {
+            _exitMode = 1;
             Stop(null);
+        }
+
+        if (_finishTask is { IsCompleted: false } finishing && !finishing.Wait(TimeSpan.FromSeconds(15)))
+        {
+            CaptureHost.Log("recording not finished before exit; kept for recovery");
         }
 
         _preparing = false;

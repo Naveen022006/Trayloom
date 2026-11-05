@@ -22,7 +22,8 @@ internal static class Output
 
     public static string DesktopFolder() => Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
 
-    public static string DataRoot() => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Trayloom");
+    /// <summary>Trayloom's local data folder; follows the dev override so a dev instance never touches the real Recordings or RecentCaptures.</summary>
+    public static string DataRoot() => AppPaths.LocalRoot;
 
     /// <summary>Base folder from a "Save to" setting: the folder if it exists, else the Desktop.</summary>
     public static string BaseFolder(string? configured)
@@ -185,13 +186,67 @@ internal static class Output
         return Pixels.Make(px, bitmap.PixelWidth, bitmap.PixelHeight, dpi, dpi);
     }
 
-    public static void SavePng(BitmapSource bitmap, string path, double scale = 1)
+    /// <summary>
+    /// Writes the PNG next to its final name and moves it into place without replacing anything: when the name was taken in the
+    /// meantime the file gets the next free numbered name. Returns the path that was written.
+    /// </summary>
+    public static string SavePng(BitmapSource bitmap, string path, double scale = 1)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var dir = Path.GetDirectoryName(path)!;
+        Directory.CreateDirectory(dir);
         var tmp = path + ".tmp-" + Guid.NewGuid().ToString("N")[..8];
-        File.WriteAllBytes(tmp, ToPng(bitmap, scale));
-        File.Move(tmp, path, true);
+        try
+        {
+            File.WriteAllBytes(tmp, ToPng(bitmap, scale));
+            try
+            {
+                File.Move(tmp, path, false);
+            }
+            catch (IOException) when (File.Exists(path))
+            {
+                path = UniquePath(dir, Path.GetFileNameWithoutExtension(path), Path.GetExtension(path));
+                File.Move(tmp, path, false);
+            }
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(tmp);
+            }
+            catch
+            {
+                // already moved
+            }
+        }
+
         MarkAsCapture(path);
+        return path;
+    }
+
+    /// <summary>
+    /// Creates <c>name</c>.ext (or <c>name 2</c>, <c>name 3</c> ...) in <paramref name="folder"/> with <see cref="FileMode.CreateNew"/> and
+    /// writes the bytes, so two captures in the same second can never replace each other. Returns the path.
+    /// </summary>
+    public static string WriteUnique(string folder, string name, string ext, byte[] bytes)
+    {
+        Directory.CreateDirectory(folder);
+        for (var i = 1; i <= 9999; i++)
+        {
+            var path = Path.Combine(folder, i == 1 ? name + ext : $"{name} {i}{ext}");
+            try
+            {
+                using var fs = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                fs.Write(bytes, 0, bytes.Length);
+                return path;
+            }
+            catch (IOException) when (File.Exists(path))
+            {
+                // taken: try the next number
+            }
+        }
+
+        throw new IOException("No free file name in " + folder);
     }
 
     private static void MarkAsCapture(string path)
@@ -237,8 +292,7 @@ internal static class Output
             {
                 var folder = CopiedFolder();
                 Directory.CreateDirectory(folder);
-                var file = UniquePath(folder, DefaultName(namePrefix ?? Strings.Screenshot.FileNamePrefix, DateTime.Now), ".png");
-                File.WriteAllBytes(file, ToPng(image, scale));
+                var file = WriteUnique(folder, DefaultName(namePrefix ?? Strings.Screenshot.FileNamePrefix, DateTime.Now), ".png", ToPng(image, scale));
                 data.SetFileDropList(new StringCollection { file });
                 PruneCopied(folder, file);
             }
@@ -286,18 +340,24 @@ internal static class Output
         }
     }
 
-    private static void PruneCopied(string folder, string keep)
+    /// <summary>Keeps a cache folder small: files older than 24 h, beyond the newest 100 or beyond 256 MB go (<paramref name="keep"/> always stays).</summary>
+    internal static void PruneCopied(string folder, string? keep, string searchPattern = "*")
     {
         try
         {
-            var files = new DirectoryInfo(folder).GetFiles().OrderByDescending(f => f.LastWriteTimeUtc).ToList();
+            if (!Directory.Exists(folder))
+            {
+                return;
+            }
+
+            var files = new DirectoryInfo(folder).GetFiles(searchPattern).OrderByDescending(f => f.LastWriteTimeUtc).ToList();
             long total = 0;
             var count = 0;
             foreach (var f in files)
             {
                 count++;
                 total += f.Length;
-                if (string.Equals(f.FullName, keep, StringComparison.OrdinalIgnoreCase))
+                if (keep is not null && string.Equals(f.FullName, keep, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }

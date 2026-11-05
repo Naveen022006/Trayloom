@@ -73,6 +73,8 @@ internal sealed class RecordingStateAdapter : IRecordingState, IDisposable
 
     public void Toggle() => _service.Toggle();
 
+    public Task<bool> StopAndFinishAsync(TimeSpan budget) => _service.StopAndFinishAsync(budget);
+
     public void Dispose() => _service.StateChanged -= Forward;
 
     private void Forward() => Changed?.Invoke();

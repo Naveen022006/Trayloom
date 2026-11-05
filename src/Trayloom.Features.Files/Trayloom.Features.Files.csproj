@@ -5,5 +5,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Trayloom.Core\Trayloom.Core.csproj" />
+    <InternalsVisibleTo Include="Trayloom.CaptureFiles.Harness" />
   </ItemGroup>
 </Project>

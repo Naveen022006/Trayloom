@@ -194,6 +194,14 @@ public sealed class ScreenshotSection : ToolSectionBase
         var shelfOn = c.Runtime.IsAvailable("shelf") && app.Get<bool>("shelfEnabled");
         Sk.Toggle(sc3, app, Strings.Screenshot.AddToShelf, K.AddToShelf, Strings.Screenshot.AddToShelfCaption, null, shelfOn, shelfOn && app.Get<bool>(K.AddToShelf));
         sc3.AddDivider();
+        Sk.Toggle(sc3, app, Loc.T("Keep recent captures"), K.RecentCapturesEnabled, Loc.T("Recent screenshots are kept in Trayloom’s local folder so you can find them again. Turn this off to keep none."), on =>
+        {
+            if (!on)
+            {
+                RecentCaptureService.Instance.Clear();
+            }
+        });
+        sc3.AddDivider();
         sc3.Add(Sk.FolderRow(app, K.SaveFolder));
         sc3.AddDivider();
         sc3.Add(PatternRow(app, Strings.Screenshot.Subfolder, K.SaveSubfolder, Strings.Screenshot.SubfolderCaption, false));
@@ -473,6 +481,47 @@ public sealed class ScreenRecorderSection : ToolSectionBase
         more.Children.Add(seg3);
         r3.Add(Sk.Disclosure(Strings.MoreOptions, more));
         AddCard(stack, r3);
+
+        AddRecoveryCard(stack, c);
+    }
+
+    /// <summary>One row per finished recording that was never saved (a crash, a forced quit): open it in the editor, or delete it.</summary>
+    private void AddRecoveryCard(StackPanel stack, ISettingsContext c)
+    {
+        var owned = CaptureHost.Recorder?.OwnedFolders() ?? [];
+        var takes = Take.Recoverable(owned);
+        if (takes.Count == 0)
+        {
+            return;
+        }
+
+        var card = new SettingsCard();
+        for (var i = 0; i < takes.Count; i++)
+        {
+            if (i > 0)
+            {
+                card.AddDivider();
+            }
+
+            var (folder, time) = takes[i];
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal };
+            var open = UiKit.Button(Loc.T("Open"), ButtonKind.Bordered, 12, null, () => c.Ui.BeginInvoke(() => CaptureHost.Recorder?.OpenRecovered(folder)));
+            var delete = UiKit.Button(Loc.T("Delete"), ButtonKind.Bordered, 12, null, () =>
+            {
+                var answer = MessageBox.Show(Loc.T("This recording hasn’t been saved anywhere else. Delete it?"), Loc.T("Delete recording?"), MessageBoxButton.OKCancel, MessageBoxImage.Warning, MessageBoxResult.Cancel);
+                if (answer == MessageBoxResult.OK)
+                {
+                    new Take { Folder = folder }.Delete();
+                    c.RequestRebuild();
+                }
+            });
+            delete.Margin = new Thickness(8, 0, 0, 0);
+            buttons.Children.Add(open);
+            buttons.Children.Add(delete);
+            card.Add(new SettingsRow(null, Loc.F("Unsaved recording from {0}", time.ToString("g", System.Globalization.CultureInfo.CurrentCulture)), null, buttons));
+        }
+
+        AddCard(stack, card);
     }
 }
 

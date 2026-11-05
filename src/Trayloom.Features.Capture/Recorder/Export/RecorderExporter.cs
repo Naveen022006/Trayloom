@@ -7,11 +7,27 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using Trayloom.Core;
 using Windows.Media.Editing;
 using Windows.Media.MediaProperties;
 using Windows.Storage;
 
 namespace Trayloom.Features.Capture;
+
+/// <summary>Limits that keep GIF export inside a safe amount of memory (every frame is held until the file is encoded).</summary>
+internal static class GifLimits
+{
+    /// <summary>The longest GIF in seconds of output.</summary>
+    public const double MaxSeconds = 60;
+
+    /// <summary>True when the trimmed recording at the export speed is short enough for a GIF.</summary>
+    public static bool Allows(double outputSeconds) => outputSeconds <= MaxSeconds + 0.05;
+
+    public static string Message => Loc.T("GIF is limited to 60 seconds. Trim the recording or export MP4.");
+}
+
+/// <summary>An export refused up front because it would need too much memory; the message is meant for the person.</summary>
+internal sealed class ExportLimitException(string message) : InvalidOperationException(message);
 
 /// <summary>
 /// Exports a take: MP4 (plain Media Foundation render when nothing is drawn, otherwise frame by frame through the shared composer)
@@ -42,94 +58,51 @@ internal static class RecorderExporter
 
     // ---- audio mix --------------------------------------------------------------------------------------------------
 
-    /// <summary>The kept sidecar tracks over the kept ranges (gains applied, ranges concatenated) as 48 kHz stereo floats at 1x speed.</summary>
+    /// <summary>
+    /// The kept sidecar tracks over the kept ranges (gains applied, ranges concatenated) as 48 kHz stereo floats at 1x speed, or null
+    /// without audio. Built block by block; the result is held in memory, so callers keep it to short audio (see <see cref="AudioMix"/>).
+    /// </summary>
     public static float[]? MixFloat(Take take, EditDocument doc)
     {
-        var tracks = new List<(float[] Data, double Gain)>();
-        if (take.HasSystemAudio && doc.KeepsSystemAudio)
-        {
-            tracks.Add((WavWriter.ReadAll(take.SystemWav), doc.SystemAudioGain));
-        }
-
-        if (take.HasMicrophone && doc.KeepsMicrophone)
-        {
-            tracks.Add((WavWriter.ReadAll(take.MicWav), doc.MicrophoneGain));
-        }
-
+        var tracks = AudioMix.Tracks(take, doc);
         if (tracks.Count == 0)
         {
             return null;
         }
 
-        var ranges = doc.KeptRanges(take.Duration);
-        var total = (int)Math.Round(ranges.Sum(r => r.End - r.Start) * 48000);
-        var mix = new float[total * 2];
-        var pos = 0;
-        foreach (var (a, b) in ranges)
+        var mix = new float[AudioMix.TotalFrames(take, doc) * 2];
+        var at = 0;
+        AudioMix.MixBlocks(tracks, doc.KeptRanges(take.Duration), block =>
         {
-            var frames = (int)Math.Round((b - a) * 48000);
-            var from = (long)Math.Round(a * 48000);
-            for (var i = 0; i < frames && pos + i < total; i++)
-            {
-                var src = from + i;
-                foreach (var (data, gain) in tracks)
-                {
-                    if ((src + 1) * 2 < data.Length)
-                    {
-                        mix[(pos + i) * 2] += data[src * 2] * (float)gain;
-                        mix[(pos + i) * 2 + 1] += data[src * 2 + 1] * (float)gain;
-                    }
-                }
-            }
-
-            pos += frames;
-        }
-
+            block.CopyTo(mix.AsSpan(at));
+            at += block.Length;
+        });
         return mix;
     }
 
-    /// <summary>The mix at the export speed (WSOLA time stretch keeps the pitch) as 16-bit stereo PCM bytes.</summary>
-    public static byte[]? MixAudio(Take take, EditDocument doc, double speed)
+    /// <summary>
+    /// Writes the mix at the export speed (WSOLA time stretch keeps the pitch) as a 16-bit stereo WAV file. At 1x the mix streams to
+    /// disk; another speed needs the audio in memory and is refused beyond <see cref="AudioMix.MaxStretchSeconds"/>. False without audio.
+    /// </summary>
+    public static bool MixAudioToFile(Take take, EditDocument doc, double speed, string path, CancellationToken ct)
     {
-        var mix = MixFloat(take, doc);
-        if (mix is null)
+        var stretch = Math.Abs(speed - 1) > 0.0005;
+        if (stretch && AudioMix.TotalFrames(take, doc) / 48000.0 > AudioMix.MaxStretchSeconds && AudioMix.Tracks(take, doc).Count > 0)
         {
-            return null;
+            throw new ExportLimitException(Loc.T("Export at another speed is limited to 10 minutes. Trim the recording or export at normal speed."));
         }
 
-        if (Math.Abs(speed - 1) > 0.0005)
+        if (!AudioMix.MixToPcmWav(take, doc, path, ct))
         {
-            mix = TimeStretch.Stretch(mix, speed);
+            return false;
         }
 
-        var pcm = new byte[mix.Length * 2];
-        for (var i = 0; i < mix.Length; i++)
+        if (stretch)
         {
-            var v = (short)Math.Clamp(mix[i] * 32767f, short.MinValue, short.MaxValue);
-            pcm[i * 2] = (byte)(v & 0xFF);
-            pcm[i * 2 + 1] = (byte)(v >> 8);
+            AudioMix.StretchPcmWav(path, speed);
         }
 
-        return pcm;
-    }
-
-    private static void WritePcmWav(string path, byte[] pcm)
-    {
-        using var fs = File.Create(path);
-        using var bw = new BinaryWriter(fs);
-        bw.Write("RIFF"u8.ToArray());
-        bw.Write(36 + pcm.Length);
-        bw.Write("WAVEfmt "u8.ToArray());
-        bw.Write(16);
-        bw.Write((short)1);
-        bw.Write((short)2);
-        bw.Write(48000);
-        bw.Write(48000 * 4);
-        bw.Write((short)4);
-        bw.Write((short)16);
-        bw.Write("data"u8.ToArray());
-        bw.Write(pcm.Length);
-        bw.Write(pcm);
+        return true;
     }
 
     // ---- STA helper --------------------------------------------------------------------------------------------------
@@ -356,11 +329,14 @@ internal static class RecorderExporter
             composition.Clips.Add(clip);
         }
 
-        string? wav = null;
-        if (MixAudio(take, doc, 1) is { } pcm)
+        string? wav = Path.Combine(take.Folder, "mix-" + Guid.NewGuid().ToString("N")[..6] + ".wav");
+        if (!await Task.Run(() => AudioMix.MixToPcmWav(take, doc, wav, ct), ct).ConfigureAwait(true))
         {
-            wav = Path.Combine(take.Folder, "mix-" + Guid.NewGuid().ToString("N")[..6] + ".wav");
-            WritePcmWav(wav, pcm);
+            wav = null;
+        }
+
+        if (wav is not null)
+        {
             var track = await BackgroundAudioTrack.CreateFromFileAsync(await StorageFile.GetFileFromPathAsync(wav));
             composition.BackgroundAudioTracks.Add(track);
         }
@@ -405,7 +381,15 @@ internal static class RecorderExporter
         var fps = take.Fps;
         var outDuration = doc.OutputDuration(take.Duration) / speed;
         var frames = Math.Max(1, (int)Math.Floor(outDuration * fps));
-        var audio = MixAudio(take, doc, speed);
+        string? audioFile = Path.Combine(take.Folder, "mix-" + Guid.NewGuid().ToString("N")[..6] + ".wav");
+        if (!await Task.Run(() => MixAudioToFile(take, doc, speed, audioFile, ct), ct).ConfigureAwait(true))
+        {
+            audioFile = null;
+        }
+
+        var audio = audioFile is null ? null : File.OpenRead(audioFile);
+        var audioLength = audio is null ? 0 : audio.Length - 44;
+        audio?.Seek(44, SeekOrigin.Begin);
         var scale = RecorderSupport.OutputScale(doc.Quality);
         var w = 0;
         var h = 0;
@@ -413,6 +397,8 @@ internal static class RecorderExporter
         const int blockBytes = 48000 / 50 * 4; // 20 ms
         var audioPos = 0;
 
+        try
+        {
         await RunSta(() =>
         {
             var composed = new ComposedFrames(take, doc, scale, null);
@@ -447,12 +433,12 @@ internal static class RecorderExporter
 
                     if (audio is not null)
                     {
-                        var until = (int)Math.Min(audio.Length, (tOut + 1.0 / fps) * 48000 * 4);
+                        var until = (int)Math.Min(audioLength, (tOut + 1.0 / fps) * 48000 * 4);
                         until -= until % 4;
                         while (audioPos + blockBytes <= until)
                         {
                             var block = new byte[blockBytes];
-                            Buffer.BlockCopy(audio, audioPos, block, 0, blockBytes);
+                            audio.ReadExactly(block, 0, blockBytes);
                             writer.AddAudio(new AudioBlock(block, TimeSpan.FromSeconds(audioPos / 4.0 / 48000), TimeSpan.FromMilliseconds(20)));
                             audioPos += blockBytes;
                         }
@@ -463,9 +449,9 @@ internal static class RecorderExporter
 
                 if (audio is not null)
                 {
-                    while (audioPos < audio.Length)
+                    while (audioPos < audioLength)
                     {
-                        var len = Math.Min(blockBytes, audio.Length - audioPos);
+                        var len = (int)Math.Min(blockBytes, audioLength - audioPos);
                         len -= len % 4;
                         if (len <= 0)
                         {
@@ -473,7 +459,7 @@ internal static class RecorderExporter
                         }
 
                         var block = new byte[len];
-                        Buffer.BlockCopy(audio, audioPos, block, 0, len);
+                        audio.ReadExactly(block, 0, len);
                         writer.AddAudio(new AudioBlock(block, TimeSpan.FromSeconds(audioPos / 4.0 / 48000), TimeSpan.FromSeconds(len / 4.0 / 48000)));
                         audioPos += len;
                     }
@@ -486,6 +472,11 @@ internal static class RecorderExporter
 
             return 0;
         });
+        }
+        finally
+        {
+            audio?.Dispose();
+        }
 
         progress?.Report(0.95);
         if (writer!.Completion is { } c)
@@ -498,10 +489,9 @@ internal static class RecorderExporter
             throw writer.Failure;
         }
 
-        if (audio is not null)
+        if (audioFile is not null)
         {
-            var wav = Path.Combine(take.Folder, "mix-" + Guid.NewGuid().ToString("N")[..6] + ".wav");
-            WritePcmWav(wav, audio);
+            var wav = audioFile;
             var muxed = staging + ".mux.mp4";
             var composition = new MediaComposition();
             composition.Clips.Add(await MediaClip.CreateFromFileAsync(await StorageFile.GetFileFromPathAsync(staging)));
@@ -544,6 +534,11 @@ internal static class RecorderExporter
             var fps = doc.GifFrameRate is 8 or 12 or 15 ? doc.GifFrameRate : 12;
             var longEdge = doc.GifSize switch { "small" => 420.0, "large" => 800.0, _ => 600.0 };
             var outDuration = doc.OutputDuration(take.Duration) / speed;
+            if (!GifLimits.Allows(outDuration))
+            {
+                throw new ExportLimitException(GifLimits.Message);
+            }
+
             var frames = Math.Max(1, (int)Math.Floor(outDuration * fps));
             var collected = await RunSta(() =>
             {

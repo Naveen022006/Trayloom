@@ -64,6 +64,13 @@ public sealed class CutPasteSettingsSection : ISettingsSection
     internal static UIElement AdminCard()
     {
         var card = new SettingsCard(Loc.T("Administrator access"));
+        if (!ElevationPolicy.CanOfferElevation)
+        {
+            // A per-user install can be changed without administrator rights, so running it elevated would hand that to any program.
+            card.Add(Ui.Caption(Loc.T("Apps that run as administrator ignore Trayloom. Trayloom doesn’t offer to run as administrator, because its folder can be changed without administrator rights.")));
+            return card;
+        }
+
         card.Add(Ui.Caption(Loc.T("Some windows belong to apps running as administrator. Run Trayloom as administrator to control them.")));
         var button = UiKit.Button(Loc.T("Restart as administrator"), ButtonKind.Bordered, 12, null, () =>
         {

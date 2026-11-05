@@ -339,13 +339,22 @@ internal sealed class ShelfTile : Border
                 switch (leaf.Kind)
                 {
                     case ShelfKinds.File when leaf.Path is not null:
+                        if (ShelfDrops.IsRisky(leaf.Path) && ShelfDrops.IsUnder(_actions.Store.ImageDirectory, leaf.Path) && !ConfirmRiskyOpen(leaf.Path))
+                        {
+                            break;
+                        }
+
                         Process.Start(new ProcessStartInfo(leaf.Path) { UseShellExecute = true });
                         break;
                     case ShelfKinds.Image:
                         Process.Start(new ProcessStartInfo(_actions.Store.ImagePath(leaf)) { UseShellExecute = true });
                         break;
                     case ShelfKinds.Link when leaf.Url is not null:
-                        UiKit.OpenUrl(leaf.Url);
+                        if (!UiKit.OpenWebUrl(leaf.Url))
+                        {
+                            System.Media.SystemSounds.Beep.Play();
+                        }
+
                         break;
                 }
             }
@@ -354,6 +363,17 @@ internal sealed class ShelfTile : Border
                 System.Media.SystemSounds.Beep.Play();
             }
         }
+    }
+
+    private static bool ConfirmRiskyOpen(string path)
+    {
+        var answer = MessageBox.Show(
+            Loc.T("This file was dropped on the shelf from another app or a web page. Open it only if you trust where it came from."),
+            Loc.F("Open “{0}”?", System.IO.Path.GetFileName(path)),
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No);
+        return answer == MessageBoxResult.Yes;
     }
 
     // ---------------------------------------------------------------------------------------------- mouse

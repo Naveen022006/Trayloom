@@ -21,7 +21,15 @@ internal sealed class ScreenshotService
     public ScreenshotService(IFeatureContext ctx)
     {
         _ctx = ctx;
+        PruneCache();
+        if (!App.Get<bool>(K.RecentCapturesEnabled))
+        {
+            RecentCaptureService.Instance.Clear();
+        }
     }
+
+    /// <summary>Keeps the cached shelf copies (<c>Cache\capture-*.png</c>) to a day, 100 files and 256 MB.</summary>
+    private static void PruneCache() => Output.PruneCopied(CacheDir, null, "capture-*.png");
 
     public IAppSettings App => _ctx.App;
 
@@ -157,7 +165,11 @@ internal sealed class ScreenshotService
     {
         BeginLatest(capture);
         _preview?.Close();
-        CaptureHost.Recent?.RecordScreenshot(capture);
+        if (App.Get<bool>(K.RecentCapturesEnabled))
+        {
+            CaptureHost.Recent?.RecordScreenshot(capture);
+        }
+
         var action = App.Get<string>(K.DefaultAction) ?? string.Empty;
         var copiesByAction = action is "copy" or "saveAndCopy";
         var autoCopy = App.Get<bool>(K.CopyToClipboard);
@@ -247,9 +259,8 @@ internal sealed class ScreenshotService
         {
             try
             {
-                Directory.CreateDirectory(CacheDir);
-                path = Path.Combine(CacheDir, $"capture-{DateTime.Now:yyyyMMdd-HHmmss}.png");
-                File.WriteAllBytes(path, Output.ToPng(capture.Image, capture.Scale));
+                path = Output.WriteUnique(CacheDir, $"capture-{DateTime.Now:yyyyMMdd-HHmmss}", ".png", Output.ToPng(capture.Image, capture.Scale));
+                PruneCache();
             }
             catch (Exception ex)
             {
@@ -313,6 +324,25 @@ internal sealed class ScreenshotService
         {
             Directory.CreateDirectory(CacheDir);
             File.WriteAllBytes(LatestPath, Output.ToPng(capture.Image, capture.Scale));
+            File.Delete(LatestPath + ".withheld");
+        }
+        catch
+        {
+            // best effort
+        }
+    }
+
+    /// <summary>Removes the cached copy of the last capture when neither "edit the last capture" nor "upload" can use it.</summary>
+    private void DropLatestIfUnused()
+    {
+        if (App.Get<bool>(K.LastCaptureShortcutEnabled) || App.Get<bool>(K.UploadShortcutEnabled))
+        {
+            return;
+        }
+
+        try
+        {
+            File.Delete(LatestPath);
             File.Delete(LatestPath + ".withheld");
         }
         catch
@@ -405,6 +435,7 @@ internal sealed class ScreenshotService
 
     public void Stop()
     {
+        DropLatestIfUnused();
         ScreenCapture.StopAll();
         _scrolling?.Cancel();
         _scrolling = null;

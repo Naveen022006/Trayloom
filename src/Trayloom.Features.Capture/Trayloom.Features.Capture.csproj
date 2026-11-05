@@ -7,5 +7,6 @@
   <ItemGroup>
     <PackageReference Include="ZXing.Net" Version="0.16.11" />
     <ProjectReference Include="..\Trayloom.Core\Trayloom.Core.csproj" />
+    <InternalsVisibleTo Include="Trayloom.CaptureFiles.Harness" />
   </ItemGroup>
 </Project>

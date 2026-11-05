@@ -368,7 +368,106 @@ internal sealed class Take
         }
     }
 
-    /// <summary>Deletes takes older than 24 h (or without a master and older than 1 h) that no editor owns.</summary>
+    private string MarkerPath(string name) => Path.Combine(Folder, name);
+
+    /// <summary>True once the take has been saved, copied out or exported at least once.</summary>
+    public bool IsExported => File.Exists(MarkerPath("exported"));
+
+    /// <summary>True once the person chose to throw the take away.</summary>
+    public bool IsDiscarded => File.Exists(MarkerPath("discarded"));
+
+    /// <summary>Remembers on disk that the take has been exported, so the sweep may remove it after a day.</summary>
+    public void MarkExported() => WriteMarker("exported");
+
+    /// <summary>Remembers on disk that the person discarded the take, so the sweep may remove it soon.</summary>
+    public void MarkDiscarded() => WriteMarker("discarded");
+
+    private void WriteMarker(string name)
+    {
+        try
+        {
+            File.WriteAllText(MarkerPath(name), DateTime.UtcNow.ToString("O"));
+        }
+        catch
+        {
+            // the marker only shortens how long the files are kept
+        }
+    }
+
+    /// <summary>
+    /// A take is worth offering back when its video was finished (meta.json is written once the file is closed) and nothing was
+    /// exported or discarded. A video that was never closed has no index and cannot be played.
+    /// </summary>
+    public static bool IsFinished(string folder) => File.Exists(Path.Combine(folder, "take.mp4")) && File.Exists(Path.Combine(folder, "meta.json"));
+
+    /// <summary>Opens a take left on disk (video, meta.json and edit.json); null when it cannot be read.</summary>
+    public static Take? Load(string folder)
+    {
+        try
+        {
+            if (!IsFinished(folder))
+            {
+                return null;
+            }
+
+            using var meta = JsonDocument.Parse(File.ReadAllText(Path.Combine(folder, "meta.json")));
+            var root = meta.RootElement;
+            var take = new Take
+            {
+                Folder = folder,
+                Duration = root.GetProperty("duration").GetDouble(),
+                Width = root.GetProperty("width").GetInt32(),
+                Height = root.GetProperty("height").GetInt32(),
+                Fps = root.TryGetProperty("fps", out var fps) ? fps.GetInt32() : 30,
+            };
+            var editPath = Path.Combine(folder, "edit.json");
+            if (File.Exists(editPath))
+            {
+                take.Document = JsonSerializer.Deserialize<EditDocument>(File.ReadAllText(editPath), Json) ?? new EditDocument();
+            }
+
+            return take.Duration > 0 && take.Width > 0 && take.Height > 0 ? take : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Takes in the Recordings folder that finished but were never exported or discarded, newest first, excluding the owned ones.</summary>
+    public static List<(string Folder, DateTime Time)> Recoverable(IEnumerable<string> owned)
+    {
+        var result = new List<(string, DateTime)>();
+        try
+        {
+            if (!Directory.Exists(Root))
+            {
+                return result;
+            }
+
+            var keep = new HashSet<string>(owned, StringComparer.OrdinalIgnoreCase);
+            foreach (var dir in Directory.EnumerateDirectories(Root, "Take-*"))
+            {
+                if (keep.Contains(dir) || !IsFinished(dir) || File.Exists(Path.Combine(dir, "exported")) || File.Exists(Path.Combine(dir, "discarded")))
+                {
+                    continue;
+                }
+
+                result.Add((dir, Directory.GetLastWriteTime(dir)));
+            }
+        }
+        catch
+        {
+            // listing only
+        }
+
+        return result.OrderByDescending(r => r.Item2).ToList();
+    }
+
+    /// <summary>
+    /// Housekeeping for takes no editor owns: discarded ones go after an hour, exported ones after a day, and one that was never
+    /// exported waits up to a week so it can be recovered (a take without a finished video is junk after an hour).
+    /// </summary>
     public static void Sweep(IEnumerable<string> owned)
     {
         try
@@ -381,14 +480,9 @@ internal sealed class Take
             var keep = new HashSet<string>(owned, StringComparer.OrdinalIgnoreCase);
             foreach (var dir in Directory.EnumerateDirectories(Root, "Take-*"))
             {
-                if (keep.Contains(dir))
-                {
-                    continue;
-                }
-
-                var age = DateTime.UtcNow - Directory.GetLastWriteTimeUtc(dir);
-                var master = File.Exists(Path.Combine(dir, "take.mp4"));
-                if (age > TimeSpan.FromHours(24) || (!master && age > TimeSpan.FromHours(1)))
+                var age = (DateTime.UtcNow - Directory.GetLastWriteTimeUtc(dir)).TotalHours;
+                var action = TakeSweep.Decide(age, IsFinished(dir), File.Exists(Path.Combine(dir, "exported")), File.Exists(Path.Combine(dir, "discarded")), keep.Contains(dir));
+                if (action == TakeAction.Delete)
                 {
                     try
                     {
@@ -405,5 +499,41 @@ internal sealed class Take
         {
             // housekeeping only
         }
+    }
+}
+
+internal enum TakeAction
+{
+    Keep,
+    Delete,
+    Recoverable,
+}
+
+/// <summary>What the sweep does with a take folder.</summary>
+internal static class TakeSweep
+{
+    public static TakeAction Decide(double ageHours, bool hasMaster, bool exported, bool discarded, bool owned)
+    {
+        if (owned)
+        {
+            return TakeAction.Keep;
+        }
+
+        if (discarded)
+        {
+            return ageHours > 1 ? TakeAction.Delete : TakeAction.Keep;
+        }
+
+        if (exported)
+        {
+            return ageHours > 24 ? TakeAction.Delete : TakeAction.Keep;
+        }
+
+        if (!hasMaster)
+        {
+            return ageHours > 1 ? TakeAction.Delete : TakeAction.Keep;
+        }
+
+        return ageHours > 168 ? TakeAction.Delete : TakeAction.Recoverable;
     }
 }

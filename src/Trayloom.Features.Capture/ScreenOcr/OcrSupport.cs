@@ -5,6 +5,7 @@ using System.Runtime.InteropServices.WindowsRuntime;
 using System.Text;
 using System.Windows;
 using System.Windows.Media.Imaging;
+using Trayloom.Core;
 using Windows.Globalization;
 using Windows.Graphics.Imaging;
 using Windows.Media.Ocr;
@@ -303,15 +304,9 @@ internal static class OcrSupport
         }
     }
 
-    /// <summary>Only plain http / https links with a host and no whitespace may be opened.</summary>
+    /// <summary>Only plain http / https links with a host and no user-info or whitespace may be opened (no mailto from a QR code).</summary>
     public static string? OpenableUrl(string payload)
     {
-        var t = payload.Trim();
-        if (t.Length == 0 || t.Any(char.IsWhiteSpace) || !Uri.TryCreate(t, UriKind.Absolute, out var uri))
-        {
-            return null;
-        }
-
-        return (uri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase) || uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase)) && uri.Host.Length > 0 ? t : null;
+        return SafeLinks.IsWebUrl(payload.Trim(), out var uri, allowMailto: false) ? uri!.ToString() : null;
     }
 }

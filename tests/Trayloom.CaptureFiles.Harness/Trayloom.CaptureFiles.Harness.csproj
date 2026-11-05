@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Console harness for the Capture and Files safety logic (take sweep, GIF cap, streamed audio mix, dropped files, shelf links). Not part of Trayloom.sln; run it with dotnet run on this project. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Trayloom.CaptureFiles.Harness</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Trayloom.Features.Capture\Trayloom.Features.Capture.csproj" />
+    <ProjectReference Include="..\..\src\Trayloom.Features.Files\Trayloom.Features.Files.csproj" />
+  </ItemGroup>
+</Project>

@@ -527,14 +527,23 @@ public sealed class ExplorerCutPasteFeature : IFeature
             byte[]? png = folder is null ? null : await Task.Run(ClipboardIO.ReadImagePng);
             if (folder is not null && png is { Length: > 0 })
             {
-                var name = $"Pasted_Image_{DateTime.Now:yyyyMMdd_HHmmss}.png";
-                var target = Path.Combine(folder, name);
-                for (var n = 2; File.Exists(target); n++)
+                var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                for (var n = 1; n < 1000; n++)
                 {
-                    target = Path.Combine(folder, $"Pasted_Image_{DateTime.Now:yyyyMMdd_HHmmss} {n}.png");
+                    var target = Path.Combine(folder, n == 1 ? $"Pasted_Image_{stamp}.png" : $"Pasted_Image_{stamp} {n}.png");
+                    try
+                    {
+                        // CreateNew: a file that appears between the name pick and the write is never replaced.
+                        await using var output = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                        await output.WriteAsync(png);
+                        return;
+                    }
+                    catch (IOException) when (File.Exists(target))
+                    {
+                        // the name is taken: try the next one
+                    }
                 }
 
-                await File.WriteAllBytesAsync(target, png);
                 return;
             }
         }

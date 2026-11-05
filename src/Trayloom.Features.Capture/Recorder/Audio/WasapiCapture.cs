@@ -159,9 +159,21 @@ internal sealed class WasapiCapture : IDisposable
         Marshal.ThrowExceptionForHR(client.GetService(ref capIid, out var capObj));
         var capture = (IAudioCaptureClient)capObj;
         _wav = new WavWriter(_path, 48000);
-        Opened = true;
         _thread = new Thread(() => Loop(client, capture, channels, rate, bits, isFloat)) { IsBackground = true, Name = "Trayloom audio capture", Priority = ThreadPriority.AboveNormal };
-        Marshal.ThrowExceptionForHR(client.Start());
+        try
+        {
+            Marshal.ThrowExceptionForHR(client.Start());
+        }
+        catch
+        {
+            // the file handle would stay open and the take folder could not be deleted
+            _wav.Dispose();
+            _wav = null;
+            _thread = null;
+            throw;
+        }
+
+        Opened = true;
         _clock.Start();
         _thread.Start();
     }

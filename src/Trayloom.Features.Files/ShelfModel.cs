@@ -259,8 +259,13 @@ internal sealed class ShelfStore
             }
 
             name = string.Concat(name.Select(c => System.IO.Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
-            var target = System.IO.Path.Combine(ImageDirectory, Guid.NewGuid().ToString("N").Substring(0, 8) + "_" + name);
-            File.WriteAllBytes(target, contents.ToArray());
+            contents.Position = 0;
+            var target = ShelfDrops.WriteDropped(ImageDirectory, Guid.NewGuid().ToString("N").Substring(0, 8) + "_" + name, contents);
+            if (target is null)
+            {
+                return false;
+            }
+
             Append(new ShelfItem { Kind = ShelfKinds.File, Path = target });
             Touch();
             return true;
@@ -302,14 +307,14 @@ internal sealed class ShelfStore
         return null;
     }
 
-    private static string? ReadLink(IDataObject data)
+    internal static string? ReadLink(IDataObject data)
     {
         try
         {
             if (data.GetDataPresent("UniformResourceLocatorW") && data.GetData("UniformResourceLocatorW") is MemoryStream w)
             {
                 var url = System.Text.Encoding.Unicode.GetString(w.ToArray()).TrimEnd('\0').Trim();
-                if (Uri.TryCreate(url, UriKind.Absolute, out _))
+                if (SafeLinks.IsWebUrl(url, out _, allowMailto: true))
                 {
                     return url;
                 }
@@ -318,7 +323,7 @@ internal sealed class ShelfStore
             if (data.GetDataPresent("UniformResourceLocator") && data.GetData("UniformResourceLocator") is MemoryStream a)
             {
                 var url = System.Text.Encoding.Default.GetString(a.ToArray()).TrimEnd('\0').Trim();
-                if (Uri.TryCreate(url, UriKind.Absolute, out _))
+                if (SafeLinks.IsWebUrl(url, out _, allowMailto: true))
                 {
                     return url;
                 }
@@ -327,7 +332,7 @@ internal sealed class ShelfStore
             if (data.GetDataPresent(DataFormats.UnicodeText) && data.GetData(DataFormats.UnicodeText) is string text)
             {
                 var t = text.Trim();
-                if (t.Length < 2048 && !t.Any(char.IsWhiteSpace) && Uri.TryCreate(t, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+                if (SafeLinks.IsWebUrl(t, out _, allowMailto: false))
                 {
                     return t;
                 }
@@ -464,6 +469,11 @@ internal sealed class ShelfStore
                 DeleteImage(leaf);
             }
 
+            foreach (var leaf in item.Leaves().Where(l => l.Kind == ShelfKinds.File))
+            {
+                DeleteDropped(leaf);
+            }
+
             return true;
         }
 
@@ -493,6 +503,11 @@ internal sealed class ShelfStore
             foreach (var leaf in item.Leaves().Where(l => l.Kind == ShelfKinds.Image))
             {
                 DeleteImage(leaf);
+            }
+
+            foreach (var leaf in item.Leaves().Where(l => l.Kind == ShelfKinds.File))
+            {
+                DeleteDropped(leaf);
             }
         }
 
@@ -693,6 +708,28 @@ internal sealed class ShelfStore
         }
     }
 
+    /// <summary>Deletes a file Trayloom wrote itself (a browser or mail drop kept under the shelf folder) when nothing else uses it.</summary>
+    private void DeleteDropped(ShelfItem leaf)
+    {
+        try
+        {
+            var path = leaf.Path;
+            if (path is null || !ShelfDrops.IsUnder(ImageDirectory, path))
+            {
+                return;
+            }
+
+            if (File.Exists(path) && !_items.SelectMany(Flatten).Any(i => i != leaf && i.Kind == ShelfKinds.File && string.Equals(i.Path, path, StringComparison.OrdinalIgnoreCase)))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (Exception)
+        {
+            // best effort
+        }
+    }
+
     private void DeleteImage(ShelfItem leaf)
     {
         try
@@ -838,6 +875,121 @@ internal static class ShellThumbs
         catch (Exception)
         {
             return null;
+        }
+    }
+}
+
+/// <summary>Files that arrive on the shelf as a promise (a browser download, a mail attachment) and the checks around keeping them.</summary>
+internal static class ShelfDrops
+{
+    /// <summary>The largest dropped file Trayloom keeps (it is copied into the shelf folder).</summary>
+    public const long MaxBytes = 512L * 1024 * 1024;
+
+    private static readonly HashSet<string> s_risky = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".exe", ".com", ".bat", ".cmd", ".ps1", ".psm1", ".js", ".jse", ".vbs", ".vbe", ".wsf", ".wsh", ".hta", ".lnk", ".url", ".scr", ".pif",
+        ".msi", ".msix", ".msixbundle", ".appx", ".appinstaller", ".application", ".reg", ".cpl", ".jar", ".chm", ".iso", ".vhd", ".vhdx",
+        ".library-ms", ".settingcontent-ms",
+    };
+
+    /// <summary>True for a file type that runs code or mounts something when opened.</summary>
+    public static bool IsRisky(string? path)
+    {
+        var ext = string.IsNullOrEmpty(path) ? string.Empty : System.IO.Path.GetExtension(path);
+        return ext.Length > 0 && s_risky.Contains(ext);
+    }
+
+    /// <summary>True when <paramref name="path"/> lies inside <paramref name="dir"/>.</summary>
+    public static bool IsUnder(string dir, string path)
+    {
+        try
+        {
+            var root = System.IO.Path.GetFullPath(dir).TrimEnd('\\') + "\\";
+            return System.IO.Path.GetFullPath(path).StartsWith(root, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Writes a dropped file into <paramref name="dir"/> without replacing anything, then marks it as coming from the internet
+    /// (<c>Zone.Identifier</c>, zone 3) so Windows warns before running it. Returns the path, or null when the file is too large,
+    /// the name is taken, or the mark could not be written for a risky file type.
+    /// </summary>
+    internal static string? WriteDropped(string dir, string name, Stream contents)
+    {
+        var safeName = System.IO.Path.GetFileName(name);
+        if (string.IsNullOrWhiteSpace(safeName) || safeName.IndexOfAny(System.IO.Path.GetInvalidFileNameChars()) >= 0)
+        {
+            return null;
+        }
+
+        var path = System.IO.Path.Combine(dir, safeName);
+        var created = false;
+        try
+        {
+            if (contents.CanSeek && contents.Length - contents.Position > MaxBytes)
+            {
+                return null;
+            }
+
+            using (var output = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                created = true;
+                var buffer = new byte[81920];
+                long total = 0;
+                int read;
+                while ((read = contents.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    total += read;
+                    if (total > MaxBytes)
+                    {
+                        throw new InvalidDataException("dropped file is too large");
+                    }
+
+                    output.Write(buffer, 0, read);
+                }
+            }
+
+            try
+            {
+                File.WriteAllText(path + ":Zone.Identifier", "[ZoneTransfer]\r\nZoneId=3\r\n");
+            }
+            catch (Exception)
+            {
+                // FAT and exFAT have no alternate data streams; a risky type is not kept without the mark.
+                if (IsRisky(path))
+                {
+                    TryDelete(path);
+                    return null;
+                }
+            }
+
+            return path;
+        }
+        catch (Exception)
+        {
+            // Only remove a file this call created: an existing name is left alone.
+            if (created)
+            {
+                TryDelete(path);
+            }
+
+            return null;
+        }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception)
+        {
+            // best effort
         }
     }
 }

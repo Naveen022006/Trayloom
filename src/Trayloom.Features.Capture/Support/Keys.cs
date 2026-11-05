@@ -51,6 +51,7 @@ internal static class K
     public const string FileNumberStart = "screenshotFileNumberStart";
     public const string FileNumberNext = "screenshotFileNumberNext";
     public const string Downscale = "screenshotDownscale";
+    public const string RecentCapturesEnabled = "recentCapturesEnabled";
 
     // Editor
     public const string ToolOrder = "screenshotToolOrder";
@@ -141,6 +142,7 @@ internal static class K
             [FileNumberStart] = 1,
             [FileNumberNext] = 1,
             [Downscale] = false,
+            [RecentCapturesEnabled] = true,
             [ToolOrder] = DefaultToolOrder,
             [ToolShortcuts] = "",
             [ToolShortcutsEnabled] = true,

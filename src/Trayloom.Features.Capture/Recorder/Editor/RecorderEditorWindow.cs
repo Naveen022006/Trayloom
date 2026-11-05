@@ -45,6 +45,7 @@ internal sealed partial class RecorderEditorWindow : Window
     private string? _lastExported;
     private bool _exported;
     private bool _forceClose;
+    private bool _keepTake;
     private bool _trimPushed;
     private Border? _progress;
 
@@ -89,7 +90,11 @@ internal sealed partial class RecorderEditorWindow : Window
             _exportCts?.Cancel();
             _audio.Dispose();
             _media.Close();
-            Take.Delete();
+            if (!_keepTake)
+            {
+                Take.Delete();
+            }
+
             Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, CaptureHost.TrimMemory);
         };
         Loaded += async (_, _) => await LoadThumbsAsync();
@@ -274,31 +279,7 @@ internal sealed partial class RecorderEditorWindow : Window
 
     private static float[] Peaks(string path, int bins)
     {
-        try
-        {
-            var data = WavWriter.ReadAll(path);
-            var frames = data.Length / 2;
-            var result = new float[bins];
-            for (var b = 0; b < bins; b++)
-            {
-                var from = (long)b * frames / bins;
-                var to = (long)(b + 1) * frames / bins;
-                float max = 0;
-                var step = Math.Max(1, (to - from) / 200);
-                for (var i = from; i < to; i += step)
-                {
-                    max = Math.Max(max, Math.Max(Math.Abs(data[i * 2]), Math.Abs(data[i * 2 + 1])));
-                }
-
-                result[b] = Math.Min(1, max);
-            }
-
-            return result;
-        }
-        catch
-        {
-            return Array.Empty<float>();
-        }
+        return WaveformPeaks.Compute(path, bins);
     }
 
     // ---- transport ---------------------------------------------------------------------------------------------------
@@ -450,6 +431,7 @@ internal sealed partial class RecorderEditorWindow : Window
             var menu = new ContextMenu();
             var item = new MenuItem { Header = Loc.T("Copy as GIF") };
             item.Click += (_, _) => _ = CopyAsync(true, false);
+            MarkGifLimit(item);
             menu.Items.Add(item);
             menu.PlacementTarget = copyMore;
             menu.IsOpen = true;
@@ -474,7 +456,8 @@ internal sealed partial class RecorderEditorWindow : Window
 
             Add(Strings.Screenshot.SaveLabel, () => _ = SaveAsync(SaveKind.Mp4, false), "Ctrl+S");
             Add(Strings.Screenshot.SaveAs, () => _ = SaveAsync(SaveKind.Mp4, true), "Ctrl+Shift+S");
-            Add(Loc.T("Save as GIF"), () => _ = SaveAsync(SaveKind.Gif, false));
+            var gifItem = Add(Loc.T("Save as GIF"), () => _ = SaveAsync(SaveKind.Gif, false));
+            MarkGifLimit(gifItem);
             menu.Items.Add(new Separator());
             Add(Strings.SaveTo + "…", ChooseFolder);
             menu.PlacementTarget = saveMore;
@@ -484,6 +467,16 @@ internal sealed partial class RecorderEditorWindow : Window
         sp.Children.Add(save);
         sp.Children.Add(saveMore);
         _topRight.Children.Add(sp);
+    }
+
+    /// <summary>Disables a GIF menu item, with the reason as its tooltip, when the edited recording is longer than a GIF may be.</summary>
+    private void MarkGifLimit(MenuItem item)
+    {
+        if (!GifLimits.Allows(_doc.OutputDuration(Duration) / Math.Clamp(_doc.ExportSpeed, 0.25, 4)))
+        {
+            item.IsEnabled = false;
+            item.ToolTip = GifLimits.Message;
+        }
     }
 
     // ---- refresh ---------------------------------------------------------------------------------------------------------
@@ -807,10 +800,16 @@ internal sealed partial class RecorderEditorWindow : Window
             }
 
             ok = true;
+            Take.MarkExported();
         }
         catch (OperationCanceledException)
         {
             // silent
+        }
+        catch (ExportLimitException ex)
+        {
+            CaptureHost.Beep();
+            QuickToolHud.Show(G.Record, ex.Message);
         }
         catch (Exception ex)
         {
@@ -888,6 +887,7 @@ internal sealed partial class RecorderEditorWindow : Window
     {
         if (ConfirmDiscard())
         {
+            Take.MarkDiscarded();
             _forceClose = true;
             Close();
         }
@@ -910,10 +910,16 @@ internal sealed partial class RecorderEditorWindow : Window
         {
             e.Cancel = true;
         }
+        else
+        {
+            Take.MarkDiscarded();
+        }
     }
 
+    /// <summary>Closes the editor because Trayloom is quitting: a take that was not saved stays on disk so it can be recovered.</summary>
     public void ForceClose()
     {
+        _keepTake = !_exported;
         _forceClose = true;
         Close();
     }
