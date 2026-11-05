@@ -279,6 +279,12 @@ internal sealed class TrayPanel : Window
             return false;
         }
 
+        // No empty tab on a PC without Bluetooth: the service says so once Windows has answered.
+        if (tab.Id == PanelTabs.Bluetooth && _s.Host.Services.Get<IBluetoothState>() is { HasAdapter: false })
+        {
+            return false;
+        }
+
         return _s.Contributions.PanelSections(tab.Id).Count > 0
             || (tab.Id == PanelTabs.Utilities && _s.Contributions.PanelUtilities().Any(u => !u.HostedOnly));
     }

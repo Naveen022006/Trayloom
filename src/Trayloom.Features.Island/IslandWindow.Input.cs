@@ -1351,6 +1351,7 @@ internal sealed partial class IslandWindow
             "timer" => _core.ModuleVisible("timer"),
             "calendar" => _core.ModuleVisible("calendar"),
             "wifi" => _core.ModuleVisible("wifi"),
+            "bluetooth" => _core.ModuleVisible("bluetooth"),
             "speedTest" => _core.ModuleVisible("system") && rt.IsAvailable("monitor-network"),
             "brightness" => rt.IsAvailable("brightness") && _core.App.Get<bool>(K.BrightnessControl),
             _ => true,
@@ -1507,6 +1508,9 @@ internal sealed partial class IslandWindow
                 break;
             case "wifi":
                 ShowModule("wifi");
+                break;
+            case "bluetooth":
+                ShowModule("bluetooth");
                 break;
             case "keepAwake":
                 if (_core.KeepAwake is { } ka)

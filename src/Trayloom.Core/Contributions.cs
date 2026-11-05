@@ -14,6 +14,7 @@ public static class PanelTabs
     public const string Mixer = "mixer";
     public const string System = "system";
     public const string Network = "network";
+    public const string Bluetooth = "bluetooth";
     public const string Disk = "disk";
     public const string Power = "power";
     public const string FanControl = "fanControl";
@@ -36,6 +37,7 @@ public static class PanelTabs
         new(Mixer, Loc.T("Volume mixer"), "", Loc.T("Volume of each app, one slider each."), ["mixer", "audio-priority"], false),
         new(System, Loc.T("System"), "", Loc.T("Processor, graphics and memory at a glance."), ["monitor-cpu", "monitor-gpu", "monitor-memory", "connected-devices"], true),
         new(Network, Loc.T("Network"), "", Loc.T("Internet speed and which apps are using it."), ["monitor-network"], true),
+        new(Bluetooth, Loc.T("Bluetooth"), "", Loc.T("Your Bluetooth devices, their battery and the Bluetooth switch."), ["notch-bluetooth"], false),
         new(Disk, Loc.T("Disks"), "", Loc.T("Free space and disk activity."), ["monitor-disk"], true),
         new(Power, Loc.T("Power"), "", Loc.T("Battery, charging and power use."), ["monitor-power"], true),
         new(FanControl, Loc.T("Fan control"), "", Loc.T("Fan speeds and your own fan curve."), ["fan-control"], false, AvailableOnWindows: false),

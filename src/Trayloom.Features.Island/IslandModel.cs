@@ -40,6 +40,7 @@ internal static class IslandCatalog
         new("files", Loc.T("Files"), G.Files, 'f', C("#64D2FF"), false, Loc.T("A shelf for the files you drop on the island."), ["shelf"], null, true),
         new("system", Loc.T("System"), G.System, 'i', C("#30D158"), false, Loc.T("CPU, memory, disk, network and battery at a glance."), ["monitor-cpu", "monitor-gpu", "monitor-memory", "monitor-network", "monitor-disk", "monitor-power", "connected-devices"], null, false),
         new("wifi", Loc.T("Wi-Fi"), "", 'l', C("#32ADE6"), false, Loc.T("Your network, its signal and the networks nearby."), ["notch-wifi"], null, true),
+        new("bluetooth", Loc.T("Bluetooth"), G.Bluetooth, 'j', C("#0A84FF"), false, Loc.T("Your Bluetooth devices, their battery and the Bluetooth switch."), ["notch-bluetooth"], null, true),
         new("tools", Loc.T("Tools"), G.Tools, 't', C("#98989D"), false, Loc.T("Tools and utilities, one click away."), ["quick-launcher"], null, true),
         new("calendar", Loc.T("Calendar"), G.Calendar, 'a', C("#FF453A"), false, Loc.T("Today's events and the month ahead."), ["notch-calendar"], K.CalendarEnabled, true),
         new("notifications", Loc.T("Notifications"), G.Bell, 'n', C("#FF9F0A"), false, Loc.T("Your PC's notifications, kept in the island."), ["notch-notifications"], K.NotificationsEnabled, true),
@@ -72,6 +73,7 @@ internal static class IslandCatalog
         new("commandBar", Loc.T("Command Bar"), G.Command, false, ["command-bar"]),
         new("scratchpad", Loc.T("Scratchpad"), G.Note, false, ["scratchpad"]),
         new("wifi", Loc.T("Wi-Fi"), "", false, ["notch-wifi"]),
+        new("bluetooth", Loc.T("Bluetooth"), G.Bluetooth, false, ["notch-bluetooth"]),
     ]);
 
     public static ModuleDef? Get(string id) => Modules.FirstOrDefault(m => m.Id == id);
@@ -82,7 +84,7 @@ internal static class IslandCatalog
     /// Sections whose page is contributed by another project (an <see cref="IIslandSection"/>): they count as installed only while that
     /// project provides the page, not merely while their feature is installed.
     /// </summary>
-    public static bool IsContributed(string id) => id is "agents" or "screenTime" or "github" or "wifi";
+    public static bool IsContributed(string id) => id is "agents" or "screenTime" or "github" or "wifi" or "bluetooth";
 
     /// <summary>Stored order followed by the remaining modules in default order (spec 02d 3.4).</summary>
     public static List<string> OrderedIds(IAppSettings app, IEnumerable<string>? extra = null)

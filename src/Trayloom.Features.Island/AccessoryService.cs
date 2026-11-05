@@ -45,7 +45,7 @@ internal sealed class AccessoryService : IDisposable
 
     public bool Active => _watchers.Count > 0;
 
-    public bool Wanted => _core.IslandOn && _core.Ctx.Runtime.IsAvailable("notch-accessories") && _core.App.Get<bool>(K.Accessories) && _core.Ctx.Runtime.IsAvailable("monitor-power");
+    public bool Wanted => _core.IslandOn && _core.Ctx.Runtime.IsAvailable("notch-accessories") && _core.App.Get<bool>(K.Accessories) && _core.Ctx.Runtime.IsAvailable("monitor-power") && !_core.Ctx.Runtime.IsAvailable("notch-bluetooth");
 
     public void Start()
     {

@@ -323,6 +323,7 @@ internal sealed class ControlsPage : IslandPage
             "timer" => Core.ModuleVisible("timer"),
             "calendar" => Core.ModuleVisible("calendar"),
             "wifi" => Core.ModuleVisible("wifi"),
+            "bluetooth" => Core.ModuleVisible("bluetooth"),
             "speedTest" => Core.ModuleVisible("system") && rt.IsAvailable("monitor-network"),
             "brightness" => BrightnessVisible(rt),
             "keyboardLight" => false,

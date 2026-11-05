@@ -47,6 +47,8 @@ internal static class Program
         Check(SettingsLayoutMath.TileColumns(2000, 92, 8, 4) == 4, "capped at MaxColumns");
         Check(Math.Abs(SettingsLayoutMath.TileCellWidth(684, 5, 10) - 128.8) < 1e-9, "cell width shares the width minus gaps");
 
+        BluetoothChecks.Run(Check);
+
         Console.WriteLine($"{s_checks - s_failed}/{s_checks} checks passed");
         return s_failed == 0 ? 0 : 1;
     }

@@ -206,6 +206,7 @@ public static class AppKeys
         PanelTabs.Mixer => "monitorShowMixer",
         PanelTabs.System => "monitorShowSystem",
         PanelTabs.Network => "monitorShowNetwork",
+        PanelTabs.Bluetooth => "panelShowBluetooth",
         PanelTabs.Disk => "monitorShowDisk",
         PanelTabs.Power => "monitorShowPower",
         PanelTabs.Utilities => "panelShowUtilities",
@@ -262,6 +263,7 @@ public static class AppKeys
             ["monitorShowMixer"] = true,
             ["monitorShowSystem"] = true,
             ["monitorShowNetwork"] = true,
+            ["panelShowBluetooth"] = true,
             ["monitorShowDisk"] = true,
             ["monitorShowPower"] = true,
         };

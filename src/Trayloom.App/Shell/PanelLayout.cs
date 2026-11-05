@@ -11,7 +11,7 @@ namespace Trayloom.App;
 /// <summary>Order and visibility of the flyout tabs (<c>panelSectionOrder</c> + the <c>panelShow*</c> keys).</summary>
 internal static class PanelLayout
 {
-    private static readonly string[] AfterPredecessor = [PanelTabs.Brightness, PanelTabs.Disk, PanelTabs.Controls];
+    private static readonly string[] AfterPredecessor = [PanelTabs.Brightness, PanelTabs.Bluetooth, PanelTabs.Disk, PanelTabs.Controls];
 
     /// <summary>All tabs that can exist on Windows, in the saved order (missing ids at their canonical positions).</summary>
     public static IReadOnlyList<PanelTabInfo> Ordered(IAppSettings app)

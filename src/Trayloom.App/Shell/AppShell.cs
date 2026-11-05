@@ -567,6 +567,12 @@ internal sealed class AppShell : IShell
             }));
         }
 
+        if (rt.IsAvailable("notch-bluetooth") && _host.Services.Get<IBluetoothState>() is { HasAdapter: not false } bt)
+        {
+            any = true;
+            menu.Items.Add(BluetoothMenu.Build(bt, this));
+        }
+
         if (any)
         {
             menu.Items.Add(new Separator());
