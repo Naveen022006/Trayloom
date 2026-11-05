@@ -162,6 +162,9 @@ internal static class WhatsNewPage
         ]),
         new("Fixed",
         [
+            Loc.T("The AI Agents page in the Dynamic Island scrolls smoothly: it no longer jumps to the top while an agent works, and its edges fade instead of being cut off."),
+            Loc.T("Settings rows keep their titles and captions readable at any window width, tile labels show in full, switches line up, and tiles and tabs work with the keyboard."),
+            Loc.T("Brightness keys step evenly, and the right monitor is used when several are connected."),
             Loc.T("Shelf and Command Bar windows keep their real size when they open."),
             Loc.T("Window layout on monitors with a different scale no longer overshoots the screen edge."),
         ]),
