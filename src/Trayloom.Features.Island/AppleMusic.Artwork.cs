@@ -69,6 +69,13 @@ internal sealed class AmArtworkMap
             using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = copy, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString()))
             {
                 connection.Open();
+                using (var pragma = connection.CreateCommand())
+                {
+                    // The copy came from another app's folder: never run schema-defined functions or views from it.
+                    pragma.CommandText = "PRAGMA trusted_schema = OFF; PRAGMA query_only = ON;";
+                    pragma.ExecuteNonQuery();
+                }
+
                 using var command = connection.CreateCommand();
                 command.CommandText = "SELECT item_id, artwork_id FROM item_to_artwork";
                 using var reader = command.ExecuteReader();

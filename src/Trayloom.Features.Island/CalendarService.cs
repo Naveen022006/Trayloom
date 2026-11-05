@@ -355,6 +355,14 @@ internal sealed class CalendarService : IDisposable
         return uri.AbsoluteUri;
     }
 
+    /// <summary>
+    /// True only for a path that starts with a drive letter and a separator. A network path in any spelling (two backslashes, two
+    /// slashes, a mixed pair, or the <c>\\?\</c> and <c>\??\</c> device prefixes) would make Windows send credentials to that server, so
+    /// none of them passes. A drive the user mapped themselves is allowed.
+    /// </summary>
+    internal static bool IsLocalIcsPath(string? s) =>
+        s is not null && System.Text.RegularExpressions.Regex.IsMatch(s.Trim(), @"^[A-Za-z]:[\\/]", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
     /// <summary>True for an ICS source written as a web address (so it is downloaded, never opened as a file).</summary>
     internal static bool LooksLikeUrl(string s) =>
         s.StartsWith("http:", StringComparison.OrdinalIgnoreCase) || s.StartsWith("https:", StringComparison.OrdinalIgnoreCase) || s.StartsWith("webcal:", StringComparison.OrdinalIgnoreCase);
@@ -379,7 +387,7 @@ internal sealed class CalendarService : IDisposable
                     {
                         // The address holds a secret that must not sit in plain text in settings; never download or log it here.
                         _log.Warn("ICS source skipped: Google calendar addresses belong in the Google Calendar setting");
-                        calendars.Add(new CalendarInfo("ics-note:google", Loc.T("Add Google calendars in the Google Calendar setting."), "ICS", green, "ics"));
+                        calendars.Add(new CalendarInfo("ics-note:" + src.GetHashCode().ToString("x"), Loc.T("Add Google calendars in the Google Calendar setting."), "ICS", green, "ics"));
                         continue;
                     }
 
@@ -387,7 +395,7 @@ internal sealed class CalendarService : IDisposable
                     if (url is null)
                     {
                         _log.Warn("ICS source skipped: not an https address");
-                        calendars.Add(new CalendarInfo("ics-note:https", Loc.T("Use an https:// address for this calendar."), "ICS", green, "ics"));
+                        calendars.Add(new CalendarInfo("ics-note:" + src.GetHashCode().ToString("x"), Loc.T("Use an https:// address for this calendar."), "ICS", green, "ics"));
                         continue;
                     }
 
@@ -400,7 +408,7 @@ internal sealed class CalendarService : IDisposable
 
                     text = cached;
                 }
-                else if (!src.StartsWith(@"\\", StringComparison.Ordinal) && File.Exists(src))
+                else if (IsLocalIcsPath(src) && File.Exists(src))
                 {
                     // A network path would make Windows send credentials to the named server, so only local files are read.
                     if (new FileInfo(src).Length > MaxIcsBytes)
@@ -416,7 +424,7 @@ internal sealed class CalendarService : IDisposable
                     continue;
                 }
 
-                var name = LooksLikeUrl(src) ? "" : Path.GetFileNameWithoutExtension(src);
+                var name = LooksLikeUrl(src) ? (Uri.TryCreate(NormalizeIcsUrl(src), UriKind.Absolute, out var hostUri) ? hostUri.Host : "") : Path.GetFileNameWithoutExtension(src);
                 var id = "ics:" + src;
                 var shown = string.IsNullOrEmpty(name) ? Loc.T("Calendar") : name;
                 calendars.Add(new CalendarInfo(id, shown, "ICS", green, "ics"));
@@ -444,6 +452,11 @@ internal sealed class CalendarService : IDisposable
         using var cts = new CancellationTokenSource(IcsTimeout);
         using var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
+        if (response.RequestMessage?.RequestUri?.Scheme != Uri.UriSchemeHttps)
+        {
+            throw new InvalidDataException("ICS address left https");
+        }
+
         if (response.Content.Headers.ContentLength > MaxIcsBytes)
         {
             throw new InvalidDataException("ICS body too large");

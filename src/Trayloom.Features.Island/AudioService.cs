@@ -717,13 +717,16 @@ internal static class BrightnessService
         return Convert.ToInt32(d.Properties_.Item("CurrentBrightness").Value, System.Globalization.CultureInfo.InvariantCulture) / 100.0;
     }
 
-    /// <summary>Sets the level off the UI thread; while a write runs, only the newest requested level is kept (dragging stays smooth).</summary>
     /// <summary>The lowest level the island writes (5 %), so a slider drag to the end can never turn the panel black.</summary>
     public const double MinimumLevel = 0.05;
 
+    /// <summary>Keeps a requested level between <see cref="MinimumLevel"/> and 1; NaN becomes the minimum.</summary>
+    internal static double ClampLevel(double value) => double.IsNaN(value) ? MinimumLevel : Math.Clamp(value, MinimumLevel, 1);
+
+    /// <summary>Sets the level off the UI thread; while a write runs, only the newest requested level is kept (dragging stays smooth).</summary>
     public static void Write(double value)
     {
-        value = double.IsNaN(value) ? MinimumLevel : Math.Clamp(value, MinimumLevel, 1);
+        value = ClampLevel(value);
         Interlocked.Exchange(ref _lastOwnWriteTicks, DateTime.UtcNow.Ticks);
         BrightnessWrites.MarkOwn();
         lock (Gate)

@@ -18,7 +18,9 @@ internal static class SafetyChecks
         Secrets(check);
         Toasts(check);
         IcsLimits(check);
-        check(BrightnessService.MinimumLevel is >= 0.05 and < 0.5, "brightness: the island never writes below 5 %");
+        check(BrightnessService.ClampLevel(0) == 0.05 && BrightnessService.ClampLevel(double.NaN) == 0.05, "brightness: the island never writes below 5 %");
+        check(BrightnessService.ClampLevel(2) == 1 && BrightnessService.ClampLevel(0.5) == 0.5, "brightness: levels above 5 % pass, 1 is the top");
+        LocalPaths(check);
     }
 
     private static void Urls(Action<bool, string> check)
@@ -36,6 +38,18 @@ internal static class SafetyChecks
         check(CalendarService.IsGoogleCalendarAddress("https://calendar.google.com/calendar/ical/x/private-abc/basic.ics"), "ics url: a Google secret address is recognised");
         check(!CalendarService.IsGoogleCalendarAddress("https://example.com/a.ics"), "ics url: another host is not Google");
         check(CalendarService.LooksLikeUrl("http://a") && CalendarService.LooksLikeUrl("webcal://a") && !CalendarService.LooksLikeUrl(@"C:\a.ics"), "ics url: URL versus file detection");
+    }
+
+    private static void LocalPaths(Action<bool, string> check)
+    {
+        string[] network = [@"\\server\share\a.ics", "//server/share/a.ics", @"/\server\a.ics", @"\??\UNC\server\share\a.ics", @"\\?\UNC\server\share\a.ics", "file://server/a.ics", "a.ics", ""];
+        foreach (var path in network)
+        {
+            check(!CalendarService.IsLocalIcsPath(path), $"ics path: '{path}' is not a local drive path");
+        }
+
+        check(CalendarService.IsLocalIcsPath(@"C:\Users\me\a.ics") && CalendarService.IsLocalIcsPath("C:/a.ics"), "ics path: a normal drive path passes");
+        check(CalendarService.IsLocalIcsPath(@"Z:\mapped\a.ics"), "ics path: a mapped drive letter passes");
     }
 
     private static void Secrets(Action<bool, string> check)

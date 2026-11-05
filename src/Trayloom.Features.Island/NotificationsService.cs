@@ -56,7 +56,7 @@ internal sealed class NotificationsService : IDisposable
     private readonly HashSet<uint> _baseline = [];
     private bool _first = true;
     private CancellationTokenSource? _uiaCts;
-    private Thread? _uiaThread;
+    private readonly object _uiaGate = new();
     private bool _starting;
     private string _lastUia = "";
     private DateTime _lastUiaAt = DateTime.MinValue;
@@ -258,16 +258,11 @@ internal sealed class NotificationsService : IDisposable
     private void StartAutomation()
     {
         Mode = NotificationMode.Automation;
+        _uiaCts?.Cancel();
         _uiaCts = new CancellationTokenSource();
         var token = _uiaCts.Token;
 
-        // The event handler is registered and removed on one dedicated MTA thread, as UI Automation requires.
-        _uiaThread = new Thread(() => RunAutomationEvents(token)) { IsBackground = true, Name = "Trayloom notifications UIA" };
-        _uiaThread.SetApartmentState(ApartmentState.MTA);
-        _uiaThread.Start();
-
-        // Fallback in case toast banners do not raise a window-opened event on some Windows builds. It runs only while the
-        // opt-in is on, because this service is stopped the moment it is turned off.
+        // A light poll that runs only while the opt-in is on: this service is stopped the moment it is turned off, which ends it.
         _ = Task.Run(async () =>
         {
             while (!token.IsCancellationRequested)
@@ -279,11 +274,14 @@ internal sealed class NotificationsService : IDisposable
                         new PropertyCondition(AutomationElement.AutomationIdProperty, "NormalToastView")));
                     if (toast is null)
                     {
-                        _lastUia = "";
+                        lock (_uiaGate)
+                        {
+                            _lastUia = "";
+                        }
                     }
                     else
                     {
-                        ReadToast(toast);
+                        ReadToast(toast, token);
                     }
                 }
                 catch
@@ -302,65 +300,9 @@ internal sealed class NotificationsService : IDisposable
         }, token);
     }
 
-    private void RunAutomationEvents(CancellationToken token)
+    private void ReadToast(AutomationElement toast, CancellationToken token)
     {
-        AutomationEventHandler handler = (sender, _) =>
-        {
-            try
-            {
-                if (token.IsCancellationRequested || sender is not AutomationElement element)
-                {
-                    return;
-                }
-
-                if (!IsToastElement(element.Current.Name, element.Current.AutomationId))
-                {
-                    return;
-                }
-
-                // Read on a worker so a slow cross-process call cannot stall UI Automation's event thread for long.
-                Task.Run(() =>
-                {
-                    var read = Task.Run(() => ReadToast(element));
-                    read.Wait(2000);
-                });
-            }
-            catch
-            {
-            }
-        };
-
-        try
-        {
-            Automation.AddAutomationEventHandler(WindowPattern.WindowOpenedEvent, AutomationElement.RootElement, TreeScope.Children, handler);
-        }
-        catch
-        {
-            return;
-        }
-
-        try
-        {
-            token.WaitHandle.WaitOne();
-        }
-        catch (ObjectDisposedException)
-        {
-        }
-        finally
-        {
-            try
-            {
-                Automation.RemoveAutomationEventHandler(WindowPattern.WindowOpenedEvent, AutomationElement.RootElement, handler);
-            }
-            catch
-            {
-            }
-        }
-    }
-
-    private void ReadToast(AutomationElement toast)
-    {
-        if (!ReadScreen)
+        if (token.IsCancellationRequested || !ReadScreen)
         {
             return;
         }
@@ -386,13 +328,17 @@ internal sealed class NotificationsService : IDisposable
         }
 
         var key = string.Join("|", texts);
-        if (key == _lastUia && (DateTime.Now - _lastUiaAt).TotalSeconds < 8)
+        lock (_uiaGate)
         {
-            return;
+            if (key == _lastUia && (DateTime.Now - _lastUiaAt).TotalSeconds < 8)
+            {
+                return;
+            }
+
+            _lastUia = key;
+            _lastUiaAt = DateTime.Now;
         }
 
-        _lastUia = key;
-        _lastUiaAt = DateTime.Now;
         string app = "", title = "", sub = "", body = "";
         if (texts.Count == 1 && texts[0].Contains(','))
         {
@@ -416,7 +362,19 @@ internal sealed class NotificationsService : IDisposable
             }
         }
 
-        _core.Ui.BeginInvoke(() => Add(new NotificationItem { App = app, Title = title, Subtitle = sub, Body = body }));
+        if (token.IsCancellationRequested)
+        {
+            return;
+        }
+
+        _core.Ui.BeginInvoke(() =>
+        {
+            // A read that was in flight when the user opted out or the lock began must not bring a banner back.
+            if (!token.IsCancellationRequested && Mode == NotificationMode.Automation)
+            {
+                Add(new NotificationItem { App = app, Title = title, Subtitle = sub, Body = body });
+            }
+        });
     }
 
     private void Add(NotificationItem item)
@@ -500,8 +458,10 @@ internal sealed class NotificationsService : IDisposable
         _poll = null;
         _uiaCts?.Cancel();
         _uiaCts = null;
-        _uiaThread = null;
-        _lastUia = "";
+        lock (_uiaGate)
+        {
+            _lastUia = "";
+        }
         _listener = null;
         _baseline.Clear();
         if (Mode != NotificationMode.Off)

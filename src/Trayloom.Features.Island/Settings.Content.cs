@@ -357,7 +357,11 @@ internal sealed class ContentEditor : Grid
                 card.AddDivider();
                 card.Add(SUi.SwitchRow(app, K.NotificationsReadScreen, "", Loc.T("Read notification banners on screen"), Loc.T("Windows only lets packaged apps use the notification listener, so Trayloom can instead read each banner’s text as it appears. Banners can contain codes and private messages."), _ => _c.RequestRebuild()));
                 var status = IslandCore.Current?.Notifications;
-                if (status is { NeedsIdentity: true } or { AccessDenied: true })
+                if (status is { NeedsIdentity: true } && !app.Get<bool>(K.NotificationsReadScreen))
+                {
+                    card.AddCaption(Loc.T("Turn on “Read notification banners on screen” above to see banners in the island."));
+                }
+                else if (status is { NeedsIdentity: true } or { AccessDenied: true })
                 {
                     var row = new SettingsRow("", Loc.T("Notification access"), status.NeedsIdentity ? Loc.T("Reading banners works best when Trayloom is installed as an app.") : Loc.T("Allow notification access in Windows Settings."), UiKit.Button(status.AccessDenied ? Loc.T("Open Settings") : "Allow", ButtonKind.Bordered, 11.5, null, () => { if (status.AccessDenied) { status.OpenAccessSettings(); } else { _ = status.RequestAccessAsync(); } }));
                     card.Add(row);

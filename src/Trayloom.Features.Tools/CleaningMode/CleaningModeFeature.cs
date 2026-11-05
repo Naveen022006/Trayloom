@@ -269,18 +269,27 @@ public sealed class CleaningModeFeature : ToolsFeatureBase, ICleaningModeService
             _unlocked = true;
             Ctx.Ui.BeginInvoke(Teardown);
         }, null, MaxLock, System.Threading.Timeout.InfiniteTimeSpan);
-        BuildOverlays();
-        _topmost = new DispatcherTimer(DispatcherPriority.Background, Ctx.Ui) { Interval = TimeSpan.FromMilliseconds(500) };
-        _topmost.Tick += (_, _) =>
-        {
-            foreach (var o in _overlays)
-            {
-                o.ReassertTopmost();
-            }
-        };
-        _topmost.Start();
         SystemEvents.DisplaySettingsChanged += OnDisplayChanged;
         SystemEvents.SessionSwitch += OnSession;
+        try
+        {
+            BuildOverlays();
+            _topmost = new DispatcherTimer(DispatcherPriority.Background, Ctx.Ui) { Interval = TimeSpan.FromMilliseconds(500) };
+            _topmost.Tick += (_, _) =>
+            {
+                foreach (var o in _overlays)
+                {
+                    o.ReassertTopmost();
+                }
+            };
+            _topmost.Start();
+        }
+        catch (Exception ex)
+        {
+            // Never leave the keyboard locked behind an overlay that failed to appear.
+            Ctx.Log.Warn("Cleaning Mode could not show its overlay: " + ex.GetType().Name);
+            Teardown();
+        }
     }
 
     private bool OnKey(KeyboardHookEvent e)

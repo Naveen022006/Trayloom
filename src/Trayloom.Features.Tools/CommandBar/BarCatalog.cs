@@ -1074,6 +1074,17 @@ internal static class BarCatalog
                 }
 
                 var pid = e.Pid;
+                DateTime started;
+                try
+                {
+                    using var snapshot = Process.GetProcessById(pid);
+                    started = snapshot.StartTime;
+                }
+                catch
+                {
+                    continue;
+                }
+
                 result.Add(new BarEntry
                 {
                     Id = "kill." + pid,
@@ -1087,6 +1098,22 @@ internal static class BarCatalog
                     Destructive = true,
                     Run = _ =>
                     {
+                        // The list may have refreshed and the pid been reused since this row was built: confirm it is the same process.
+                        try
+                        {
+                            using var target = Process.GetProcessById(pid);
+                            if (target.StartTime != started || ProcessSafety.IsProtectedName(target.ProcessName))
+                            {
+                                System.Media.SystemSounds.Beep.Play();
+                                return;
+                            }
+                        }
+                        catch
+                        {
+                            System.Media.SystemSounds.Beep.Play();
+                            return;
+                        }
+
                         if (!kill.Kill(pid))
                         {
                             System.Media.SystemSounds.Beep.Play();

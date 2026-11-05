@@ -114,7 +114,16 @@ internal static class CommandBarLinks
             return (null, true);
         }
 
-        var extension = Path.GetExtension(path);
+        // Windows drops trailing dots and spaces, so "x.bat." still runs as a batch file: classify the normalised name.
+        string extension;
+        try
+        {
+            extension = Path.GetExtension(Path.GetFullPath(path)).TrimEnd('.', ' ');
+        }
+        catch (Exception)
+        {
+            return (null, true);
+        }
         if ((extension.Equals(".bat", StringComparison.OrdinalIgnoreCase) || extension.Equals(".cmd", StringComparison.OrdinalIgnoreCase))
             && !IsSafeBatchArgument(argument))
         {
