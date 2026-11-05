@@ -94,11 +94,27 @@ internal sealed class GitHubPage : StackPanel
         Loaded += (_, _) =>
         {
             runtime.Changed += OnChanged;
+            if (Coding() is { } coding)
+            {
+                coding.Changed += OnChanged;
+                coding.PageOpened();
+            }
+
             runtime.OnPageOpened();
             Build();
         };
-        Unloaded += (_, _) => runtime.Changed -= OnChanged;
+        Unloaded += (_, _) =>
+        {
+            runtime.Changed -= OnChanged;
+            if (Coding() is { } coding)
+            {
+                coding.Changed -= OnChanged;
+            }
+        };
     }
+
+    /// <summary>The tracker of the repository you are working in, when the extension runs it.</summary>
+    private CodingTracker? Coding() => _runtime.Services.Services.Get<CodingTracker>();
 
     private void OnChanged() => Dispatcher.BeginInvoke(Build);
 
@@ -109,6 +125,13 @@ internal sealed class GitHubPage : StackPanel
     private void Build()
     {
         Children.Clear();
+
+        // The card of the repository you are in comes first, whether or not GitHub is connected.
+        if (Coding() is { Snapshot.Repo: not null } coding)
+        {
+            Children.Add(CodingIsland.CodingCard(coding, _runtime));
+        }
+
         if (!_runtime.Connected)
         {
             BuildNotConnected();

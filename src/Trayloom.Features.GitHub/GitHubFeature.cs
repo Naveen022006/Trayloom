@@ -14,6 +14,7 @@ public sealed class GitHubFeature : IFeature
     private static readonly bool Dev = Environment.GetEnvironmentVariable("TRAYLOOM_DEV") == "1";
 
     private GitHubRuntime? _runtime;
+    private CodingTracker? _tracker;
     private IFeatureContext? _context;
 
     public string Id => GhText.FeatureId;
@@ -25,6 +26,10 @@ public sealed class GitHubFeature : IFeature
         _runtime = new GitHubRuntime(context);
         context.Services.Provide(_runtime);
         _runtime.Start();
+        CodingKeys.Register(context.App);
+        _tracker = new CodingTracker(context, _runtime);
+        context.Services.Provide(_tracker);
+        _tracker.Start();
     }
 
     public void Stop()
@@ -37,6 +42,19 @@ public sealed class GitHubFeature : IFeature
         // The runtime flips featureAvailable.* before it stops the feature: not available any more means "uninstalled", so the data goes too.
         var uninstalled = !_context.Runtime.IsAvailable(GhText.FeatureId);
         _context.Log.Info("[github] stop: uninstalled=" + uninstalled);
+        if (_tracker is not null)
+        {
+            // The tracker goes first: it asks the runtime for its transport, so the runtime must outlive it.
+            _context.Services.Withdraw(_tracker);
+            if (uninstalled)
+            {
+                _tracker.Erase();
+            }
+
+            _tracker.Dispose();
+            _tracker = null;
+        }
+
         _context.Services.Withdraw(_runtime);
         if (uninstalled)
         {
@@ -74,6 +92,12 @@ public sealed class GitHubFeature : IFeature
                     }, context.Log, "connect-cli")));
                 list.Add(new FeatureAction("simulate-notice", "GitHub: simulate a notice", () =>
                     runtime.Queue(new GitHubNotice("", GhText.NoticeNew, GhText.NewNotifications(3), System.Windows.Media.Colors.White))));
+            }
+
+            if (Dev && _tracker is { } tracker)
+            {
+                list.Add(new FeatureAction("log-coding", "GitHub: log coding state", tracker.LogState));
+                list.Add(new FeatureAction("simulate-checks-finished", "GitHub: simulate checks finished", tracker.SimulateFinished));
             }
 
             return list;

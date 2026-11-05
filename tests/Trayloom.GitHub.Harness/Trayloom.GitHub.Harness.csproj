@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Console harness for the pure logic of "GitHub while you code" (titles, focus, git status, remotes, query, checks). No network and no real repository. Not part of Trayloom.sln; run it with dotnet run on this project. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Trayloom.GitHub.Harness</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Trayloom.Features.GitHub\Trayloom.Features.GitHub.csproj" />
+  </ItemGroup>
+</Project>

@@ -626,6 +626,9 @@ public sealed class GitHubRuntime : IDisposable
         }
     }
 
+    /// <summary>A transport for the connection in use, or null when there is none. The coding tracker sends its one query through it.</summary>
+    internal IGhTransport? CreateTransport() => Source switch { "cli" => new GhCliTransport(), "token" => new TokenTransport(_vault.Load), _ => null };
+
     internal void Queue(GitHubNotice notice)
     {
         _notice = notice;
