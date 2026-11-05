@@ -611,7 +611,25 @@ internal sealed class LevelSlider : FrameworkElement
 
     public double Minimum { get; }
 
-    public double Maximum { get; }
+    public double Maximum { get; private set; }
+
+    /// <summary>Changes the upper end of the range (a track length that arrived or changed): the value stays inside it and the bar is redrawn.</summary>
+    public void SetMaximum(double max)
+    {
+        if (Math.Abs(max - Maximum) < 1e-9)
+        {
+            return;
+        }
+
+        Maximum = max;
+        _value = Math.Clamp(_value, Minimum, Maximum);
+        if (!_dragging)
+        {
+            _drawn = Normalised(_value);
+        }
+
+        InvalidateVisual();
+    }
 
     public double Thickness { get; set; }
 

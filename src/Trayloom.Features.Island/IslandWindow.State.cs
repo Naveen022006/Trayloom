@@ -623,7 +623,10 @@ internal sealed partial class IslandWindow
         }
 
         var destination = module;
-        if (destination is null && _core.App.Get<bool>(K.OpensActivity) && _core.CurrentActivity() is { } act)
+        // within 4 s of a collapse the person did not ask for, the island comes back where they were instead of on the activity page
+        var afterUnasked = _unaskedCollapseAt != 0 && Environment.TickCount64 - _unaskedCollapseAt < 4000;
+        _unaskedCollapseAt = 0;
+        if (destination is null && !afterUnasked && _core.App.Get<bool>(K.OpensActivity) && _core.CurrentActivity() is { } act)
         {
             destination = ModuleForActivity(act);
         }

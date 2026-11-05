@@ -196,8 +196,30 @@ internal sealed partial class IslandWindow
             return;
         }
 
+        if (_core.AppleMusic.Keeper.DriverActive)
+        {
+            // the driver's job (and its grace period) moves the foreground to other apps on its own: that is not the user leaving either
+            return;
+        }
+
+        // remembered so that an Open() right after this one (a track change asking for the activity page) does not throw the person off
+        // the page they were on: they did not ask for this collapse
+        _unaskedCollapseAt = Environment.TickCount64;
+        _core.Ctx.Log.Info($"[island] collapsed because the foreground moved to {NativeWindowClass(hwnd)} (module {_module})");
         Collapse();
     }
+
+    /// <summary>When the island last collapsed without the person asking for it (another window took the foreground), in <see cref="Environment.TickCount64"/> ms; 0 = never.</summary>
+    private long _unaskedCollapseAt;
+
+    private static string NativeWindowClass(nint hwnd)
+    {
+        var sb = new System.Text.StringBuilder(64);
+        return GetClassNameNative(hwnd, sb, sb.Capacity) > 0 ? sb.ToString() : "?";
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "GetClassNameW", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern int GetClassNameNative(nint hwnd, System.Text.StringBuilder text, int max);
 
     private const string AppleMusicProcess = "AppleMusic";
     private const string AppleMusicWindowClass = "WinUIDesktopWin32WindowClass";

@@ -265,5 +265,12 @@ internal static class StreamListChecks
         Check(MusicSources.Name(MusicSource.Spotify) == "spotify" && MusicSources.Parse(MusicSources.Name(MusicSource.YouTube)) == MusicSource.YouTube, "sources: the saved names round-trip");
         Check(MusicSources.FromPlayer("Microsoft.YouTubeMusic_x") == MusicSource.YouTube && MusicSources.FromPlayer(null) is null, "sources: the YouTube Music app is recognised, no player is none");
         Check(MusicSources.Brand(MusicSource.Apple) == "Apple Music" && MusicSources.Brand(MusicSource.YouTube) == "YouTube Music", "sources: the switcher shows brand names");
+
+        Check(MusicSources.Selected(MusicSource.Spotify, "AppleInc.AppleMusicWin") == MusicSource.Spotify, "sources: the switch selects the resolved source first");
+        Check(MusicSources.Selected(null, "SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify") == MusicSource.Spotify, "sources: with none resolved the switch follows the playing player");
+        Check(MusicSources.Selected(null, "chrome.exe") == MusicSource.Apple && MusicSources.Selected(null, null) == MusicSource.Apple, "sources: with nothing to follow the switch selects Apple Music");
+        string[] sessions = ["chrome.exe", "SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify"];
+        Check(MusicSources.SessionFor(sessions, MusicSource.Spotify) == sessions[1], "sources: a live Spotify session is found for the switch");
+        Check(MusicSources.SessionFor(sessions, MusicSource.Apple) is null && MusicSources.SessionFor([], MusicSource.YouTube) is null, "sources: no session of that source means no Playback.Choose");
     }
 }

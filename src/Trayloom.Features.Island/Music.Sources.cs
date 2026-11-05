@@ -109,7 +109,22 @@ internal static class MusicSources
         return aumid.Contains("youtubemusic", StringComparison.OrdinalIgnoreCase) ? MusicSource.YouTube : null;
     }
 
+    /// <summary>
+    /// The segment the Music page's source switch shows as selected: the source the browser resolved (<paramref name="current"/>), else the
+    /// source of the player that is playing (<paramref name="playingAumid"/>), else Apple Music.
+    /// </summary>
+    public static MusicSource Selected(MusicSource? current, string? playingAumid) => current ?? FromPlayer(playingAumid) ?? MusicSource.Apple;
+
+    /// <summary>The app id of the first live media session (of <paramref name="aumids"/>) that belongs to <paramref name="source"/>; null when there is none.</summary>
+    public static string? SessionFor(IEnumerable<string> aumids, MusicSource source) => aumids.FirstOrDefault(a => FromPlayer(a) == source);
+
     // ---------------------------------------------------------------- live state
+
+    /// <summary>The segment the Music page's source switch shows as selected right now.</summary>
+    public static MusicSource Selected(IslandCore core) => Selected(Current(core), core.Playback.Current.Aumid);
+
+    /// <summary>The app id of a live media session of <paramref name="source"/> (what <c>Playback.Choose</c> takes); null when none is running.</summary>
+    public static string? SessionFor(IslandCore core, MusicSource source) => SessionFor(core.Playback.Sources.Select(s => s.Aumid), source);
 
     /// <summary>The sources on offer right now.</summary>
     public static IReadOnlyList<MusicSource> Available(IslandCore core) =>

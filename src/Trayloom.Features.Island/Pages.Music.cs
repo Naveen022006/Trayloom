@@ -92,9 +92,7 @@ internal sealed class MusicTimeline : Grid
         ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var widest = p.Duration >= 3600 ? "00:00:00" : "00:00";
-        _left.MinWidth = _right.MinWidth = MeasureWidth(widest + (p.Duration >= 3600 ? "" : ""), 10);
-        _right.MinWidth += 6;
+        FitWidths(p.Duration);
         _left.VerticalAlignment = _right.VerticalAlignment = VerticalAlignment.Center;
         _left.Margin = new Thickness(0, 0, 8, 0);
         _right.Margin = new Thickness(8, 0, 0, 0);
@@ -113,7 +111,7 @@ internal sealed class MusicTimeline : Grid
             Grid.SetColumn(_slider, 1);
             Children.Add(_slider);
             D.Tip(_slider, Strings.PlaybackPosition);
-            _slider.ValueChanged += v => { _left.Text = D.TrackTime(v); _right.Text = "−" + D.TrackTime(p.Duration - v); };
+            _slider.ValueChanged += v => { _left.Text = D.TrackTime(v); _right.Text = "−" + D.TrackTime(_core.Playback.Current.Duration - v); };
             _slider.ValueCommitted += v =>
             {
                 _released = v;
@@ -145,6 +143,26 @@ internal sealed class MusicTimeline : Grid
     private void OnSeekFailed()
     {
         _released = null;
+        Update();
+    }
+
+    private void FitWidths(double duration)
+    {
+        _left.MinWidth = _right.MinWidth = MeasureWidth(duration >= 3600 ? "00:00:00" : "00:00", 10);
+        _right.MinWidth += 6;
+    }
+
+    /// <summary>The track's length arrived or changed while the timeline was already showing: the slider and the time columns follow it, nothing is rebuilt.</summary>
+    public void RefreshDuration()
+    {
+        var duration = _core.Playback.Current.Duration;
+        if (duration <= 0)
+        {
+            return;
+        }
+
+        _slider.SetMaximum(Math.Max(1, duration));
+        FitWidths(duration);
         Update();
     }
 
@@ -202,18 +220,51 @@ internal sealed class MusicPage : IslandPage
     private IMusicBrowserPanel? _library;
     private double _extraHeight = 216;
 
-    // The page is rebuilt whenever the track changes: the Apple Music library panel is carried over to the new instance.
+    // Track changes arrive as several events (the title, then the length, sometimes a brief drop of the session): one look after they settle.
+    private readonly DispatcherTimer _settle = new(DispatcherPriority.Normal) { Interval = TimeSpan.FromMilliseconds(300) };
+    private bool _active;
+    private MusicTimeline? _timeline;
+
+    // what the page on screen was built for: a change in any of these is visible and rebuilds it; anything else is not worth a rebuild
+    private string _song = "";
+    private bool _canSeek;
+    private ImageSource? _artwork;
+    private int _shownDuration;
+    private string _extraKey = "";
+
+    /// <summary>The source switch: a 24 px plate and the gap above it.</summary>
+    private const double SwitchGap = 8;
+    private const double SwitchHeight = 24 + SwitchGap;
+
+    // The page is rebuilt (a new instance) when the person changes what it shows, or the Music page is reopened: the open extra
+    // (Library, Lyrics or Queue) is carried over to the new instance, as long as the head still offers it.
     private static (MusicExtra Extra, DateTime At)? s_carry;
 
     public MusicPage(IslandCore core, IslandWindow? window)
         : base(core, window)
     {
-        if (s_carry is { Extra: MusicExtra.Library } carry && (DateTime.UtcNow - carry.At).TotalSeconds < 3 && MusicSources.Any(Core))
+        if (s_carry is { } carry && (DateTime.UtcNow - carry.At).TotalSeconds < 3)
         {
-            _extra = MusicExtra.Library;
+            // the same conditions the head uses to offer each toggle
+            _extra = carry.Extra switch
+            {
+                MusicExtra.Library when MusicSources.Any(Core) => MusicExtra.Library,
+                MusicExtra.Lyrics when LyricsOn => MusicExtra.Lyrics,
+                MusicExtra.Queue when QueueOn => MusicExtra.Queue,
+                _ => MusicExtra.None,
+            };
+            if (_extra == MusicExtra.Lyrics)
+            {
+                Core.Lyrics.Ensure(Core.Playback.Current);
+            }
         }
 
         s_carry = null;
+        _settle.Tick += (_, _) =>
+        {
+            _settle.Stop();
+            Settle();
+        };
     }
 
     public override string ModuleId => "music";
@@ -317,14 +368,13 @@ internal sealed class MusicPage : IslandPage
     {
         _width = Math.Min(NaturalWidth ?? 344, width);
         var p = Core.Playback.Current;
-        double h = (p.Duration > 0 ? 56 + 14 + 14 + 10 + 44 + 8 : 56 + 14 + 44 + 8);
+        double h = (p.Duration > 0 ? 56 + 14 + 14 + 10 + 44 + 8 : 56 + 14 + 44 + 8) + SwitchHeight;
         if (Core.App.Get<bool>(K.MusicShowVolume) && Core.ModuleVisible("mixer"))
         {
             h += 38;
         }
 
-        // the source switcher (24 + 6) takes its room from the list, so the Library may be that much taller
-        _extraHeight = _extra == MusicExtra.Library ? Math.Clamp(budget - h - 10, 200, 330 + (SwitcherShown ? 30 : 0)) : 216;
+        _extraHeight = _extra == MusicExtra.Library ? Math.Clamp(budget - h - 10, 200, 330) : 216;
         if (_extra != MusicExtra.None)
         {
             h += 10 + _extraHeight;
@@ -364,9 +414,9 @@ internal sealed class MusicPage : IslandPage
 
     private void OnKeeper() => _view.Dispatcher.BeginInvoke(() =>
     {
-        if (AppleButtonState() != _appleButton)
+        if (_active && AppleButtonState() != _appleButton)
         {
-            Reopen();
+            RefreshInPlace();
         }
     });
 
@@ -379,18 +429,24 @@ internal sealed class MusicPage : IslandPage
     private void OnAppleMusic() => _view.Dispatcher.BeginInvoke(() =>
     {
         var svc = Core.AppleMusic;
-        if (_idle && (svc.Busy != _amBusy || !ReferenceEquals(svc.Note, _amNote)))
+        if (_active && _idle && (svc.Busy != _amBusy || !ReferenceEquals(svc.Note, _amNote)))
         {
-            Reopen();
+            RefreshInPlace();
         }
     });
 
     public override void Shown()
     {
+        // Shown also runs after an in-place rebuild (the window measures the page again), so the subscriptions are made once
+        Core.Playback.Changed -= OnChanged;
+        Core.Lyrics.Changed -= OnLyrics;
+        Core.AppleMusic.Keeper.Changed -= OnKeeper;
+        Core.AppleMusic.Changed -= OnAppleMusic;
         Core.Playback.Changed += OnChanged;
         Core.Lyrics.Changed += OnLyrics;
         Core.AppleMusic.Keeper.Changed += OnKeeper;
         Core.AppleMusic.Changed += OnAppleMusic;
+        _active = true;
         _poll.Start();
         if (HasWindow && !IsPreview)
         {
@@ -413,6 +469,8 @@ internal sealed class MusicPage : IslandPage
         Core.Lyrics.Changed -= OnLyrics;
         Core.AppleMusic.Keeper.Changed -= OnKeeper;
         Core.AppleMusic.Changed -= OnAppleMusic;
+        _active = false;
+        _settle.Stop();
         _poll.Stop();
         if (HasWindow)
         {
@@ -496,23 +554,86 @@ internal sealed class MusicPage : IslandPage
     {
         _view.Dispatcher.BeginInvoke(() =>
         {
+            if (!_active)
+            {
+                return;
+            }
+
             var p = Core.Playback.Current;
-            var hadTimeline = _hadTimeline;
-            if ((p.Duration > 0) != hadTimeline || p.Identity != _identity || Core.Playback.CommandFailed != _commandFailed)
+            if (NeedsRebuild(p))
             {
-                Reopen();
+                // restarted by every event: the page is rebuilt once, when the title, the length and the cover have all arrived
+                _settle.Stop();
+                _settle.Start();
+                return;
             }
-            else if (p.IsPlaying != _wasPlaying)
-            {
-                // play / pause only changes the glyph, the cover's size and the bars: the page is not rebuilt (a rebuild reloads
-                // everything on it, the Apple Music queue view included, which would drive Apple Music's window again)
-                ApplyPlaying(p);
-            }
+
+            // nothing visible changed (or it changed back within the delay): no rebuild
+            _settle.Stop();
+            Lighten(p);
         });
     }
 
+    /// <summary>Something the page shows changed in a way that needs the page built again: another song, the timeline appearing or going, idle / track, the failure line, a new cover.</summary>
+    private bool NeedsRebuild(Playback p) =>
+        SongOf(p) != _song || (p.Duration > 0) != _hadTimeline || !p.HasTrack != _idle || Core.Playback.CommandFailed != _commandFailed
+        || (p.Duration > 0 && p.CanSeek != _canSeek) || !ReferenceEquals(p.Artwork, _artwork);
+
+    /// <summary>The song as the page shows it: the length is left out (it arrives after the title and must not rebuild the page).</summary>
+    private static string SongOf(Playback p) => $"{p.Aumid}|{p.Title}|{p.Artist}|{p.Album}";
+
+    /// <summary>The changes that never rebuild the page: play / pause, and a length that changed while the timeline already shows.</summary>
+    private void Lighten(Playback p)
+    {
+        if (p.IsPlaying != _wasPlaying)
+        {
+            // play / pause only changes the glyph, the cover's size and the bars: the page is not rebuilt (a rebuild reloads
+            // everything on it, the Apple Music queue view included, which would drive Apple Music's window again)
+            ApplyPlaying(p);
+        }
+
+        if (_timeline is not null && p.Duration > 0 && (int)p.Duration != _shownDuration)
+        {
+            _shownDuration = (int)p.Duration;
+            _timeline.RefreshDuration();
+        }
+    }
+
+    private void Settle()
+    {
+        if (!_active || !HasWindow)
+        {
+            return;
+        }
+
+        var p = Core.Playback.Current;
+        if (!NeedsRebuild(p))
+        {
+            Lighten(p);
+            return;
+        }
+
+        if (_extra == MusicExtra.Lyrics && SongOf(p) != _song)
+        {
+            Core.Lyrics.Ensure(p);
+        }
+
+        RefreshInPlace();
+    }
+
+    /// <summary>
+    /// Builds this page's content again and has the window measure it again, on the same page object: no new page, no cross-fade, and the
+    /// open Library / Lyrics / Queue view is kept (so the list stays where it is and its tiles are not loaded again).
+    /// </summary>
+    private void RefreshInPlace()
+    {
+        if (HasWindow)
+        {
+            Window.BuildOpen(rebuildPage: false);
+        }
+    }
+
     private bool _hadTimeline;
-    private string _identity = "";
     private bool _wasPlaying;
     private bool _commandFailed;
     private TextBlock? _playGlyph;
@@ -585,7 +706,11 @@ internal sealed class MusicPage : IslandPage
         _view.Children.Clear();
         var p = Core.Playback.Current;
         _hadTimeline = p.Duration > 0;
-        _identity = p.Identity;
+        _song = SongOf(p);
+        _canSeek = p.CanSeek;
+        _artwork = p.Artwork;
+        _shownDuration = (int)p.Duration;
+        _timeline = null;
         _wasPlaying = p.IsPlaying;
         _commandFailed = Core.Playback.CommandFailed;
         _playGlyph = null;
@@ -599,9 +724,11 @@ internal sealed class MusicPage : IslandPage
         var preferred = PlaybackService.ResolvePreferredPlayer(Core.App.Get<string>(K.PreferredPlayer), Core.Playback);
         var stack = new StackPanel { Width = _width, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top };
         stack.Children.Add(BuildHead(p, idle, awaiting, preferred));
+        stack.Children.Add(BuildSourceSwitch());
         if (p.Duration > 0)
         {
             var tl = new MusicTimeline(Core, p) { Margin = new Thickness(0, 14, 0, 0) };
+            _timeline = tl;
             stack.Children.Add(tl);
         }
 
@@ -616,30 +743,91 @@ internal sealed class MusicPage : IslandPage
 
         if (_extra != MusicExtra.None)
         {
-            _extraView = _extra switch
+            // The view is built once per page: a rebuild in place (a track change) puts the same Library / Lyrics / Queue view back, unless
+            // what it needs changed (another source, another player's queue).
+            var key = ExtraKey();
+            if (_extraView is null || key != _extraKey)
             {
-                MusicExtra.Lyrics => _lyrics = new LyricsView(Core, () => HasWindow ? Window.HoldOpen() : null),
-                MusicExtra.Library => BuildBrowser(),
-                _ => BuildQueue(preferred),
-            };
+                if (_extraView is not null && _extraKey.StartsWith("library", StringComparison.Ordinal))
+                {
+                    _library?.ReleaseNow();
+                }
+
+                _extraKey = key;
+                _extraView = _extra switch
+                {
+                    MusicExtra.Lyrics => _lyrics = new LyricsView(Core, () => HasWindow ? Window.HoldOpen() : null),
+                    MusicExtra.Library => BuildBrowser(),
+                    _ => BuildQueue(preferred),
+                };
+            }
+
             var holder = new Grid { Height = _extraHeight, ClipToBounds = true, Margin = new Thickness(0, 10, 0, 0) };
-            holder.Children.Add(_extraView);
+            holder.Children.Add(Detach.From(_extraView)!);
             stack.Children.Add(holder);
         }
 
         _view.Children.Add(stack);
     }
 
-    /// <summary>Two or more sources are on offer: a switcher shows above the browser.</summary>
-    private bool SwitcherShown => MusicSources.Available(Core).Count >= 2;
+    /// <summary>
+    /// What the open extra view was built for; when it differs from the last build the view is created again. The Queue includes the song:
+    /// "Up next" changes with every track, and a new view reads it again (Apple Music's only when its last read is stale).
+    /// </summary>
+    private string ExtraKey() => _extra switch
+    {
+        MusicExtra.Library => "library:" + (MusicSources.Current(Core) ?? MusicSource.Apple),
+        MusicExtra.Lyrics => "lyrics",
+        _ => "queue:" + (Core.AppleMusic.Available && Core.Playback.Current.Aumid.Contains("AppleMusic", StringComparison.OrdinalIgnoreCase)
+            ? "apple"
+            : Core.Music.Spotify.Connection == StreamConnection.Connected && Core.Playback.Current.Aumid.Contains("spotify", StringComparison.OrdinalIgnoreCase) ? "spotify" : "other") + ":" + _song,
+    };
+
+    /// <summary>The 24 px source switch under the head: Apple Music, Spotify and YouTube Music, always all three.</summary>
+    private FrameworkElement BuildSourceSwitch()
+    {
+        var selected = MusicSources.Selected(Core);
+        var plate = new Border { CornerRadius = new CornerRadius(9), Background = D.White(0.065), Padding = new Thickness(2), Height = 24, Margin = new Thickness(0, SwitchGap, 0, 0) };
+        var row = new Grid();
+        MusicSource[] all = [MusicSource.Apple, MusicSource.Spotify, MusicSource.YouTube];
+        for (var i = 0; i < all.Length; i++)
+        {
+            var source = all[i];
+            var isSelected = source == selected;
+
+            // Apple Music is only offered where the island can drive it; the other two are turned on by choosing them
+            var offered = source != MusicSource.Apple || Core.AppleMusic.Available;
+            var segment = new HoverButton(() => ChooseSource(source)) { CornerRadius = new CornerRadius(7), Lifts = false, Selected = isSelected };
+            var label = D.T(MusicSources.Brand(source), 11, isSelected ? FontWeights.SemiBold : FontWeights.Medium, isSelected ? D.Text : D.White(0.6), false, TextTrimming.CharacterEllipsis);
+            label.HorizontalAlignment = HorizontalAlignment.Center;
+            label.VerticalAlignment = VerticalAlignment.Center;
+            label.Margin = new Thickness(4, 0, 4, 0);
+            segment.Child = label;
+            if (!offered)
+            {
+                segment.IsEnabled = false;
+                segment.Opacity = 0.4;
+                D.Tip(segment, LibStrings.Missing);
+                ToolTipService.SetShowOnDisabled(segment, true);
+            }
+
+            System.Windows.Automation.AutomationProperties.SetAutomationId(segment, "Island.Music.Source." + source);
+            System.Windows.Automation.AutomationProperties.SetName(segment, MusicSources.Brand(source));
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            Grid.SetColumn(segment, i);
+            row.Children.Add(segment);
+        }
+
+        plate.Child = row;
+        return plate;
+    }
 
     /// <summary>
-    /// The Library area: the Apple Music <see cref="LibraryPanel"/> or a <see cref="StreamPanel"/> for the source shown, under a 24 px source
-    /// switcher when there is more than one source. Apple Music alone looks and behaves exactly as before.
+    /// The Library area: the Apple Music <see cref="LibraryPanel"/> or a <see cref="StreamPanel"/> for the source shown. The source switch
+    /// is part of the page (see <see cref="BuildSourceSwitch"/>), not of this area.
     /// </summary>
     private FrameworkElement BuildBrowser()
     {
-        var sources = MusicSources.Available(Core);
         var current = MusicSources.Current(Core) ?? MusicSource.Apple;
         var window = HasWindow ? Window : null;
         FrameworkElement panel;
@@ -662,50 +850,45 @@ internal sealed class MusicPage : IslandPage
                 break;
         }
 
-        if (sources.Count < 2)
-        {
-            return panel;
-        }
-
-        var grid = new Grid();
-        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        var plate = new Border { CornerRadius = new CornerRadius(9), Background = D.White(0.065), Padding = new Thickness(2), Height = 24, Margin = new Thickness(0, 0, 0, 6) };
-        var row = new Grid();
-        for (var i = 0; i < sources.Count; i++)
-        {
-            var source = sources[i];
-            var selected = source == current;
-            var segment = new HoverButton(() => ChooseSource(source, current)) { CornerRadius = new CornerRadius(7), Lifts = false, Selected = selected };
-            var label = D.T(MusicSources.Brand(source), 11, selected ? FontWeights.SemiBold : FontWeights.Medium, selected ? D.Text : D.White(0.6), false, TextTrimming.CharacterEllipsis);
-            label.HorizontalAlignment = HorizontalAlignment.Center;
-            label.VerticalAlignment = VerticalAlignment.Center;
-            label.Margin = new Thickness(4, 0, 4, 0);
-            segment.Child = label;
-            System.Windows.Automation.AutomationProperties.SetAutomationId(segment, "Island.Music.Source." + source);
-            System.Windows.Automation.AutomationProperties.SetName(segment, MusicSources.Brand(source));
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            Grid.SetColumn(segment, i);
-            row.Children.Add(segment);
-        }
-
-        plate.Child = row;
-        grid.Children.Add(plate);
-        Grid.SetRow(panel, 1);
-        grid.Children.Add(panel);
-        return grid;
+        return panel;
     }
 
-    /// <summary>The switcher: hands the keyboard back, remembers the choice and rebuilds the page around the other source.</summary>
-    private void ChooseSource(MusicSource source, MusicSource current)
+    /// <summary>
+    /// A tap on a segment of the source switch: turns Spotify / YouTube Music on when they are off (nothing is sent until the person connects
+    /// or searches), remembers the source, lets the now-playing controls follow a live session of it, and opens the Library on it. Apple Music
+    /// only ever shows the island's own Library: its player is never opened and nothing is played.
+    /// </summary>
+    private void ChooseSource(MusicSource source)
     {
-        if (source == current)
+        if (!HasWindow)
         {
             return;
         }
 
-        _library?.ReleaseNow();
+        var selected = MusicSources.Selected(Core);
+        if (source == selected && _extra == MusicExtra.Library && MusicSources.Current(Core) == source)
+        {
+            return;
+        }
+
+        if (source == MusicSource.Spotify && !Core.Music.Spotify.ShowInIsland)
+        {
+            Core.App.Set(K.MusicSpotify, true);
+        }
+        else if (source == MusicSource.YouTube && !Core.Music.YouTube.ShowInIsland)
+        {
+            Core.App.Set(K.MusicYouTube, true);
+        }
+
         MusicSources.Choose(Core, source);
+        if (source != selected && MusicSources.SessionFor(Core, source) is { } aumid)
+        {
+            // the controls follow the player of that source; with no live session of it they stay as they are
+            Core.Playback.Choose(aumid);
+        }
+
+        _library?.ReleaseNow();
+        _extra = MusicExtra.Library;
         Reopen();
     }
 

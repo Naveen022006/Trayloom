@@ -1009,6 +1009,7 @@ internal sealed class ForegroundGuard : IDisposable
     private readonly object _gate = new();
     private readonly HashSet<nint> _visibleAtArm = [];
     private nint _target;
+    private readonly nint _ownPrevious;
     private int _reclaims;
     private long _focusedAt;
     private long _actedAt;
@@ -1030,6 +1031,14 @@ internal sealed class ForegroundGuard : IDisposable
         }
 
         _enforce = AmNative.MainWindowsHidden();
+
+        // The job began from one of Trayloom's own windows (the island with its Library search box): the foreground goes back to it, not to
+        // another app, so the island keeps the keyboard and does not see the person leave.
+        if (previous != 0 && AmNative.ProcessOf(previous) == _ownPid && AmNative.GetAncestor(previous, AmNative.GaRoot) == previous)
+        {
+            _ownPrevious = previous;
+        }
+
         _target = PickTarget(previous);
         if (_enforce)
         {
@@ -1044,8 +1053,8 @@ internal sealed class ForegroundGuard : IDisposable
     }
 
     /// <summary>
-    /// Starts guarding. <paramref name="previous"/> is the foreground window of the moment (it is only used as the target when it is neither Trayloom's
-    /// nor Apple Music's). The hook is dropped after <paramref name="maxMs"/> at the latest, even when <see cref="Dispose"/> is never called.
+    /// Starts guarding. <paramref name="previous"/> is the foreground window of the moment (it is the target when it is not Apple Music's: an
+    /// app window, or one of Trayloom's own top-level windows such as the island, otherwise the top app window is). The hook is dropped after <paramref name="maxMs"/> at the latest, even when <see cref="Dispose"/> is never called.
     /// </summary>
     public static ForegroundGuard Arm(nint previous, Action<string>? say = null, int maxMs = 60000) => new(previous, say, maxMs);
 
@@ -1138,12 +1147,16 @@ internal sealed class ForegroundGuard : IDisposable
         hwnd != 0 && AmNative.IsWindow(hwnd) && AmNative.IsWindowVisible(hwnd) && !AmNative.IsIconic(hwnd) && !AmNative.IsCloaked(hwnd)
         && AmNative.ProcessOf(hwnd) is var pid && pid != _ownPid && !AmNative.IsAppleMusic(pid);
 
+    /// <summary>The Trayloom window that had the foreground when the guard was armed, while it is still on screen.</summary>
+    private bool UsableOwn(nint hwnd) =>
+        hwnd != 0 && hwnd == _ownPrevious && AmNative.IsWindow(hwnd) && AmNative.IsWindowVisible(hwnd) && !AmNative.IsIconic(hwnd) && !AmNative.IsCloaked(hwnd);
+
     private static readonly string[] ShellClasses = ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "Windows.UI.Core.CoreWindow", "XamlExplorerHostIslandWindow"];
 
     /// <summary>The window that should have the foreground: <paramref name="previous"/> when it is the user's own, else the top real application window.</summary>
     private nint PickTarget(nint previous)
     {
-        if (Usable(previous))
+        if (Usable(previous) || UsableOwn(previous))
         {
             return previous;
         }
@@ -1196,7 +1209,7 @@ internal sealed class ForegroundGuard : IDisposable
                 return;
             }
 
-            if (!Usable(_target))
+            if (!Usable(_target) && !UsableOwn(_target))
             {
                 _target = PickTarget(0);
             }
