@@ -8,6 +8,7 @@ using Windows.Media.Capture;
 using Windows.Media.Capture.Frames;
 using Windows.Media.FaceAnalysis;
 using Windows.Media.MediaProperties;
+using Windows.Storage.Streams;
 
 namespace Trayloom.Features.WindowTools.AwayMode;
 
@@ -36,8 +37,11 @@ internal sealed class AwayFaceWatcher : IDisposable
     private long _due;
     private long _lastFrame;
     private volatile bool _quick;
+    private volatile int _normalMs = NormalIntervalMs;
     private int _busy;
     private bool _running;
+    private byte[]? _previousGrid;
+    private long _previousGridAt;
 
     public AwayFaceWatcher(ILog log)
     {
@@ -47,8 +51,17 @@ internal sealed class AwayFaceWatcher : IDisposable
     /// <summary>Raised on a worker thread with <c>true</c> when a sample saw a face, <c>false</c> when it did not.</summary>
     public event Action<bool>? Sample;
 
+    /// <summary>
+    /// Raised on a worker thread with what a sample showed (face, movement, usable picture) while <see cref="MeasureMotion"/> is on.
+    /// Only these four flags leave the watcher; the picture itself never does.
+    /// </summary>
+    public event Action<AwayObservation>? Observed;
+
     /// <summary>Raised on a worker thread when the camera failed (the controller then falls back to input).</summary>
     public event Action<string>? Failed;
+
+    /// <summary>True while the presence watch needs movement too, not only faces (the camera looks for someone sitting at the PC).</summary>
+    public bool MeasureMotion { get; set; }
 
     /// <summary>True between a successful start and the stop.</summary>
     public bool IsRunning => _running;
@@ -212,12 +225,21 @@ internal sealed class AwayFaceWatcher : IDisposable
         Interlocked.Exchange(ref _due, 0);
     }
 
+    /// <summary>Changes how often a frame is looked at (the presence watch looks every second, then every few seconds once a face is seen).</summary>
+    public void SetInterval(int ms)
+    {
+        _normalMs = Math.Max(QuickIntervalMs, ms);
+        Interlocked.Exchange(ref _due, 0);
+    }
+
     /// <summary>Turns the camera off. Safe to call repeatedly.</summary>
     public void Stop(string reason)
     {
         var wasRunning = _running;
         _running = false;
         _quick = false;
+        MeasureMotion = false;
+        _normalMs = NormalIntervalMs;
         Teardown();
         if (wasRunning)
         {
@@ -229,6 +251,9 @@ internal sealed class AwayFaceWatcher : IDisposable
 
     /// <summary>Feeds a sample as if the camera had produced it (developer action <c>simulate-face</c>).</summary>
     public void Feed(bool positive) => Sample?.Invoke(positive);
+
+    /// <summary>Feeds an observation as if the camera had produced it (developer actions <c>simulate-absence</c> and friends).</summary>
+    public void FeedObservation(AwayObservation observation) => Observed?.Invoke(observation);
 
     private void Teardown()
     {
@@ -243,6 +268,10 @@ internal sealed class AwayFaceWatcher : IDisposable
             _reader = null;
             _capture = null;
             _watchdog = null;
+
+            // The brightness thumbnail of the last sample goes with the camera.
+            _previousGrid = null;
+            _previousGridAt = 0;
         }
 
         try
@@ -289,7 +318,7 @@ internal sealed class AwayFaceWatcher : IDisposable
             return;
         }
 
-        Interlocked.Exchange(ref _due, now + (_quick ? QuickIntervalMs : NormalIntervalMs));
+        Interlocked.Exchange(ref _due, now + (_quick ? QuickIntervalMs : _normalMs));
         var bitmap = reference.VideoMediaFrame?.SoftwareBitmap;
         if (bitmap is null)
         {
@@ -313,8 +342,18 @@ internal sealed class AwayFaceWatcher : IDisposable
                 return;
             }
 
+            var measure = MeasureMotion;
             var candidate = bitmap;
-            if (!FaceDetector.IsBitmapPixelFormatSupported(candidate.BitmapPixelFormat))
+            if (measure)
+            {
+                // Gray8 is accepted by the face detector and is also what the brightness grid needs.
+                if (bitmap.BitmapPixelFormat != BitmapPixelFormat.Gray8)
+                {
+                    converted = SoftwareBitmap.Convert(bitmap, BitmapPixelFormat.Gray8);
+                    candidate = converted;
+                }
+            }
+            else if (!FaceDetector.IsBitmapPixelFormatSupported(candidate.BitmapPixelFormat))
             {
                 converted = SoftwareBitmap.Convert(candidate, BitmapPixelFormat.Gray8);
                 candidate = converted;
@@ -323,12 +362,19 @@ internal sealed class AwayFaceWatcher : IDisposable
             var faces = await detector.DetectFacesAsync(candidate).AsTask();
             var height = candidate.PixelHeight;
             var positive = faces.Any(f => height > 0 && f.FaceBox.Height >= MinFaceHeight * height);
-            if (positive)
+            if (!measure)
             {
-                _log.Info("[away] camera: face seen");
+                // The presence watch looks once a second: no line per sample there.
+                if (positive)
+                {
+                    _log.Info("[away] camera: face seen");
+                }
+
+                Sample?.Invoke(positive);
+                return;
             }
 
-            Sample?.Invoke(positive);
+            Observed?.Invoke(Observe(candidate, positive));
         }
         finally
         {
@@ -336,5 +382,41 @@ internal sealed class AwayFaceWatcher : IDisposable
             bitmap.Dispose();
             Interlocked.Exchange(ref _busy, 0);
         }
+    }
+
+    /// <summary>
+    /// Reduces a gray frame to a 64 x 48 brightness grid, compares it with the previous one (when that is at most 3 s old) and keeps only
+    /// the new grid. The grid is 3 KB of block averages; it is never written, logged or sent.
+    /// </summary>
+    private AwayObservation Observe(SoftwareBitmap gray, bool face)
+    {
+        var width = gray.PixelWidth;
+        var height = gray.PixelHeight;
+        int start;
+        int stride;
+        using (var buffer = gray.LockBuffer(BitmapBufferAccessMode.Read))
+        {
+            var plane = buffer.GetPlaneDescription(0);
+            start = plane.StartIndex;
+            stride = plane.Stride;
+        }
+
+        var copy = new Windows.Storage.Streams.Buffer((uint)(start + (stride * height)));
+        gray.CopyToBuffer(copy);
+        var bytes = new byte[copy.Length];
+        using (var reader = DataReader.FromBuffer(copy))
+        {
+            reader.ReadBytes(bytes);
+        }
+
+        var grid = AwayPresenceMath.Grid(bytes, start, width, height, stride);
+        var usable = AwayPresenceMath.Usable(AwayPresenceMath.Stats(grid));
+        var now = Environment.TickCount64;
+        var previous = _previousGrid;
+        var motionKnown = previous is not null && now - _previousGridAt <= 3000;
+        var motion = motionKnown && AwayPresenceMath.Motion(previous!, grid);
+        _previousGrid = grid;
+        _previousGridAt = now;
+        return new AwayObservation(face, motion, usable, motionKnown);
     }
 }

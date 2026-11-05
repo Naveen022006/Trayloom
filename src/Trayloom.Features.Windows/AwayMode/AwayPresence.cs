@@ -58,8 +58,11 @@ internal sealed class AwayPresence
         }
     }
 
-    /// <summary>The first reason that applies, or <see cref="AwaySuppression.None"/>. Call on the UI thread.</summary>
-    public AwaySuppression Current()
+    /// <summary>
+    /// The first reason that applies, or <see cref="AwaySuppression.None"/>. Call on the UI thread. While Trayloom's own presence watch
+    /// has the camera open, <paramref name="ownCameraOpen"/> keeps Trayloom's own use from looking like a call.
+    /// </summary>
+    public AwaySuppression Current(bool ownCameraOpen = false)
     {
         var app = _services.App;
         if (System.Windows.Forms.SystemInformation.TerminalServerSession)
@@ -87,7 +90,7 @@ internal sealed class AwayPresence
             return AwaySuppression.Media;
         }
 
-        if (app.Get<bool>("awayModeSkipCalls") && (InUse("microphone") || InUse("webcam")))
+        if (app.Get<bool>("awayModeSkipCalls") && (InUse("microphone") || InUse("webcam", ownCameraOpen)))
         {
             return AwaySuppression.Calls;
         }
@@ -95,8 +98,24 @@ internal sealed class AwayPresence
         return AwaySuppression.None;
     }
 
-    /// <summary>True while any app uses a camera (the face watcher does not start the camera then).</summary>
-    public bool CameraInUse() => InUse("webcam");
+    /// <summary>
+    /// True while an app other than Trayloom uses a camera (the face watcher does not start the camera then). Trayloom itself is
+    /// skipped because the consent store lists it while its own watch is running.
+    /// </summary>
+    public bool OtherAppUsesCamera() => InUse("webcam", skipSelf: true);
+
+    /// <summary>True while battery saver is on: the camera watch stays off to save power.</summary>
+    public static bool EnergySaverOn()
+    {
+        try
+        {
+            return Windows.System.Power.PowerManager.EnergySaverStatus == Windows.System.Power.EnergySaverStatus.On;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
 
     /// <summary>The settings-card text of a reason.</summary>
     public static string Describe(AwaySuppression reason) => reason switch
@@ -138,7 +157,7 @@ internal sealed class AwayPresence
     /// Reads the consent store: packaged apps are sub keys, desktop apps sit under <c>NonPackaged</c>; an app is using the device while
     /// <c>LastUsedTimeStop</c> is 0 or older than <c>LastUsedTimeStart</c>.
     /// </summary>
-    private static bool InUse(string capability)
+    private static bool InUse(string capability, bool skipSelf = false)
     {
         try
         {
@@ -148,7 +167,7 @@ internal sealed class AwayPresence
                 return false;
             }
 
-            return AnyInUse(root, nested: true);
+            return AnyInUse(root, nested: true, skipSelf ? SelfKeyName() : null);
         }
         catch (Exception)
         {
@@ -156,7 +175,10 @@ internal sealed class AwayPresence
         }
     }
 
-    private static bool AnyInUse(RegistryKey key, bool nested)
+    /// <summary>The name the consent store gives a desktop app: its exe path with every backslash replaced by a hash sign.</summary>
+    private static string? SelfKeyName() => Environment.ProcessPath?.Replace('\\', '#');
+
+    private static bool AnyInUse(RegistryKey key, bool nested, string? skipName)
     {
         foreach (var name in key.GetSubKeyNames())
         {
@@ -166,9 +188,14 @@ internal sealed class AwayPresence
                 continue;
             }
 
+            if (!nested && skipName is not null && string.Equals(name, skipName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             if (nested && name == "NonPackaged")
             {
-                if (AnyInUse(child, nested: false))
+                if (AnyInUse(child, nested: false, skipName))
                 {
                     return true;
                 }

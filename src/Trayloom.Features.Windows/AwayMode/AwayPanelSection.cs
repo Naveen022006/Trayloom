@@ -24,6 +24,16 @@ public sealed class AwayPanelSection : IPanelSection
         var controller = context.Services.Get<AwayController>();
         var enabled = app.Get<bool>(AwayKeys.Enabled);
         var caption = enabled ? AwayStrings.PanelCaption(app.Get<int>(AwayKeys.IdleMinutes)) : AwayStrings.Off;
+        if (enabled && controller is { PresencePhase: AwayPresencePhase.Countdown })
+        {
+            caption = controller.CountdownCloses
+                ? AwayStrings.StatusClosingIn(controller.CountdownSecondsLeft)
+                : AwayStrings.StatusMinimizingIn(controller.CountdownSecondsLeft);
+        }
+        else if (enabled && controller is { PresenceLooking: true })
+        {
+            caption = AwayStrings.StatusLooking;
+        }
 
         var toggle = new PanelToggleRow("", AwayStrings.Title, caption, enabled, on => app.Set(AwayKeys.Enabled, on), showCaption: true);
 

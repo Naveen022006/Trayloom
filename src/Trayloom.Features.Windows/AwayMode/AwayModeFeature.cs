@@ -30,8 +30,18 @@ internal static class AwayKeys
     public const string CloseListSeeded = "awayModeCloseListSeeded";
     public const string CloseAfterMinutes = "awayModeCloseAfterMinutes";
 
+    /// <summary>Which apps close: <c>list</c> (the chosen apps), <c>mode</c> (those plus the active mode's apps) or <c>all</c>.</summary>
+    public const string CloseScope = "awayModeCloseScope";
+
+    /// <summary>Opt-in: leave when the camera has not seen anyone for <see cref="LeaveCameraSeconds"/> (spec 08 section 1).</summary>
+    public const string LeaveCamera = "awayModeLeaveCamera";
+    public const string LeaveCameraSeconds = "awayModeLeaveCameraSeconds";
+
     public static void Register(IAppSettings app)
     {
+        app.Register(LeaveCamera, false);
+        app.Register(LeaveCameraSeconds, 60);
+        app.Register(CloseScope, "list");
         app.Register(Enabled, true);
         app.Register(IdleMinutes, 10);
         app.Register(LockPc, false);
@@ -93,7 +103,10 @@ public sealed class AwayModeFeature : IFeature
                 list.Add(new FeatureAction("simulate-away", "Away mode: simulate away (needs away-mode-only.txt)", () => SimulateAway(controller, _context?.Log)));
                 list.Add(new FeatureAction("simulate-return", "Away mode: simulate return", () => controller.Return("simulated")));
                 list.Add(new FeatureAction("simulate-face", "Away mode: simulate a face sample", controller.SimulateFace));
-                list.Add(new FeatureAction("dump", "Away mode: dump state", controller.Dump));
+                list.Add(new FeatureAction("simulate-absence", "Away mode: simulate a camera sample with nobody there", () => controller.SimulateObservation(new AwayObservation(false, false, true, true))));
+                list.Add(new FeatureAction("simulate-motion", "Away mode: simulate a camera sample with movement", () => controller.SimulateObservation(new AwayObservation(false, true, true, true))));
+                list.Add(new FeatureAction("simulate-dark", "Away mode: simulate a dark camera sample", () => controller.SimulateObservation(new AwayObservation(false, false, false, true))));
+                list.Add(new FeatureAction("dump","Away mode: dump state", controller.Dump));
                 list.Add(new FeatureAction("dev-close-now", "Away mode: close the listed apps now (needs away-mode-only.txt)", controller.DevCloseNow));
                 list.Add(new FeatureAction("simulate-session-end", "Away mode: simulate a session end while away", controller.SimulateSessionEnd));
             }
@@ -106,7 +119,8 @@ public sealed class AwayModeFeature : IFeature
     {
         _context = context;
         AwayKeys.Register(context.App);
-        var session = new AwaySession(context.DataDirectory, context.Log);
+        ApplyDevArmSeconds(context.Log);
+        var session =new AwaySession(context.DataDirectory, context.Log);
         RecoverEarlierRun(context, session);
         var offered = RecoverClosedApps(context);
 
@@ -157,6 +171,21 @@ public sealed class AwayModeFeature : IFeature
             {
                 // a leftover dump contains counts only
             }
+        }
+    }
+
+    /// <summary>Developer aid: <c>TRAYLOOM_AWAY_ARM_SECONDS</c> shortens the 30 s without input the camera waits for, so a test does not have to sit still.</summary>
+    private static void ApplyDevArmSeconds(ILog log)
+    {
+        if (Environment.GetEnvironmentVariable("TRAYLOOM_DEV") != "1")
+        {
+            return;
+        }
+
+        if (int.TryParse(Environment.GetEnvironmentVariable("TRAYLOOM_AWAY_ARM_SECONDS"), out var seconds) && seconds >= 0)
+        {
+            AwayPresenceClock.ArmIdleMs = seconds * 1000L;
+            log.Info($"[away] dev: camera arms after {seconds} s without input");
         }
     }
 

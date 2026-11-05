@@ -127,6 +127,34 @@ internal static class AwayStrings
     public static string NotificationRecovery(int apps) => Loc.F("{0} apps were closed while you were away. Open them again from the tray icon or from Settings.", apps);
     public static string NotificationFailed(int apps) => Loc.F("{0} apps did not open again. Settings > Away mode can try again.", apps);
 
+    // Leaving when the camera does not see the person.
+    public static string LeaveCamera => Loc.T("Leave when the camera doesn’t see you");
+    public static string LeaveCameraCaption => Loc.T("After 30 seconds without the mouse or keyboard, the camera turns on and checks whether someone is at the PC. If nobody is there for the time below, Away mode starts after a 10-second notice. Pictures are checked on this PC and never saved; the camera light is on while it checks.");
+    public static string LeaveAfter => Loc.T("Nobody there for");
+    public static string Leave30 => Loc.T("30 seconds");
+    public static string Leave60 => Loc.T("1 minute");
+    public static string Leave120 => Loc.T("2 minutes");
+    public static string Leave300 => Loc.T("5 minutes");
+    public static string LeaveNote => Loc.T("In a dark room, with the camera covered, while another app uses the camera, or with battery saver on, Away mode waits for the usual time without input instead.");
+    public static string StatusLooking => Loc.T("Checking that you’re here with the camera");
+    public static string StatusClosingIn(int seconds) => Loc.F("Closing your workspace in {0} s", seconds);
+    public static string StatusMinimizingIn(int seconds) => Loc.F("Minimizing your windows in {0} s", seconds);
+    public static string NoticeClosing => Loc.F("Closing your workspace in {0} s. Move to cancel.", 10);
+    public static string NoticeMinimizing => Loc.F("Minimizing your windows in {0} s. Move to cancel.", 10);
+    public static string StripClosing(int seconds) => Loc.F("Closing in {0} s", seconds);
+    public static string StripMinimizing(int seconds) => Loc.F("Minimizing in {0} s", seconds);
+    public static string StripLooking => Loc.T("Checking you’re here");
+    public static string ToastClosing => Loc.F("The camera doesn’t see you. Your workspace closes in {0} seconds; move the mouse to stay.", 10);
+    public static string ToastMinimizing => Loc.F("The camera doesn’t see you. Your windows are minimized in {0} seconds; move the mouse to stay.", 10);
+
+    // Which apps are closed.
+    public static string CloseScope => Loc.T("Which apps");
+    public static string ScopeList => Loc.T("The apps on the list");
+    public static string ScopeMode => Loc.T("The active mode’s apps and the list");
+    public static string ScopeAll => Loc.T("All my apps");
+    public static string ScopeAllCaption => Loc.T("Every app with an open window is closed, up to 20, except File Explorer, terminals and the apps under “Leave these apps alone”. Closing an app also ends what runs inside it, such as a build in an editor’s terminal.");
+    public static string ScopeModeCaption => Loc.T("The apps of the mode you’re in (Modes) are closed too, and open again when you’re back.");
+
     // The cover.
     public static string CoverAway => Loc.T("Away");
     public static string CoverSince(string time) => Loc.F("Since {0}", time);

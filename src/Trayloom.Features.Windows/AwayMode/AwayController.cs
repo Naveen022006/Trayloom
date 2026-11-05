@@ -23,7 +23,7 @@ internal enum AwayState
 /// person restoring a window, manual) and the restore. Everything here runs on the UI thread except the restore itself, which runs on
 /// its own background thread so a hung app can never freeze Trayloom.
 /// </summary>
-internal sealed class AwayController
+internal sealed partial class AwayController
 {
     private const int PresentTickMs = 5000;
     private const int AwayTickMs = 250;
@@ -143,7 +143,8 @@ internal sealed class AwayController
     /// <summary>Apps that stayed open or did not open again after the last return, with the reason (names only, in memory).</summary>
     public IReadOnlyList<(string Name, AwayKeepReason Reason)> LastResult => _lastResult;
 
-    private bool CloseWanted => !_elevated && _app.Get<bool>(AwayKeys.CloseApps) && _app.Get<List<string>>(AwayKeys.CloseList).Count > 0;
+    private bool CloseWanted => !_elevated && _app.Get<bool>(AwayKeys.CloseApps)
+        && (_app.Get<string>(AwayKeys.CloseScope) == "all" || CloseListFor().Count > 0);
 
     /// <summary>True from the first minimize until the restore finished.</summary>
     public bool IsAway => State is AwayState.GoingAway or AwayState.Away;
@@ -159,6 +160,7 @@ internal sealed class AwayController
         SystemEvents.SessionEnding += OnSessionEnding;
         _watcher.Sample += positive => _ctx.Ui.BeginInvoke(() => Safe(() => OnSample(positive)));
         _watcher.Failed += reason => _ctx.Ui.BeginInvoke(() => Safe(() => OnCameraFailed(reason)));
+        _watcher.Observed += o => _ctx.Ui.BeginInvoke(() => Safe(() => OnObserved(o)));
         AwayGuard.FireAndLog(_presence.InitializeAsync, _log, "media sessions");
         _timer.Start();
     }
@@ -167,6 +169,8 @@ internal sealed class AwayController
     public void Stop()
     {
         _stopping = true;
+        _clock.Reset();
+        _presenceCamera = false;
         _timer.Stop();
         _verify.Stop();
         _app.Changed -= OnSettingChanged;
@@ -209,7 +213,7 @@ internal sealed class AwayController
             return false;
         }
 
-        if (trigger == "idle" && Environment.TickCount64 - _presentSince < AfterPresentMs)
+        if (trigger is "idle" or "camera" && Environment.TickCount64 - _presentSince < AfterPresentMs)
         {
             return false;
         }
@@ -219,7 +223,9 @@ internal sealed class AwayController
         _records = AwayWindows.Snapshot(ignored, only, out _active);
         _trigger = trigger;
         _simulated = simulated;
-        _awayLabel = trigger == "idle" ? $"idle {_app.Get<int>("awayModeIdleMinutes")} min" : simulated ? "simulated" : "manual";
+        _awayLabel = trigger == "idle" ? $"idle {_app.Get<int>("awayModeIdleMinutes")} min"
+            : trigger == "camera" ? $"camera {_app.Get<int>(AwayKeys.LeaveCameraSeconds)} s"
+            : simulated ? "simulated" : "manual";
         _awaySince = DateTime.Now;
         _awayTick = Environment.TickCount64;
         _awayTick32 = (uint)Environment.TickCount;
@@ -288,7 +294,12 @@ internal sealed class AwayController
         }
         else
         {
-            if (face)
+            if (_presenceCamera && _watcher.IsRunning)
+            {
+                // The presence watch already has the camera open: hand it over for the return, or switch it off.
+                HandOverCamera(face);
+            }
+            else if (face)
             {
                 StartFace();
             }
@@ -327,6 +338,7 @@ internal sealed class AwayController
         switch (State)
         {
             case AwayState.Present:
+                PresenceTick();
                 PresentTick();
                 break;
             case AwayState.Away:
@@ -461,7 +473,7 @@ internal sealed class AwayController
         _faceWanted = true;
         AwayGuard.FireAndLog(async () =>
         {
-            if (_app.Get<bool>("awayModeSkipCalls") && _presence.CameraInUse())
+            if (_app.Get<bool>("awayModeSkipCalls") && _presence.OtherAppUsesCamera())
             {
                 _log.Info("[away] camera: in use by another app, input brings the windows back");
                 return;
@@ -504,6 +516,11 @@ internal sealed class AwayController
         _log.Info("[away] camera: " + reason);
         _app.Set("awayModeCameraFailed", true);
         _quickUntil = 0;
+        if (_presenceCamera)
+        {
+            Apply(_clock.CameraFailed());
+        }
+
         Changed?.Invoke();
     }
 
@@ -569,6 +586,7 @@ internal sealed class AwayController
         }
 
         State = AwayState.Returning;
+        _clock.Reset();
         _quickUntil = 0;
         _faceWanted = false;
         CloseCovers();
@@ -585,6 +603,8 @@ internal sealed class AwayController
 
     private void RestoreWorker(List<AwayRecord> records, nint active, string trigger, long awayStart)
     {
+        IReadOnlyDictionary<long, nint> replaced = new Dictionary<long, nint>();
+        IReadOnlySet<string> reopened = new HashSet<string>();
         try
         {
             _watcher.Stop(trigger is "stop" ? "stop" : "return");
@@ -641,6 +661,8 @@ internal sealed class AwayController
             else if (reopen is not null)
             {
                 summary = reopen.Finish(records, active, out var stack);
+                replaced = reopen.Replaced;
+                reopened = closed.Select(a => a.Exe.ToLowerInvariant()).ToHashSet();
                 var focusTarget = reopen.Replaced.TryGetValue(active, out var moved) ? moved : active;
                 (zOk, focusOk) = AwayWindows.Check(stack, focusTarget);
             }
@@ -664,6 +686,12 @@ internal sealed class AwayController
                 _presentSince = Environment.TickCount64;
                 _timer.Interval = TimeSpan.FromMilliseconds(PresentTickMs);
                 _reopenJob = null;
+                _clock.Reset();
+                if (!_stopping)
+                {
+                    _ctx.Services.Get<IAwayWorkspace>()?.OnAwayReturned(new AwayReturnInfo(replaced, reopened, trigger));
+                }
+
                 Changed?.Invoke();
             }));
         }
@@ -711,13 +739,19 @@ internal sealed class AwayController
     /// <summary>Starts the close job once per away period, when the apps on the list are due (spec 07 section 5.1).</summary>
     private void MaybeStartClose(long now, bool force)
     {
-        if (_closeStarted || !_app.Get<bool>(AwayKeys.CloseApps) || _app.Get<List<string>>(AwayKeys.CloseList).Count == 0)
+        if (_closeStarted || !_app.Get<bool>(AwayKeys.CloseApps))
         {
             return;
         }
 
         var delay = _app.Get<int>(AwayKeys.CloseAfterMinutes) * 60_000L;
         if (!force && now - _awayTick < delay)
+        {
+            return;
+        }
+
+        var closeList = CloseListFor();
+        if (closeList.Count == 0)
         {
             return;
         }
@@ -743,7 +777,7 @@ internal sealed class AwayController
         }
 
         var ignored = _app.Get<List<string>>(AwayKeys.IgnoredApps);
-        var job = new AwayCloseJob(_log, _store, _app.Get<List<string>>(AwayKeys.CloseList), ignored, filter, _records, _active, _awaySince);
+        var job = new AwayCloseJob(_log, _store, closeList, ignored, filter, _records, _active, _awaySince);
         job.Changed += () => _ctx.Ui.BeginInvoke(() => Safe(() =>
         {
             ShowCloseOnCover();
@@ -892,6 +926,8 @@ internal sealed class AwayController
             {
                 case SessionSwitchReason.SessionLock:
                     _locked = true;
+                    _clock.Reset();
+                    _presenceCamera = false;
                     if (_watcher.IsRunning)
                     {
                         Task.Run(() => _watcher.Stop("suspend"));
@@ -917,6 +953,8 @@ internal sealed class AwayController
             if (e.Mode == PowerModes.Suspend)
             {
                 _suspended = true;
+                _clock.Reset();
+                _presenceCamera = false;
                 if (_watcher.IsRunning)
                 {
                     Task.Run(() => _watcher.Stop("suspend"));

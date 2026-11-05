@@ -36,6 +36,7 @@ public sealed class AwaySettingsSection : ISettingsSection
         var lockOn = app.Get<bool>(AwayKeys.LockPc);
         var faceOn = app.Get<bool>(AwayKeys.Face);
         var faceSupported = AwayFaceWatcher.IsSupported;
+        var leaveOn = app.Get<bool>(AwayKeys.LeaveCamera) && faceSupported;
         var card = new SettingsCard(AwayStrings.Title);
 
         if (controller is { RecoveryCount: > 0 } recovering && !controller.IsAway)
@@ -71,11 +72,11 @@ public sealed class AwaySettingsSection : ISettingsSection
         face.IsEnabled = !lockOn && faceSupported;
         card.Add(face);
 
+        var cameraShown = false;
         if (faceOn && !lockOn)
         {
-            var cameraHost = new StackPanel();
-            card.Add(cameraHost);
-            AwayGuard.FireAndLog(() => FillCamerasAsync(cameraHost, app, c.Log), c.Log, "camera list");
+            AddCameraPicker(card, app, c.Log);
+            cameraShown = true;
 
             var stop = new PickerRow<int>(null, AwayStrings.StopLooking, null,
             [
@@ -84,23 +85,33 @@ public sealed class AwaySettingsSection : ISettingsSection
             Identify(stop, "AwayMode.FaceStop", AwayStrings.StopLooking);
             stop.Margin = new Thickness(SettingsRow.TextInset, 0, 0, 0);
             card.Add(stop);
+            AddCameraProblems(card, app);
+        }
 
-            if (AwayFaceWatcher.AccessDenied)
-            {
-                var denied = new StackPanel { Margin = new Thickness(SettingsRow.TextInset, 0, 0, 0) };
-                denied.Children.Add(UiKit.Text(AwayStrings.CameraDenied, 11.5, FontWeights.Normal, ThemeKeys.Orange, wrap: true));
-                var open = UiKit.Button(AwayStrings.OpenCameraSettings, ButtonKind.Bordered, 11.5, onClick: OpenCameraSettings);
-                open.HorizontalAlignment = HorizontalAlignment.Left;
-                open.Margin = new Thickness(0, 6, 0, 0);
-                denied.Children.Add(open);
-                card.Add(denied);
-            }
+        // The camera also looks while the person is still here, to notice when nobody is: independent of "Lock the PC too".
+        card.AddDivider();
+        var leaveCaption = !faceSupported ? AwayStrings.FaceUnsupported : AwayStrings.LeaveCameraCaption;
+        var leave = Switch("\uE714", AwayStrings.LeaveCamera, leaveCaption, AwayKeys.LeaveCamera, "AwayMode.LeaveCamera", app, onToggled: _ => c.RequestRebuild());
+        leave.IsEnabled = faceSupported;
+        card.Add(leave);
+        if (leaveOn)
+        {
+            var leaveAfter = new PickerRow<int>(null, AwayStrings.LeaveAfter, null,
+            [
+                (30, AwayStrings.Leave30), (60, AwayStrings.Leave60), (120, AwayStrings.Leave120), (300, AwayStrings.Leave300),
+            ], app.Get<int>(AwayKeys.LeaveCameraSeconds), value => app.Set(AwayKeys.LeaveCameraSeconds, value), 230);
+            Identify(leaveAfter, "AwayMode.LeaveAfter", AwayStrings.LeaveAfter);
+            leaveAfter.Margin = new Thickness(SettingsRow.TextInset, 0, 0, 0);
+            card.Add(leaveAfter);
 
-            if (app.Get<bool>(AwayKeys.CameraFailed))
+            var leaveNote = UiKit.Text(AwayStrings.LeaveNote, 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+            leaveNote.Margin = new Thickness(SettingsRow.TextInset, 0, 0, 0);
+            card.Add(leaveNote);
+
+            if (!cameraShown)
             {
-                var failed = UiKit.Text(AwayStrings.CameraFailed, 11.5, FontWeights.Normal, ThemeKeys.Orange, wrap: true);
-                failed.Margin = new Thickness(SettingsRow.TextInset, 0, 0, 0);
-                card.Add(failed);
+                AddCameraPicker(card, app, c.Log);
+                AddCameraProblems(card, app);
             }
         }
 
@@ -154,6 +165,36 @@ public sealed class AwaySettingsSection : ISettingsSection
         return card;
     }
 
+    /// <summary>The camera picker, filled in once the cameras are listed (it stays empty on a PC with one camera).</summary>
+    private static void AddCameraPicker(SettingsCard card, IAppSettings app, ILog log)
+    {
+        var cameraHost = new StackPanel();
+        card.Add(cameraHost);
+        AwayGuard.FireAndLog(() => FillCamerasAsync(cameraHost, app, log), log, "camera list");
+    }
+
+    /// <summary>The "camera access is off" and "camera could not start" lines, shown wherever the camera is used.</summary>
+    private static void AddCameraProblems(SettingsCard card, IAppSettings app)
+    {
+        if (AwayFaceWatcher.AccessDenied)
+        {
+            var denied = new StackPanel { Margin = new Thickness(SettingsRow.TextInset, 0, 0, 0) };
+            denied.Children.Add(UiKit.Text(AwayStrings.CameraDenied, 11.5, FontWeights.Normal, ThemeKeys.Orange, wrap: true));
+            var open = UiKit.Button(AwayStrings.OpenCameraSettings, ButtonKind.Bordered, 11.5, onClick: OpenCameraSettings);
+            open.HorizontalAlignment = HorizontalAlignment.Left;
+            open.Margin = new Thickness(0, 6, 0, 0);
+            denied.Children.Add(open);
+            card.Add(denied);
+        }
+
+        if (app.Get<bool>(AwayKeys.CameraFailed))
+        {
+            var failed = UiKit.Text(AwayStrings.CameraFailed, 11.5, FontWeights.Normal, ThemeKeys.Orange, wrap: true);
+            failed.Margin = new Thickness(SettingsRow.TextInset, 0, 0, 0);
+            card.Add(failed);
+        }
+    }
+
     /// <summary>The "Close apps while I’m away" switch, the delay, the list of apps and what happened last time (spec 07 section 9.1).</summary>
     private static void AddCloseBlock(SettingsCard card, ISettingsContext c, AwayController? controller)
     {
@@ -198,6 +239,40 @@ public sealed class AwaySettingsSection : ISettingsSection
         after.Margin = new Thickness(SettingsRow.TextInset, 0, 0, 0);
         card.Add(after);
 
+        var modesAvailable = c.Runtime.IsAvailable("modes");
+        var scope = app.Get<string>(AwayKeys.CloseScope) ?? "list";
+        if (scope == "mode" && !modesAvailable)
+        {
+            scope = "list";
+        }
+
+        var scopeOptions = new List<(string, string)> { ("list", AwayStrings.ScopeList) };
+        if (modesAvailable)
+        {
+            scopeOptions.Add(("mode", AwayStrings.ScopeMode));
+        }
+
+        scopeOptions.Add(("all", AwayStrings.ScopeAll));
+        var which = new PickerRow<string>(null, AwayStrings.CloseScope, null, scopeOptions, scope, value =>
+        {
+            app.Set(AwayKeys.CloseScope, value);
+            c.RequestRebuild();
+        }, 230);
+        Identify(which, "AwayMode.CloseScope", AwayStrings.CloseScope);
+        which.Margin = new Thickness(SettingsRow.TextInset, 0, 0, 0);
+        card.Add(which);
+
+        if (scope == "all")
+        {
+            // Every app is closed, so there is no list to edit.
+            var everything = UiKit.Text(AwayStrings.ScopeAllCaption, 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+            everything.Margin = new Thickness(SettingsRow.TextInset, 0, 0, 0);
+            card.Add(everything);
+            AddCloseNote(card);
+            AddLastTime(card, controller);
+            return;
+        }
+
         var list = new AppBundleList(AwayStrings.CloseListTitle, AwayStrings.CloseListCaption,
             () => [.. app.Get<List<string>>(AwayKeys.CloseList)],
             items => app.Set(AwayKeys.CloseList, items),
@@ -208,10 +283,22 @@ public sealed class AwaySettingsSection : ISettingsSection
         AutomationProperties.SetName(landmark, AwayStrings.CloseListTitle);
         card.Add(landmark);
 
+        if (scope == "mode")
+        {
+            var modeNote = UiKit.Text(AwayStrings.ScopeModeCaption, 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+            modeNote.Margin = new Thickness(SettingsRow.TextInset, 0, 0, 0);
+            card.Add(modeNote);
+        }
+
+        AddCloseNote(card);
+        AddLastTime(card, controller);
+    }
+
+    private static void AddCloseNote(SettingsCard card)
+    {
         var note = UiKit.Text(AwayStrings.CloseNote, 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
         note.Margin = new Thickness(SettingsRow.TextInset, 0, 0, 0);
         card.Add(note);
-        AddLastTime(card, controller);
     }
 
     /// <summary>What will happen to a listed app, as a small caption at the end of its row.</summary>
@@ -403,6 +490,17 @@ public sealed class AwaySettingsSection : ISettingsSection
             return controller.CloseJobState == AwayCloseJobState.Waiting
                 ? AwayStrings.AwaySinceWaiting(time, controller.WindowCount, controller.CloseAt.ToString("t"))
                 : AwayStrings.AwaySince(time, controller.WindowCount);
+        }
+
+        if (controller.PresencePhase == AwayPresencePhase.Countdown)
+        {
+            var seconds = controller.CountdownSecondsLeft;
+            return controller.CountdownCloses ? AwayStrings.StatusClosingIn(seconds) : AwayStrings.StatusMinimizingIn(seconds);
+        }
+
+        if (controller.PresenceLooking)
+        {
+            return AwayStrings.StatusLooking;
         }
 
         return controller.Suppression == AwaySuppression.None ? AwayStrings.Here : AwayStrings.Waiting(AwayPresence.Describe(controller.Suppression));

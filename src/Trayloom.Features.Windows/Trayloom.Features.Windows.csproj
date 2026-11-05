@@ -6,4 +6,10 @@
   <ItemGroup>
     <ProjectReference Include="..\Trayloom.Core\Trayloom.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- the console harness under tests/ exercises the pure Modes logic and the session-file parser -->
+    <InternalsVisibleTo Include="Trayloom.Modes.Harness" />
+    <!-- the Away harness exercises the presence maths and the presence state machine -->
+    <InternalsVisibleTo Include="Trayloom.Away.Harness" />
+  </ItemGroup>
 </Project>
