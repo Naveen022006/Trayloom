@@ -1496,3 +1496,10 @@ Existing code: `Trayloom.Features.Island/{IslandFeature, IslandWindow, IslandHub
 | Calendar | week start, show events; computes week numbers always | countdown, lead, time-left, week numbers toggle, calendars shown, permission UI |
 | Defaults | hideInFullscreen true; hover opens; close delay 450 ms | Align to Vorssaint defaults (click opens; hideInFullscreen false; close 0.18 s) unless product decides Windows-specific defaults |
 | Strings | Hard-coded English ("Open the island", "Show on", ...) | Replace with the verbatim tables in section 11 |
+
+## Safety addendum (WP-7)
+
+* Notifications card: Switch "Read notification banners on screen" caption "Windows only lets packaged apps use the notification listener, so Trayloom can instead read each banner’s text as it appears. Banners can contain codes and private messages." -> `notchNotificationsReadScreen` (false, for everyone). Off: no UI Automation, and the poll stops completely. When Windows denies listener access nothing is read from the screen at all. Turning it off clears the captured items.
+* Mascot: the 1 s timer and the 30 Hz clock run only while the companion is enabled.
+* Calendar ICS sources: https only (`webcal://` becomes `https://`; `http://` shows "Use an https:// address for this calendar."), 8 MB cap, 20 s timeout, local files only (no network paths) and capped, parsing off the UI thread. A Google secret address is refused with "Add Google calendars in the Google Calendar setting.". Per file: 5 000 events, 5 000 occurrences, 16 384 characters per line, INTERVAL above 1 000 shows the first occurrence only.
+* Island brightness slider never writes below 5 %. Clipboard notice ignores copies flagged `ExcludeClipboardContentFromMonitorProcessing` or `CanIncludeInClipboardHistory` = 0. A stored music sign-in is deleted only when it cannot be decrypted or is not JSON, never on an I/O error.

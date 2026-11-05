@@ -718,8 +718,12 @@ internal static class BrightnessService
     }
 
     /// <summary>Sets the level off the UI thread; while a write runs, only the newest requested level is kept (dragging stays smooth).</summary>
+    /// <summary>The lowest level the island writes (5 %), so a slider drag to the end can never turn the panel black.</summary>
+    public const double MinimumLevel = 0.05;
+
     public static void Write(double value)
     {
+        value = double.IsNaN(value) ? MinimumLevel : Math.Clamp(value, MinimumLevel, 1);
         Interlocked.Exchange(ref _lastOwnWriteTicks, DateTime.UtcNow.Ticks);
         BrightnessWrites.MarkOwn();
         lock (Gate)

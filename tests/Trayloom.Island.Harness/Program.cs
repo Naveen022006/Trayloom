@@ -42,6 +42,7 @@ internal static class Program
         YouTubeChecks.Run(Check);
         StreamListChecks.Run(Check);
         GoogleCalendarChecks.Run(Check);
+        SafetyChecks.Run(Check);
         Console.WriteLine($"{s_checks - s_failed}/{s_checks} checks passed");
         return s_failed == 0 ? 0 : 1;
     }

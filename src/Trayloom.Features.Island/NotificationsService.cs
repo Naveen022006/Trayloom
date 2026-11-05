@@ -56,6 +56,8 @@ internal sealed class NotificationsService : IDisposable
     private readonly HashSet<uint> _baseline = [];
     private bool _first = true;
     private CancellationTokenSource? _uiaCts;
+    private Thread? _uiaThread;
+    private bool _starting;
     private string _lastUia = "";
     private DateTime _lastUiaAt = DateTime.MinValue;
 
@@ -76,6 +78,16 @@ internal sealed class NotificationsService : IDisposable
 
     public event Action<NotificationItem>? Received;
 
+    /// <summary>
+    /// True when the user allowed Trayloom to read banner text off the screen. Off by default: banners can hold codes and private
+    /// messages, and this is the only path that reads another app's window contents.
+    /// </summary>
+    public bool ReadScreen => _core.App.Get<bool>(K.NotificationsReadScreen);
+
+    /// <summary>True for the window Windows uses to draw a toast banner (matched by its name or its automation id).</summary>
+    internal static bool IsToastElement(string? name, string? automationId) =>
+        string.Equals(name, "New notification", StringComparison.Ordinal) || string.Equals(automationId, "NormalToastView", StringComparison.Ordinal);
+
     public bool Wanted => _core.IslandOn && _core.Ctx.Runtime.IsAvailable("notch-notifications") && _core.App.Get<bool>(K.NotificationsEnabled);
 
     public void Start()
@@ -89,11 +101,26 @@ internal sealed class NotificationsService : IDisposable
         if (!Wanted)
         {
             Stop();
+            AccessDenied = false;
+            NeedsIdentity = false;
             return;
         }
 
-        if (Mode != NotificationMode.Off)
+        if (Mode == NotificationMode.Automation && !ReadScreen)
         {
+            // The user turned screen reading off: stop reading and forget what was captured.
+            Stop();
+            return;
+        }
+
+        if (Mode != NotificationMode.Off || _starting)
+        {
+            return;
+        }
+
+        if (AccessDenied || (NeedsIdentity && !ReadScreen))
+        {
+            // Windows said no (or there is no package identity and the user has not opted in): ask again only from the buttons.
             return;
         }
 
@@ -101,6 +128,19 @@ internal sealed class NotificationsService : IDisposable
     }
 
     private async Task StartAsync()
+    {
+        _starting = true;
+        try
+        {
+            await StartCoreAsync();
+        }
+        finally
+        {
+            _starting = false;
+        }
+    }
+
+    private async Task StartCoreAsync()
     {
         _first = true;
         NeedsIdentity = false;
@@ -125,14 +165,18 @@ internal sealed class NotificationsService : IDisposable
                 return;
             }
 
+            // Windows refused: respect that. Reading the banner off the screen instead would sidestep the user's choice.
             AccessDenied = true;
         }
         catch
         {
             NeedsIdentity = true;
+            if (ReadScreen && Wanted)
+            {
+                StartAutomation();
+            }
         }
 
-        StartAutomation();
         Changed?.Invoke();
     }
 
@@ -216,33 +260,108 @@ internal sealed class NotificationsService : IDisposable
         Mode = NotificationMode.Automation;
         _uiaCts = new CancellationTokenSource();
         var token = _uiaCts.Token;
+
+        // The event handler is registered and removed on one dedicated MTA thread, as UI Automation requires.
+        _uiaThread = new Thread(() => RunAutomationEvents(token)) { IsBackground = true, Name = "Trayloom notifications UIA" };
+        _uiaThread.SetApartmentState(ApartmentState.MTA);
+        _uiaThread.Start();
+
+        // Fallback in case toast banners do not raise a window-opened event on some Windows builds. It runs only while the
+        // opt-in is on, because this service is stopped the moment it is turned off.
         _ = Task.Run(async () =>
         {
             while (!token.IsCancellationRequested)
             {
                 try
                 {
-                    ReadToast();
+                    var toast = AutomationElement.RootElement.FindFirst(TreeScope.Children, new OrCondition(
+                        new PropertyCondition(AutomationElement.NameProperty, "New notification"),
+                        new PropertyCondition(AutomationElement.AutomationIdProperty, "NormalToastView")));
+                    if (toast is null)
+                    {
+                        _lastUia = "";
+                    }
+                    else
+                    {
+                        ReadToast(toast);
+                    }
                 }
                 catch
                 {
                 }
 
-                await Task.Delay(500, token).ConfigureAwait(false);
+                try
+                {
+                    await Task.Delay(1500, token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
             }
         }, token);
     }
 
-    private void ReadToast()
+    private void RunAutomationEvents(CancellationToken token)
     {
-        var root = AutomationElement.RootElement;
-        var cond = new OrCondition(
-            new PropertyCondition(AutomationElement.NameProperty, "New notification"),
-            new PropertyCondition(AutomationElement.AutomationIdProperty, "NormalToastView"));
-        var toast = root.FindFirst(TreeScope.Children, cond);
-        if (toast is null)
+        AutomationEventHandler handler = (sender, _) =>
         {
-            _lastUia = "";
+            try
+            {
+                if (token.IsCancellationRequested || sender is not AutomationElement element)
+                {
+                    return;
+                }
+
+                if (!IsToastElement(element.Current.Name, element.Current.AutomationId))
+                {
+                    return;
+                }
+
+                // Read on a worker so a slow cross-process call cannot stall UI Automation's event thread for long.
+                Task.Run(() =>
+                {
+                    var read = Task.Run(() => ReadToast(element));
+                    read.Wait(2000);
+                });
+            }
+            catch
+            {
+            }
+        };
+
+        try
+        {
+            Automation.AddAutomationEventHandler(WindowPattern.WindowOpenedEvent, AutomationElement.RootElement, TreeScope.Children, handler);
+        }
+        catch
+        {
+            return;
+        }
+
+        try
+        {
+            token.WaitHandle.WaitOne();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        finally
+        {
+            try
+            {
+                Automation.RemoveAutomationEventHandler(WindowPattern.WindowOpenedEvent, AutomationElement.RootElement, handler);
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private void ReadToast(AutomationElement toast)
+    {
+        if (!ReadScreen)
+        {
             return;
         }
 
@@ -347,7 +466,7 @@ internal sealed class NotificationsService : IDisposable
 
         try
         {
-            Process.Start(new ProcessStartInfo("explorer.exe", $"shell:AppsFolder\\{item.Aumid}") { UseShellExecute = true });
+            Process.Start(new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"), $"shell:AppsFolder\\{item.Aumid}") { UseShellExecute = true });
             return true;
         }
         catch
@@ -381,11 +500,18 @@ internal sealed class NotificationsService : IDisposable
         _poll = null;
         _uiaCts?.Cancel();
         _uiaCts = null;
+        _uiaThread = null;
+        _lastUia = "";
         _listener = null;
         _baseline.Clear();
         if (Mode != NotificationMode.Off)
         {
             Mode = NotificationMode.Off;
+            _items.Clear();
+            Changed?.Invoke();
+        }
+        else if (_items.Count > 0)
+        {
             _items.Clear();
             Changed?.Invoke();
         }

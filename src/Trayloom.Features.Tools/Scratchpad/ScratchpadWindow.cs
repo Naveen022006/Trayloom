@@ -1166,7 +1166,13 @@ internal sealed class ScratchpadWindow : GlassWindow
                 ApplyEdit(new PadEdit(toggled, _editor.SelectionStart, _editor.SelectionLength));
                 RenderReading();
             }
-        }, url => Plat.Open(url));
+        }, url =>
+        {
+            if (!UiKit.OpenWebUrl(url))
+            {
+                System.Media.SystemSounds.Beep.Play();
+            }
+        });
     }
 
     private void CopyAll()

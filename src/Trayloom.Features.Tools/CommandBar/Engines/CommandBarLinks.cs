@@ -6,6 +6,7 @@ using System.IO;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+using Trayloom.Core;
 
 namespace Trayloom.Features.Tools;
 
@@ -82,6 +83,28 @@ internal static class CommandBarLinks
         return ExpandHome(result);
     }
 
+    /// <summary>
+    /// True when <paramref name="argument"/> can be handed to a <c>.bat</c> or <c>.cmd</c> file as typed. cmd.exe re-parses its command
+    /// line, so <c>&amp; | &lt; &gt; ^ %</c>, a double quote or a line break would let the argument run other commands.
+    /// </summary>
+    internal static bool IsSafeBatchArgument(string? argument)
+    {
+        if (string.IsNullOrEmpty(argument))
+        {
+            return true;
+        }
+
+        foreach (var c in argument)
+        {
+            if (c is '&' or '|' or '<' or '>' or '^' or '%' or '"' or '\r' or '\n' or '\0')
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     /// <summary>Runs a script with one argument (5 s timeout, 64 KiB output cap). Returns trimmed stdout, or null when it failed / produced nothing and exited non-zero.</summary>
     public static async Task<(string? Output, bool Failed)> RunScriptAsync(CommandBarLink link, string? argument, CancellationToken cancel)
     {
@@ -89,6 +112,13 @@ internal static class CommandBarLinks
         if (path.Length == 0 || !File.Exists(path))
         {
             return (null, true);
+        }
+
+        var extension = Path.GetExtension(path);
+        if ((extension.Equals(".bat", StringComparison.OrdinalIgnoreCase) || extension.Equals(".cmd", StringComparison.OrdinalIgnoreCase))
+            && !IsSafeBatchArgument(argument))
+        {
+            return (Loc.T("This argument can’t be passed to a batch script."), false);
         }
 
         var info = new ProcessStartInfo
@@ -103,7 +133,7 @@ internal static class CommandBarLinks
         };
         if (Path.GetExtension(path).Equals(".ps1", StringComparison.OrdinalIgnoreCase))
         {
-            info.FileName = "powershell.exe";
+            info.FileName = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
             foreach (var a in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path })
             {
                 info.ArgumentList.Add(a);

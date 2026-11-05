@@ -1409,7 +1409,7 @@ internal sealed class BarService
     {
         try
         {
-            System.Diagnostics.Process.Start("explorer.exe", File.Exists(path) ? $"/select,\"{path}\"" : $"\"{path}\"");
+            System.Diagnostics.Process.Start(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"), File.Exists(path) ? $"/select,\"{path}\"" : $"\"{path}\"");
             return true;
         }
         catch

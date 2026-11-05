@@ -288,6 +288,16 @@ internal sealed class PadStore
             }
 
             _canSave = true;
+            try
+            {
+                // A crash between writing and renaming leaves a stale temp copy of the pads behind.
+                File.Delete(_file + ".tmp");
+            }
+            catch
+            {
+                // best effort
+            }
+
             var cleared = PadRules.ApplyRetention(Doc, _retention(), PadRules.Now());
             if (migrated || cleared > 0)
             {

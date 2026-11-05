@@ -58,7 +58,7 @@ internal sealed class ClipboardSource : IDisposable
     private DispatcherTimer? _debounce;
     private IClipboardHistoryService? _service;
     private DateTime _lastNotice = DateTime.MinValue;
-    private string _lastText = "";
+    private string _lastHash = "";
 
     public ClipboardSource(IslandCore core) => _core = core;
 
@@ -169,6 +169,12 @@ internal sealed class ClipboardSource : IDisposable
         string text;
         try
         {
+            if (AsksToStayPrivate(System.Windows.Clipboard.GetDataObject()))
+            {
+                // A password manager (or similar) marked this copy as not for history or monitoring: do not read or announce it.
+                return;
+            }
+
             text = System.Windows.Clipboard.ContainsText() ? System.Windows.Clipboard.GetText() : (System.Windows.Clipboard.ContainsImage() ? "\u0001image" : (System.Windows.Clipboard.ContainsFileDropList() ? "\u0001files" : ""));
         }
         catch
@@ -176,12 +182,19 @@ internal sealed class ClipboardSource : IDisposable
             return;
         }
 
-        if (text.Length == 0 || ((DateTime.UtcNow - _lastNotice).TotalMilliseconds < 400 && text == _lastText))
+        if (text.Length == 0)
         {
             return;
         }
 
-        _lastText = text;
+        // Only a hash of the text is kept to spot a repeat, so a copied secret does not linger in this object.
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text)));
+        if ((DateTime.UtcNow - _lastNotice).TotalMilliseconds < 400 && hash == _lastHash)
+        {
+            return;
+        }
+
+        _lastHash = hash;
         _lastNotice = DateTime.UtcNow;
         Schedule();
         if (!_core.ModuleVisible("clipboard") || !_core.App.Get<bool>(K.ClipboardWindow))
@@ -190,6 +203,44 @@ internal sealed class ClipboardSource : IDisposable
         }
 
         _core.ShowNotice(new Notice { Event = NoticeEvents.ClipboardCopy, Glyph = G.Clipboard, Title = Loc.T("Copied"), Detail = Loc.T("Clipboard") });
+    }
+
+    /// <summary>
+    /// True when the copied data carries <c>ExcludeClipboardContentFromMonitorProcessing</c>, or <c>CanIncludeInClipboardHistory</c>
+    /// holding 0, which apps such as password managers set on secrets.
+    /// </summary>
+    private static bool AsksToStayPrivate(System.Windows.IDataObject? data)
+    {
+        if (data is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            if (data.GetDataPresent("ExcludeClipboardContentFromMonitorProcessing"))
+            {
+                return true;
+            }
+
+            if (data.GetDataPresent("CanIncludeInClipboardHistory"))
+            {
+                var value = data.GetData("CanIncludeInClipboardHistory");
+                byte[]? bytes = value switch
+                {
+                    byte[] b => b,
+                    MemoryStream m => m.ToArray(),
+                    _ => null,
+                };
+                return bytes is { Length: >= 1 } && bytes.All(b => b == 0);
+            }
+        }
+        catch
+        {
+            // Unreadable flags: treat as ordinary content.
+        }
+
+        return false;
     }
 
     public void Copy(ClipItem item)

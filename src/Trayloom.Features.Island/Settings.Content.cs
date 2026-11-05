@@ -354,6 +354,8 @@ internal sealed class ContentEditor : Grid
             case "notifications":
                 card.Add(SUi.SwitchRow(app, K.DismissNative, "", Loc.T("Hide the system banner"), Loc.T("Hide the original while the Dynamic Island shows it."), enabled: false, badge: null));
                 card.AddCaption(Loc.T("Not available on this PC"));
+                card.AddDivider();
+                card.Add(SUi.SwitchRow(app, K.NotificationsReadScreen, "", Loc.T("Read notification banners on screen"), Loc.T("Windows only lets packaged apps use the notification listener, so Trayloom can instead read each banner’s text as it appears. Banners can contain codes and private messages."), _ => _c.RequestRebuild()));
                 var status = IslandCore.Current?.Notifications;
                 if (status is { NeedsIdentity: true } or { AccessDenied: true })
                 {

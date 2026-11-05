@@ -95,7 +95,7 @@ internal static class BarSystem
 
     public static void Sleep() => SetSuspendState(false, false, false);
 
-    public static void Shutdown(string arg) => Run("shutdown.exe", arg + " /t 0");
+    public static void Shutdown(string arg) => Run(Path.Combine(Environment.SystemDirectory, "shutdown.exe"), arg + " /t 0");
 
     private static void Run(string exe, string args)
     {

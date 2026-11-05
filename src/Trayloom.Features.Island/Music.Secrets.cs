@@ -26,7 +26,7 @@ internal sealed class SecretStore
     /// <summary>The store under <c>%APPDATA%\Trayloom\music</c> (or the TRAYLOOM_DATA folder).</summary>
     public static SecretStore Default(ILog? log = null) => new(Path.Combine(AppPaths.Root, "music"), log);
 
-    /// <summary>Reads and decrypts <paramref name="name"/>; an unreadable or non-JSON file is deleted and reported as missing.</summary>
+    /// <summary>Reads and decrypts <paramref name="name"/>; a file that cannot be decrypted or is not JSON is deleted and reported as missing; an I/O error keeps it.</summary>
     public bool TryRead(string name, out string json)
     {
         json = "";
@@ -49,11 +49,26 @@ internal sealed class SecretStore
         catch (Exception ex) when (ex is CryptographicException or JsonException or IOException or UnauthorizedAccessException or ArgumentException)
         {
             // Never log the exception text: it must not carry anything about the file's content.
-            _log?.Warn("[island] Music: stored sign-in unreadable, cleared (" + name + ")");
-            Delete(name);
+            if (ShouldDelete(ex))
+            {
+                _log?.Warn("[island] Music: stored sign-in unreadable, cleared (" + name + ")");
+                Delete(name);
+            }
+            else
+            {
+                // A locked file or a denied read says nothing about the sign-in itself, so it is kept for the next try.
+                _log?.Warn("[island] Music: stored sign-in could not be read, kept (" + name + ")");
+            }
+
             return false;
         }
     }
+
+    /// <summary>
+    /// True only when the file itself is proven bad (it cannot be decrypted or is not JSON). An I/O error, a denied access or a
+    /// bad argument must never delete a sign-in.
+    /// </summary>
+    internal static bool ShouldDelete(Exception e) => e is CryptographicException or JsonException;
 
     /// <summary>Encrypts and writes <paramref name="json"/> immediately (temp file, then replace).</summary>
     public void Write(string name, string json)

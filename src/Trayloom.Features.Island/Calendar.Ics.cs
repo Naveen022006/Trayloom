@@ -61,6 +61,22 @@ internal static class Ics
     /// <summary>Most periods walked for one event, so a pathological rule cannot stall a refresh.</summary>
     private const int MaxIterations = 2000;
 
+    /// <summary>Most events read from one file; the rest are ignored so a hostile or huge file cannot exhaust memory.</summary>
+    internal const int MaxEvents = 5000;
+
+    /// <summary>Most occurrences produced from one file for the visible window.</summary>
+    internal const int MaxOccurrences = 5000;
+
+    /// <summary>Longest unfolded line kept; anything past it is dropped.</summary>
+    internal const int MaxLineLength = 16384;
+
+    /// <summary>Largest INTERVAL honoured; a rule asking for more shows its first occurrence only.</summary>
+    internal const int MaxInterval = 1000;
+
+    private const int MaxZones = 64;
+
+    private static readonly char[] LineBreaks = ['\r', '\n'];
+
     private static readonly ConcurrentDictionary<string, TimeZoneInfo?> Zones = new(StringComparer.Ordinal);
 
     private static readonly Regex DurationRule = new(@"^([+-])?P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$", RegexOptions.CultureInvariant | RegexOptions.Compiled);
@@ -118,7 +134,7 @@ internal static class Ics
             {
                 if (cur is not null && string.Equals(value.Trim(), "VEVENT", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (cur.Build(events.Count) is { } ev)
+                    if (events.Count < MaxEvents && cur.Build(events.Count) is { } ev)
                     {
                         events.Add(ev);
                     }
@@ -212,7 +228,24 @@ internal static class Ics
     /// <summary>Resolves a zone id (IANA or Windows); null when the system does not know it.</summary>
     public static TimeZoneInfo? FindZone(string? id)
     {
-        return string.IsNullOrEmpty(id) ? null : Zones.GetOrAdd(id, Lookup);
+        if (string.IsNullOrEmpty(id) || id.Length > 100)
+        {
+            return null;
+        }
+
+        if (Zones.TryGetValue(id, out var cached))
+        {
+            return cached;
+        }
+
+        var zone = Lookup(id);
+        if (Zones.Count < MaxZones)
+        {
+            // The cache is bounded because the ids come from files anyone can publish.
+            Zones.TryAdd(id, zone);
+        }
+
+        return zone;
 
         static TimeZoneInfo? Lookup(string name)
         {
@@ -253,6 +286,11 @@ internal static class Ics
         var result = new List<IcsOccurrence>();
         foreach (var e in c.Events)
         {
+            if (result.Count >= MaxOccurrences)
+            {
+                break;
+            }
+
             if (e.RecurrenceId is null)
             {
                 if (!string.Equals(e.Status, "CANCELLED", StringComparison.OrdinalIgnoreCase))
@@ -298,6 +336,11 @@ internal static class Ics
 
         foreach (var wall in starts)
         {
+            if (result.Count >= MaxOccurrences)
+            {
+                break;
+            }
+
             var key = InstantKey(e.Start with { Value = wall }, c.DefaultTz, local);
             if (exdates.Contains(key) || overridden.Contains((e.Uid, key)))
             {
@@ -699,7 +742,9 @@ internal static class Ics
             unsupported |= freq is "DAILY" or "WEEKLY" && parts.ContainsKey("BYSETPOS");
             unsupported |= freq == "YEARLY" && parts.ContainsKey("BYDAY") && !parts.ContainsKey("BYMONTH");
 
-            var interval = parts.TryGetValue("INTERVAL", out var iv) && int.TryParse(iv, NumberStyles.None, CultureInfo.InvariantCulture, out var i) ? Math.Max(1, i) : 1;
+            var interval = parts.TryGetValue("INTERVAL", out var iv) && int.TryParse(iv, NumberStyles.None, CultureInfo.InvariantCulture, out var i) ? Math.Clamp(i, 1, MaxInterval) : 1;
+            // An INTERVAL that is too large (or does not parse) would silently change the schedule, so show the first occurrence only.
+            unsupported |= parts.ContainsKey("INTERVAL") && (!int.TryParse(parts["INTERVAL"], NumberStyles.None, CultureInfo.InvariantCulture, out var rawInterval) || rawInterval > MaxInterval);
             var count = parts.TryGetValue("COUNT", out var cv) && int.TryParse(cv, NumberStyles.None, CultureInfo.InvariantCulture, out var cn) ? cn : 0;
             IcsTime? until = null;
             if (parts.TryGetValue("UNTIL", out var uv))
@@ -786,26 +831,50 @@ internal static class Ics
     /// <summary>Joins folded lines: a line that starts with a space or tab continues the previous one.</summary>
     private static IEnumerable<string> Unfold(string text)
     {
-        string? current = null;
-        foreach (var line in text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Split('\n'))
+        var current = new System.Text.StringBuilder();
+        var started = false;
+        var pos = 0;
+        while (true)
         {
+            var end = text.IndexOfAny(LineBreaks, pos);
+            var line = end < 0 ? text[pos..] : text.Substring(pos, end - pos);
             if (line.Length > 0 && (line[0] == ' ' || line[0] == '\t'))
             {
-                current += line[1..];
-                continue;
+                AppendCapped(current, line, 1);
+                started = true;
             }
-
-            if (current is not null)
+            else
             {
-                yield return current;
+                if (started)
+                {
+                    yield return current.ToString();
+                }
+
+                current.Clear();
+                AppendCapped(current, line, 0);
+                started = true;
             }
 
-            current = line;
+            if (end < 0)
+            {
+                break;
+            }
+
+            pos = end + (text[end] == '\r' && end + 1 < text.Length && text[end + 1] == '\n' ? 2 : 1);
         }
 
-        if (current is not null)
+        if (started)
         {
-            yield return current;
+            yield return current.ToString();
+        }
+    }
+
+    private static void AppendCapped(System.Text.StringBuilder sb, string line, int from)
+    {
+        var room = MaxLineLength - sb.Length;
+        if (room > 0 && from < line.Length)
+        {
+            sb.Append(line, from, Math.Min(room, line.Length - from));
         }
     }
 

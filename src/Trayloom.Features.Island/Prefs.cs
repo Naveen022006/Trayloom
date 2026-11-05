@@ -69,6 +69,7 @@ internal static partial class K
     public const string KeyboardLight = "notchKeyboardLight";
     public const string Accessories = "notchAccessoriesEnabled";
     public const string NotificationsEnabled = "notchNotificationsEnabled";
+    public const string NotificationsReadScreen = "notchNotificationsReadScreen";
     public const string DismissNative = "notchDismissNativeNotifications";
     public const string TimerEnabled = "notchTimerEnabled";
     public const string TimerSound = "notchTimerSoundEnabled";
@@ -207,6 +208,7 @@ internal static partial class K
             [KeyboardLight] = true,
             [Accessories] = true,
             [NotificationsEnabled] = true,
+            [NotificationsReadScreen] = false,
             [DismissNative] = false,
             [TimerEnabled] = true,
             [TimerSound] = true,

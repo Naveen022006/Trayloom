@@ -62,7 +62,9 @@ internal sealed class CalendarService : IDisposable
     private readonly Dispatcher _ui;
     private readonly ILog _log;
     private readonly DispatcherTimer _timer;
-    private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
+    private const int MaxIcsBytes = 8 * 1024 * 1024;
+    private static readonly TimeSpan IcsTimeout = TimeSpan.FromSeconds(20);
+    private readonly HttpClient _http = new(new SocketsHttpHandler { MaxAutomaticRedirections = 5, AllowAutoRedirect = true }) { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
     private readonly GoogleCalendarSource _google;
     private AppointmentStore? _store;
     private List<CalEvent> _events = [];
@@ -72,7 +74,7 @@ internal sealed class CalendarService : IDisposable
     private bool _loading;
     private bool _disposed;
     private bool _again;
-    private DateTime _lastIcs = DateTime.MinValue;
+    private readonly Dictionary<string, DateTime> _lastIcs = [];
     private readonly Dictionary<string, string> _icsCache = [];
 
     public CalendarService(IAppSettings app, Dispatcher ui, ILog log)
@@ -327,27 +329,86 @@ internal sealed class CalendarService : IDisposable
 
     // ---------------------------------------------------------------- ICS
 
+    /// <summary>
+    /// The https address to download for an ICS source: <c>webcal://</c> becomes <c>https://</c>, <c>https://</c> is kept, and plain
+    /// <c>http://</c> or anything else gives null. A user-info part, a missing host or control characters are refused too.
+    /// </summary>
+    internal static string? NormalizeIcsUrl(string? s)
+    {
+        var text = s?.Trim() ?? "";
+        if (text.Length == 0 || text.Length > 2048 || text.Any(char.IsControl))
+        {
+            return null;
+        }
+
+        if (text.StartsWith("webcal://", StringComparison.OrdinalIgnoreCase))
+        {
+            text = "https://" + text["webcal://".Length..];
+        }
+
+        if (!Uri.TryCreate(text, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps
+            || string.IsNullOrEmpty(uri.Host) || uri.UserInfo.Length > 0)
+        {
+            return null;
+        }
+
+        return uri.AbsoluteUri;
+    }
+
+    /// <summary>True for an ICS source written as a web address (so it is downloaded, never opened as a file).</summary>
+    internal static bool LooksLikeUrl(string s) =>
+        s.StartsWith("http:", StringComparison.OrdinalIgnoreCase) || s.StartsWith("https:", StringComparison.OrdinalIgnoreCase) || s.StartsWith("webcal:", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>True when the address is a Google Calendar iCal address, which carries a secret and belongs in the Google setting.</summary>
+    internal static bool IsGoogleCalendarAddress(string s) =>
+        s.Contains("calendar.google.com", StringComparison.OrdinalIgnoreCase) || s.Contains("google.com/calendar/ical", StringComparison.OrdinalIgnoreCase);
+
     private async Task ReadIcs(List<CalEvent> events, List<CalendarInfo> calendars, List<string> excluded)
     {
         var sources = _app.Get<List<string>>(K.CalendarSources) ?? [];
-        foreach (var src in sources.Where(s => !string.IsNullOrWhiteSpace(s)))
+        var green = Color.FromRgb(0x5E, 0xC8, 0x6B);
+        foreach (var src in sources.Where(s => !string.IsNullOrWhiteSpace(s)).Take(20))
         {
             try
             {
                 string text;
-                if (src.StartsWith("http", StringComparison.OrdinalIgnoreCase) || src.StartsWith("webcal", StringComparison.OrdinalIgnoreCase))
+                if (LooksLikeUrl(src))
                 {
-                    if (!_icsCache.TryGetValue(src, out var cached) || (DateTime.UtcNow - _lastIcs).TotalMinutes > 15)
+                    var key = src.Trim();
+                    if (IsGoogleCalendarAddress(key))
                     {
-                        cached = await _http.GetStringAsync(src.Replace("webcal://", "https://", StringComparison.OrdinalIgnoreCase));
-                        _icsCache[src] = cached;
-                        _lastIcs = DateTime.UtcNow;
+                        // The address holds a secret that must not sit in plain text in settings; never download or log it here.
+                        _log.Warn("ICS source skipped: Google calendar addresses belong in the Google Calendar setting");
+                        calendars.Add(new CalendarInfo("ics-note:google", Loc.T("Add Google calendars in the Google Calendar setting."), "ICS", green, "ics"));
+                        continue;
+                    }
+
+                    var url = NormalizeIcsUrl(key);
+                    if (url is null)
+                    {
+                        _log.Warn("ICS source skipped: not an https address");
+                        calendars.Add(new CalendarInfo("ics-note:https", Loc.T("Use an https:// address for this calendar."), "ICS", green, "ics"));
+                        continue;
+                    }
+
+                    if (!_icsCache.TryGetValue(key, out var cached) || !_lastIcs.TryGetValue(key, out var at) || (DateTime.UtcNow - at).TotalMinutes > 15)
+                    {
+                        cached = await DownloadIcsAsync(url);
+                        _icsCache[key] = cached;
+                        _lastIcs[key] = DateTime.UtcNow;
                     }
 
                     text = cached;
                 }
-                else if (File.Exists(src))
+                else if (!src.StartsWith(@"\\", StringComparison.Ordinal) && File.Exists(src))
                 {
+                    // A network path would make Windows send credentials to the named server, so only local files are read.
+                    if (new FileInfo(src).Length > MaxIcsBytes)
+                    {
+                        _log.Warn("ICS file skipped: larger than 8 MB");
+                        continue;
+                    }
+
                     text = await File.ReadAllTextAsync(src);
                 }
                 else
@@ -355,21 +416,56 @@ internal sealed class CalendarService : IDisposable
                     continue;
                 }
 
-                var name = Path.GetFileNameWithoutExtension(src);
+                var name = LooksLikeUrl(src) ? "" : Path.GetFileNameWithoutExtension(src);
                 var id = "ics:" + src;
-                calendars.Add(new CalendarInfo(id, string.IsNullOrEmpty(name) ? Loc.T("Calendar") : name, "ICS", Color.FromRgb(0x5E, 0xC8, 0x6B), "ics"));
+                var shown = string.IsNullOrEmpty(name) ? Loc.T("Calendar") : name;
+                calendars.Add(new CalendarInfo(id, shown, "ICS", green, "ics"));
                 if (excluded.Contains(id))
                 {
                     continue;
                 }
 
-                events.AddRange(IcsReader.Read(text, _rangeStart, _rangeEnd, id, string.IsNullOrEmpty(name) ? "Calendar" : name, Color.FromRgb(0x5E, 0xC8, 0x6B), "ics", _log));
+                var from = _rangeStart;
+                var to = _rangeEnd;
+                var parsed = await Task.Run(() => IcsReader.Read(text, from, to, id, string.IsNullOrEmpty(name) ? "Calendar" : name, green, "ics", _log).ToList());
+                events.AddRange(parsed);
             }
             catch (Exception ex)
             {
-                _log.Warn($"ICS source failed: {ex.Message}");
+                // The exception text of a download can name the address, so only its type is logged.
+                _log.Warn($"ICS source failed: {ex.GetType().Name}");
             }
         }
+    }
+
+    /// <summary>Downloads an ICS body over https with a 20 s limit and an 8 MB cap, reading the headers first.</summary>
+    private async Task<string> DownloadIcsAsync(string url)
+    {
+        using var cts = new CancellationTokenSource(IcsTimeout);
+        using var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        if (response.Content.Headers.ContentLength > MaxIcsBytes)
+        {
+            throw new InvalidDataException("ICS body too large");
+        }
+
+        using var buffer = new MemoryStream();
+        await using (var stream = await response.Content.ReadAsStreamAsync(cts.Token).ConfigureAwait(false))
+        {
+            var chunk = new byte[81920];
+            int n;
+            while ((n = await stream.ReadAsync(chunk, cts.Token).ConfigureAwait(false)) > 0)
+            {
+                if (buffer.Length + n > MaxIcsBytes)
+                {
+                    throw new InvalidDataException("ICS body too large");
+                }
+
+                buffer.Write(chunk, 0, n);
+            }
+        }
+
+        return System.Text.Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length).TrimStart('\uFEFF');
     }
 
     // ---------------------------------------------------------------- scheduling

@@ -248,7 +248,7 @@ internal sealed class IslandCore : IDisposable
                     ModulesChanged?.Invoke();
                 }
 
-                if (key is K.NotificationsEnabled or K.DismissNative)
+                if (key is K.NotificationsEnabled or K.DismissNative or K.NotificationsReadScreen)
                 {
                     Notifications.Sync();
                 }

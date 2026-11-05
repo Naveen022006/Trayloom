@@ -1068,6 +1068,11 @@ internal static class BarCatalog
             // Kill Process owns the list (protected processes are never offered) and the identity-verified kill.
             foreach (var e in kill.Browse(string.Empty, 400))
             {
+                if (ProcessSafety.IsProtectedName(e.Name))
+                {
+                    continue;
+                }
+
                 var pid = e.Pid;
                 result.Add(new BarEntry
                 {
@@ -1104,6 +1109,13 @@ internal static class BarCatalog
 
                 var pid = p.Id;
                 var name = p.ProcessName;
+                if (ProcessSafety.IsProtectedName(name))
+                {
+                    continue;
+                }
+
+                // The start time identifies this process, so a recycled pid can never be ended by mistake.
+                var started = p.StartTime;
                 result.Add(new BarEntry
                 {
                     Id = "kill." + pid,
@@ -1120,6 +1132,12 @@ internal static class BarCatalog
                         try
                         {
                             using var target = Process.GetProcessById(pid);
+                            if (target.StartTime != started || ProcessSafety.IsProtectedName(target.ProcessName))
+                            {
+                                System.Media.SystemSounds.Beep.Play();
+                                return;
+                            }
+
                             target.Kill();
                         }
                         catch

@@ -21,6 +21,7 @@ internal static class CleaningStrings
     public static  string PanelCaption => Loc.T("Locks the keyboard so you can clean safely.");
     public static  string OverlayTitle => Loc.T("Keyboard locked for cleaning");
     public static  string OverlaySubtitle => Loc.T("Press Escape 5 times to unlock");
+    public static  string AutoUnlock => Loc.T("Unlocks by itself after 10 minutes.");
     public static  string Unlock => Loc.T("Unlock");
     public static  string MouseHint => Loc.T("Your mouse and trackpad still work");
     public static  string KeepVisible => Loc.T("Keep screen visible");
@@ -79,6 +80,7 @@ internal static class CleaningViews
         button.Click += (_, _) => unlock();
         Add(button, 24);
         Add(new TextBlock { Text = CleaningStrings.MouseHint, FontSize = 12, Foreground = new SolidColorBrush(Color.FromArgb(128, 255, 255, 255)), HorizontalAlignment = HorizontalAlignment.Center }, 18);
+        Add(new TextBlock { Text = CleaningStrings.AutoUnlock, FontSize = 12, Foreground = new SolidColorBrush(Color.FromArgb(128, 255, 255, 255)), HorizontalAlignment = HorizontalAlignment.Center }, 6);
 
         var root = new Grid { Background = Brushes.Black };
         stack.Margin = new Thickness(44);
@@ -212,6 +214,14 @@ public sealed class CleaningModeFeature : ToolsFeatureBase, ICleaningModeService
     private DispatcherTimer? _releaseDeadline;
     private bool _active;
 
+    /// <summary>The longest the keyboard stays locked; a stuck UI thread or a lost overlay can never trap the user for good.</summary>
+    private static readonly TimeSpan MaxLock = TimeSpan.FromMinutes(10);
+
+    /// <summary>Set on the hook thread (or the safety timer) the moment the lock must end, so keys and the wheel pass straight away.</summary>
+    private volatile bool _unlocked;
+
+    private System.Threading.Timer? _safety;
+
     public override string Id => "cleaning-mode";
 
     public override IReadOnlyList<FeatureAction> Actions =>
@@ -241,6 +251,7 @@ public sealed class CleaningModeFeature : ToolsFeatureBase, ICleaningModeService
             return;
         }
 
+        _unlocked = false;
         Array.Clear(_down);
         lock (_hookGate)
         {
@@ -253,6 +264,11 @@ public sealed class CleaningModeFeature : ToolsFeatureBase, ICleaningModeService
         _keyboard = Ctx.Hooks.SubscribeKeyboard(OnKey, int.MaxValue);
         _mouse = Ctx.Hooks.SubscribeMouse(OnMouse, int.MaxValue);
         _active = true;
+        _safety = new System.Threading.Timer(_ =>
+        {
+            _unlocked = true;
+            Ctx.Ui.BeginInvoke(Teardown);
+        }, null, MaxLock, System.Threading.Timeout.InfiniteTimeSpan);
         BuildOverlays();
         _topmost = new DispatcherTimer(DispatcherPriority.Background, Ctx.Ui) { Interval = TimeSpan.FromMilliseconds(500) };
         _topmost.Tick += (_, _) =>
@@ -269,6 +285,11 @@ public sealed class CleaningModeFeature : ToolsFeatureBase, ICleaningModeService
 
     private bool OnKey(KeyboardHookEvent e)
     {
+        if (_unlocked)
+        {
+            return false;
+        }
+
         var vk = e.VkCode & 0xFF;
         var unlocked = false;
         var progress = -1;
@@ -300,6 +321,7 @@ public sealed class CleaningModeFeature : ToolsFeatureBase, ICleaningModeService
 
         if (unlocked)
         {
+            _unlocked = true;
             Ctx.Ui.BeginInvoke(RequestDeactivation);
         }
 
@@ -310,7 +332,7 @@ public sealed class CleaningModeFeature : ToolsFeatureBase, ICleaningModeService
     {
         if (e.IsWheel)
         {
-            return true;
+            return !_unlocked;
         }
 
         var button = e.Kind switch
@@ -431,6 +453,9 @@ public sealed class CleaningModeFeature : ToolsFeatureBase, ICleaningModeService
         }
 
         _active = false;
+        _unlocked = true;
+        _safety?.Dispose();
+        _safety = null;
         SystemEvents.DisplaySettingsChanged -= OnDisplayChanged;
         SystemEvents.SessionSwitch -= OnSession;
         _keyboard?.Dispose();

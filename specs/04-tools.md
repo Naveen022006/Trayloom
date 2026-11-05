@@ -5352,3 +5352,9 @@ Open questions for the orchestrator
 2. App updates source pills: the reference image shows a pill only on the Store row, the Swift code draws one on every row (7.3.3). Spec follows the code.
 3. NuGet additions that may be needed and are **ask first**: a WinGet COM projection (`Microsoft.WindowsPackageManager.ComInterop`), a GIF quantiser (ImageSharp/Magick.NET), Win2D (not required if WPF `RenderTargetBitmap` is used).
 4. Recorder editor dependency for the Video tool's `Edit` button: needs the recorder part's `OpenEditor(path)`; hide the button until that exists.
+
+## Safety addendum (WP-7)
+
+* Scratchpad reading view: only `http`, `https` and `mailto` links are clickable (opened through the web-link helper); any other target (`file:`, `ms-settings:`, a path) is plain text with the target as tooltip. A stale `Scratchpad.json.tmp` is deleted after a successful load.
+* Command Bar: Kill Process rows hide protected system processes and re-check the process start time before ending one. A `.bat` or `.cmd` script refuses an argument containing `& | < > ^ % "` or a line break and shows "This argument can’t be passed to a batch script.". `powershell.exe`, `shutdown.exe` and `explorer.exe` are started by full path.
+* Cleaning Mode: the keyboard lock ends by itself after 10 minutes (overlay line "Unlocks by itself after 10 minutes."). Once the five-Escape gesture or the timer fires, keys and the wheel pass at once, before the UI thread tears the overlay down.

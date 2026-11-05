@@ -401,11 +401,23 @@ internal static class ScratchpadReading
 
             if (span.Url is { } url)
             {
-                var link = new Hyperlink(run) { Cursor = Cursors.Hand };
-                link.SetResourceReference(TextElement.ForegroundProperty, ThemeKeys.Accent);
-                link.TextDecorations = null;
-                link.Click += (_, _) => openLink(url);
-                run = link;
+                if (SafeLinks.IsWebUrl(url, out _))
+                {
+                    var link = new Hyperlink(run) { Cursor = Cursors.Hand, ToolTip = url };
+                    link.SetResourceReference(TextElement.ForegroundProperty, ThemeKeys.Accent);
+                    link.TextDecorations = null;
+                    link.Click += (_, _) => openLink(url);
+                    run = link;
+                }
+                else
+                {
+                    // Only http, https and mailto are links; anything else (file:, ms-settings:, a path) is shown as plain text.
+                    run.ToolTip = url;
+                    if (brushKey is not null)
+                    {
+                        run.SetResourceReference(TextElement.ForegroundProperty, brushKey);
+                    }
+                }
             }
             else if (brushKey is not null)
             {

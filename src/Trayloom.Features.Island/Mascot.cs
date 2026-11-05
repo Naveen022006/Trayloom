@@ -779,6 +779,7 @@ internal sealed class MascotService : IDisposable
     private string? _waiting;
     private DateTime _waitingSince;
     private bool _wasEnabled;
+    private bool _running;
 
     public MascotService(IslandCore core)
     {
@@ -808,8 +809,6 @@ internal sealed class MascotService : IDisposable
 
     public void Start()
     {
-        _timer.Start();
-        DecorativeClock.Subscribe(Tick);
         _core.Playback.Changed += OnMusic;
         _core.Timer.Started += p => React(p == TimerPhase.Focus || p == TimerPhase.Timer ? "ready" : "ready");
         _core.Timer.Finished += (p, cycle) => React(p == TimerPhase.Focus ? "celebrate" : (p is TimerPhase.ShortBreak or TimerPhase.LongBreak ? "ready" : "surprised"));
@@ -824,6 +823,7 @@ internal sealed class MascotService : IDisposable
         var en = Enabled;
         if (en && !_wasEnabled)
         {
+            SetRunning(true);
             Tucked = false;
             Actor.Wake();
             Actor.Play("wakeUp", D.ReduceMotion);
@@ -832,15 +832,38 @@ internal sealed class MascotService : IDisposable
         else if (!en && _wasEnabled)
         {
             _nextVisit = DateTime.MaxValue;
+            SetRunning(false);
         }
 
         _wasEnabled = en;
         Changed?.Invoke();
     }
 
+    /// <summary>Runs the 1 s timer and the 30 Hz clock only while the companion is on; a disabled companion costs nothing.</summary>
+    private void SetRunning(bool on)
+    {
+        if (on == _running)
+        {
+            return;
+        }
+
+        _running = on;
+        if (on)
+        {
+            _timer.Start();
+            DecorativeClock.Subscribe(Tick);
+        }
+        else
+        {
+            _timer.Stop();
+            DecorativeClock.Unsubscribe(Tick);
+        }
+    }
+
     private void Tick()
     {
-        if (Enabled && (Actor.Animating || true))
+        // Stepping continues while enabled: the idle blink and breathing are time-driven inside Step, not gated by Animating.
+        if (Enabled)
         {
             Actor.Step(D.ReduceMotion);
         }
@@ -972,7 +995,6 @@ internal sealed class MascotService : IDisposable
 
     public void Dispose()
     {
-        _timer.Stop();
-        DecorativeClock.Unsubscribe(Tick);
+        SetRunning(false);
     }
 }
