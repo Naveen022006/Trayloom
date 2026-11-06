@@ -31,6 +31,9 @@ internal sealed class IslandSurface : FrameworkElement
     private readonly LineSegment _left;
     private readonly BezierSegment _tl;
     private readonly PathFigure _figure;
+
+    // The notch's flat edge lies on the screen edge, so the outline must not be stroked along it: the pen is clipped to everything but that edge.
+    private readonly RectangleGeometry _edgeClip = new();
     private bool _capsule = true;
     private bool _open;
     private bool _outline;
@@ -178,6 +181,12 @@ internal sealed class IslandSurface : FrameworkElement
         else
         {
             UpdateNotch();
+            var sh = Math.Min(Shoulder, H * 0.19);
+            var clipW = Math.Max(0, W + (2 * sh) + 8);
+            var clipH = Math.Max(0, H + 3);
+            _edgeClip.Rect = _flip
+                ? new Rect(X - sh - 4, Y - 4, clipW, clipH)
+                : new Rect(X - sh - 4, Y + 1, clipW, clipH);
         }
 
         GeometryChanged?.Invoke();
@@ -267,12 +276,27 @@ internal sealed class IslandSurface : FrameworkElement
         if (_alpha < 0.999)
         {
             dc.PushOpacity(_alpha);
-            dc.DrawGeometry(fill, pen, CurrentGeometry);
+            DrawBody(dc, fill, pen);
             dc.Pop();
             return;
         }
 
-        dc.DrawGeometry(fill, pen, CurrentGeometry);
+        DrawBody(dc, fill, pen);
+    }
+
+    /// <summary>Fills the silhouette; the notch strokes its pen through <see cref="_edgeClip"/> so no line is drawn along the screen edge.</summary>
+    private void DrawBody(DrawingContext dc, Brush fill, Pen? pen)
+    {
+        if (_capsule || pen is null)
+        {
+            dc.DrawGeometry(fill, pen, CurrentGeometry);
+            return;
+        }
+
+        dc.DrawGeometry(fill, null, _path);
+        dc.PushClip(_edgeClip);
+        dc.DrawGeometry(null, pen, _path);
+        dc.Pop();
     }
 
     protected override HitTestResult? HitTestCore(PointHitTestParameters hitTestParameters)

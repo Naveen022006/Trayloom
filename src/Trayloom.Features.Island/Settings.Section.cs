@@ -151,7 +151,7 @@ internal sealed class IslandSettingsView : StackPanel
         _body.Children.Clear();
         FrameworkElement view = _tab switch
         {
-            0 => SettingsTabs.Layout(_ctx),
+            0 => SettingsTabs.Layout(_ctx, Build),
             1 => new ContentEditor(_ctx, _pendingModule),
             2 => SettingsTabs.Activity(_ctx, Build),
             3 => SettingsTabs.Behavior(_ctx, Build),
@@ -170,12 +170,27 @@ internal static class SettingsTabs
 {
     // ================================================================== Layout
 
-    public static FrameworkElement Layout(ISettingsContext c)
+    public static FrameworkElement Layout(ISettingsContext c, Action rebuildTab)
     {
         var app = c.App;
         var stack = new StackPanel();
         stack.AddSpaced(new LayoutEditor(c), 0);
         var rebuild = () => c.RequestRebuild();
+
+        // Own() keeps the live refresh (below) from rebuilding the tab a second time for a change this page makes itself
+        var own = false;
+        void Own(Action write)
+        {
+            own = true;
+            try
+            {
+                write();
+            }
+            finally
+            {
+                own = false;
+            }
+        }
 
         // Size
         var size = new SettingsCard(Loc.T("Size"));
@@ -201,9 +216,28 @@ internal static class SettingsTabs
         stack.AddSpaced(size, 20);
 
         // Displays without a notch
-        var silhouette = app.Get<string>(K.Silhouette) == "notch" ? "notch" : "capsule";
+        var chosen = app.Get<string>(K.Silhouette) == IslandSilhouette.Notch ? IslandSilhouette.Notch : IslandSilhouette.Capsule;
+        var position = SettingsPosition(app);
+        var note = IslandSilhouette.NoteFor(chosen, position);
+        var atBottom = position.Edge == IslandEdge.Bottom;
         var shape = new SettingsCard(Loc.T("Displays without a notch"));
-        shape.Add(SUi.TileRow(2, 10, SilhouetteTile(Loc.T("Capsule"), true, silhouette == "capsule", () => { app.Set(K.Silhouette, "capsule"); rebuild(); }), SilhouetteTile(Loc.T("Notch"), false, silhouette == "notch", () => { app.Set(K.Silhouette, "notch"); rebuild(); })));
+        shape.Add(SUi.TileRow(
+            2,
+            10,
+            SilhouetteTile(Loc.T("Capsule"), true, chosen == IslandSilhouette.Capsule, () => { app.Set(K.Silhouette, IslandSilhouette.Capsule); rebuild(); }, null),
+            SilhouetteTile(Loc.T("Notch"), false, chosen == IslandSilhouette.Notch, () => ChooseNotch(app, Own, rebuildTab), note == SilhouetteNote.NotchFloating ? Loc.T("Capsule while away from the edge") : null)));
+        if (note == SilhouetteNote.NotchOnEdge)
+        {
+            shape.AddCaption(atBottom
+                ? Loc.T("The notch rests on the bottom edge of the screen; moving the island away from the edge shows it as a capsule.")
+                : Loc.T("The notch hangs from the top edge of the screen; moving the island away from the edge shows it as a capsule."));
+        }
+        else if (note == SilhouetteNote.NotchFloating)
+        {
+            shape.AddCaption(Loc.T("The island is away from the edge of the screen, so it shows as a capsule. Move it back to the edge to see the notch."));
+            shape.Add(UiKit.Button(Loc.T("Move to the edge"), ButtonKind.Bordered, 12, null, () => ChooseNotch(app, Own, rebuildTab)));
+        }
+
         if (app.Get<bool>(K.Enabled) && app.Get<string>(K.Display) == "builtIn" && System.Windows.Forms.Screen.AllScreens.Length == 0)
         {
             shape.AddCaption(Loc.T("With the Display chosen on the Behavior tab, Dynamic Island doesn’t appear on these displays."));
@@ -212,15 +246,14 @@ internal static class SettingsTabs
 
         stack.AddSpaced(shape, 20);
 
-        // Capsule fit
-        if (silhouette == "capsule")
+        // the fit shapes the capsule, and a notch that is away from its edge is drawn as one
+        if (chosen == IslandSilhouette.Capsule || note == SilhouetteNote.NotchFloating)
         {
             var fit = new SettingsCard(Loc.T("Capsule fit"));
             string Signed(double v, int d) => (v > 0 ? "+" : "") + v.ToString(d == 0 ? "0" : "0.#", System.Globalization.CultureInfo.InvariantCulture);
             fit.Add(SUi.SliderLine(Loc.T("Width"), -40, 40, app.Get<double>(K.CapsuleFitWidth), 2, v => Signed(v, 0), v => app.Set(K.CapsuleFitWidth, v)));
             fit.Add(SUi.SliderLine(Loc.T("Height"), -4, 4, app.Get<double>(K.CapsuleFitHeight), 1, v => Signed(v, 0), v => app.Set(K.CapsuleFitHeight, v)));
             // the drop applies on whichever edge the island rests on
-            var atBottom = IsAtBottom(app);
             fit.Add(SUi.SliderLine(atBottom ? Loc.T("Distance from bottom") : Loc.T("Distance from top"), 0, 20, app.Get<double>(K.CapsuleFitDrop), 1, v => Signed(v, 0), v => app.Set(K.CapsuleFitDrop, v)));
             fit.AddCaption(atBottom
                 ? Loc.T("Resizes the capsule and raises it from the bottom of the screen on displays without a notch.")
@@ -231,10 +264,52 @@ internal static class SettingsTabs
         var outline = new SettingsCard();
         outline.Add(SUi.SwitchRow(app, K.Outline, "", Loc.T("Show outline")));
         stack.AddSpaced(outline, 20);
+
+        // the shape hint follows the island when it is moved elsewhere (a drag, the Behavior tab, Move island…)
+        var refreshPending = false;
+        void OnSetting(string key)
+        {
+            if (own || refreshPending || key is not (K.Position or K.PositionsByDisplay or K.Display or K.DisplayId))
+            {
+                return;
+            }
+
+            refreshPending = true;
+            stack.Dispatcher.BeginInvoke(() =>
+            {
+                refreshPending = false;
+                if (stack.IsLoaded)
+                {
+                    rebuildTab();
+                }
+            });
+        }
+
+        stack.Loaded += (_, _) => app.Changed += OnSetting;
+        stack.Unloaded += (_, _) => app.Changed -= OnSetting;
         return stack;
     }
 
-    private static Border SilhouetteTile(string title, bool capsule, bool selected, Action onClick)
+    /// <summary>
+    /// Chooses the notch and moves the island to its edge on every display, because the notch only exists against the edge. The place along the
+    /// edge and the edge itself are kept; the Capsule tile never touches the position.
+    /// </summary>
+    private static void ChooseNotch(IAppSettings app, Action<Action> own, Action rebuildTab)
+    {
+        var before = SettingsPosition(app);
+        own(() =>
+        {
+            var attached = IslandPlacementStore.AttachAll(app);
+            app.Set(K.Silhouette, IslandSilhouette.Notch);
+            if (attached)
+            {
+                IslandCore.Current?.Ctx.Log.Info($"silhouette: notch chosen, attached the island to its edge (was {before.Format()})");
+            }
+        });
+        rebuildTab();
+    }
+
+    private static Border SilhouetteTile(string title, bool capsule, bool selected, Action onClick, string? note)
     {
         var b = new Border { Padding = new Thickness(8), CornerRadius = new CornerRadius(12), Cursor = Cursors.Hand, BorderThickness = new Thickness(1) };
         if (selected)
@@ -260,12 +335,20 @@ internal static class SettingsTabs
         t.HorizontalAlignment = HorizontalAlignment.Center;
         t.Margin = new Thickness(0, 8, 0, 0);
         stack.Children.Add(t);
+        if (note is not null)
+        {
+            var n = UiKit.Text(note, 10.5, FontWeights.Normal, ThemeKeys.TextSecondary);
+            n.HorizontalAlignment = HorizontalAlignment.Center;
+            n.Margin = new Thickness(0, 2, 0, 0);
+            stack.Children.Add(n);
+        }
+
         b.Child = stack;
         b.Clickable(onClick, title);
         return b;
     }
 
-    // ================================================================== Activity
+    //================================================================== Activity
 
     public static FrameworkElement Activity(ISettingsContext c, Action rebuildTab)
     {
@@ -726,6 +809,10 @@ internal static class SettingsTabs
                     own(() => IslandPlacementStore.Save(app, monitor, next, null));
                 }
             }));
+            if (app.Get<string>(K.Silhouette) == IslandSilhouette.Notch)
+            {
+                card.AddCaption(Loc.T("With the Notch shape, any distance from the edge shows the island as a capsule."));
+            }
         }
 
         var window = IslandCore.Current?.Window;
@@ -798,7 +885,7 @@ internal static class SettingsTabs
     }
 
     /// <summary>The display the island is on: the live window's, else the one the Display setting resolves to right now.</summary>
-    private static IslandMonitor? ResolveMonitor(IAppSettings app)
+    internal static IslandMonitor? ResolveMonitor(IAppSettings app)
     {
         try
         {
@@ -820,7 +907,20 @@ internal static class SettingsTabs
     private static bool IsAtBottom(IAppSettings app) =>
         ResolveMonitor(app) is { } m && IslandPlacementStore.Load(app, m).Edge == IslandEdge.Bottom;
 
-    private static double SettingsZoom(IAppSettings app)
+    /// <summary>
+    /// Where the island is for the settings pages: the stored position of its display, clamped to what fits there. Read from the settings, not
+    /// from the live window, because the window follows a write only a dispatcher turn later.
+    /// </summary>
+    internal static IslandPosition SettingsPosition(IAppSettings app) =>
+        ResolveMonitor(app) is { } m
+            ? IslandPlacement.Frame(m, IslandPlacementStore.Load(app, m), SettingsZoom(app)).Position
+            : IslandPosition.Parse(app.Get<string>(K.Position));
+
+    /// <summary>True when the island is drawn as a capsule at the position the settings show.</summary>
+    internal static bool SettingsDrawsCapsule(IAppSettings app) =>
+        IslandSilhouette.DrawsCapsule(app.Get<string>(K.Silhouette), SettingsPosition(app));
+
+    internal static double SettingsZoom(IAppSettings app)
     {
         var z = app.Get(IslandWindow.ZoomKey, IslandWindow.DefaultZoom);
         return IslandSizes.ClampZoom(z, IslandWindow.DefaultZoom);

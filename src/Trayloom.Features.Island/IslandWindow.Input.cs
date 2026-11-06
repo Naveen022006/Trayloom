@@ -468,6 +468,15 @@ internal sealed partial class IslandWindow
         var r = SurfaceScreenRect();
         var cx = r.Left + (r.Width / 2);
         var cy = r.Top + (r.Height / 2);
+
+        // beside the notch the companion rests at one side of the body, and it looks from there
+        var side = _closedKey == "rest" ? IslandSilhouette.MascotSide(IsCapsule, ChosenMascotSide) : 0;
+        if (side != 0)
+        {
+            var size = ClosedViews.MascotSize(BodyHeight);
+            cx += side * ((r.Width / 2) - ((ClosedViews.MascotInset(BodyHeight) + (size / 2)) * _scale));
+        }
+
         var s = 18 * _scale;
         _core.Mascot.Actor.LookAt((cursor.X - cx) / (3 * s), (cursor.Y - cy) / (2 * s));
         if (r.Contains(cursor))
@@ -1574,17 +1583,21 @@ internal sealed class MirrorWindow : OverlayWindow
 {
     private readonly IslandWindow _owner;
     private readonly IslandMonitor _monitor;
-    private readonly System.Windows.Shapes.Rectangle _view = new();
+    private readonly System.Windows.Shapes.Rectangle _view = new() { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
+
+    // The black body the copy sits on, cut to the island's silhouette: the copy alone is only the island's content, which is transparent where the surface is black.
+    private readonly Grid _plate = new() { Background = Brushes.Black, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
+    private (double W, double H, bool Capsule, bool OpensUp)? _shape;
 
     public MirrorWindow(IslandWindow owner, IslandMonitor monitor)
     {
         _owner = owner;
         _monitor = monitor;
-        _view.RadiusX = 12;
-        _view.RadiusY = 12;
+
         // the island is drawn larger by its zoom; the copy keeps the same proportions
-        _view.LayoutTransform = Math.Abs(owner.Zoom - 1) < 0.0005 ? Transform.Identity : new ScaleTransform(owner.Zoom, owner.Zoom);
-        Content = _view;
+        _plate.LayoutTransform = Math.Abs(owner.Zoom - 1) < 0.0005 ? Transform.Identity : new ScaleTransform(owner.Zoom, owner.Zoom);
+        _plate.Children.Add(_view);
+        Content = _plate;
         Width = 140;
         Height = 40;
         MouseLeftButtonUp += (_, _) => _owner.MoveHere(_monitor);
@@ -1598,6 +1611,8 @@ internal sealed class MirrorWindow : OverlayWindow
         var src = _owner.MirrorSource;
         var w = Math.Max(20, src.ActualWidth);
         var h = Math.Max(10, src.ActualHeight);
+        _plate.Width = w;
+        _plate.Height = h;
         _view.Width = w;
         _view.Height = h;
         _view.Fill = new VisualBrush(src) { Stretch = Stretch.None };
@@ -1605,7 +1620,20 @@ internal sealed class MirrorWindow : OverlayWindow
         // placed by the display's own frame (its saved position, its DPI scale): the window's own DPI can still be the one of the display it
         // was created on until Windows has moved it here
         var frame = _owner.FrameFor(_monitor);
-        var body = IslandPlacement.PillRectPx(frame, w, h, 0);
+
+        // each display has its own position, so each copy is a notch or a capsule by its own rule
+        var capsule = IslandSilhouette.DrawsCapsule(_owner.ChosenSilhouette, frame.Position);
+        var shape = (w, h, capsule, frame.OpensUp);
+        if (shape != _shape)
+        {
+            _shape = shape;
+            _plate.Clip = IslandSurface.Build(0, 0, w, h, capsule, false, frame.OpensUp);
+
+            // the window ends at the body's far side on a bottom island, so the plate hugs the bottom there and the top otherwise
+            _plate.VerticalAlignment = frame.OpensUp ? VerticalAlignment.Bottom : VerticalAlignment.Top;
+        }
+
+        var body = IslandPlacement.PillRectPx(frame, w, h, _owner.NearGapOf(capsule));
         var width = (int)Math.Ceiling(w * frame.Scale);
         var height = (int)Math.Ceiling(h * frame.Scale) + 4;
         SetPhysicalBounds(body.Left, frame.OpensUp ? body.Bottom - height : body.Top, width, height);

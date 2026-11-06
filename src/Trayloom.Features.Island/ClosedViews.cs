@@ -63,6 +63,12 @@ internal static class ClosedViews
 
     // ---------------------------------------------------------------- resting
 
+    /// <summary>The resting companion's size in units for a body of this height.</summary>
+    internal static double MascotSize(double body) => Math.Max(10, Math.Min(18, body - 6));
+
+    /// <summary>How far the companion rests from the body's side when it sits beside the notch: past the flared shoulder, never more than 16 units.</summary>
+    internal static double MascotInset(double body) => Math.Min(16, Math.Min(IslandSurface.Shoulder, body * 0.19) + 5);
+
     public static ClosedView Resting(IslandCore core, IslandWindow win)
     {
         var app = core.App;
@@ -123,7 +129,7 @@ internal static class ClosedViews
 
         if (mascotOn)
         {
-            middle = new MascotView(core.Mascot.Actor, Math.Max(10, Math.Min(18, body - 6)), core.Mascot.Look);
+            middle = new MascotView(core.Mascot.Actor, MascotSize(body), core.Mascot.Look);
         }
 
         var grid = new Grid { Height = body };
@@ -150,7 +156,18 @@ internal static class ClosedViews
 
         if (middle is not null)
         {
-            middle.HorizontalAlignment = HorizontalAlignment.Center;
+            // the notch has a camera in its middle, so the companion rests beside it (the Companion tab's Left or Right) instead of on it
+            var side = mascotOn ? IslandSilhouette.MascotSide(win.IsCapsule, app.Get<string>(K.MascotSide)) : 0;
+            if (side != 0)
+            {
+                middle.HorizontalAlignment = side < 0 ? HorizontalAlignment.Left : HorizontalAlignment.Right;
+                middle.Margin = side < 0 ? new Thickness(MascotInset(body), 0, 0, 0) : new Thickness(0, 0, MascotInset(body), 0);
+            }
+            else
+            {
+                middle.HorizontalAlignment = HorizontalAlignment.Center;
+            }
+
             middle.VerticalAlignment = VerticalAlignment.Center;
             grid.Children.Add(middle);
         }

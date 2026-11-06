@@ -22,6 +22,9 @@ internal sealed class IslandGhostWindow : OverlayWindow
     private readonly bool _excludeFromCapture;
     private CornerRadius _corners = new(-1);
     private double _radius = -1;
+    private readonly double _w;
+    private readonly double _h;
+    private (bool Capsule, bool Bottom)? _shape;
 
     /// <param name="source">The closed layer of the island (copied live: its content keeps updating while it is dragged).</param>
     /// <param name="width">Width of that layer in island units (DIP before the island zoom).</param>
@@ -30,6 +33,8 @@ internal sealed class IslandGhostWindow : OverlayWindow
     public IslandGhostWindow(FrameworkElement source, double width, double height, bool excludeFromCapture)
     {
         _excludeFromCapture = excludeFromCapture;
+        _w = width;
+        _h = height;
         ClickThrough = true;
         UseLayoutRounding = false;
         SnapsToDevicePixels = false;
@@ -90,11 +95,20 @@ internal sealed class IslandGhostWindow : OverlayWindow
             _plate.CornerRadius = corners;
         }
 
-        if (Math.Abs(radius - _radius) > 0.01)
+        // the copy of the island is cut to the same silhouette as the plate, because a rounded rectangle would round the notch's flat edge
+        if ((capsule, bottom) != _shape)
         {
-            _radius = radius;
-            _view.RadiusX = radius;
-            _view.RadiusY = radius;
+            _shape = (capsule, bottom);
+            _view.Clip = IslandSurface.Build(0, 0, _w, _h, capsule, false, bottom);
+            _radius = -1;
+        }
+
+        var viewRadius = capsule ? radius : 0;
+        if (Math.Abs(viewRadius - _radius) > 0.01)
+        {
+            _radius = viewRadius;
+            _view.RadiusX = viewRadius;
+            _view.RadiusY = viewRadius;
         }
     }
 }

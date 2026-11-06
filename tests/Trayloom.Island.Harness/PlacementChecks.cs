@@ -40,6 +40,7 @@ internal static class PlacementChecks
         ResolveAndFind();
         AfterDrop();
         Store();
+        Silhouette();
     }
 
     // ---------------------------------------------------------------- layouts
@@ -512,6 +513,101 @@ internal static class PlacementChecks
         app.Set(K.Display, "pointer");
         IslandPlacementStore.Reset(app);
         _check(app.Get<string>(K.Display) == "pointer", "store: reset leaves pointer alone");
+    }
+
+    // ---------------------------------------------------------------- silhouette
+
+    private static void Silhouette()
+    {
+        var top49 = new IslandPosition(0.5, IslandEdge.Top, 49);
+
+        // the notch only exists attached to its edge
+        _check(IslandSilhouette.DrawsCapsule("capsule", IslandPosition.Default), "silhouette: capsule chosen is a capsule");
+        _check(!IslandSilhouette.DrawsCapsule("notch", IslandPosition.Default), "silhouette: notch chosen at the edge is a notch");
+        _check(IslandSilhouette.DrawsCapsule("notch", top49), "silhouette: notch chosen at offset 49 is drawn as a capsule");
+        _check(!IslandSilhouette.DrawsCapsule("notch", new IslandPosition(0.5, IslandEdge.Top, 0.4)), "silhouette: offset 0.4 still counts as attached");
+        _check(IslandSilhouette.DrawsCapsule("notch", new IslandPosition(0.5, IslandEdge.Top, 0.5)), "silhouette: offset 0.5 is floating");
+        _check(IslandSilhouette.DrawsCapsule(null, IslandPosition.Default) && IslandSilhouette.DrawsCapsule("", IslandPosition.Default) && IslandSilhouette.DrawsCapsule("Notch", IslandPosition.Default),
+            "silhouette: an unknown or missing choice is a capsule");
+        _check(!IslandSilhouette.DrawsCapsule("notch", new IslandPosition(1, IslandEdge.Bottom, 0)), "silhouette: notch chosen at the bottom edge is a notch");
+
+        _check(IslandSilhouette.NoteFor("capsule", IslandPosition.Default) == SilhouetteNote.None, "silhouette: no note for the capsule");
+        _check(IslandSilhouette.NoteFor("notch", IslandPosition.Default) == SilhouetteNote.NotchOnEdge, "silhouette: notch at the edge gets the on-edge note");
+        _check(IslandSilhouette.NoteFor("notch", top49) == SilhouetteNote.NotchFloating, "silhouette: notch away from the edge gets the floating note");
+
+        // a display too short for any offset keeps the island at its edge, so it can always show the notch
+        var tiny = Mon("TINY", true, true, (0, 0, 1024, 640), (0, 0, 1024, 600), 1.25);
+        var tinyFrame = IslandPlacement.Frame(tiny, top49, Zoom);
+        _check(tinyFrame.MaxOffset == 0 && tinyFrame.Position.Attached, "silhouette: on a display with no room for an offset the island stays attached");
+        _check(!IslandPlacement.Frame(L1()[0], top49, Zoom).Position.Attached, "silhouette: offset 49 stays floating on a roomy display");
+
+        _check(IslandPlacement.Attach(new IslandPosition(0.3, IslandEdge.Top, 160)) == new IslandPosition(0.3, IslandEdge.Top, 0), "silhouette: Attach keeps the side and zeroes the offset");
+        _check(IslandPlacement.Attach(new IslandPosition(1, IslandEdge.Bottom, 40)) == new IslandPosition(1, IslandEdge.Bottom, 0), "silhouette: Attach keeps the bottom edge");
+        _check(IslandPlacement.Attach(IslandPosition.Default) == IslandPosition.Default, "silhouette: Attach leaves an attached position alone");
+
+        AttachAll();
+
+        // dropping the island back at the edge restores the notch, a drop further in keeps the capsule
+        var ms = L1();
+        var atEdge = IslandPlacement.FromDrop(ms, 960, 30.25, 135, 24, Zoom).Position;
+        _check(atEdge == new IslandPosition(0.5, IslandEdge.Top, 0) && !IslandSilhouette.DrawsCapsule("notch", atEdge), "silhouette: a drop near the top edge snaps to the edge and draws the notch");
+        var away = IslandPlacement.FromDrop(ms, 960, 154, 135, 24, Zoom).Position;
+        _check(away.Offset == 100 && IslandSilhouette.DrawsCapsule("notch", away), "silhouette: a drop 100 units in keeps its offset and draws a capsule");
+        var usableH = ms[0].Work.Height / (ms[0].Dpi * Zoom);
+        var bottom = IslandPlacement.FromDrop(ms, 960, (usableH - 12 - 5) * ms[0].Dpi * Zoom, 135, 24, Zoom).Position;
+        _check(bottom.Edge == IslandEdge.Bottom && bottom.Offset == 0 && !IslandSilhouette.DrawsCapsule("notch", bottom), "silhouette: a drop at the bottom edge draws the notch there");
+
+        _check(IslandSilhouette.MascotSide(true, "right") == 0, "silhouette: the capsule keeps the companion centred");
+        _check(IslandSilhouette.MascotSide(false, "left") == -1 && IslandSilhouette.MascotSide(false, "right") == 1, "silhouette: the notch puts the companion at the chosen side");
+        _check(IslandSilhouette.MascotSide(false, null) == -1 && IslandSilhouette.MascotSide(false, "x") == -1, "silhouette: anything but right is left");
+    }
+
+    private static void AttachAll()
+    {
+        var ms = L1();
+        var (main, side) = (ms[0], ms[1]);
+        var app = new FakeSettings();
+        K.RegisterDefaults(app);
+        IslandPlacementStore.Save(app, main, new IslandPosition(0.3, IslandEdge.Top, 160), null);
+        IslandPlacementStore.Save(app, side, new IslandPosition(1, IslandEdge.Bottom, 40), null);
+        app.Set(K.Position, "0.7,top,25");
+        app.Set(K.Display, IslandPlacement.SpecificDisplay);
+        app.Set(K.DisplayId, side.Key);
+
+        var changed = 0;
+        app.Changed += _ => changed++;
+        _check(IslandPlacementStore.AttachAll(app), "attach all: reports a change when positions floated");
+        _check(IslandPlacementStore.Load(app, main) == new IslandPosition(0.3, IslandEdge.Top, 0), "attach all: the main display's entry is attached in place");
+        _check(IslandPlacementStore.Load(app, side) == new IslandPosition(1, IslandEdge.Bottom, 0), "attach all: the other display's entry is attached on its edge");
+        _check(app.Get<string>(K.Position) == "0.7,top,0", "attach all: the plain position is attached");
+        _check(app.Get<string>(K.Display) == IslandPlacement.SpecificDisplay && app.Get<string>(K.DisplayId) == side.Key, "attach all: the display choice is untouched");
+        _check(MapCount(app) == 2, "attach all: no entry is added or lost");
+
+        changed = 0;
+        _check(!IslandPlacementStore.AttachAll(app) && changed == 0, "attach all: a second call changes and writes nothing");
+
+        var fresh = new FakeSettings();
+        K.RegisterDefaults(fresh);
+        var writes = 0;
+        fresh.Changed += _ => writes++;
+        _check(!IslandPlacementStore.AttachAll(fresh) && writes == 0, "attach all: a fresh store is left alone");
+
+        var broken = new FakeSettings();
+        K.RegisterDefaults(broken);
+        broken.Set(K.PositionsByDisplay, "{not json");
+        broken.Set(K.Position, "0.5,top,30");
+        var result = false;
+        var threw = false;
+        try
+        {
+            result = IslandPlacementStore.AttachAll(broken);
+        }
+        catch (Exception)
+        {
+            threw = true;
+        }
+
+        _check(!threw && result && broken.Get<string>(K.Position) == "0.5,top,0", "attach all: a broken map does not throw and the plain position is still attached");
     }
 
     private static int MapCount(IAppSettings app)

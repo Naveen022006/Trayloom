@@ -271,10 +271,16 @@ internal sealed class ContentEditor : Grid
 
                     var budget = IslandSizes.Budget(_c.App, 76);
                     var ch = Math.Clamp(page.Height(w - 56, budget), 40, budget);
-                    var h = page.HasTopRow ? 12 + 64 + ch : 32 + ch;
+
+                    // the preview draws what the island draws: the notch only exists while the island rests against its edge
+                    var position = SettingsTabs.SettingsPosition(_c.App);
+                    var capsule = IslandSilhouette.DrawsCapsule(_c.App.Get<string>(K.Silhouette), position);
+                    var bottom = position.Edge == IslandEdge.Bottom;
+                    var h = page.HasTopRow ? (capsule ? 12 : 0) + 64 + ch : 32 + ch;
+                    var corners = capsule ? new CornerRadius(28) : (bottom ? new CornerRadius(28, 28, 0, 0) : new CornerRadius(0, 0, 28, 28));
                     var surface = new Grid { Width = w, Height = h, IsHitTestVisible = false };
-                    surface.Children.Add(new Border { Background = Brushes.Black, CornerRadius = new CornerRadius(28), Width = w, Height = h });
-                    var inner = new Grid { Margin = new Thickness(28, page.HasTopRow ? 60 : 16, 28, 16), ClipToBounds = true };
+                    surface.Children.Add(new Border { Background = Brushes.Black, CornerRadius = corners, Width = w, Height = h });
+                    var inner = new Grid { Margin = new Thickness(28, page.HasTopRow ? (capsule ? 60 : 48) : 16, 28, 16), ClipToBounds = true };
                     inner.Children.Add(page.View);
                     surface.Children.Add(inner);
                     var vb = new Viewbox { Stretch = Stretch.Uniform, StretchDirection = StretchDirection.DownOnly, MaxHeight = 236, Child = surface, Opacity = hiddenFromIsland ? 0.4 : 1, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(16, 14, 16, 0) };

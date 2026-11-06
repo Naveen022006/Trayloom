@@ -253,6 +253,17 @@ internal sealed class CompanionPage : StackPanel
         g.Children.Add(bar);
         var strip = new Border { Width = 223 * 0.9, Height = 24, Background = Brushes.Black, CornerRadius = new CornerRadius(12), VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 4, 0, 0), Child = null };
         _view = new MascotView(_actor, 18, Look) { StepsActor = true, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+
+        // the stage shows what the island does: a centred capsule, or a notch hanging from the edge with the companion at the chosen side
+        if (!SettingsTabs.SettingsDrawsCapsule(App))
+        {
+            var side = IslandSilhouette.MascotSide(false, App.Get<string>(K.MascotSide));
+            strip.Margin = new Thickness(0);
+            strip.CornerRadius = new CornerRadius(0, 0, 12, 12);
+            _view.HorizontalAlignment = side < 0 ? HorizontalAlignment.Left : HorizontalAlignment.Right;
+            _view.Margin = side < 0 ? new Thickness(10, 0, 0, 0) : new Thickness(0, 0, 10, 0);
+        }
+
         _actor.Asleep = !enabled;
         if (!enabled)
         {

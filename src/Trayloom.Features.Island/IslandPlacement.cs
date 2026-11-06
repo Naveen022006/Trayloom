@@ -68,6 +68,47 @@ internal readonly record struct IslandPosition(double X, IslandEdge Edge, double
         string.Create(CultureInfo.InvariantCulture, $"{X:0.####},{(Edge == IslandEdge.Top ? "top" : "bottom")},{Offset:0.##}");
 }
 
+/// <summary>Whether the island is attached flush to its edge, floating with the Notch shape chosen, or the note does not apply.</summary>
+internal enum SilhouetteNote
+{
+    None,
+    NotchOnEdge,
+    NotchFloating,
+}
+
+/// <summary>The island's shape: the Layout tab's choice, and the rule that the notch only exists attached to its edge.</summary>
+internal static class IslandSilhouette
+{
+    public const string Capsule = "capsule";
+    public const string Notch = "notch";
+
+    /// <summary>True when the island is drawn as a capsule: chosen, or forced because a floating island has no edge to hang from.</summary>
+    public static bool DrawsCapsule(string? chosen, IslandPosition position) =>
+        chosen != Notch || !position.Attached;
+
+    /// <summary>What the settings should tell the person about the shape they chose at this position.</summary>
+    public static SilhouetteNote NoteFor(string? chosen, IslandPosition position)
+    {
+        if (chosen != Notch)
+        {
+            return SilhouetteNote.None;
+        }
+
+        return position.Attached ? SilhouetteNote.NotchOnEdge : SilhouetteNote.NotchFloating;
+    }
+
+    /// <summary>Where the resting companion sits: 0 centred (capsule), -1 left or +1 right of the centre (notch, notchMascotSide; anything but "right" is left).</summary>
+    public static int MascotSide(bool capsule, string? side)
+    {
+        if (capsule)
+        {
+            return 0;
+        }
+
+        return side == "right" ? 1 : -1;
+    }
+}
+
 /// <summary>
 /// One display as the island sees it. Rectangles are physical pixels in virtual-screen coordinates; <see cref="Dpi"/> is the effective
 /// scale factor (1.0 = 96 dpi, 1.25 = 120 dpi), the same unit as <c>IslandNative.MonitorScale</c>.
@@ -151,6 +192,10 @@ internal static class IslandPlacement
 
     /// <summary><c>notchDisplay</c> value for "the display chosen in <c>notchDisplayId</c>".</summary>
     public const string SpecificDisplay = "specific";
+
+    /// <summary>The same place flush against its edge, which is the only place the notch can be drawn.</summary>
+    public static IslandPosition Attach(IslandPosition p) =>
+        p.Attached ? p : p with { Offset = 0 };
 
     /// <summary>The largest offset a display of this usable height (units) can take: half the display at most, and pages keep their room.</summary>
     public static double MaxOffsetFor(double usableHeight) =>
@@ -420,6 +465,60 @@ internal static class IslandPlacementStore
             {
                 app.Set(K.DisplayId, id);
             }
+        }
+    }
+
+    /// <summary>
+    /// Moves every stored position that floats against its edge, keeping its side, its edge and the order of the map. Choosing the notch calls
+    /// this so the shape shows at once on every display. Writes only what changed; returns true when anything did. A malformed map is left
+    /// alone (rewriting it would drop what the person had), the plain position is still attached.
+    /// </summary>
+    public static bool AttachAll(IAppSettings app)
+    {
+        var changed = false;
+
+        var json = app.Get<string>(K.PositionsByDisplay);
+        if (!string.IsNullOrWhiteSpace(json) && IsObjectJson(json))
+        {
+            var map = ReadMap(app);
+            var mapChanged = false;
+            for (var i = 0; i < map.Count; i++)
+            {
+                var p = IslandPosition.Parse(map[i].Value);
+                if (!p.Attached)
+                {
+                    map[i] = new KeyValuePair<string, string>(map[i].Key, IslandPlacement.Attach(p).Format());
+                    mapChanged = true;
+                }
+            }
+
+            if (mapChanged)
+            {
+                app.Set(K.PositionsByDisplay, WriteMap(map));
+                changed = true;
+            }
+        }
+
+        var plain = IslandPosition.Parse(app.Get<string>(K.Position));
+        if (!plain.Attached)
+        {
+            app.Set(K.Position, IslandPlacement.Attach(plain).Format());
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    private static bool IsObjectJson(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.ValueKind == JsonValueKind.Object;
+        }
+        catch (JsonException)
+        {
+            return false;
         }
     }
 

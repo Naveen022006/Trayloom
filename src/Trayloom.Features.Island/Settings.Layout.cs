@@ -47,7 +47,7 @@ internal sealed class LayoutEditor : Grid
 
     private void OnSetting(string key)
     {
-        if (key is K.Size or K.CustomWidth or K.CustomHeight or K.Silhouette or K.Outline or K.HiddenControls or K.ControlOrder or K.HiddenModules or K.QuickAccessLayout)
+        if (key is K.Size or K.CustomWidth or K.CustomHeight or K.Silhouette or K.Position or K.PositionsByDisplay or K.Display or K.DisplayId or K.Outline or K.HiddenControls or K.ControlOrder or K.HiddenModules or K.QuickAccessLayout)
         {
             Dispatcher.BeginInvoke(() =>
             {
@@ -66,7 +66,11 @@ internal sealed class LayoutEditor : Grid
         var app = _ctx.App;
         var custom = IslandSizes.IsCustom(app);
         var w = IslandSizes.Width(app);
-        var capsule = app.Get<string>(K.Silhouette) != "notch";
+
+        // the preview draws what the island draws: the notch only exists while the island rests against its edge
+        var position = SettingsTabs.SettingsPosition(app);
+        var capsule = IslandSilhouette.DrawsCapsule(app.Get<string>(K.Silhouette), position);
+        var bottom = position.Edge == IslandEdge.Bottom;
         // page + height
         IslandPage? page = _core is null ? null : new ControlsPage(_core, null) { IsPreview = true };
         var contentW = w - 56;
@@ -87,7 +91,7 @@ internal sealed class LayoutEditor : Grid
             Width = w,
             Height = h,
             Background = Brushes.Black,
-            CornerRadius = capsule ? new CornerRadius(28) : new CornerRadius(0, 0, 28, 28),
+            CornerRadius = capsule ? new CornerRadius(28) : (bottom ? new CornerRadius(28, 28, 0, 0) : new CornerRadius(0, 0, 28, 28)),
             BorderBrush = app.Get<bool>(K.Outline) ? new SolidColorBrush(Color.FromArgb(166, 255, 255, 255)) : Brushes.Transparent,
             BorderThickness = new Thickness(app.Get<bool>(K.Outline) ? 2 : 0),
             ClipToBounds = true,

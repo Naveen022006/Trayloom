@@ -150,7 +150,12 @@ internal sealed partial class IslandWindow : OverlayWindow
     public bool Exploring => _exploring;
 
     /// <summary>The capsule silhouette: chosen, or forced while the island floats away from its edge (the notch only exists attached).</summary>
-    public bool IsCapsule => _capsuleCache ??= _core.App.Get<string>(K.Silhouette) != "notch" || !_frame.Position.Attached;
+    public bool IsCapsule => _capsuleCache ??= IslandSilhouette.DrawsCapsule(ChosenSilhouette, _frame.Position);
+
+    /// <summary>The shape the Layout tab chose; it is drawn as a capsule anyway while the island floats (see <see cref="IsCapsule"/>).</summary>
+    internal string ChosenSilhouette => _core.App.Get<string>(K.Silhouette);
+
+    private string ChosenMascotSide => _core.App.Get<string>(K.MascotSide);
 
     private bool OutlineOn => _outlineCache ??= _core.App.Get<bool>(K.Outline);
 
@@ -190,8 +195,13 @@ internal sealed partial class IslandWindow : OverlayWindow
     }
 
     /// <summary>Resolves the display, the saved position of that display and the zoom into <see cref="_frame"/>.</summary>
-    private void RebuildFrame() =>
+    private void RebuildFrame()
+    {
         _frame = IslandPlacement.Frame(_monitor, IslandPlacementStore.Load(_core.App, _monitor), _zoom);
+
+        // the shape depends on the frame, because a floating island is always the capsule
+        _capsuleCache = null;
+    }
 
     // ---------------------------------------------------------------- geometry helpers
 
@@ -321,7 +331,7 @@ internal sealed partial class IslandWindow : OverlayWindow
             var pill = IslandPlacement.PillRectPx(_frame, Math.Max(_sw.Target, 1), Math.Max(_sh.Target, 1), NearGap);
             var line = string.Create(
                 System.Globalization.CultureInfo.InvariantCulture,
-                $"placement: display={_core.App.Get<string>(K.Display)} monitor=\"{_monitor.Name}\" key={_monitor.HardwareId} dpi={_monitor.Dpi:0.##} zoom={_zoom:0.00} pos={_frame.Position.Format()} window={_lastBounds.X},{_lastBounds.Y},{_lastBounds.W},{_lastBounds.H} pill={pill.Left},{pill.Top},{pill.Right},{pill.Bottom} opensUp={OpensUp}");
+                $"placement: display={_core.App.Get<string>(K.Display)} monitor=\"{_monitor.Name}\" key={_monitor.HardwareId} dpi={_monitor.Dpi:0.##} zoom={_zoom:0.00} pos={_frame.Position.Format()} window={_lastBounds.X},{_lastBounds.Y},{_lastBounds.W},{_lastBounds.H} pill={pill.Left},{pill.Top},{pill.Right},{pill.Bottom} opensUp={OpensUp} silhouette={ChosenSilhouette} shape={(IsCapsule ? "capsule" : "notch")}");
             if (line != _lastPlacementLog)
             {
                 _lastPlacementLog = line;

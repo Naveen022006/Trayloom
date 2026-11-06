@@ -489,7 +489,7 @@ internal sealed partial class IslandWindow
         _candidate = candidate;
 
         var frame = IslandPlacement.Frame(candidate.Monitor, candidate.Position, _zoom);
-        var capsule = _core.App.Get<string>(K.Silhouette) != "notch" || !frame.Position.Attached;
+        var capsule = IslandSilhouette.DrawsCapsule(ChosenSilhouette, frame.Position);
         var rect = IslandPlacement.PillRectPx(frame, _dragW, _dragH, NearGapOf(capsule));
         _ghost.Place(rect, frame.Scale, capsule, frame.OpensUp);
 
@@ -498,7 +498,7 @@ internal sealed partial class IslandWindow
     }
 
     /// <summary>The capsule gap plus the "Capsule fit" drop for a silhouette that is, or is not, a capsule (the notch sits flush).</summary>
-    private double NearGapOf(bool capsule) =>
+    internal double NearGapOf(bool capsule) =>
         capsule ? 2 + Math.Clamp(_core.App.Get<double>(K.CapsuleFitDrop), 0, 20) : 0;
 
     /// <summary>The release reached the island window: the drag is over and the drop is the last candidate.</summary>
@@ -596,6 +596,13 @@ internal sealed partial class IslandWindow
 
             IslandPlacementStore.Save(_core.App, c.Monitor, c.Position, _monitor);
             _core.Ctx.Log.Info($"move: dropped on \"{c.Monitor.Name}\" at {c.Position.Format()}");
+            if (ChosenSilhouette == IslandSilhouette.Notch)
+            {
+                _core.Ctx.Log.Info(IslandPlacement.Frame(c.Monitor, c.Position, _zoom).Position.Attached
+                    ? "move: at the edge, the notch shows"
+                    : "move: away from the edge, the notch shows as a capsule");
+            }
+
             ApplyDisplay();
             RefreshClosed(snap: true);
         }
