@@ -210,6 +210,7 @@ internal static class WhatsNewPage
             Loc.T("GitHub while you code: the island follows the repository in front of you, with branch, changes, pull request and checks, and tells you when checks finish."),
             Loc.T("Claude Code’s pixel mascot opens a laptop and types on it in the Dynamic Island while Claude works, as it does in Claude Code, and waves when it needs you."),
             Loc.T("Google Calendar in the island: add your calendar’s secret address, see your events and join a Google Meet call in one click."),
+            Loc.T("Create and edit Modes right in the Dynamic Island: name, colour and icon, “Use what’s open now”, apps, web pages and folders."),
         ]),
         new("Changed",
         [
@@ -219,6 +220,8 @@ internal static class WhatsNewPage
         ]),
         new("Fixed",
         [
+            Loc.T("The Notch shape works: choosing it attaches the island to the screen edge, Settings explains when it shows as a capsule, and the outline, companion side, previews and other displays follow the notch."),
+            Loc.T("A playing song keeps its banner in the closed island while an AI agent works; the agent takes over only when it needs you."),
             Loc.T("The AI Agents page in the Dynamic Island scrolls smoothly: it no longer jumps to the top while an agent works, and its edges fade instead of being cut off."),
             Loc.T("Settings rows keep their titles and captions readable at any window width, tile labels show in full, switches line up, and tiles and tabs work with the keyboard."),
             Loc.T("Brightness keys step evenly, and the right monitor is used when several are connected."),
@@ -231,7 +234,7 @@ internal static class WhatsNewPage
     {
         var stack = new StackPanel { Margin = new Thickness(2, 2, 2, 0) };
         stack.Children.Add(UiKit.Text(Loc.T("What’s new in this version"), 18, FontWeights.Bold, ThemeKeys.TextPrimary));
-        var version = UiKit.Text($"v{AppInfo.Version} · 2026-11-05", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary);
+        var version = UiKit.Text($"v{AppInfo.Version} · 2026-11-06", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary);
         version.Margin = new Thickness(0, 4, 0, 0);
         stack.Children.Add(version);
         foreach (var section in Notes)
