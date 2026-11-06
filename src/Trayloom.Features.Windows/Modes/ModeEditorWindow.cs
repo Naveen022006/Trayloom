@@ -67,6 +67,10 @@ internal static class ModesDialogKit
             dialog.WindowStartupLocation = WindowStartupLocation.CenterScreen;
         }
 
+        // The Dynamic Island is always on top, so a dialog that is only owned by Settings would open behind it. Staying on top of
+        // everything for the few seconds a dialog lives is simpler and safer than collapsing the island under the person's hands.
+        dialog.Topmost = true;
+        dialog.ContentRendered += (_, _) => dialog.Activate();
         return dialog.ShowDialog() == true;
     }
 

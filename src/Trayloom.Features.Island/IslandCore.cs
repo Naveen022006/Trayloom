@@ -12,6 +12,28 @@ namespace Trayloom.Features.Island;
 internal sealed class IslandCtx(IContributionServices services, IslandCore core) : ContributionServicesBase(services), IIslandContext
 {
     public void Invalidate() => core.InvalidateExternal();
+
+    public IDisposable? HoldOpen() => core.HoldOpen();
+
+    public void EnsureKeyboard()
+    {
+        if (core.Window is not { } window)
+        {
+            return;
+        }
+
+        window.EnsureKeyboard();
+
+        // A click on a box may arrive while another window still holds the foreground; ask for it back so the first key types.
+        if (!window.IsForeground)
+        {
+            window.ReclaimKeyboard();
+        }
+    }
+
+    public void ReleaseKeyboard() => core.Window?.ReleaseKeyboard();
+
+    public void Relayout() => core.Window?.BuildOpen(rebuildPage: false);
 }
 
 /// <summary>A module as the island shows it (built-in or contributed).</summary>
@@ -480,7 +502,11 @@ internal sealed class IslandCore : IDisposable
             list.Add(ActDownloads);
         }
 
-        if (Ctx.Runtime.IsAvailable("notch-agents") && App.Get<bool>(K.AgentsEnabled) && App.Get<bool>(K.AgentsLiveActivity) && ExternalStrip("agents") is not null)
+        // Agents rank above music only while one needs the person; a working or resting agent lets a playing song keep its banner and
+        // follows right after it, so both stay one click (or swipe) apart in the picker.
+        var agentsLive = Ctx.Runtime.IsAvailable("notch-agents") && App.Get<bool>(K.AgentsEnabled) && App.Get<bool>(K.AgentsLiveActivity) && ExternalStrip("agents") is not null;
+        var agentsBeforeMusic = agentsLive && (!ShowsMusicActivity || (Ctx.Island.Strips.FirstOrDefault(s => s.Id == "agents")?.OutranksMusic(IslandContext) ?? true));
+        if (agentsBeforeMusic)
         {
             list.Add(ActAgents);
         }
@@ -500,6 +526,11 @@ internal sealed class IslandCore : IDisposable
         if (ShowsMusicActivity)
         {
             list.Add(ActMusic);
+        }
+
+        if (agentsLive && !agentsBeforeMusic)
+        {
+            list.Add(ActAgents);
         }
 
         if (App.Get<bool>(K.KeepAwakeActivity) && Ctx.Runtime.IsAvailable("keep-awake") && KeepAwake is { IsActive: true })
@@ -528,11 +559,14 @@ internal sealed class IslandCore : IDisposable
         return list;
     }
 
+    /// <summary>
+    /// A playing song is an activity, not resting content: "Show music while playing" alone decides whether it takes the closed island.
+    /// The "At rest" choice (even "Nothing") only says what shows when nothing is going on, so it no longer hides a playing song.
+    /// </summary>
     public bool ShowsMusicActivity =>
         Playback.Current is { IsPlaying: true }
         && App.Get<bool>(K.ShowPlayingMusic)
-        && ModuleVisible("music")
-        && (App.Get<string>(K.IdleContent) != "none" || App.Get<bool>(K.MascotEnabled));
+        && ModuleVisible("music");
 
     public string? PickedActivity
     {

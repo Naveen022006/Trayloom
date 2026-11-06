@@ -431,6 +431,46 @@ public interface IIslandContext : IContributionServices
 {
     /// <summary>Asks the island to re-render the contribution.</summary>
     void Invalidate();
+
+    /// <summary>
+    /// Keeps the island open (it will not collapse when the pointer leaves) until the returned handle is disposed. Used while a page
+    /// has an unfinished edit or a dialog is up. Null when there is no island window to hold.
+    /// </summary>
+    IDisposable? HoldOpen() => null;
+
+    /// <summary>
+    /// Makes the island take the keyboard, so a text box on the page receives keys (the island does not activate by default). It keeps
+    /// the keyboard until <see cref="ReleaseKeyboard"/> or until the island closes.
+    /// </summary>
+    void EnsureKeyboard()
+    {
+    }
+
+    /// <summary>Gives the keyboard back after <see cref="EnsureKeyboard"/> and returns to the window the person was working in.</summary>
+    void ReleaseKeyboard()
+    {
+    }
+
+    /// <summary>
+    /// Measures the open page again and resizes the island to it, for a view that changed its own content (an inline form opening).
+    /// The view is kept, not rebuilt. Does nothing while the island is closed.
+    /// </summary>
+    void Relayout()
+    {
+    }
+}
+
+/// <summary>
+/// Optional: implemented by the view of an <see cref="IIslandSection"/> that has an inner layer (for example an edit form) which Esc
+/// and the island's Back button should close before they leave the page.
+/// </summary>
+public interface IIslandLayerHost
+{
+    /// <summary>An inner layer is open, so <see cref="StepBack"/> would close it.</summary>
+    bool CanStepBack { get; }
+
+    /// <summary>Closes the inner layer; true when something was closed.</summary>
+    bool StepBack();
 }
 
 /// <summary>A page / module of the Dynamic Island (e.g. Calendar, Timer, AI Agents). Hosted by the Island project.</summary>
@@ -470,4 +510,10 @@ public interface IIslandStrip : IContributionProvider
 
     /// <summary>Builds the strip item; return null when there is nothing to show right now.</summary>
     FrameworkElement? CreateStrip(IIslandContext context);
+
+    /// <summary>
+    /// Whether this strip should still take the closed island while music plays. Strips the island ranks above music (agents) say so
+    /// only when they need the person; otherwise the playing song keeps its banner and the strip waits its turn behind it.
+    /// </summary>
+    bool OutranksMusic(IIslandContext context) => true;
 }

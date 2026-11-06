@@ -368,6 +368,13 @@ public sealed class AgentsLiveStrip : IIslandStrip
 
         return new AgentStripView(runtime);
     }
+
+    /// <summary>
+    /// Only an agent that waits for the person keeps the closed island over a playing song: working and resting agents are on screen
+    /// for long stretches, and the song's banner would otherwise never show while someone codes with an agent.
+    /// </summary>
+    public bool OutranksMusic(IIslandContext context) =>
+        context.Services.Get<AgentsRuntime>() is { } runtime && runtime.Sessions.Current.Any(s => s.IsWaiting);
 }
 
 /// <summary>"Claude needs your permission": shown the moment a session starts waiting for the person; a click brings its window forward.</summary>

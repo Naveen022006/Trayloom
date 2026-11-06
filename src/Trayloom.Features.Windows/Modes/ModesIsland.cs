@@ -80,7 +80,7 @@ internal static class ModesLook
     };
 
     /// <summary>A button that UI Automation can find and invoke: a rounded fill, a hover tint and an optional ring in <paramref name="ring"/>.</summary>
-    public static Button TileButton(UIElement content, Action onClick, string automationId, string name, bool island, double radius, Thickness padding, Brush? ring = null, bool pill = false)
+    public static Button TileButton(UIElement content, Action onClick, string automationId, string name, bool island, double radius, Thickness padding, Brush? ring = null, bool pill = false, Brush? fill = null, Brush? fillHover = null)
     {
         var template = new ControlTemplate(typeof(Button));
         var border = new FrameworkElementFactory(typeof(Border), "chrome");
@@ -88,7 +88,12 @@ internal static class ModesLook
         border.SetValue(Border.PaddingProperty, padding);
         border.SetValue(Border.BorderThicknessProperty, new Thickness(pill ? 0 : 2));
         border.SetValue(Border.BorderBrushProperty, new TemplateBindingExtension(Control.BorderBrushProperty));
-        if (island)
+        if (fill is not null)
+        {
+            // A button with its own colour (a swatch, the accent Save button) instead of the usual translucent tile.
+            border.SetValue(Border.BackgroundProperty, fill);
+        }
+        else if (island)
         {
             border.SetValue(Border.BackgroundProperty, White(0.1));
         }
@@ -98,12 +103,13 @@ internal static class ModesLook
         }
 
         var presenter = new FrameworkElementFactory(typeof(ContentPresenter));
-        presenter.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+        // Centred unless the caller sets HorizontalContentAlignment (a list row that fills the width and reads from the left).
+        presenter.SetValue(FrameworkElement.HorizontalAlignmentProperty, new TemplateBindingExtension(Control.HorizontalContentAlignmentProperty));
         presenter.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
         border.AppendChild(presenter);
         template.VisualTree = border;
         var hover = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
-        hover.Setters.Add(new Setter(Border.BackgroundProperty, island ? White(0.2) : UiKit.BrushOf(ThemeKeys.RowHover), "chrome"));
+        hover.Setters.Add(new Setter(Border.BackgroundProperty, fill is not null ? fillHover ?? fill : island ? White(0.2) : UiKit.BrushOf(ThemeKeys.RowHover), "chrome"));
         template.Triggers.Add(hover);
         var button = new Button
         {
@@ -140,6 +146,10 @@ internal sealed class ModeTilesView : Border
     private readonly Action? _save;
     private readonly Action? _leave;
     private readonly Action? _resized;
+    private readonly Action? _add;
+    private readonly Action<string>? _edit;
+    private string? _manageId;
+    private bool _confirmDelete;
 
     /// <param name="runtime">The Modes service.</param>
     /// <param name="island">True for the dark island style, false for the themed light style.</param>
@@ -148,7 +158,9 @@ internal sealed class ModeTilesView : Border
     /// <param name="save">When set, the footer shows "Save what’s open now…" and calls this.</param>
     /// <param name="leave">When set, the footer shows "Leave {mode}" while a mode is active and calls this.</param>
     /// <param name="resized">Called after a rebuild changed the size, so the host can re-measure.</param>
-    public ModeTilesView(ModesRuntime runtime, bool island, Action<string> pick, Action create, Action? save = null, Action? leave = null, Action? resized = null)
+    /// <param name="add">When set, a "New mode" tile ends the grid and calls this.</param>
+    /// <param name="edit">When set, every tile has a "…" button (and a right click) that opens Edit, Move and Delete, and Edit calls this with the mode id.</param>
+    public ModeTilesView(ModesRuntime runtime, bool island, Action<string> pick, Action create, Action? save = null, Action? leave = null, Action? resized = null, Action? add = null, Action<string>? edit = null)
     {
         _runtime = runtime;
         _island = island;
@@ -157,6 +169,8 @@ internal sealed class ModeTilesView : Border
         _save = save;
         _leave = leave;
         _resized = resized;
+        _add = add;
+        _edit = edit;
         Child = Build();
         Loaded += (_, _) =>
         {
@@ -191,6 +205,11 @@ internal sealed class ModeTilesView : Border
             grid.Children.Add(Tile(mode, mode.Id == active, _runtime.IsSwitching && _runtime.SwitchingToId == mode.Id));
         }
 
+        if (_add is not null && _runtime.CanAdd)
+        {
+            grid.Children.Add(NewTile());
+        }
+
         // Two rows are shown; more scroll.
         var scroll = new ScrollViewer
         {
@@ -201,6 +220,17 @@ internal sealed class ModeTilesView : Border
         };
         var root = new StackPanel();
         root.Children.Add(scroll);
+        if (_edit is not null && modes.FirstOrDefault(m => m.Id == _manageId) is { } managed)
+        {
+            root.Children.Add(ManageStrip(managed, modes.Select(m => m.Id).ToList().IndexOf(managed.Id), modes.Count));
+        }
+        else if (_add is not null && !_runtime.CanAdd)
+        {
+            var limit = ModesLook.Text(ModesUiStrings.LimitReached, 11, null, Secondary);
+            limit.Margin = new Thickness(0, 0, 0, 6);
+            root.Children.Add(limit);
+        }
+
         if (_save is not null || (_leave is not null && _runtime.Active is not null))
         {
             root.Children.Add(Footer());
@@ -238,8 +268,124 @@ internal sealed class ModeTilesView : Border
         var button = ModesLook.TileButton(stack, () => _pick(mode.Id), "Modes.Tile." + mode.Id, mode.Name, _island, 10, new Thickness(2, 3, 2, 3), active ? ModesLook.Of(color) : null);
         button.Width = TileWidth;
         button.Height = TileHeight;
+        if (_edit is null)
+        {
+            button.Margin = new Thickness(0, 0, Gap, Gap);
+            return button;
+        }
+
+        // The island page can manage a mode in place: a small "…" in the corner, or a right click, opens its actions under the grid.
+        // The right click is handled here so the island's own menu does not also appear.
+        button.MouseRightButtonUp += (_, e) =>
+        {
+            Manage(mode.Id);
+            e.Handled = true;
+        };
+        var more = ModesLook.TileButton(ModesLook.Icon(Glyphs.More, 11, Primary(0.8)), () => Manage(mode.Id), "Modes.Island.More." + mode.Id, ModesUiStrings.ModeOptions, _island, 6, new Thickness(0), pill: true);
+        more.Width = 20;
+        more.Height = 20;
+        more.HorizontalAlignment = HorizontalAlignment.Right;
+        more.VerticalAlignment = VerticalAlignment.Top;
+        more.Margin = new Thickness(0, 3, 3, 0);
+        more.ToolTip = ModesUiStrings.ModeOptions;
+        var cell = new Grid { Width = TileWidth, Height = TileHeight, Margin = new Thickness(0, 0, Gap, Gap) };
+        cell.Children.Add(button);
+        cell.Children.Add(more);
+        return cell;
+    }
+
+    private FrameworkElement NewTile()
+    {
+        var plus = new Border
+        {
+            Width = 26,
+            Height = 26,
+            CornerRadius = new CornerRadius(13),
+            BorderThickness = new Thickness(1.5),
+            BorderBrush = ModesLook.White(0.45),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Child = ModesLook.Icon(Glyphs.Add, 12, ModesLook.White(0.8)),
+        };
+        var name = ModesLook.Text(ModesUiStrings.NewMode, 12, FontWeights.Medium, Primary(0.8));
+        name.TextAlignment = TextAlignment.Center;
+        name.MaxWidth = TileWidth - 12;
+        name.Margin = new Thickness(0, 4, 0, 0);
+        var stack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+        stack.Children.Add(plus);
+        stack.Children.Add(name);
+        var button = ModesLook.TileButton(stack, () => _add!(), "Modes.Island.New", ModesUiStrings.NewMode, _island, 10, new Thickness(2, 3, 2, 3));
+        button.Width = TileWidth;
+        button.Height = TileHeight;
         button.Margin = new Thickness(0, 0, Gap, Gap);
         return button;
+    }
+
+    /// <summary>Opens or closes the action strip of a mode (a second click on its "…" closes it).</summary>
+    private void Manage(string modeId)
+    {
+        _manageId = _manageId == modeId ? null : modeId;
+        _confirmDelete = false;
+        Rebuild();
+    }
+
+    private void Rebuild()
+    {
+        Child = Build();
+        _resized?.Invoke();
+    }
+
+    /// <summary>The actions of one mode: Edit, Move left, Move right and Delete (which asks first, in the same strip).</summary>
+    private FrameworkElement ManageStrip(Mode mode, int index, int count)
+    {
+        var id = mode.Id;
+        var strip = new StackPanel { Margin = new Thickness(0, 0, 0, 6) };
+        var row = new WrapPanel { Orientation = Orientation.Horizontal };
+        if (_confirmDelete)
+        {
+            var question = ModesLook.Text(ModesUiStrings.DeleteConfirm(mode.Name), 11.5, null, Primary(0.9));
+            question.TextWrapping = TextWrapping.Wrap;
+            question.Margin = new Thickness(0, 0, 0, 6);
+            strip.Children.Add(question);
+            var confirm = ManagePill(ModesUiStrings.Delete, "Modes.Island.DeleteConfirm." + id, () =>
+            {
+                _manageId = null;
+                _confirmDelete = false;
+                _runtime.Delete(id);
+            }, ModesLook.Of(Color.FromRgb(0xFF, 0x45, 0x3A)));
+            row.Children.Add(confirm);
+            row.Children.Add(ManagePill(ModesUiStrings.Cancel, "Modes.Island.DeleteCancel." + id, () =>
+            {
+                _confirmDelete = false;
+                Rebuild();
+            }));
+            strip.Children.Add(row);
+            return strip;
+        }
+
+        row.Children.Add(ManagePill(ModesUiStrings.Edit, "Modes.Island.Edit." + id, () => _edit!(id)));
+        var left = ManagePill(ModesUiStrings.MoveLeft, "Modes.Island.MoveLeft." + id, () => _runtime.Move(id, -1));
+        left.IsEnabled = index > 0;
+        left.Opacity = left.IsEnabled ? 1 : 0.4;
+        row.Children.Add(left);
+        var right = ManagePill(ModesUiStrings.MoveRight, "Modes.Island.MoveRight." + id, () => _runtime.Move(id, 1));
+        right.IsEnabled = index >= 0 && index < count - 1;
+        right.Opacity = right.IsEnabled ? 1 : 0.4;
+        row.Children.Add(right);
+        row.Children.Add(ManagePill(ModesUiStrings.Delete, "Modes.Island.Delete." + id, () =>
+        {
+            _confirmDelete = true;
+            Rebuild();
+        }, ModesLook.Of(Color.FromRgb(0xFF, 0x45, 0x3A))));
+        strip.Children.Add(row);
+        return strip;
+    }
+
+    private Button ManagePill(string text, string automationId, Action onClick, Brush? brush = null)
+    {
+        var label = ModesLook.Text(text, 11.5, FontWeights.Medium, brush ?? Primary(0.9));
+        var pill = ModesLook.TileButton(label, onClick, automationId, text, _island, 12, new Thickness(12, 5, 12, 5), pill: true);
+        pill.Margin = new Thickness(0, 0, 8, 6);
+        return pill;
     }
 
     private FrameworkElement Footer()
@@ -272,7 +418,7 @@ internal sealed class ModeTilesView : Border
         var line = ModesLook.Text(ModesStrings.NoModes, 13, null, Primary(0.9));
         line.HorizontalAlignment = HorizontalAlignment.Center;
         panel.Children.Add(line);
-        var button = ModesLook.TileButton(ModesLook.Text(ModesStrings.CreateMode, 12, FontWeights.Medium, Primary()), _create, "Modes.Create", ModesStrings.CreateMode, _island, 10, new Thickness(12, 5, 12, 5), pill: true);
+        var button = ModesLook.TileButton(ModesLook.Text(ModesStrings.CreateMode, 12, FontWeights.Medium, Primary()), _create, _island ? "Modes.Island.New" : "Modes.Create", ModesStrings.CreateMode, _island, 10, new Thickness(12, 5, 12, 5), pill: true);
         button.HorizontalAlignment = HorizontalAlignment.Center;
         button.Margin = new Thickness(0, 10, 0, 0);
         panel.Children.Add(button);
@@ -303,19 +449,225 @@ public sealed class ModesIslandSection : IIslandSection
             return message;
         }
 
-        void OpenSettings() => context.Shell.OpenSettings("quick-tools#modes");
-        return new ModeTilesView(
-            runtime,
+        return new ModesIslandView(runtime, context);
+    }
+}
+
+/// <summary>
+/// What outlives a rebuild of the Modes island page: the form being filled in, and the hold that keeps the island open while it is. The
+/// island rebuilds its page whenever a song changes, and the old view is dropped with its text boxes, so the values live here.
+/// </summary>
+internal static class ModesIslandState
+{
+    private static IDisposable? s_hold;
+    private static int s_views;
+    private static System.Windows.Threading.DispatcherTimer? s_timer;
+
+    /// <summary>The mode being created or edited in the island, or null while the tiles show.</summary>
+    public static ModesDraft? Draft { get; set; }
+
+    /// <summary>A view of the page entered the tree: while a form is open the island is held open again (a rebuild or reopening drops the old hold).</summary>
+    public static void Attach(IIslandContext context)
+    {
+        s_views++;
+        s_timer?.Stop();
+        if (Draft is not null)
+        {
+            s_hold ??= context.HoldOpen();
+        }
+    }
+
+    /// <summary>
+    /// A view of the page left the tree. A relayout or rebuild puts a new one back within the same moment, so the hold is only let go
+    /// when no view returns for a short while (the island closed, or the person went to another page); otherwise the island would never
+    /// collapse by itself again.
+    /// </summary>
+    public static void Detach(IIslandContext context)
+    {
+        s_views = Math.Max(0, s_views - 1);
+        if (s_views > 0 || s_hold is null)
+        {
+            return;
+        }
+
+        if (s_timer is null)
+        {
+            s_timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+            s_timer.Tick += OnTimer;
+        }
+
+        s_timer.Stop();
+        s_timer.Start();
+    }
+
+    private static void OnTimer(object? sender, EventArgs e)
+    {
+        s_timer?.Stop();
+        if (s_views == 0)
+        {
+            Release();
+        }
+    }
+
+    /// <summary>Holds the island open for as long as the form is up.</summary>
+    public static void Hold(IIslandContext context) => s_hold ??= context.HoldOpen();
+
+    /// <summary>Lets the island collapse by itself again.</summary>
+    public static void Release()
+    {
+        s_hold?.Dispose();
+        s_hold = null;
+    }
+}
+
+/// <summary>
+/// The content of the Modes island page: the tile grid, or the inline form for a new or edited mode. It tells the island (through
+/// <see cref="IIslandLayerHost"/>) that Esc and Back close the form first, and asks it to measure the page again whenever it swaps.
+/// </summary>
+internal sealed class ModesIslandView : Border, IIslandLayerHost
+{
+    private readonly ModesRuntime _runtime;
+    private readonly IIslandContext _context;
+    private ModesIslandEditor? _editor;
+    private double _lastHeight;
+    private bool _relayoutPending;
+
+    public ModesIslandView(ModesRuntime runtime, IIslandContext context)
+    {
+        _runtime = runtime;
+        _context = context;
+        Show();
+        Loaded += (_, _) => ModesIslandState.Attach(_context);
+        Unloaded += (_, _) => ModesIslandState.Detach(_context);
+    }
+
+    public bool CanStepBack => ModesIslandState.Draft is not null;
+
+    /// <summary>Closes the open layer inside the form first (the app list, the web box), then the form itself without saving.</summary>
+    public bool StepBack()
+    {
+        if (ModesIslandState.Draft is null)
+        {
+            return false;
+        }
+
+        if (_editor?.StepBack() != true)
+        {
+            CloseForm();
+        }
+
+        return true;
+    }
+
+    private void Show()
+    {
+        _editor = null;
+        if (ModesIslandState.Draft is { } draft)
+        {
+            _editor = new ModesIslandEditor(_runtime, _context, draft, CloseForm, Relayout);
+            Child = _editor;
+            return;
+        }
+
+        Child = new ModeTilesView(
+            _runtime,
             island: true,
-            pick: id => runtime.Enter(id, "tile"),
-            create: OpenSettings,
-            save: () =>
+            pick: id => _runtime.Enter(id, "tile"),
+            create: () => StartNew(false),
+            save: () => StartNew(true),
+            leave: () => _runtime.Leave("tile"),
+            resized: TilesResized,
+            add: () => StartNew(false),
+            edit: StartEdit);
+    }
+
+    /// <summary>A rebuilt tile grid asks for a new measure only when its height really changed (a switch rebuilds it often).</summary>
+    private void TilesResized()
+    {
+        Measure(new Size(Math.Max(1, ActualWidth), double.PositiveInfinity));
+        if (Math.Abs(DesiredSize.Height - _lastHeight) > 0.5)
+        {
+            _lastHeight = DesiredSize.Height;
+            Relayout();
+        }
+    }
+
+    private void StartNew(bool useOpenNow)
+    {
+        if (!_runtime.CanAdd)
+        {
+            return;
+        }
+
+        ModesIslandState.Draft = ModesDraft.ForNew();
+        Open(useOpenNow);
+    }
+
+    private void StartEdit(string id)
+    {
+        if (_runtime.Modes.FirstOrDefault(m => m.Id == id) is not { } mode)
+        {
+            return;
+        }
+
+        ModesIslandState.Draft = ModesDraft.ForEdit(mode);
+        Open(false);
+    }
+
+    private void Open(bool useOpenNow)
+    {
+        ModesIslandState.Hold(_context);
+        Show();
+        Relayout();
+        _editor?.Begin(useOpenNow);
+    }
+
+    /// <summary>Back to the tiles, with nothing saved (Save already stored the mode before calling this).</summary>
+    private void CloseForm()
+    {
+        ModesIslandState.Draft = null;
+        ModesIslandState.Release();
+        _context.ReleaseKeyboard();
+        Show();
+        Relayout();
+    }
+
+    /// <summary>
+    /// Asks the island to measure the page again after the content changed size. The island moves the view into a fresh layout for that,
+    /// which drops the keyboard focus, so a text box that had it gets it back.
+    /// </summary>
+    private void Relayout()
+    {
+        if (_relayoutPending)
+        {
+            return;
+        }
+
+        _relayoutPending = true;
+        var focused = Keyboard.FocusedElement as TextBox;
+        var caret = focused?.CaretIndex ?? 0;
+        if (focused is not null && !focused.IsDescendantOf(this))
+        {
+            focused = null;
+        }
+
+        Dispatcher.BeginInvoke(() =>
+        {
+            _relayoutPending = false;
+            _context.Relayout();
+            if (focused is not null)
             {
-                ModesRequests.RequestCapture();
-                OpenSettings();
-            },
-            leave: () => runtime.Leave("tile"),
-            resized: context.Invalidate);
+                Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, () =>
+                {
+                    if (focused.IsLoaded)
+                    {
+                        _context.EnsureKeyboard();
+                        Keyboard.Focus(focused);
+                        focused.CaretIndex = Math.Min(caret, focused.Text.Length);
+                    }
+                });
+            }
+        });
     }
 }
 

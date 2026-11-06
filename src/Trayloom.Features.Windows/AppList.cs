@@ -201,6 +201,18 @@ internal sealed class AppPickerWindow : Window
         return [.. map.Values.OrderBy(e => e.Name, StringComparer.CurrentCultureIgnoreCase)];
     }
 
+    /// <summary>Only the apps that own a window now, with the same filtering as <see cref="LoadDefault"/>: what the Modes island form lists inline.</summary>
+    public static IReadOnlyList<AppEntry> LoadRunning()
+    {
+        var map = new Dictionary<string, AppEntry>(StringComparer.OrdinalIgnoreCase);
+        foreach (var path in RunningPaths())
+        {
+            Add(map, path);
+        }
+
+        return [.. map.Values.OrderBy(e => e.Name, StringComparer.CurrentCultureIgnoreCase)];
+    }
+
     /// <summary>Executable paths of apps that currently own a window.</summary>
     public static IEnumerable<string> RunningPaths()
     {

@@ -99,6 +99,11 @@ internal sealed class ExternalPage : IslandPage
 
     public override bool ScrollsContent => true;
 
+    /// <summary>A section view with an inner layer (an edit form) closes it on Esc and Back before the island leaves the page.</summary>
+    public override bool CanStepBack => HasWindow && !IsPreview && _view is IIslandLayerHost { CanStepBack: true };
+
+    public override bool StepBack() => HasWindow && !IsPreview && _view is IIslandLayerHost host && host.StepBack();
+
     /// <summary>A section view may keep a control in the top row (AI Agents: the period menu), claimed once before the page is measured.</summary>
     public override FrameworkElement? Leading => HasWindow && !IsPreview && View is IIslandTopRowHost host ? host.ClaimTopRow() : null;
 

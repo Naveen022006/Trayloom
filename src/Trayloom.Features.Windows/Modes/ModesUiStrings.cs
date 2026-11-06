@@ -99,6 +99,26 @@ internal static class ModesUiStrings
     public static string Timer => Loc.T("Open the island timer");
     public static string DoNotDisturb => Loc.T("Windows has no setting apps can use to switch on Do not disturb, so Modes can’t do it for you.");
 
+    // ------------------------------------------------------------------------------------------ the form inside the island
+
+    public static string IslandNameHint => Loc.T("Name, like Coding");
+    public static string UseOpenNow => Loc.T("Use what’s open now");
+    public static string AddTickedItems => Loc.T("Add the ticked items");
+    public static string IslandApp => Loc.T("App…");
+    public static string IslandWeb => Loc.T("Web pages…");
+    public static string IslandFolder => Loc.T("Folder…");
+    public static string IslandFile => Loc.T("File…");
+    public static string MoreApps => Loc.T("More apps…");
+    public static string RunningApps => Loc.T("Running apps");
+    public static string NoRunningApps => Loc.T("No running apps were found.");
+    public static string AddTabsNow => Loc.T("Add the tabs open now");
+    public static string MoreOptions => Loc.T("More options");
+    public static string MoreSettings => Loc.T("More settings…");
+    public static string MoveLeft => Loc.T("Move left");
+    public static string MoveRight => Loc.T("Move right");
+    public static string ModeOptions => Loc.T("Mode options");
+    public static string Close => Loc.T("Close");
+
     // ------------------------------------------------------------------------------------------ capture dialog
 
     public static string CaptureTitle => Loc.T("Save what’s open now");
