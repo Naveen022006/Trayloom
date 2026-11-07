@@ -383,6 +383,7 @@ internal sealed partial class IslandWindow
         IslandCore.ActWatch => ClosedViews.WatchStrip(_core, this),
         IslandCore.ActDownloads => ClosedViews.DownloadStrip(_core, this),
         IslandCore.ActAgents => ClosedViews.ExternalStrip(_core, this, "agents"),
+        IslandCore.ActMeeting => MeetingStrip.Build(_core, this),
         IslandCore.ActCalendar => ClosedViews.CalendarStrip(_core, this),
         IslandCore.ActMusic => ClosedViews.MusicStrip(_core, this),
         IslandCore.ActKeepAwake => ClosedViews.KeepAwakeStrip(_core, this),
@@ -395,6 +396,7 @@ internal sealed partial class IslandWindow
         IslandCore.ActWatch => "watch",
         IslandCore.ActDownloads => "downloads",
         IslandCore.ActAgents => "agents",
+        IslandCore.ActMeeting => "calendar",
         IslandCore.ActCalendar => "calendar",
         IslandCore.ActMusic => "music",
         IslandCore.ActKeepAwake => "controls",
@@ -1129,13 +1131,37 @@ internal sealed partial class IslandWindow
             budget = page.ModuleId is "mixer" or "calendar" or "clipboard" or "captures" or "files" or "notifications" or "downloads" or "camera" or "scratchpad" or "watch" or "explore" ? budget : Math.Max(budget, IslandSizes.SpaciousBudget);
         }
 
-        if (page is not null && page.GrowsBeyondBudget && preset != IslandSizes.Custom)
+        if (page is not null && page.GrowsBeyondBudget)
         {
             budget = cap - chrome;
         }
 
         budget = Math.Min(budget, cap - chrome);
         return (w, budget, cap);
+    }
+
+    /// <summary>
+    /// Changes the open island's height while its page stays as it is. The grip under the Library uses it on every mouse move: rebuilding the
+    /// page there would remove the grip from under the pointer and end the drag.
+    /// </summary>
+    internal void ResizeOpen(double deltaHeight)
+    {
+        if (_mode != IslandMode.Open || _openHost.Children.Count == 0)
+        {
+            return;
+        }
+
+        _openH += deltaHeight;
+        _openHost.Height = _openH;
+        if (_openHost.Children[^1] is FrameworkElement root)
+        {
+            root.Height = _openH;
+        }
+
+        LayoutHosts();
+        SetTarget(_openW, _openH);
+        PositionQuick();
+        PublishPill();
     }
 
     /// <summary>Builds the open layer (top row, page) for the current module / Explore and sizes the island to it.</summary>

@@ -1117,12 +1117,29 @@ internal sealed class AgentSpinner : Grid
         Children.Add(new Viewbox { Child = new Canvas { Width = 12, Height = 12, Children = { arc } }, Stretch = Stretch.Uniform });
         arc.Width = 12;
         arc.Height = 12;
-        Loaded += (_, _) => _subscription ??= AgentClock.Instance.Subscribe(t => _rotate.Angle = t * 360 % 360);
-        Unloaded += (_, _) =>
+        // Turns only while it can be seen: a card on a hidden page or a closed island stays loaded, and the clock would keep
+        // stepping (and the island repainting) for nobody.
+        Loaded += (_, _) => Sync();
+        Unloaded += (_, _) => Stop();
+        IsVisibleChanged += (_, _) => Sync();
+    }
+
+    private void Sync()
+    {
+        if (IsVisible && IsLoaded)
         {
-            _subscription?.Dispose();
-            _subscription = null;
-        };
+            _subscription ??= AgentClock.Instance.Subscribe(t => _rotate.Angle = t * 360 % 360);
+        }
+        else
+        {
+            Stop();
+        }
+    }
+
+    private void Stop()
+    {
+        _subscription?.Dispose();
+        _subscription = null;
     }
 }
 

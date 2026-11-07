@@ -501,7 +501,22 @@ internal sealed class PlaybackService : IDisposable
 
             s.MediaPropertiesChanged += (_, _) => _ui.BeginInvoke(() => RefreshEntry(s));
             s.PlaybackInfoChanged += (_, _) => _ui.BeginInvoke(() => RefreshEntry(s));
-            s.TimelinePropertiesChanged += (_, _) => _ui.BeginInvoke(() => RefreshEntry(s));
+
+            // Players report their timeline about once a second while they play. That only moves the position, so it re-reads the
+            // state without asking for the song's properties (one more cross-process round trip each time), and a run of reports
+            // that arrives before the UI thread gets to it is read once.
+            var timelineQueued = 0;
+            s.TimelinePropertiesChanged += (_, _) =>
+            {
+                if (Interlocked.Exchange(ref timelineQueued, 1) == 0)
+                {
+                    _ui.BeginInvoke(DispatcherPriority.Background, () =>
+                    {
+                        Volatile.Write(ref timelineQueued, 0);
+                        RefreshTimeline(s);
+                    });
+                }
+            };
             RefreshEntry(s);
         }
 
@@ -520,6 +535,32 @@ internal sealed class PlaybackService : IDisposable
     }
 
     private static void Unhook(Entry e) => e.Paused = true;
+
+    /// <summary>A timeline report: position, length, state and controls, read without the song's properties.</summary>
+    private void RefreshTimeline(GlobalSystemMediaTransportControlsSession session)
+    {
+        var id = session.SourceAppUserModelId ?? "";
+        if (_disposed || !_entries.TryGetValue(id, out var e) || !ReferenceEquals(e.Session, session))
+        {
+            return;
+        }
+
+        if (!e.HasProps)
+        {
+            // Not read in full yet: the full read covers the timeline too.
+            RefreshEntry(session);
+            return;
+        }
+
+        var wasPlaying = e.Playing;
+        ReadState(e);
+        if (wasPlaying && !e.Playing && IsAppleMusic(e))
+        {
+            _appleStoppedAt = DateTime.UtcNow;
+        }
+
+        Recompute();
+    }
 
     private async void RefreshEntry(GlobalSystemMediaTransportControlsSession session)
     {

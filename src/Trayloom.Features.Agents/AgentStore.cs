@@ -18,6 +18,13 @@ internal sealed class AgentUsageStore
     private List<AgentBillable> _billables = [];
     private List<List<string>> _sources = [];
     private Dictionary<string, int> _index = new(StringComparer.Ordinal);
+    // Months of history hold over a hundred thousand responses that name a handful of models, projects, sessions and logs. Each
+    // read gives every response its own copies of those strings (about 160 MB for one user), so the store keeps one of each.
+    private readonly Dictionary<string, string> _strings = new(StringComparer.Ordinal);
+
+    // Almost every response comes from one log: those share one read-only-by-convention list per log, replaced (never changed in
+    // place) when a second log turns up for a response. Forget may empty a shared list, which then drops the whole cache.
+    private readonly Dictionary<string, List<string>> _soleSources = new(PathComparer);
     private readonly Dictionary<string, DateTime> _replies = new(PathComparer);
     private readonly HashSet<string> _registered = new(PathComparer);
     private readonly Dictionary<string, DateTime> _settled = new(PathComparer);
@@ -70,7 +77,7 @@ internal sealed class AgentUsageStore
                     }
 
                     var copy = _records[position].Clone();
-                    copy.Model = um.Model;
+                    copy.Model = Share(um.Model);
                     _records[position] = copy;
                     break;
                 }
@@ -251,7 +258,8 @@ internal sealed class AgentUsageStore
         {
             if (!_sources[position].Contains(source, PathComparer))
             {
-                _sources[position].Add(source);
+                // The list may be shared with other responses of the first log: grow a copy.
+                _sources[position] = [.. _sources[position], Share(source)];
             }
 
             var old = _records[position];
@@ -345,9 +353,10 @@ internal sealed class AgentUsageStore
         else
         {
             _index[key] = _records.Count;
+            ShareStrings(record);
             _records.Add(record);
             _billables.Add(billable);
-            _sources.Add([source]);
+            _sources.Add(SoleSource(source));
         }
 
         if (file is null)
@@ -573,9 +582,16 @@ internal sealed class AgentUsageStore
         {
             if (s.Any(files.Contains))
             {
+                // A shared list is changed once for all its responses, which all came from the same log.
                 s.RemoveAll(files.Contains);
                 emptied |= s.Count == 0;
             }
+        }
+
+        if (files.Count > 0)
+        {
+            // A shared list may now be empty or shorter: new responses must not pick it up.
+            _soleSources.Clear();
         }
 
         if (emptied)
@@ -650,6 +666,37 @@ internal sealed class AgentUsageStore
         _sources = sources;
     }
 
+    /// <summary>The one kept instance of a repeated string (model, project, session or log path).</summary>
+    private string Share(string value)
+    {
+        if (_strings.TryGetValue(value, out var kept))
+        {
+            return kept;
+        }
+
+        _strings[value] = value;
+        return value;
+    }
+
+    private void ShareStrings(UsageRecord record)
+    {
+        record.Model = Share(record.Model);
+        record.Project = Share(record.Project);
+        record.Session = Share(record.Session);
+    }
+
+    /// <summary>The shared source list of the responses that only <paramref name="source"/> gave.</summary>
+    private List<string> SoleSource(string source)
+    {
+        if (!_soleSources.TryGetValue(source, out var list))
+        {
+            list = [Share(source)];
+            _soleSources[source] = list;
+        }
+
+        return list;
+    }
+
     // ------------------------------------------------------------------------------------------ persistence
 
     public sealed class SavedRecord
@@ -708,15 +755,20 @@ internal sealed class AgentUsageStore
     {
         var store = new AgentUsageStore
         {
-            _records = saved.Records.Select(r => r.Record).ToList(),
+            _records = new List<UsageRecord>(saved.Records.Count),
             _billables = saved.Records.Select(r => r.Billable).ToList(),
-            _sources = saved.Records.Select(r => r.Sources).ToList(),
+            _sources = new List<List<string>>(saved.Records.Count),
+            _index = new Dictionary<string, int>(saved.Records.Count, StringComparer.Ordinal),
             CodexPlan = saved.CodexPlan,
             _codexPlanObserved = saved.CodexPlanObserved,
         };
         for (var i = 0; i < saved.Records.Count; i++)
         {
-            store._index[saved.Records[i].Key] = i;
+            var entry = saved.Records[i];
+            store.ShareStrings(entry.Record);
+            store._records.Add(entry.Record);
+            store._sources.Add(entry.Sources.Count == 1 ? store.SoleSource(entry.Sources[0]) : entry.Sources.Select(store.Share).ToList());
+            store._index[entry.Key] = i;
         }
 
         foreach (var reading in saved.Limits.OrderBy(l => l.ObservedAt))

@@ -234,6 +234,10 @@ internal sealed class MusicPage : IslandPage
 
     /// <summary>The source switch: a 24 px plate and the gap above it.</summary>
     private const double SwitchGap = 8;
+    private const double GripHeight = 14;
+
+    /// <summary>The most height the Library can have on this screen, worked out when the page is measured; the grip stops there.</summary>
+    private double _libraryRoom = IslandSizes.DefaultLibraryHeight;
     private const double SwitchHeight = 24 + SwitchGap;
 
     // The page is rebuilt (a new instance) when the person changes what it shows, or the Music page is reopened: the open extra
@@ -271,7 +275,7 @@ internal sealed class MusicPage : IslandPage
 
     public override FrameworkElement View => _view;
 
-    public override double? NaturalWidth => _extra == MusicExtra.Library ? 400 : 344;
+    public override double? NaturalWidth => _extra == MusicExtra.Library ? 480 : 344;
 
     // The Library search box asks the island for the keyboard itself, and only while it is focused.
     public override bool WantsKeyboard => false;
@@ -374,7 +378,18 @@ internal sealed class MusicPage : IslandPage
             h += 38;
         }
 
-        _extraHeight = _extra == MusicExtra.Library ? Math.Clamp(budget - h - 10, 200, 330) : 216;
+        if (_extra == MusicExtra.Library)
+        {
+            // the Library takes the height the person gave it and the screen allows; the page's fixed parts and the grip come first
+            h += GripHeight;
+            _libraryRoom = budget - h - 10;
+            _extraHeight = IslandSizes.LibraryHeightFor(Core.App.Get<double>(K.MusicLibraryHeight), _libraryRoom);
+        }
+        else
+        {
+            _extraHeight = 216;
+        }
+
         if (_extra != MusicExtra.None)
         {
             h += 10 + _extraHeight;
@@ -775,7 +790,6 @@ internal sealed class MusicPage : IslandPage
         var preferred = PlaybackService.ResolvePreferredPlayer(Core.App.Get<string>(K.PreferredPlayer), Core.Playback);
         var stack = new StackPanel { Width = _width, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top };
         stack.Children.Add(BuildHead(p, idle, awaiting, preferred));
-        stack.Children.Add(BuildSourceSwitch());
         if (p.Duration > 0)
         {
             var tl = new MusicTimeline(Core, p) { Margin = new Thickness(0, 14, 0, 0) };
@@ -792,6 +806,8 @@ internal sealed class MusicPage : IslandPage
             stack.Children.Add(vol);
         }
 
+        // the switch chooses what the Library below it shows, so it sits right above it, not between the song and its controls
+        stack.Children.Add(BuildSourceSwitch());
         if (_extra != MusicExtra.None)
         {
             // The view is built once per page: a rebuild in place (a track change) puts the same Library / Lyrics / Queue view back, unless
@@ -816,9 +832,89 @@ internal sealed class MusicPage : IslandPage
             var holder = new Grid { Height = _extraHeight, ClipToBounds = true, Margin = new Thickness(0, 10, 0, 0) };
             holder.Children.Add(Detach.From(_extraView)!);
             stack.Children.Add(holder);
+            if (_extra == MusicExtra.Library)
+            {
+                stack.Children.Add(BuildLibraryGrip(holder));
+            }
         }
 
         _view.Children.Add(stack);
+    }
+
+    /// <summary>
+    /// The handle under the Library: dragging it makes the island taller or shorter and the height is kept. The page is not rebuilt during the
+    /// drag: the Library's holder and the island follow the pointer, and the height is saved when the button goes up.
+    /// </summary>
+    private FrameworkElement BuildLibraryGrip(FrameworkElement holder)
+    {
+        var bar = new Border { Width = 44, Height = 4, CornerRadius = new CornerRadius(2), Background = D.White(0.22), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
+        var grip = new Grid { Height = GripHeight, Background = Brushes.Transparent, Cursor = Cursors.SizeNS };
+        grip.Children.Add(bar);
+        D.Tip(grip, Loc.T("Drag to change the height"));
+        System.Windows.Automation.AutomationProperties.SetAutomationId(grip, "Island.Music.LibraryGrip");
+        grip.MouseEnter += (_, _) => bar.Background = D.White(0.5);
+        grip.MouseLeave += (_, _) => bar.Background = D.White(grip.IsMouseCaptured ? 0.5 : 0.22);
+        var dragging = false;
+        var startY = 0.0;
+        var startHeight = 0.0;
+        IDisposable? hold = null;
+        void End()
+        {
+            if (!dragging)
+            {
+                return;
+            }
+
+            dragging = false;
+            hold?.Dispose();
+            hold = null;
+            bar.Background = D.White(grip.IsMouseOver ? 0.5 : 0.22);
+            Core.App.Set(K.MusicLibraryHeight, _extraHeight);
+        }
+
+        grip.MouseLeftButtonDown += (_, e) =>
+        {
+            if (!HasWindow)
+            {
+                return;
+            }
+
+            dragging = true;
+            startY = grip.PointToScreen(e.GetPosition(grip)).Y;
+            startHeight = _extraHeight;
+            hold = Window.HoldOpen();
+            grip.CaptureMouse();
+            e.Handled = true;
+        };
+        grip.MouseMove += (_, e) =>
+        {
+            if (!dragging || !HasWindow)
+            {
+                return;
+            }
+
+            // Screen pixels to island units: the display scale and the island's zoom. An island resting on the bottom edge grows upwards.
+            var units = VisualTreeHelper.GetDpi(grip).DpiScaleY * Window.Zoom;
+            var moved = (grip.PointToScreen(e.GetPosition(grip)).Y - startY) / units * (Window.OpensUp ? -1 : 1);
+            var next = Math.Round(IslandSizes.LibraryHeightFor(startHeight + moved, _libraryRoom));
+            if (next == _extraHeight)
+            {
+                return;
+            }
+
+            var delta = next - _extraHeight;
+            _extraHeight = next;
+            holder.Height = next;
+            Window.ResizeOpen(delta);
+        };
+        grip.MouseLeftButtonUp += (_, e) =>
+        {
+            grip.ReleaseMouseCapture();
+            End();
+            e.Handled = true;
+        };
+        grip.LostMouseCapture += (_, _) => End();
+        return grip;
     }
 
     /// <summary>

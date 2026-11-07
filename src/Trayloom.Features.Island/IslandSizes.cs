@@ -35,6 +35,11 @@ internal static class IslandSizes
     /// <summary>The smallest content height a custom size may leave once the chrome of the page is taken off.</summary>
     public const double MinCustomBudget = 120;
 
+    /// <summary>The height of the Library under the player: what it opens at, and how far its grip can drag it (the screen may give less).</summary>
+    public const double MinLibraryHeight = 200;
+    public const double DefaultLibraryHeight = 420;
+    public const double MaxLibraryHeight = 900;
+
     /// <summary>Zoom limits of the island (the whole stage is scaled by it); the default stays 1.10.</summary>
     public const double MinZoom = 0.9;
     public const double MaxZoom = 1.5;
@@ -52,6 +57,11 @@ internal static class IslandSizes
     public static double ClampWidth(double width) => double.IsFinite(width) ? Math.Clamp(width, MinCustomWidth, MaxCustomWidth) : MinCustomWidth;
 
     public static double ClampHeight(double height) => double.IsFinite(height) ? Math.Clamp(height, MinCustomHeight, MaxCustomHeight) : MinCustomHeight;
+
+    public static double ClampLibraryHeight(double height) => double.IsFinite(height) ? Math.Clamp(height, MinLibraryHeight, MaxLibraryHeight) : DefaultLibraryHeight;
+
+    /// <summary>The Library's height for the height the person wants and the room the screen leaves; it never goes below the minimum, because a list of one row is useless.</summary>
+    public static double LibraryHeightFor(double wanted, double room) => Math.Max(MinLibraryHeight, Math.Min(ClampLibraryHeight(wanted), room));
 
     public static double ClampZoom(double zoom, double fallback) => double.IsFinite(zoom) ? Math.Clamp(zoom, MinZoom, MaxZoom) : fallback;
 

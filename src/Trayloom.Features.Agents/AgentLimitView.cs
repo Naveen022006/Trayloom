@@ -49,7 +49,7 @@ internal static class LimitPresenter
         var ordered = all.OrderBy(w => w.Kind).ThenBy(w => w.Scope is not null).ThenBy(w => w.Minutes).ToList();
         foreach (var w in ordered)
         {
-            rows.Add(Row(provider, w, now, usedDisplay, inferred, weekExhausted ? weekly : null));
+            rows.Add(Row(provider, w, now, limits.ObservedAt, usedDisplay, inferred, weekExhausted ? weekly : null));
         }
 
         // The plan says which windows exist; one the source did not report is still listed, saying so.
@@ -70,7 +70,7 @@ internal static class LimitPresenter
     private static LimitRowModel Missing(AgentProvider provider, string label) =>
         new(label, AgentStrings.NoReading, null, provider.Tint(), null, AgentStrings.NoReadingNote, false, label + ": " + AgentStrings.NoReadingNote + ". It appears as soon as Claude reports it.", null);
 
-    private static LimitRowModel Row(AgentProvider provider, LimitWindow w, DateTime now, bool usedDisplay, bool inferred, LimitWindow? exhaustedWeek)
+    private static LimitRowModel Row(AgentProvider provider, LimitWindow w, DateTime now, DateTime observedAt, bool usedDisplay, bool inferred, LimitWindow? exhaustedWeek)
     {
         var label = Label(w);
         var reset = ResetText(w, now, inferred);
@@ -102,6 +102,13 @@ internal static class LimitPresenter
             note = provider == AgentProvider.Claude ? AgentStrings.StartsWithMessage : AgentStrings.StartsWithTask;
         }
 
+        // Only when nothing more important is said: the forecast is a guess from the pace so far, never shown over a fact.
+        var forecast = note is null && !exhausted ? AgentLimitForecast.Text(w, observedAt, now) : null;
+        if (forecast is not null)
+        {
+            note = AgentStrings.RunsOutPace(forecast);
+        }
+
         // A full bar in both display modes once the limit is used up, so it never reads as empty.
         var fraction = exhausted ? 1 : usedDisplay ? w.UsedFraction : w.RemainingFraction;
         var value = AgentSettings.LimitShare(w, usedDisplay);
@@ -120,6 +127,7 @@ internal static class LimitPresenter
             w.Severity is { Length: > 0 } s ? "severity " + s : null,
             reset is null ? "no reset time reported" : "resets " + (AgentLimitSupport.DisplayedReset(w, now) is { } d ? d.ToLocalTime().ToString("ddd MMM d, " + Loc.ShortTime, CultureInfo.CurrentCulture) : ""),
             inferred ? "reset time inferred from history" : null,
+            forecast is null ? null : AgentStrings.RunsOutPace(forecast),
         }.Where(x => !string.IsNullOrEmpty(x)));
         return new LimitRowModel(label, value, fraction, tint, reset, note, alert, tip, pace) { Dimmed = paused is not null };
     }

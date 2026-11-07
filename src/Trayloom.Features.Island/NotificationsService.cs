@@ -55,6 +55,8 @@ internal sealed class NotificationsService : IDisposable
     private Windows.UI.Notifications.Management.UserNotificationListener? _listener;
     private readonly HashSet<uint> _baseline = [];
     private bool _first = true;
+    private bool _reading;
+    private bool _readFailureLogged;
     private CancellationTokenSource? _uiaCts;
     private readonly object _uiaGate = new();
     private bool _starting;
@@ -180,54 +182,45 @@ internal sealed class NotificationsService : IDisposable
         Changed?.Invoke();
     }
 
+    /// <summary>A new notification as read off the listener, before its icon is loaded on the UI thread.</summary>
+    private sealed record ListenerRead(string App, string Title, string Subtitle, string Body, string? Aumid, DateTime Received, Windows.Storage.Streams.RandomAccessStreamReference? Logo);
+
     private async Task ReadListener()
     {
-        if (_listener is null)
+        if (_listener is not { } listener || _reading)
         {
             return;
         }
 
+        // Every item of the listener's list is a cross-process object, so reading the ids of a full notification centre costs
+        // tens of milliseconds every poll: that work runs on a pool thread and only what is new comes back to the UI thread.
+        _reading = true;
         try
         {
-            var list = await _listener.GetNotificationsAsync(Windows.UI.Notifications.NotificationKinds.Toast);
-            foreach (var n in list)
+            var first = _first;
+            var fresh = await Task.Run(() => CollectNew(listener, first));
+            if (!ReferenceEquals(listener, _listener))
             {
-                if (_first)
-                {
-                    _baseline.Add(n.Id);
-                    continue;
-                }
+                // Stopped (or restarted) while reading: what was read belongs to the old run.
+                return;
+            }
 
-                if (!_baseline.Add(n.Id))
-                {
-                    continue;
-                }
+            if (first)
+            {
+                // One line per run: it shows the read works from the pool thread, without naming anything in the notifications.
+                _core.Ctx.Log.Info("Notifications: listening");
+            }
 
-                string title = "", sub = "", body = "";
-                try
-                {
-                    var binding = n.Notification.Visual.GetBinding(Windows.UI.Notifications.KnownNotificationBindings.ToastGeneric);
-                    var texts = binding?.GetTextElements().Select(t => t.Text).ToList() ?? [];
-                    title = texts.ElementAtOrDefault(0) ?? "";
-                    if (texts.Count >= 3)
-                    {
-                        sub = texts[1];
-                        body = texts[2];
-                    }
-                    else
-                    {
-                        body = texts.ElementAtOrDefault(1) ?? "";
-                    }
-                }
-                catch
-                {
-                }
-
+            _first = false;
+            foreach (var n in fresh)
+            {
                 ImageSource? icon = null;
                 try
                 {
-                    var logo = n.AppInfo.DisplayInfo.GetLogo(new Windows.Foundation.Size(32, 32));
-                    icon = await PlaybackService.LoadArtworkAsync(logo, 32);
+                    if (n.Logo is not null)
+                    {
+                        icon = await PlaybackService.LoadArtworkAsync(n.Logo, 32);
+                    }
                 }
                 catch
                 {
@@ -235,22 +228,83 @@ internal sealed class NotificationsService : IDisposable
 
                 Add(new NotificationItem
                 {
-                    App = n.AppInfo.DisplayInfo.DisplayName,
-                    Title = title,
-                    Subtitle = sub,
-                    Body = body,
-                    Aumid = n.AppInfo.AppUserModelId,
+                    App = n.App,
+                    Title = n.Title,
+                    Subtitle = n.Subtitle,
+                    Body = n.Body,
+                    Aumid = n.Aumid,
                     Icon = icon,
-                    CanOpen = !string.IsNullOrEmpty(n.AppInfo.AppUserModelId),
-                    Received = n.CreationTime.LocalDateTime,
+                    CanOpen = !string.IsNullOrEmpty(n.Aumid),
+                    Received = n.Received,
                 });
             }
-
-            _first = false;
         }
-        catch
+        catch (Exception ex)
         {
+            // The poll goes on; a failure that repeats every 2 s is logged once, or banners would just stop with no trace.
+            if (!_readFailureLogged)
+            {
+                _readFailureLogged = true;
+                _core.Ctx.Log.Warn($"Reading notifications failed: {ex.Message}");
+            }
         }
+        finally
+        {
+            _reading = false;
+        }
+    }
+
+    /// <summary>Pool thread: the notifications not seen before (none on the first read, which only learns what is there).</summary>
+    private async Task<List<ListenerRead>> CollectNew(Windows.UI.Notifications.Management.UserNotificationListener listener, bool first)
+    {
+        var fresh = new List<ListenerRead>();
+        var list = await listener.GetNotificationsAsync(Windows.UI.Notifications.NotificationKinds.Toast);
+        foreach (var n in list)
+        {
+            bool added;
+            lock (_baseline)
+            {
+                added = _baseline.Add(n.Id);
+            }
+
+            if (first || !added)
+            {
+                continue;
+            }
+
+            string title = "", sub = "", body = "";
+            try
+            {
+                var binding = n.Notification.Visual.GetBinding(Windows.UI.Notifications.KnownNotificationBindings.ToastGeneric);
+                var texts = binding?.GetTextElements().Select(t => t.Text).ToList() ?? [];
+                title = texts.ElementAtOrDefault(0) ?? "";
+                if (texts.Count >= 3)
+                {
+                    sub = texts[1];
+                    body = texts[2];
+                }
+                else
+                {
+                    body = texts.ElementAtOrDefault(1) ?? "";
+                }
+            }
+            catch
+            {
+            }
+
+            Windows.Storage.Streams.RandomAccessStreamReference? logo = null;
+            try
+            {
+                logo = n.AppInfo.DisplayInfo.GetLogo(new Windows.Foundation.Size(32, 32));
+            }
+            catch
+            {
+            }
+
+            fresh.Add(new ListenerRead(n.AppInfo.DisplayInfo.DisplayName, title, sub, body, n.AppInfo.AppUserModelId, n.CreationTime.LocalDateTime, logo));
+        }
+
+        return fresh;
     }
 
     // ---------------------------------------------------------------- automation fallback
@@ -463,7 +517,10 @@ internal sealed class NotificationsService : IDisposable
             _lastUia = "";
         }
         _listener = null;
-        _baseline.Clear();
+        lock (_baseline)
+        {
+            _baseline.Clear();
+        }
         if (Mode != NotificationMode.Off)
         {
             Mode = NotificationMode.Off;

@@ -34,6 +34,8 @@ internal static partial class Program
         DesktopAccount(args.Length > 0 ? args[0] : null);
         Mascot();
         Hooks();
+        Forecast();
+        Memory();
         Console.WriteLine($"{s_checks - s_failed}/{s_checks} checks passed");
         return s_failed == 0 ? 0 : 1;
     }

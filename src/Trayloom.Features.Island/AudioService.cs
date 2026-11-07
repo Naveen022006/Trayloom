@@ -95,7 +95,10 @@ internal sealed class AudioService : IDisposable
 
     private readonly Dispatcher _ui;
     private readonly MMDeviceEnumerator _enum = new();
+    private const int DevicesSettleMs = 250;
+
     private readonly NotifyClient _client;
+    private readonly Timer _devicesSettle;
     private readonly Dictionary<string, ImageSource?> _icons = [];
     private MMDevice? _render;
     private MMDevice? _capture;
@@ -106,6 +109,7 @@ internal sealed class AudioService : IDisposable
     public AudioService(Dispatcher ui)
     {
         _ui = ui;
+        _devicesSettle = new Timer(_ => OnDevicesSettled(), null, Timeout.Infinite, Timeout.Infinite);
         _client = new NotifyClient(this);
         try
         {
@@ -131,7 +135,24 @@ internal sealed class AudioService : IDisposable
     /// <summary>Volume changes made by the island's own controls do not show a notice.</summary>
     public bool RecentlyOwnChange => (DateTime.UtcNow - _lastOwnChange).TotalMilliseconds < 600;
 
-    private void DevicesTick() => _ui.BeginInvoke(() =>
+    /// <summary>
+    /// Endpoint notifications come in bursts (a Bluetooth headset or a dock changes the state of several endpoints at once) and each
+    /// re-bind costs tens of milliseconds of COM calls on the UI thread: a burst is handled once, a moment after its last notification.
+    /// Called on Core Audio's notification thread.
+    /// </summary>
+    private void DevicesTick()
+    {
+        try
+        {
+            _devicesSettle.Change(DevicesSettleMs, Timeout.Infinite);
+        }
+        catch (ObjectDisposedException)
+        {
+            // A notification that raced the island stopping.
+        }
+    }
+
+    private void OnDevicesSettled() => _ui.BeginInvoke(() =>
     {
         if (_disposed)
         {
@@ -545,6 +566,7 @@ internal sealed class AudioService : IDisposable
     public void Dispose()
     {
         _disposed = true;
+        _devicesSettle.Dispose();
         try
         {
             _enum.UnregisterEndpointNotificationCallback(_client);

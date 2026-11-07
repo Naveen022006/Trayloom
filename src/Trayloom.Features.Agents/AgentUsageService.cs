@@ -49,7 +49,12 @@ public sealed class AgentUsageService : IDisposable
     private static readonly TimeSpan Poll = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan PollWindow = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan PublishDelay = TimeSpan.FromSeconds(1);
-    private static readonly TimeSpan SaveInterval = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan RunningPublishDelay = TimeSpan.FromSeconds(3);
+
+    // Saving writes every response of the last 13 weeks again (about 1 s of work and 100 MB of short-lived JSON with a heavy user's
+    // history), and it changes on every poll while an agent works. The archive only spares the next launch some reading, and it is
+    // also saved when reading stops, so a quarter of an hour is plenty.
+    private static readonly TimeSpan SaveInterval = TimeSpan.FromMinutes(15);
 
     private readonly AgentSettings _settings;
     private readonly Dispatcher _ui;
@@ -122,6 +127,9 @@ public sealed class AgentUsageService : IDisposable
     private AgentPriceList? _shippedPrices;
     private Dictionary<AgentProvider, AgentLimits> _previousLimits = [];
     private readonly Dictionary<string, (AgentProvider Provider, LimitWindow Window)> _warned = [];
+
+    /// <summary>Windows already warned about running out at this pace (window id and reset), so one window warns once per renewal.</summary>
+    private readonly HashSet<string> _forecastWarned = [];
     private DateTime? _budgetDay;
     private DateTime _lastRootCheck = DateTime.MinValue;
     private long? _savedMark;
@@ -349,6 +357,7 @@ public sealed class AgentUsageService : IDisposable
         _published = new AgentUsageSnapshot();
         _previousLimits.Clear();
         _warned.Clear();
+        _forecastWarned.Clear();
         _budgetDay = null;
         _claudePlan = null;
         _claudeOrganization = null;
@@ -655,13 +664,18 @@ public sealed class AgentUsageService : IDisposable
             }
 
             // After the logs, so a turn its last lines ended ends as usual.
-            if (!(CloseEndedTurns(_watchedRoots) || read || stopped))
+            var ended = CloseEndedTurns(_watchedRoots);
+            if (!(ended || read || stopped))
             {
                 return;
             }
 
             CheckLimits();
-            SchedulePublish();
+
+            // A snapshot walks every response kept (about 30 ms for a heavy user). A turn that began or ended shows soon; lines that only
+            // add to a running turn, which arrive on nearly every poll while an agent works, can wait a little longer.
+            var turnsSame = _store.Turns.Count == _published.Live.Count && _published.Live.All(l => _store.Turns.ContainsKey(l.Id));
+            SchedulePublish(ended || stopped || !turnsSame ? PublishDelay : RunningPublishDelay);
         }
         finally
         {
@@ -1002,7 +1016,7 @@ public sealed class AgentUsageService : IDisposable
     // ------------------------------------------------------------------------------------------ publishing
 
     /// <summary>Bursts of writes publish once.</summary>
-    private void SchedulePublish()
+    private void SchedulePublish(TimeSpan? delay = null)
     {
         if (_publishScheduled)
         {
@@ -1010,7 +1024,7 @@ public sealed class AgentUsageService : IDisposable
         }
 
         _publishScheduled = true;
-        _worker.Post(PublishDelay, () =>
+        _worker.Post(delay ?? PublishDelay, () =>
         {
             _publishScheduled = false;
             if (_loaded)
@@ -1064,6 +1078,7 @@ public sealed class AgentUsageService : IDisposable
         ReadClaudeApp(now);
         CheckLimits();
         ReportRenewals(now);
+        ReportForecasts(now);
         if (now - _lastSave >= SaveInterval)
         {
             SaveProgress();
@@ -1235,6 +1250,13 @@ public sealed class AgentUsageService : IDisposable
                 }
 
                 break;
+            case AgentUsageEvent.LimitForecast p:
+                if (!_providers.Contains(p.Provider) || _settings.ForecastLead() is null || !HasWindow(p.Provider, p.Window))
+                {
+                    return;
+                }
+
+                break;
             case AgentUsageEvent.BudgetReached:
                 if (_settings.DailyBudget() is null)
                 {
@@ -1295,6 +1317,38 @@ public sealed class AgentUsageService : IDisposable
             {
                 _warned.Remove(id);
                 Report(new AgentUsageEvent.LimitReset(entry.Provider, entry.Window));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Warns once per window and renewal when, at the pace so far, it would run out within the chosen lead time. The reset is
+    /// rounded to a quarter hour in the key because sources restate it by a few seconds between readings, which must not warn twice.
+    /// </summary>
+    private void ReportForecasts(DateTime now)
+    {
+        if (!_store.ReportsTransitions || _settings.ForecastLead() is not { } lead)
+        {
+            return;
+        }
+
+        foreach (var (provider, limits) in _store.Limits)
+        {
+            foreach (var window in limits.Windows)
+            {
+                if (AgentLimitForecast.RunsOutAt(window, limits.ObservedAt, now) is not { } eta
+                    || AgentLimitSupport.DisplayedReset(window, now) is not { } reset
+                    || !AgentLimitForecast.ShouldWarn(eta, now, lead))
+                {
+                    continue;
+                }
+
+                var quarter = TimeSpan.FromMinutes(15).Ticks;
+                var rounded = new DateTime((reset.Ticks + quarter / 2) / quarter * quarter, reset.Kind);
+                if (_forecastWarned.Add(provider + "|" + AgentLimitForecast.WarnKey(window, rounded)))
+                {
+                    Report(new AgentUsageEvent.LimitForecast(provider, window, eta));
+                }
             }
         }
     }

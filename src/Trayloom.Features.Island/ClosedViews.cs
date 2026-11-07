@@ -127,6 +127,29 @@ internal static class ClosedViews
             }
         }
 
+        // The mode badge takes a free wing, and never the one the companion rests on. A strip in the middle (screen time, agents) or music
+        // already fills the wings, so the badge waits for a quiet island.
+        var badgeWing = 0.0;
+        if (middle is null && core.TakeStrip("modes.resting") is { } badge)
+        {
+            var mascotSide = mascotOn ? IslandSilhouette.MascotSide(win.IsCapsule, app.Get<string>(K.MascotSide)) : 0;
+            if (left is null && mascotSide >= 0)
+            {
+                left = badge;
+            }
+            else if (right is null && mascotSide <= 0)
+            {
+                right = badge;
+            }
+
+            if (ReferenceEquals(left, badge) || ReferenceEquals(right, badge))
+            {
+                // The wings are narrow beside the camera, so the island grows to hold the badge on both sides and stays centred.
+                badge.Measure(new Size(double.PositiveInfinity, body));
+                badgeWing = badge.DesiredSize.Width + 16;
+            }
+        }
+
         if (mascotOn)
         {
             middle = new MascotView(core.Mascot.Actor, MascotSize(body), core.Mascot.Look);
@@ -136,6 +159,11 @@ internal static class ClosedViews
         if (left is not null || right is not null || middle is not null)
         {
             wide = Math.Max(wide, IslandWindow.CameraWidth * body / IslandWindow.BarHeight + 88);
+        }
+
+        if (badgeWing > 0)
+        {
+            wide = Math.Max(wide, win.BareWidth + (2 * badgeWing));
         }
 
         if (left is not null)
@@ -395,31 +423,120 @@ internal static class ClosedViews
 
     // ---------------------------------------------------------------- timer strip
 
-    public static ClosedView TimerStrip(IslandCore core, IslandWindow win) => Dotted(core, win, new(new TimerStripView(core, win), 220, 109));
+    public static ClosedView TimerStrip(IslandCore core, IslandWindow win) => Dotted(core, win, new(new TimerStripView(core, win), 280, 109));
 
     private sealed class TimerStripView : LiveStrip
     {
         private readonly IslandCore _core;
         private readonly IslandWindow _win;
-        private readonly TextBlock _mark;
-        private readonly TextBlock _reading;
+        private TextBlock _mark = null!;
+        private TextBlock? _reading;
+        private bool _builtRinging;
         private string _lastShape = "";
 
         public TimerStripView(IslandCore core, IslandWindow win)
         {
             _core = core;
             _win = win;
-            var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-            _mark = D.I(MarkGlyph(), Math.Min(20, win.StripHeight - 10), D.Orange);
-            _mark.Margin = new Thickness(Math.Max(6, (win.StripHeight - 14) / 2), 0, 6, 0);
-            _reading = D.Digits(core.Timer.CompactText, 13, FontWeights.SemiBold, D.Orange);
-            _reading.Margin = new Thickness(0, 0, 12, 0);
-            _reading.VerticalAlignment = VerticalAlignment.Center;
-            row.Children.Add(_mark);
-            row.Children.Add(_reading);
-            Children.Add(row);
             Height = win.StripHeight;
-            D.Tip(this, core.Timer.PhaseName);
+            BuildRow();
+        }
+
+        /// <summary>
+        /// Builds the strip's content for the current state: the bell with Stop and +1 min while the alarm rings, the usual reading otherwise.
+        /// </summary>
+        public void BuildRow()
+        {
+            Children.Clear();
+            _builtRinging = _core.Timer.Ringing;
+            _lastShape = "";
+            var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            if (_builtRinging)
+            {
+                BuildRinging(row);
+            }
+            else
+            {
+                _mark = D.I(MarkGlyph(), Math.Min(20, _win.StripHeight - 10), D.Orange);
+                _mark.Margin = new Thickness(Math.Max(6, (_win.StripHeight - 14) / 2), 0, 6, 0);
+                _reading = D.Digits(_core.Timer.CompactText, 13, FontWeights.SemiBold, D.Orange);
+                _reading.Margin = new Thickness(0, 0, 12, 0);
+                _reading.VerticalAlignment = VerticalAlignment.Center;
+                row.Children.Add(_mark);
+
+                // During a focus session the companion keeps the person company beside the time left.
+                if (_core.Focus.Active && _core.App.Get<bool>(K.FocusMascot) && _core.Mascot.Enabled)
+                {
+                    var buddy = new MascotView(_core.Mascot.Actor, MascotSize(_win.StripHeight), _core.Mascot.Look) { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) };
+                    row.Children.Add(buddy);
+                }
+
+                row.Children.Add(_reading);
+                D.Tip(this, _core.Timer.PhaseName);
+            }
+
+            Children.Add(row);
+        }
+
+        private void BuildRinging(StackPanel row)
+        {
+            _reading = null;
+            _mark = D.I(G.Ringer, Math.Min(20, _win.StripHeight - 10), D.Orange);
+            _mark.Margin = new Thickness(Math.Max(6, (_win.StripHeight - 14) / 2), 0, 8, 0);
+            if (!D.ReduceMotion)
+            {
+                // A short wiggle (0.6 s) says "look here" without moving for as long as the alarm rings.
+                _mark.RenderTransformOrigin = new Point(0.5, 0.2);
+                var turn = new RotateTransform();
+                _mark.RenderTransform = turn;
+                turn.BeginAnimation(RotateTransform.AngleProperty, new System.Windows.Media.Animation.DoubleAnimation(-14, 14, TimeSpan.FromMilliseconds(150))
+                {
+                    AutoReverse = true,
+                    RepeatBehavior = new System.Windows.Media.Animation.RepeatBehavior(2),
+                });
+            }
+
+            var title = D.T(RingingTitle(), 13, FontWeights.SemiBold, D.Orange);
+            title.VerticalAlignment = VerticalAlignment.Center;
+            title.Margin = new Thickness(0, 0, 10, 0);
+            row.Children.Add(_mark);
+            row.Children.Add(title);
+            row.Children.Add(RingPill(Loc.T("Stop"), "Timer.Stop", null, () => _core.Timer.StopAlarm()));
+            row.Children.Add(RingPill(Loc.T("+1 min"), "Timer.Snooze", Loc.T("Snooze for 1 minute"), () => _core.Timer.Snooze(60)));
+            D.Tip(this, RingingTitle());
+        }
+
+        private string RingingTitle() => _core.Timer.Phase switch
+        {
+            TimerPhase.Focus => Loc.T("Focus done"),
+            TimerPhase.ShortBreak or TimerPhase.LongBreak => Loc.T("Break over"),
+            _ => Loc.T("Time is up"),
+        };
+
+        /// <summary>A small pill that handles its own click, so the strip's "stop and open the timer" click does not also fire.</summary>
+        private static Border RingPill(string text, string automationId, string? tip, Action action)
+        {
+            var label = D.T(text, 11.5, FontWeights.SemiBold, D.Text);
+            label.VerticalAlignment = VerticalAlignment.Center;
+            var pill = new Border
+            {
+                Background = D.White(0.16),
+                CornerRadius = new CornerRadius(11),
+                Padding = new Thickness(9, 0, 9, 0),
+                Height = 22,
+                Margin = new Thickness(0, 0, 6, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Cursor = Cursors.Hand,
+                Child = label,
+            };
+            pill.MouseLeftButtonUp += (_, e) =>
+            {
+                e.Handled = true;
+                action();
+            };
+            System.Windows.Automation.AutomationProperties.SetAutomationId(pill, automationId);
+            D.Tip(pill, tip ?? text);
+            return pill;
         }
 
         private string MarkGlyph() => _core.Timer.Completed ? G.Check : (_core.Timer.Paused ? G.Pause : (_core.Timer.IsStopwatch ? G.Stopwatch : G.Timer));
@@ -428,10 +545,31 @@ internal static class ClosedViews
         {
             On(() => _core.Timer.Ticked += Update, () => _core.Timer.Ticked -= Update);
             On(() => _core.Timer.Changed += Update, () => _core.Timer.Changed -= Update);
+            On(() => _core.Timer.AlarmChanged += Update, () => _core.Timer.AlarmChanged -= Update);
+            On(() => _core.Focus.Changed += Rebuild, () => _core.Focus.Changed -= Rebuild);
+        }
+
+        /// <summary>The session started or ended: the companion appears or goes, so the row is built again.</summary>
+        private void Rebuild()
+        {
+            BuildRow();
+            _win.ReMeasureClosed();
         }
 
         private void Update()
         {
+            if (_core.Timer.Ringing != _builtRinging)
+            {
+                BuildRow();
+                _win.ReMeasureClosed();
+                return;
+            }
+
+            if (_reading is null)
+            {
+                return;
+            }
+
             _mark.Text = MarkGlyph();
             _reading.Text = _core.Timer.Completed ? "00:00" : _core.Timer.CompactText;
             if (_core.Timer.Completed)
@@ -699,7 +837,7 @@ internal static class ClosedViews
     /// While an app uses the microphone and another activity is the one on show, a small pulsing orange dot sits at the strip's edge
     /// (the privacy indicator is never hidden, whatever the island shows).
     /// </summary>
-    private static ClosedView Dotted(IslandCore core, IslandWindow win, ClosedView view)
+    internal static ClosedView Dotted(IslandCore core, IslandWindow win, ClosedView view)
     {
         if (!core.MicInUse)
         {
@@ -790,7 +928,7 @@ internal static class ClosedViews
 
 /// <summary>
 /// The microphone mark: a glyph (or a plain dot) in the iOS microphone orange with a soft sonar pulse behind it, on the shared
-/// 30 Hz decorative clock; still with Reduce Motion. Sizes are island layout units, so the island zoom scales it.
+/// decorative clock; still with Reduce Motion. Sizes are island layout units, so the island zoom scales it.
 /// </summary>
 internal sealed class MicPulse : Grid
 {

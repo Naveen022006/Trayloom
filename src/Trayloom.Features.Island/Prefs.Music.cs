@@ -23,6 +23,9 @@ internal static partial class K
     /// <summary>Where YouTube songs open: "music" or "youtube".</summary>
     public const string YouTubeOpenIn = "notchYouTubeOpenIn";
 
+    /// <summary>The height the person dragged the Library in the music page to.</summary>
+    public const string MusicLibraryHeight = "notchMusicLibraryHeight";
+
     /// <summary>Registers the defaults of the music services (off, nothing sent until the user sets one up).</summary>
     private static void RegisterMusicDefaults(IAppSettings app)
     {
@@ -33,6 +36,7 @@ internal static partial class K
             [MusicYouTube] = false,
             [SpotifyClientId] = "",
             [YouTubeOpenIn] = "music",
+            [MusicLibraryHeight] = IslandSizes.DefaultLibraryHeight,
         });
     }
 }

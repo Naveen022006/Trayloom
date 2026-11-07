@@ -28,6 +28,8 @@ public sealed class AgentSettings
 
     /// <summary>The closed island shows the time and the limit together unless the person chose one of them.</summary>
     public const string DefaultReadout = "timeLimit";
+    public const int DefaultForecastLead = 30;
+    public static readonly int[] ForecastLeads = [15, 30, 60];
     public static readonly double[] FinishMinimums = [0, 30, 60, 120, 300];
     public static readonly double[] LimitThresholds = [50, 75, 80, 90, 95];
     public static readonly double[] Budgets = [0, 5, 10, 25, 50, 100, 250];
@@ -68,6 +70,8 @@ public sealed class AgentSettings
         app.Register(AgentKeys.FinishMinimum, DefaultFinishMinimum);
         app.Register(AgentKeys.LimitAlert, true);
         app.Register(AgentKeys.LimitThreshold, DefaultLimitThreshold);
+        app.Register(AgentKeys.ForecastAlert, true);
+        app.Register(AgentKeys.ForecastLead, (double)DefaultForecastLead);
         app.Register(AgentKeys.DailyBudget, 0.0);
         app.Register(AgentKeys.PriceUpdates, true);
         app.Register(AgentKeys.Attention, true);
@@ -177,6 +181,18 @@ public sealed class AgentSettings
 
         var v = _app.Get(AgentKeys.LimitThreshold, DefaultLimitThreshold);
         return double.IsFinite(v) ? Math.Min(100, Math.Max(1, v)) : DefaultLimitThreshold;
+    }
+
+    /// <summary>Minutes before a projected run-out that earn a notice (15, 30 or 60); null while those are off.</summary>
+    public int? ForecastLead()
+    {
+        if (!_app.Get(AgentKeys.ForecastAlert, true))
+        {
+            return null;
+        }
+
+        var v = _app.Get(AgentKeys.ForecastLead, (double)DefaultForecastLead);
+        return double.IsFinite(v) ? ForecastLeads.OrderBy(o => Math.Abs(o - v)).First() : DefaultForecastLead;
     }
 
     public double? DailyBudget()

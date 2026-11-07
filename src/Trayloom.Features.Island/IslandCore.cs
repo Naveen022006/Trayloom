@@ -123,8 +123,10 @@ internal sealed class IslandCore : IDisposable
         Playback = new PlaybackService(Ui, ctx.Log);
         Audio = new AudioService(Ui);
         Levels = new AudioLevelService();
-        Timer = new TimerService(ctx.App, Ui);
+        Timer = new TimerService(ctx.App, Ui, ctx.Log);
+        Focus = new FocusService(this);
         Calendar = new CalendarService(ctx.App, Ui, ctx.Log);
+        Meeting = new MeetingService(this);
         Session = new SessionState(Ui);
         Clipboard = new ClipboardSource(this);
         Downloads = new DownloadsService(this);
@@ -158,7 +160,13 @@ internal sealed class IslandCore : IDisposable
 
     public TimerService Timer { get; }
 
+    /// <summary>The Focus session: a Pomodoro that can enter a mode and hold back optional notices (spec 10c).</summary>
+    public FocusService Focus { get; }
+
     public CalendarService Calendar { get; }
+
+    /// <summary>The next-meeting heads-up and its microphone check (spec 10d).</summary>
+    public MeetingService Meeting { get; }
 
     public SessionState Session { get; }
 
@@ -215,6 +223,7 @@ internal sealed class IslandCore : IDisposable
         Mascot.Start();
         Session.Start();
         Sources.Start();
+        Meeting.Start();
         MicUse.Changed += OnMicUse;
         SyncMicUse();
         Ctx.Runtime.Changed += OnRuntime;
@@ -471,6 +480,7 @@ internal sealed class IslandCore : IDisposable
     public const string ActAgents = "agents";
     public const string ActMicrophone = "microphone";
     public const string ActCalendar = "calendar";
+    public const string ActMeeting = "meeting";
     public const string ActMusic = "music";
     public const string ActKeepAwake = "keepAwake";
 
@@ -511,6 +521,12 @@ internal sealed class IslandCore : IDisposable
             list.Add(ActAgents);
         }
 
+        // A meeting a few minutes away is more urgent than a song or a countdown, but less than an agent that is blocked waiting for you.
+        if (Meeting.Current is not null)
+        {
+            list.Add(ActMeeting);
+        }
+
         // A privacy indicator outranks what is merely nice to see (calendar countdown, music, keep awake) and ranks just below the
         // activities the person started and watches (timer, watch, downloads, agents); those get an orange dot while it is live.
         if (MicInUse)
@@ -518,7 +534,8 @@ internal sealed class IslandCore : IDisposable
             list.Add(ActMicrophone);
         }
 
-        if (Ctx.Runtime.IsAvailable("notch-calendar") && App.Get<bool>(K.CalendarEnabled) && Calendar.CountdownTarget(DateTime.Now) is not null)
+        if (Ctx.Runtime.IsAvailable("notch-calendar") && App.Get<bool>(K.CalendarEnabled)
+            && Calendar.CountdownTarget(DateTime.Now) is { } countdown && countdown.Event.CountdownKey != Meeting.Current?.CountdownKey)
         {
             list.Add(ActCalendar);
         }
@@ -578,6 +595,13 @@ internal sealed class IslandCore : IDisposable
     public string? CurrentActivity()
     {
         var live = LiveActivities();
+
+        // A ringing alarm outranks the person's pick: it has to be seen and stopped.
+        if (Timer.Ringing && live.Contains(ActTimer))
+        {
+            return ActTimer;
+        }
+
         if (_picked is not null && live.Contains(_picked))
         {
             return _picked;
@@ -769,6 +793,12 @@ internal sealed class IslandCore : IDisposable
             return;
         }
 
+        // A focus session holds the optional notices back; they stay on the Notifications page and a summary follows the focus phase.
+        if (Focus.Hold(notice))
+        {
+            return;
+        }
+
         Notices.Post(notice);
     }
 
@@ -793,7 +823,9 @@ internal sealed class IslandCore : IDisposable
         AppleMusic.Dispose();
         Music.Dispose();
         Audio.Dispose();
+        Focus.Dispose();
         Timer.Dispose();
+        Meeting.Dispose();
         Calendar.Dispose();
         Session.Dispose();
         Clipboard.Dispose();

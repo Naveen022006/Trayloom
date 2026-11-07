@@ -64,6 +64,7 @@ public partial class App : Application
     private CoreHost? _host;
     private AppShell? _shell;
     private DispatcherTimer? _healthyTimer;
+    private DevPerfProbe? _perf;
     private ProblemReporter? _problems;
     private InstallWindow? _installWindow;
 
@@ -314,6 +315,7 @@ public partial class App : Application
 
         RunDevFlags(e.Args, startup: true);
         ScheduleMemoryTrim();
+        _perf = DevPerfProbe.StartIfDev(Dispatcher, log);
     }
 
     /// <summary>
@@ -913,6 +915,7 @@ public partial class App : Application
         _quitWait?.Unregister(null);
         _quitEvent?.Dispose();
         _healthyTimer?.Stop();
+        _perf?.Dispose();
 
         foreach (var window in Windows.OfType<Window>().ToList())
         {

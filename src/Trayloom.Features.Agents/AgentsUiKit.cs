@@ -64,7 +64,11 @@ internal static class AgentColors
     public static Brush Tertiary => White(0.32);
 }
 
-/// <summary>A shared 30 Hz decorative clock, stepped only while something that shows subscribes (never at display refresh rate).</summary>
+/// <summary>
+/// A shared decorative clock, stepped only while something that shows subscribes (never at display refresh rate). 15 Hz, under the
+/// spec's 30 fps ceiling: each step repaints the island's layered window, and the breathing mark, the pulse ring and the mascot's
+/// typing frames read the same at that rate.
+/// </summary>
 internal sealed class AgentClock
 {
     public static readonly AgentClock Instance = new();
@@ -82,7 +86,7 @@ internal sealed class AgentClock
         _subscribers.Add(tick);
         if (_timer is null)
         {
-            _timer = new DispatcherTimer(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(1000.0 / 30) };
+            _timer = new DispatcherTimer(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(1000.0 / 15) };
             _timer.Tick += (_, _) =>
             {
                 var t = Time;
@@ -379,7 +383,7 @@ internal static class AgentMarks
 
 /// <summary>
 /// An agent's mark while it works: it breathes (scale 0.84 to 1, opacity 0.7 to 1, one swing every 1.2 s) and Claude's spark also
-/// turns slowly, one full turn every 3.5 s, like Claude's own working indicator. Stepped by the shared 30 Hz decorative clock through
+/// turns slowly, one full turn every 3.5 s, like Claude's own working indicator. Stepped by the shared 15 Hz decorative clock through
 /// render transforms only (no layout); still when idle, hidden, or when motion is reduced.
 /// </summary>
 internal sealed class AgentGlyph : Grid

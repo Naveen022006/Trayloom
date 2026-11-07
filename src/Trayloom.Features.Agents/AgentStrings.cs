@@ -79,6 +79,12 @@ public static class AgentStrings
     public static  string AnyLength => Loc.T("Any length");
     public static  string LimitAlert => Loc.T("Near a plan limit");
     public static  string LimitAt => Loc.T("Warn at");
+    public static  string ForecastAlert => Loc.T("Before a limit runs out");
+    public static  string ForecastAlertHint => Loc.T("Warns when, at your pace so far, a limit would run out before it resets.");
+    public static  string ForecastLead => Loc.T("Warn");
+    public static  string MinutesBefore(int minutes) => Loc.F("{0} min before", minutes);
+    public static  string RunsOutAround(string time) => Loc.F("Runs out around {0}", time);
+    public static  string RunsOutPace(string time) => Loc.F("Runs out around {0} at this pace", time);
     public static  string Budget => Loc.T("Daily API value budget");
     public static  string Off => Loc.T("Off");
     public static  string ClaudeLimitsTitle => Loc.T("Claude plan limits");

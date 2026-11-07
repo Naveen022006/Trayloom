@@ -313,6 +313,8 @@ public sealed class AgentsRuntime : IDisposable
 
             case AgentUsageEvent.LimitReset r:
                 return new AgentNotice(LimitTitle(r.Provider, r.Window), AgentStrings.LimitRenewed, r.Provider, "", r.Provider.Tint(), true, expires);
+            case AgentUsageEvent.LimitForecast p:
+                return new AgentNotice(LimitTitle(p.Provider, p.Window), AgentStrings.RunsOutAround(LimitPresenter.Clock(p.RunsOutAt, DateTime.UtcNow)), p.Provider, "", warn, false, expires);
             case AgentUsageEvent.BudgetReached b:
                 return new AgentNotice(AgentStrings.BudgetTitle, AgentFormat.Cost(b.Spent), null, "", System.Windows.Media.Color.FromRgb(0x30, 0xD1, 0x58), false, expires);
             default:

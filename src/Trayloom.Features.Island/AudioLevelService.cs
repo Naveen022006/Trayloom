@@ -23,6 +23,10 @@ internal sealed class AudioLevelService : IDisposable
     private readonly float[] _window = new float[Fft];
     private readonly double[] _smooth = new double[7];
     private readonly object _gate = new();
+
+    // One buffer for every analysis: a new one per step was half a megabyte of garbage a second while music played.
+    private readonly Complex[] _fft = new Complex[Fft];
+    private int _analysing;
     private WasapiLoopbackCapture? _capture;
     private Timer? _timer;
     private int _write;
@@ -170,12 +174,25 @@ internal sealed class AudioLevelService : IDisposable
 
     private void Analyse()
     {
-        if (!_running)
+        // Timer steps can overlap when the pool is busy; the shared buffer takes one at a time, and a skipped step is not missed.
+        if (!_running || Interlocked.Exchange(ref _analysing, 1) == 1)
         {
             return;
         }
 
-        var data = new Complex[Fft];
+        try
+        {
+            AnalyseStep();
+        }
+        finally
+        {
+            Volatile.Write(ref _analysing, 0);
+        }
+    }
+
+    private void AnalyseStep()
+    {
+        var data = _fft;
         lock (_gate)
         {
             var start = (_write - Fft + RingSize) % RingSize;

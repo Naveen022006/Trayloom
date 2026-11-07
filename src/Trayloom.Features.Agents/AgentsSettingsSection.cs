@@ -196,6 +196,15 @@ internal sealed class AgentsSettingsView
                 Nearest(_app.Get(AgentKeys.LimitThreshold, AgentSettings.DefaultLimitThreshold), AgentSettings.LimitThresholds), v => _app.Set(AgentKeys.LimitThreshold, v))));
         }
 
+        card.Add(Switch("", AgentStrings.ForecastAlert, AgentKeys.ForecastAlert, true, AgentStrings.ForecastAlertHint, rebuild: true));
+        if (_app.Get(AgentKeys.ForecastAlert, true))
+        {
+            card.Add(Indent(Menu("", AgentStrings.ForecastLead,
+                AgentSettings.ForecastLeads.Select(m => ((double)m, AgentStrings.MinutesBefore(m))).ToList(),
+                Nearest(_app.Get(AgentKeys.ForecastLead, (double)AgentSettings.DefaultForecastLead), AgentSettings.ForecastLeads.Select(m => (double)m).ToArray()),
+                v => _app.Set(AgentKeys.ForecastLead, v))));
+        }
+
         card.AddDivider();
         card.Add(new AgentAttentionSettings(_app));
         card.AddDivider();

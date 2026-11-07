@@ -7,10 +7,14 @@ using System.Windows.Threading;
 
 namespace Trayloom.Features.Island;
 
-/// <summary>Shared 30 Hz decorative clock (never the display refresh rate); runs only while subscribed.</summary>
+/// <summary>
+/// Shared decorative clock (never the display refresh rate); runs only while subscribed. 15 Hz, under the spec's 30 fps ceiling:
+/// every step repaints the island's layered window, whose whole surface is copied back for each frame (measured about 1.4 ms of
+/// render-thread time per frame, 20 frames a second at the old 33 ms), and the small bars read the same at half the rate.
+/// </summary>
 internal static class DecorativeClock
 {
-    private static readonly DispatcherTimer Timer = new(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(33) };
+    private static readonly DispatcherTimer Timer = new(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(1000.0 / 15) };
     private static int _subscribers;
     private static readonly DateTime Origin = DateTime.UtcNow;
 

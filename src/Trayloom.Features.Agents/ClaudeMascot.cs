@@ -745,7 +745,7 @@ internal sealed class ClaudeMascotView : FrameworkElement
 
     /// <summary>
     /// Standing and waiting poses change rarely: a one-shot timer wakes the mascot just when the picture changes (a wink, a wave)
-    /// instead of keeping the shared 30 Hz clock running for a picture that does not move.
+    /// instead of keeping the shared decorative clock running for a picture that does not move.
     /// </summary>
     private void Sleep(double now)
     {

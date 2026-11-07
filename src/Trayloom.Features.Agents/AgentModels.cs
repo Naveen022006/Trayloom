@@ -52,11 +52,15 @@ public static class AgentProviders
 /// <summary>Token counts. <c>Input</c> excludes cache traffic, <c>Output</c> already contains reasoning.</summary>
 public record struct AgentTokens(long Input, long CacheWrite, long CacheRead, long Output, long Reasoning)
 {
+    // The computed totals stay out of the saved usage archive: written twice per response they made up about a fifth of it.
+    [System.Text.Json.Serialization.JsonIgnore]
     public readonly long Total => Input + CacheWrite + CacheRead + Output;
 
     /// <summary>Everything the model read, cached or not.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
     public readonly long Prompt => Input + CacheWrite + CacheRead;
 
+    [System.Text.Json.Serialization.JsonIgnore]
     public readonly double? CacheHitRate => Prompt > 0 ? (double)CacheRead / Prompt : null;
 
     public static AgentTokens operator +(AgentTokens a, AgentTokens b) =>
@@ -231,6 +235,9 @@ public abstract record AgentUsageEvent
     public sealed record LimitWarning(AgentProvider Provider, LimitWindow Window) : AgentUsageEvent;
 
     public sealed record LimitReset(AgentProvider Provider, LimitWindow Window) : AgentUsageEvent;
+
+    /// <summary>At the pace so far this window would run out at <paramref name="RunsOutAt"/>, before it resets.</summary>
+    public sealed record LimitForecast(AgentProvider Provider, LimitWindow Window, DateTime RunsOutAt) : AgentUsageEvent;
 
     public sealed record BudgetReached(double Spent, double Budget) : AgentUsageEvent;
 }
@@ -478,6 +485,8 @@ public static class AgentKeys
     public const string FinishMinimum = "notchAgentsFinishMinimum";
     public const string LimitAlert = "notchAgentsLimitAlert";
     public const string LimitThreshold = "notchAgentsLimitThreshold";
+    public const string ForecastAlert = "notchAgentsForecastAlert";
+    public const string ForecastLead = "notchAgentsForecastLead";
     public const string DailyBudget = "notchAgentsDailyBudget";
     public const string PriceUpdates = "notchAgentsPriceUpdates";
     public const string Attention = "notchAgentsAttention";

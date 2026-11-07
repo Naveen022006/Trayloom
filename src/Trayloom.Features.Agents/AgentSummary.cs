@@ -32,22 +32,31 @@ internal static class AgentUsageSummary
 
         var tomorrow = today.AddDays(1);
         var hourStarts = Enumerable.Range(0, 24).Select(h => today.AddHours(h)).ToList();
+
+        // The local day and hour boundaries in UTC, so a response is placed with plain comparisons.
+        var startsUtc = starts.Select(s => s.ToUniversalTime()).ToList();
+        var tomorrowUtc = tomorrow.ToUniversalTime();
+        var hourStartsUtc = hourStarts.Select(h => h.ToUniversalTime()).ToList();
         var days = starts.Select(s => new AgentBucket { Start = s }).ToList();
         var hours = hourStarts.Select(s => new AgentBucket { Start = s }).ToList();
         var periods = new Dictionary<AgentPeriod, AgentPeriodUsage>();
         var models = new Dictionary<AgentPeriod, Dictionary<string, AgentShare>>();
         var projects = new Dictionary<AgentPeriod, Dictionary<string, AgentShare>>();
         var claude = new List<UsageRecord>();
-        var names = new Dictionary<string, string>(StringComparer.Ordinal);
+        var allPeriods = Enum.GetValues<AgentPeriod>();
         var recent = nowUtc - BurnWindow;
         var lastDay = starts.Count - 1;
-        foreach (var p in Enum.GetValues<AgentPeriod>())
+        foreach (var p in allPeriods)
         {
             periods[p] = new AgentPeriodUsage();
             models[p] = [];
             projects[p] = [];
         }
 
+        // A snapshot is built every couple of seconds while an agent works, over every response of 13 weeks (over a hundred thousand
+        // for a heavy user). Each response is first added to its group (day, hour, provider, model, project), then the few thousand
+        // groups are spread over the days, hours, periods, models and projects: one lookup per response instead of up to nine.
+        var groups = new Dictionary<SnapshotGroup, AgentTotals>();
         foreach (var record in records)
         {
             if (!providers.Contains(record.Provider))
@@ -73,51 +82,62 @@ internal static class AgentUsageSummary
                 snapshot.BurnRate[record.Provider] = burn;
             }
 
-            var local = record.Date.ToLocalTime();
-            if (local < starts[0] || local >= tomorrow || IndexOf(local, starts) is not { } day)
+            // Dates are read as UTC; a local one is converted, an unspecified one counts as UTC (as ToLocalTime takes it).
+            var utc = record.Date.Kind == DateTimeKind.Local ? record.Date.ToUniversalTime() : record.Date;
+            if (utc < startsUtc[0] || utc >= tomorrowUtc || IndexOf(utc, startsUtc) is not { } day)
             {
                 continue;
             }
 
-            Add(days[day].ByProvider, record.Provider, record);
-            if (day == lastDay && IndexOf(local, hourStarts) is { } hour)
+            var hour = day == lastDay && IndexOf(utc, hourStartsUtc) is { } h ? h : -1;
+            ref var totals = ref System.Runtime.InteropServices.CollectionsMarshal.GetValueRefOrAddDefault(
+                groups, new SnapshotGroup(day, hour, record.Provider, record.Model, record.Project), out _);
+            totals.Add(record);
+        }
+
+        var names = new Dictionary<(AgentProvider, string), (string Name, string Id)>();
+        foreach (var (group, totals) in groups)
+        {
+            Add(days[group.Day].ByProvider, group.Provider, totals);
+            if (group.Hour >= 0)
             {
-                Add(hours[hour].ByProvider, record.Provider, record);
+                Add(hours[group.Hour].ByProvider, group.Provider, totals);
             }
 
-            if (!names.TryGetValue(record.Model, out var name))
+            if (!names.TryGetValue((group.Provider, group.Model), out var named))
             {
-                name = AgentPricing.DisplayName(record.Model);
-                names[record.Model] = name;
+                var display = AgentPricing.DisplayName(group.Model);
+                named = (display, group.Provider.Raw() + ":" + display);
+                names[(group.Provider, group.Model)] = named;
             }
 
-            var modelId = record.Provider.Raw() + ":" + name;
-            foreach (var period in Enum.GetValues<AgentPeriod>())
+            var (name, modelId) = named;
+            foreach (var period in allPeriods)
             {
-                if (day <= lastDay - period.Days())
+                if (group.Day <= lastDay - period.Days())
                 {
                     continue;
                 }
 
                 var usage = periods[period];
-                usage.Total.Add(record);
-                Add(usage.ByProvider, record.Provider, record);
+                usage.Total.Add(totals);
+                Add(usage.ByProvider, group.Provider, totals);
                 if (!models[period].TryGetValue(modelId, out var share))
                 {
-                    share = new AgentShare { Id = modelId, Name = name.Length == 0 ? "?" : name, Provider = record.Provider };
+                    share = new AgentShare { Id = modelId, Name = name.Length == 0 ? "?" : name, Provider = group.Provider };
                     models[period][modelId] = share;
                 }
 
-                share.Totals.Add(record);
-                if (record.Project.Length > 0)
+                share.Totals.Add(totals);
+                if (group.Project.Length > 0)
                 {
-                    if (!projects[period].TryGetValue(record.Project, out var ps))
+                    if (!projects[period].TryGetValue(group.Project, out var ps))
                     {
-                        ps = new AgentShare { Id = record.Project, Name = record.Project };
-                        projects[period][record.Project] = ps;
+                        ps = new AgentShare { Id = group.Project, Name = group.Project };
+                        projects[period][group.Project] = ps;
                     }
 
-                    ps.Totals.Add(record);
+                    ps.Totals.Add(totals);
                 }
             }
         }
@@ -148,11 +168,36 @@ internal static class AgentUsageSummary
         return snapshot;
     }
 
-    private static void Add(Dictionary<AgentProvider, AgentTotals> map, AgentProvider provider, UsageRecord record)
+    private static void Add(Dictionary<AgentProvider, AgentTotals> map, AgentProvider provider, in AgentTotals totals)
     {
         var t = map.GetValueOrDefault(provider);
-        t.Add(record);
+        t.Add(totals);
         map[provider] = t;
+    }
+
+    /// <summary>
+    /// The responses a snapshot counts together. Model and project compare by reference: the store keeps one instance of each, and
+    /// two equal strings that are not the same instance only make two groups that add up to the same shares.
+    /// </summary>
+    private readonly struct SnapshotGroup(int day, int hour, AgentProvider provider, string model, string project) : IEquatable<SnapshotGroup>
+    {
+        public int Day { get; } = day;
+
+        public int Hour { get; } = hour;
+
+        public AgentProvider Provider { get; } = provider;
+
+        public string Model { get; } = model;
+
+        public string Project { get; } = project;
+
+        public bool Equals(SnapshotGroup other) =>
+            Day == other.Day && Hour == other.Hour && Provider == other.Provider && ReferenceEquals(Model, other.Model) && ReferenceEquals(Project, other.Project);
+
+        public override bool Equals(object? obj) => obj is SnapshotGroup other && Equals(other);
+
+        public override int GetHashCode() =>
+            HashCode.Combine(Day, Hour, Provider, System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(Model), System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(Project));
     }
 
     /// <summary>Whether a snapshot reads differently at <paramref name="nowUtc"/> with nothing new read.</summary>

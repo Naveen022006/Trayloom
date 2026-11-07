@@ -14,6 +14,17 @@ internal static class IslandSizesChecks
         Custom(check);
         Budgets(check);
         Zoom(check);
+        Library(check);
+    }
+
+    private static void Library(Action<bool, string> check)
+    {
+        check(IslandSizes.LibraryHeightFor(IslandSizes.DefaultLibraryHeight, 600) == 420, "sizes: the Library opens at 420 when the screen has room");
+        check(IslandSizes.LibraryHeightFor(420, 300) == 300, "sizes: the Library never takes more than the screen leaves");
+        check(IslandSizes.LibraryHeightFor(420, 50) == 200, "sizes: the Library keeps its minimum on a very short screen");
+        check(IslandSizes.LibraryHeightFor(5000, 800) == 800 && IslandSizes.LibraryHeightFor(5000, 2000) == 900, "sizes: the grip stops at the screen or the ceiling");
+        check(IslandSizes.LibraryHeightFor(10, 800) == 200, "sizes: the grip stops at the minimum");
+        check(IslandSizes.ClampLibraryHeight(double.NaN) == 420, "sizes: a bad stored height falls back to the default");
     }
 
     private static void Presets(Action<bool, string> check)
