@@ -31,6 +31,15 @@ internal static class AwayPresenceMath
     public const double MotionShare = 0.012;
 
     /// <summary>
+    /// The oldest earlier grid a frame is compared with. The relaxed rate takes a sample every 3 s, and the next frame always arrives a
+    /// little after that, so a 3 s limit would leave every relaxed sample without a comparison and the absence would never be counted.
+    /// </summary>
+    public const long MaxGridAgeMs = 4500;
+
+    /// <summary>True when a grid taken <paramref name="ageMs"/> ago can still show movement.</summary>
+    public static bool Comparable(long ageMs) => ageMs >= 0 && ageMs <= MaxGridAgeMs;
+
+    /// <summary>
     /// Block means of an 8-bit gray frame. The frame may have a stride larger than its width; blocks at the right and bottom edge
     /// take the remaining pixels, so a frame whose size does not divide evenly is still covered completely.
     /// </summary>

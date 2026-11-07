@@ -78,7 +78,9 @@ internal static class AwayPresenceMath
 - T = clamp(BaseThreshold + 2·median(d), BaseThreshold, MaxThreshold). The median comes from a counting sort over 0..255 and adapts the threshold to sensor noise.
 - Result: count(d_i > T) / 3072.
 
-**Someone is present** if `Face || (MotionKnown && Motion)`. A frame counts as **nobody** only when it is `Usable`, shows no face, has no motion, and motion is known. **Unusable** frames are never counted as absence.
+**Someone is present** if `Face || (Usable && MotionKnown && Motion)`. A frame counts as **nobody** only when it is `Usable`, shows no face, has no motion, and motion is known. **Unusable** frames are never counted as absence, and their movement (often sensor noise in the dark) does not count as presence either, so a dark room still reaches the 60 s give-up. During the countdown any movement cancels.
+
+The previous grid is compared when it is at most `MaxGridAgeMs` = 4.5 s old (not 3 s): at the relaxed 3 s rate the next frame always arrives a little after 3 s, and a 3 s limit would leave every relaxed sample without a comparison, so absence would never be counted once a face had been seen.
 
 ### 1.4 The presence state machine (pure, harness-tested)
 
@@ -128,7 +130,10 @@ internal sealed class AwayPresenceClock
 - **Watching, frame not usable:**
   - set `absentSince` = null and `unusableSince ??= now`;
   - if unusable for 60 s or more: Phase = GaveUp, return `StopCamera`. The camera stays off until the next input.
+- **Watching, no face and motion unknown:** nothing is decided; `IntervalMs = Fast` so the next sample has a recent frame to compare with.
 - **Watching, someone present:** `absentSince` = null; `IntervalMs = Face ? Relaxed : Fast`.
+- **`Tick`, Watching and no sample for `SilentGiveUpMs` (60 s) since the camera was asked to start or since the last sample:** Phase = GaveUp, return `StopCamera` (a hung camera never keeps the light on).
+- **Idle and start:** the controller feeds `Tick` the effective idle (`AwayLeaveGuard.EffectiveIdleMs`: never counted from before the feature started or the windows came back), and `GoAway("camera")` is refused in the first 60 s after the feature starts.
 - **Watching, nobody:**
   - `IntervalMs = Fast`, `absentSince ??= now`;
   - once absent for `leaveAfterMs` or more: Phase = Countdown, `CountdownEndsAt = now + 10 s`, return `BeginCountdown`.

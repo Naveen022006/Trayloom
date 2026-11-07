@@ -1048,6 +1048,10 @@ Command Bar (package D's block): `action.awayNow` ("Go away now") and `action.aw
 * Display layout changed while away: 4.5 step 5.
 * Return during GoingAway (input within the first second): the minimize pass finishes, then Returning runs at once.
 * Return trigger while Returning: ignored. Away trigger while Returning: ignored until 10 s after Present.
+* Trayloom starts (or restarts after an update) while the PC is already idle: the idle time counts from the later of the last input
+  and the moment Away mode started or the windows came back (`AwayLeaveGuard.EffectiveIdleMs`), so a fresh idle period is needed. The
+  idle and camera triggers never minimize in the first 60 s after the feature starts. A return by face brings no input either, so
+  the same rule keeps the idle trigger from minimizing again right after it.
 * Sleep while away: camera off at `Suspend`; after `Resume` the state is still Away; input or unlock returns.
 * The person locks manually while Away: unlock = return.
 * `awayModeEnabled` turned off while Away: return now. Feature uninstalled or Trayloom quits while Away: `Stop()` stops the camera,

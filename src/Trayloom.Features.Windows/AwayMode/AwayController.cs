@@ -30,7 +30,6 @@ internal sealed partial class AwayController
     private const int SweepMs = 5000;
     private const int GraceMs = 2000;
     private const int QuickLookMs = 10000;
-    private const int AfterPresentMs = 10000;
 
     private readonly IFeatureContext _ctx;
     private readonly IAppSettings _app;
@@ -43,6 +42,7 @@ internal sealed partial class AwayController
     private readonly List<AwayCoverWindow> _covers = [];
     private readonly DispatcherTimer _timer;
     private readonly DispatcherTimer _verify;
+    private readonly long _startedAt;
     private List<AwayRecord> _records = [];
     private Thread? _restoreThread;
     private nint _active;
@@ -89,7 +89,10 @@ internal sealed partial class AwayController
         _timer.Tick += (_, _) => Safe(Tick);
         _verify = new DispatcherTimer(DispatcherPriority.Background, ctx.Ui) { Interval = TimeSpan.FromMilliseconds(1000) };
         _verify.Tick += (_, _) => Safe(Verify);
-        _presentSince = Environment.TickCount64 - AfterPresentMs;
+
+        // The person counts as present from the start: a PC that was already idle before a restart needs a fresh idle period first.
+        _startedAt = Environment.TickCount64;
+        _presentSince = _startedAt;
     }
 
     /// <summary>Raised on the UI thread when the state, the window count or the waiting reason changed.</summary>
@@ -169,8 +172,7 @@ internal sealed partial class AwayController
     public void Stop()
     {
         _stopping = true;
-        _clock.Reset();
-        _presenceCamera = false;
+        ForgetPresence();
         _timer.Stop();
         _verify.Stop();
         _app.Changed -= OnSettingChanged;
@@ -213,7 +215,7 @@ internal sealed partial class AwayController
             return false;
         }
 
-        if (trigger is "idle" or "camera" && Environment.TickCount64 - _presentSince < AfterPresentMs)
+        if (trigger is "idle" or "camera" && !AwayLeaveGuard.MayLeave(Environment.TickCount64, _startedAt, _presentSince))
         {
             return false;
         }
@@ -290,13 +292,20 @@ internal sealed partial class AwayController
 
         if (lockPc)
         {
+            // With the PC locked the person comes back by unlocking: the presence watch must not keep the camera light on.
+            if (_presenceCamera)
+            {
+                HandOverCamera(false);
+            }
+
             AwayNative.Lock();
         }
         else
         {
-            if (_presenceCamera && _watcher.IsRunning)
+            if (_presenceCamera)
             {
-                // The presence watch already has the camera open: hand it over for the return, or switch it off.
+                // The presence watch has the camera open, or is still opening it: hand it over for the return, or switch it off. A second
+                // start next to an opening one would open the camera twice and leave one of them on.
                 HandOverCamera(face);
             }
             else if (face)
@@ -362,9 +371,11 @@ internal sealed partial class AwayController
         }
 
         var threshold = _app.Get<int>("awayModeIdleMinutes") * 60_000L;
-        if (AwayNative.IdleMilliseconds() >= threshold)
+        if (EffectiveIdleMs() >= threshold)
         {
-            _suppression = _presence.Current();
+            // Trayloom's own presence watch is listed in the consent store too; it must not look like a call, or the idle timer could
+            // never fire while the camera is on.
+            _suppression = _presence.Current(ownCameraOpen: _presenceCamera || _watcher.IsRunning);
             if (_suppression == AwaySuppression.None)
             {
                 GoAway("idle");
@@ -480,6 +491,12 @@ internal sealed partial class AwayController
             }
 
             var failure = await _watcher.StartAsync(_app.Get<string>("awayModeCameraId") ?? string.Empty);
+            if (failure == AwayFaceWatcher.Cancelled)
+            {
+                // The person came back (or the PC locked) while the camera was opening; the camera is already off again.
+                return;
+            }
+
             if (failure is not null)
             {
                 _log.Info("[away] camera: " + failure);
@@ -926,8 +943,7 @@ internal sealed partial class AwayController
             {
                 case SessionSwitchReason.SessionLock:
                     _locked = true;
-                    _clock.Reset();
-                    _presenceCamera = false;
+                    ForgetPresence();
                     if (_watcher.IsRunning)
                     {
                         Task.Run(() => _watcher.Stop("suspend"));
@@ -953,8 +969,7 @@ internal sealed partial class AwayController
             if (e.Mode == PowerModes.Suspend)
             {
                 _suspended = true;
-                _clock.Reset();
-                _presenceCamera = false;
+                ForgetPresence();
                 if (_watcher.IsRunning)
                 {
                     Task.Run(() => _watcher.Stop("suspend"));
@@ -979,7 +994,7 @@ internal sealed partial class AwayController
             iconicNow = WinApi.IsWindow(r.Handle) && WinApi.IsIconic(r.Handle),
         }).ToList();
         var armed = _app.Get<bool>("awayModeEnabled");
-        var reason = _presence.Current().ToString().ToLowerInvariant();
+        var reason = _presence.Current(ownCameraOpen: _presenceCamera || _watcher.IsRunning).ToString().ToLowerInvariant();
         var dump = new
         {
             state = State.ToString(),
@@ -987,6 +1002,7 @@ internal sealed partial class AwayController
             since = State == AwayState.Present ? null : (DateTime?)_awaySince,
             suppressed = reason,
             idleSeconds = AwayNative.IdleMilliseconds() / 1000,
+            idleCountedSeconds = EffectiveIdleMs() / 1000,
             armed,
             records,
             closeJob = CloseJobState.ToString().ToLowerInvariant(),

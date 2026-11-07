@@ -20,6 +20,7 @@ internal sealed partial class AwayController
 
     private readonly AwayPresenceClock _clock = new();
     private bool _presenceCamera;
+    private bool _presenceStarting;
     private int _appliedInterval = AwayPresenceClock.FastIntervalMs;
     private string? _pendingNotice;
 
@@ -47,13 +48,16 @@ internal sealed partial class AwayController
 
     private long LeaveAfterMs => _app.Get<int>(AwayKeys.LeaveCameraSeconds) * 1000L;
 
+    /// <summary>The idle time both triggers act on: never counted from before Away mode started or before the windows came back.</summary>
+    private long EffectiveIdleMs() => AwayLeaveGuard.EffectiveIdleMs(AwayNative.IdleMilliseconds(), Environment.TickCount64, _presentSince);
+
     // ------------------------------------------------------------------------------------------ ticks
 
     /// <summary>Runs before <c>PresentTick</c> while the person is present: asks the clock what to do and does it.</summary>
     private void PresenceTick()
     {
         var allowed = PresenceAllowed();
-        var idle = AwayNative.IdleMilliseconds();
+        var idle = EffectiveIdleMs();
         var suppressed = allowed && idle >= AwayPresenceClock.ArmIdleMs
             && (_presence.Current(ownCameraOpen: _presenceCamera) != AwaySuppression.None
                 || _presence.OtherAppUsesCamera()
@@ -170,9 +174,31 @@ internal sealed partial class AwayController
         _watcher.MeasureMotion = true;
         _appliedInterval = _clock.IntervalMs;
         _watcher.SetInterval(_appliedInterval);
+        if (_presenceStarting)
+        {
+            // An earlier start is still opening the camera (a slow driver): it reads _presenceCamera when it finishes.
+            return;
+        }
+
+        _presenceStarting = true;
         AwayGuard.FireAndLog(async () =>
         {
-            var failure = await _watcher.StartAsync(_app.Get<string>(AwayKeys.CameraId) ?? string.Empty);
+            string? failure;
+            try
+            {
+                failure = await _watcher.StartAsync(_app.Get<string>(AwayKeys.CameraId) ?? string.Empty);
+            }
+            finally
+            {
+                _presenceStarting = false;
+            }
+
+            if (failure == AwayFaceWatcher.Cancelled)
+            {
+                // A stop came while the camera was opening and won; nothing is left on.
+                return;
+            }
+
             if (failure is not null)
             {
                 _log.Info("[away] camera: " + failure);
@@ -201,6 +227,18 @@ internal sealed partial class AwayController
             _clock.CameraStarted(Environment.TickCount64);
             _log.Info($"[away] camera: watching (idle {AwayPresenceClock.ArmIdleMs / 1000} s)");
         }, _log, "presence camera start");
+    }
+
+    /// <summary>
+    /// The presence watch is over without a stop of its own (the PC locks or sleeps, the feature stops): the callers switch the camera
+    /// off themselves. A countdown notice the island has not shown yet is dropped too, so it cannot appear later out of context.
+    /// </summary>
+    private void ForgetPresence()
+    {
+        _clock.Reset();
+        _presenceCamera = false;
+        _watcher.MeasureMotion = false;
+        _pendingNotice = null;
     }
 
     private void StopPresenceCamera(string reason)

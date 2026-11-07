@@ -28,8 +28,17 @@ internal sealed class AwayFaceWatcher : IDisposable
 
     private const int NoFrameTimeoutMs = 10000;
 
+    /// <summary>What <see cref="StartAsync"/> returns when a stop came while the camera was opening: not a failure, nothing is left on.</summary>
+    public const string Cancelled = "cancelled";
+
     private readonly ILog _log;
     private readonly object _gate = new();
+
+    /// <summary>One start at a time: two overlapping starts would open two captures and the first would never be closed (light stays on).</summary>
+    private readonly SemaphoreSlim _startGate = new(1, 1);
+
+    /// <summary>Bumped by every stop, so a start that was opening the camera at that moment closes it again instead of finishing.</summary>
+    private int _generation;
     private MediaCapture? _capture;
     private MediaFrameReader? _reader;
     private FaceDetector? _detector;
@@ -126,14 +135,31 @@ internal sealed class AwayFaceWatcher : IDisposable
             ?? devices[0].Id;
     }
 
-    /// <summary>Starts the camera. Returns false (and raises nothing) when it could not start; the reason is in <paramref name="failure"/>.</summary>
+    /// <summary>
+    /// Starts the camera. Returns null when it runs (or already ran), <see cref="Cancelled"/> when a stop came while it was opening, and
+    /// otherwise the reason it could not start; nothing is raised in either case.
+    /// </summary>
     public async Task<string?> StartAsync(string cameraId)
+    {
+        await _startGate.WaitAsync();
+        try
+        {
+            return await StartCoreAsync(cameraId);
+        }
+        finally
+        {
+            _startGate.Release();
+        }
+    }
+
+    private async Task<string?> StartCoreAsync(string cameraId)
     {
         if (_running)
         {
             return null;
         }
 
+        var generation = Volatile.Read(ref _generation);
         if (NoCamera)
         {
             _running = true;
@@ -191,6 +217,9 @@ internal sealed class AwayFaceWatcher : IDisposable
                 _reader = reader;
                 _lastFrame = Environment.TickCount64;
                 _due = 0;
+
+                // Created with the capture so every teardown, including the one of a cancelled start, disposes it too.
+                _watchdog = new Timer(_ => CheckFrames(), null, 2000, 2000);
             }
 
             var status = await reader.StartAsync().AsTask();
@@ -200,10 +229,16 @@ internal sealed class AwayFaceWatcher : IDisposable
                 return "reader " + status;
             }
 
+            if (Volatile.Read(ref _generation) != generation)
+            {
+                // The stop found nothing to close yet; the camera opened after it, so it is closed here and the light goes off.
+                Teardown();
+                return Cancelled;
+            }
+
             _running = true;
             var format = source.CurrentFormat;
             _log.Info($"[away] camera: started ({(subtype ?? format.Subtype)} {format.VideoFormat?.Width}x{format.VideoFormat?.Height})");
-            _watchdog = new Timer(_ => CheckFrames(), null, 2000, 2000);
             return null;
         }
         catch (UnauthorizedAccessException)
@@ -235,6 +270,7 @@ internal sealed class AwayFaceWatcher : IDisposable
     /// <summary>Turns the camera off. Safe to call repeatedly.</summary>
     public void Stop(string reason)
     {
+        Interlocked.Increment(ref _generation);
         var wasRunning = _running;
         _running = false;
         _quick = false;
@@ -385,7 +421,7 @@ internal sealed class AwayFaceWatcher : IDisposable
     }
 
     /// <summary>
-    /// Reduces a gray frame to a 64 x 48 brightness grid, compares it with the previous one (when that is at most 3 s old) and keeps only
+    /// Reduces a gray frame to a 64 x 48 brightness grid, compares it with the previous one (when that is recent enough) and keeps only
     /// the new grid. The grid is 3 KB of block averages; it is never written, logged or sent.
     /// </summary>
     private AwayObservation Observe(SoftwareBitmap gray, bool face)
@@ -413,7 +449,7 @@ internal sealed class AwayFaceWatcher : IDisposable
         var usable = AwayPresenceMath.Usable(AwayPresenceMath.Stats(grid));
         var now = Environment.TickCount64;
         var previous = _previousGrid;
-        var motionKnown = previous is not null && now - _previousGridAt <= 3000;
+        var motionKnown = previous is not null && AwayPresenceMath.Comparable(now - _previousGridAt);
         var motion = motionKnown && AwayPresenceMath.Motion(previous!, grid);
         _previousGrid = grid;
         _previousGridAt = now;

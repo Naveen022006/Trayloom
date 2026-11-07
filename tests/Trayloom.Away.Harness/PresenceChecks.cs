@@ -5,7 +5,7 @@ using Trayloom.Features.WindowTools.AwayMode;
 
 namespace Trayloom.Away.Harness;
 
-/// <summary>The checks of spec 08 section 1.11, in two groups: the picture maths and the state machine.</summary>
+/// <summary>The checks of spec 08 section 1.11 in three groups: the picture maths, the state machine, and the start and return grace.</summary>
 internal static class PresenceChecks
 {
     private const long LeaveMs = 60_000;
@@ -89,6 +89,41 @@ internal static class PresenceChecks
         var flatStats = AwayPresenceMath.Stats(flat);
         Program.Check(flatStats.Mean is > 119 and < 121 && flatStats.Spread < 2 && !AwayPresenceMath.Usable(flatStats), "a uniform frame (mean 120, spread 1) is not usable");
         Program.Check(AwayPresenceMath.Usable(AwayPresenceMath.Stats(scene)), "a normal scene is usable");
+
+        // The relaxed rate samples every 3 s and the next frame arrives a little later: that grid must still be compared.
+        Program.Check(AwayPresenceMath.Comparable(1000) && AwayPresenceMath.Comparable(3040), "a grid from the last sample (1 s or just over 3 s ago) is compared");
+        Program.Check(!AwayPresenceMath.Comparable(AwayPresenceMath.MaxGridAgeMs + 1) && !AwayPresenceMath.Comparable(-1), "a stale grid (or a clock that went back) is not compared");
+    }
+
+    // ------------------------------------------------------------------------------------------ start grace and idle
+
+    /// <summary>The automatic triggers after a start and after a return (<c>AwayLeaveGuard</c>).</summary>
+    public static void Guard()
+    {
+        const long tenMinutes = 10 * 60_000;
+        const long started = Start;
+
+        // The user's log: Trayloom restarted on a PC idle for 20 minutes and minimized everything 6 s later.
+        var sixSeconds = AwayLeaveGuard.EffectiveIdleMs(20 * 60_000, started + 6000, started);
+        Program.Check(sixSeconds == 6000 && sixSeconds < tenMinutes, "restart on an idle PC: idle counts from the start (6 s, not 20 min)");
+        Program.Check(!AwayLeaveGuard.MayLeave(started + 6000, started, started), "restart: no automatic leave 6 s after the start");
+        Program.Check(!AwayLeaveGuard.MayLeave(started + 59_999, started, started), "restart: no automatic leave 59.999 s after the start");
+        Program.Check(AwayLeaveGuard.MayLeave(started + 60_000, started, started), "restart: automatic leave allowed from 60 s after the start");
+        Program.Check(AwayLeaveGuard.EffectiveIdleMs(20 * 60_000, started + tenMinutes, started) == tenMinutes, "restart: a fresh idle period of 10 min reaches the threshold");
+        Program.Check(AwayLeaveGuard.EffectiveIdleMs(5000, started + tenMinutes, started) == 5000, "input after the start: idle counts from that input");
+        Program.Check(AwayLeaveGuard.EffectiveIdleMs(20 * 60_000, started - 5000, started) == 0, "idle is never negative");
+
+        // A return by face brings no input, so the raw idle time is still large afterwards.
+        var back = started + (30 * 60_000);
+        Program.Check(AwayLeaveGuard.EffectiveIdleMs(25 * 60_000, back + 11_000, back) == 11_000, "after a face return: idle counts from the return");
+        Program.Check(!AwayLeaveGuard.MayLeave(back + 9_999, started, back) && AwayLeaveGuard.MayLeave(back + 10_000, started, back), "after a return: automatic leave only from 10 s on");
+
+        // The camera arms on the effective idle too: 30 s after the start, never at once.
+        AwayPresenceClock.ArmIdleMs = 30_000;
+        var clock = new AwayPresenceClock();
+        var early = clock.Tick(started + 5000, AwayLeaveGuard.EffectiveIdleMs(20 * 60_000, started + 5000, started), true, false, LeaveMs);
+        var late = clock.Tick(started + 30_000, AwayLeaveGuard.EffectiveIdleMs(20 * 60_000, started + 30_000, started), true, false, LeaveMs);
+        Program.Check(early == AwayPresenceCommand.None && late == AwayPresenceCommand.StartCamera, "restart on an idle PC: the camera starts 30 s after the start, not at once");
     }
 
     // ------------------------------------------------------------------------------------------ state machine
@@ -249,6 +284,70 @@ internal static class PresenceChecks
             Program.Check(clock.IntervalMs == 3000, "a face sample sets the interval to 3000");
             clock.Sample(t + 3000, Absent, LeaveMs);
             Program.Check(clock.IntervalMs == 1000, "an absent sample sets the interval to 1000");
+        }
+
+        {
+            // Seen once, then the person leaves: the next relaxed sample has no comparison; the rate must go back to fast so the absence
+            // is counted at all.
+            var (clock, ready) = Watching();
+            var t = ready + AwayPresenceClock.WarmupMs;
+            clock.Sample(t, Face, LeaveMs);
+            clock.Sample(t + 3040, new AwayObservation(false, false, true, false), LeaveMs);
+            Program.Check(clock.IntervalMs == AwayPresenceClock.FastIntervalMs, "no face and no comparison: back to the fast rate");
+            var now = t + 3040;
+            var command = AwayPresenceCommand.None;
+            while (command == AwayPresenceCommand.None && now < t + 120_000)
+            {
+                now += 1000;
+                command = clock.Sample(now, Absent, LeaveMs);
+            }
+
+            Program.Check(command == AwayPresenceCommand.BeginCountdown && now - (t + 4040) == LeaveMs, "after a face, 60 s of absence still starts the countdown");
+        }
+
+        {
+            // A dark room with a noisy sensor: "movement" in unusable frames is not a person, so the camera still gives up.
+            var noisyDark = new AwayObservation(false, true, false, true);
+            var (clock, ready) = Watching();
+            var t = ready + AwayPresenceClock.WarmupMs;
+            clock.Sample(t, noisyDark, LeaveMs);
+            Program.Check(clock.Sample(t + 59_000, noisyDark, LeaveMs) == AwayPresenceCommand.None && clock.Phase == AwayPresencePhase.Watching, "noisy dark frames: no countdown");
+            Program.Check(clock.Sample(t + 60_000, noisyDark, LeaveMs) == AwayPresenceCommand.StopCamera && clock.Phase == AwayPresencePhase.GaveUp, "noisy dark frames for 60 s: StopCamera, GaveUp");
+        }
+
+        {
+            var (clock, now) = Counting();
+            var command = clock.Sample(now + 1000, new AwayObservation(false, true, false, true), LeaveMs);
+            Program.Check(command == AwayPresenceCommand.CancelCountdown, "movement in a dim frame during the countdown still cancels it");
+        }
+
+        {
+            var (clock, ready) = Watching();
+            var face = new AwayObservation(true, false, false, true);
+            var t = ready + AwayPresenceClock.WarmupMs;
+            clock.Sample(t, face, LeaveMs);
+            Program.Check(clock.Sample(t + 70_000, face, LeaveMs) == AwayPresenceCommand.None && clock.Phase == AwayPresencePhase.Watching, "a face in a dim frame counts as present, never as dark");
+        }
+
+        {
+            // A camera that never delivers a sample (hung driver): off after 60 s instead of keeping the light on.
+            AwayPresenceClock.ArmIdleMs = 30_000;
+            var clock = new AwayPresenceClock();
+            clock.Tick(Start, 30_000, true, false, LeaveMs);
+            Program.Check(clock.Tick(Start + 59_000, 89_000, true, false, LeaveMs) == AwayPresenceCommand.None, "no sample for 59 s: still waiting for the camera");
+            Program.Check(clock.Tick(Start + 60_000, 90_000, true, false, LeaveMs) == AwayPresenceCommand.StopCamera && clock.Phase == AwayPresencePhase.GaveUp, "no sample for 60 s: StopCamera, GaveUp");
+            Program.Check(clock.Tick(Start + 61_000, 1000, true, false, LeaveMs) == AwayPresenceCommand.None && clock.Phase == AwayPresencePhase.Armed, "input clears the silent give-up");
+        }
+
+        {
+            var (clock, ready) = Watching();
+            var t = ready + AwayPresenceClock.WarmupMs;
+            for (var s = t; s <= t + 90_000; s += 3000)
+            {
+                clock.Sample(s, Face, LeaveMs);
+            }
+
+            Program.Check(clock.Tick(t + 91_000, 120_000, true, false, LeaveMs) == AwayPresenceCommand.None && clock.Phase == AwayPresencePhase.Watching, "samples every 3 s keep the watch going (no silent give-up)");
         }
 
         {

@@ -5,7 +5,8 @@ namespace Trayloom.Away.Harness;
 
 /// <summary>
 /// Console harness for the camera-based leaving of Away mode: <c>AwayPresenceMath</c> (brightness grid, usable frame, motion) and
-/// <c>AwayPresenceClock</c> (the pure presence state machine). No camera, window or setting is touched. Exit code 0 = all passed.
+/// <c>AwayPresenceClock</c> (the pure presence state machine) and <c>AwayLeaveGuard</c> (when the idle and camera triggers may leave after
+/// a start or a return). No camera, window or setting is touched. Exit code 0 = all passed.
 /// </summary>
 internal static class Program
 {
@@ -16,6 +17,7 @@ internal static class Program
     {
         PresenceChecks.Math();
         PresenceChecks.Clock();
+        PresenceChecks.Guard();
 
         Console.WriteLine($"{s_checks - s_failed}/{s_checks} checks passed");
         return s_failed == 0 ? 0 : 1;

@@ -47,6 +47,10 @@ internal sealed class AwayPresenceClock
     public const long WarmupMs = 2_000;
     public const long CountdownMs = 10_000;
     public const long UnusableGiveUpMs = 60_000;
+
+    /// <summary>A camera that was asked to start but has not produced a single sample for this long (a hung driver) is given up.</summary>
+    public const long SilentGiveUpMs = 60_000;
+
     public const long SuppressedCooldownMs = 30_000;
     public const int FastIntervalMs = 1000;
     public const int RelaxedIntervalMs = 3000;
@@ -56,6 +60,8 @@ internal sealed class AwayPresenceClock
     private long _cooldownUntil;
     private long _cameraStartedAt;
     private bool _cameraReady;
+    private long _watchSince;
+    private long _lastSampleAt;
 
     public AwayPresencePhase Phase { get; private set; }
 
@@ -142,7 +148,18 @@ internal sealed class AwayPresenceClock
             ClearRun();
             Phase = AwayPresencePhase.Watching;
             IntervalMs = FastIntervalMs;
+            _watchSince = now;
+            _lastSampleAt = now;
             return AwayPresenceCommand.StartCamera;
+        }
+
+        // Without samples nothing can ever be decided, so the camera light would stay on for nothing: off until the next input.
+        if (Phase == AwayPresencePhase.Watching && now - Math.Max(_watchSince, _lastSampleAt) >= SilentGiveUpMs)
+        {
+            ClearRun();
+            Phase = AwayPresencePhase.GaveUp;
+            LastReason = "no samples";
+            return AwayPresenceCommand.StopCamera;
         }
 
         if (Phase == AwayPresencePhase.Countdown && now >= CountdownEndsAt)
@@ -162,16 +179,18 @@ internal sealed class AwayPresenceClock
             return AwayPresenceCommand.None;
         }
 
+        _lastSampleAt = now;
+
         // Frames from an opening camera are often black or half exposed.
         if (!_cameraReady || now - _cameraStartedAt < WarmupMs)
         {
             return AwayPresenceCommand.None;
         }
 
-        var present = o.Face || (o.MotionKnown && o.Motion);
         if (Phase == AwayPresencePhase.Countdown)
         {
-            if (!present)
+            // Any sign of someone cancels the notice, even in a dim picture: a wrong cancel only waits longer, a wrong leave would not.
+            if (!o.Face && !(o.MotionKnown && o.Motion))
             {
                 return AwayPresenceCommand.None;
             }
@@ -183,7 +202,11 @@ internal sealed class AwayPresenceClock
             return AwayPresenceCommand.CancelCountdown;
         }
 
-        // A face is proof enough even in a dim picture; without one, a dark or flat frame says nothing about the chair.
+        // A face is proof enough even in a dim picture. Movement is not: in a dark or flat frame it is sensor noise as often as a person,
+        // and counting it would keep the camera light on all night instead of giving up.
+        var present = o.Face || (o.Usable && o.MotionKnown && o.Motion);
+
+        // Without a face, a dark or flat frame says nothing about the chair.
         if (!present && !o.Usable)
         {
             _absentSince = null;
@@ -198,9 +221,11 @@ internal sealed class AwayPresenceClock
             return AwayPresenceCommand.None;
         }
 
-        // The first frame has nothing to compare with: it can show a face, but it cannot show that nobody is there.
+        // A frame with nothing to compare with can show a face, but it cannot show that nobody is there. The next sample comes at the
+        // fast rate so it has a recent frame to compare with; at the relaxed rate it might never get one.
         if (!present && !o.MotionKnown)
         {
+            IntervalMs = FastIntervalMs;
             return AwayPresenceCommand.None;
         }
 
