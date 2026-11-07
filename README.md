@@ -141,7 +141,7 @@ The tools are grouped the same way as in the Features hub. Each line says what t
 | **Scratchpad** | Floating pads for short-lived notes, with tabs and formatting. |
 | **Cleaning Mode** | Locks the keyboard and blanks the screen so you can wipe them. |
 | **Away mode** | Minimizes your windows when you leave the PC, or (optionally) when the camera stops seeing you, and brings them back in the same order when you return, by mouse, unlock or (optionally) when the camera sees you. Optionally closes the apps you choose and opens them again, browsers with their tabs. |
-| **Modes** | One-click workspaces: open the apps, folders and browser tabs of a task, like coding or studying, put the others away, and save what is open now as a mode. Start one from the Dynamic Island, the tray, the Quick panel, the Command Bar or its own shortcut. |
+| **Modes** | One-click workspaces: open the apps, folders and browser tabs of a task, like coding or studying, put the others away, and save what is open now as a mode. Start one from the Dynamic Island, the tray, the Quick panel, the Command Bar or its own shortcut, or let it start by itself when an app comes to the front or at a time you set. The active mode shows as a small badge in the closed island. |
 | **Quit apps** | Quit open apps one by one, all at once, or all but the one in front, always after showing the list. |
 | **Wallpaper** | Pick a still wallpaper without opening Windows Settings. |
 | **Cleaner** | Find and clear caches and junk files, with a review before anything is removed. |
@@ -149,7 +149,7 @@ The tools are grouped the same way as in the Features hub. Each line says what t
 | **Packages** | Keep your `winget` packages up to date from the panel. |
 | **App updates** | Find and install updates for the apps you already have. |
 | **Kill Process** *(beta)* | Search running processes and force quit, restart or end a whole process tree. |
-| **Port Manager** | See which processes listen on which ports, and end them (with Kill Process installed). |
+| **Port Manager** | See which processes listen on which ports, and end them (with Kill Process installed). Local dev servers also get their own page in the Dynamic Island. |
 
 ### Dynamic Island
 
@@ -159,10 +159,13 @@ need it. Its layout, size, buttons and pages are all yours to arrange.
 | Extension | What it does |
 | --- | --- |
 | **Dynamic Island** | Music, volume, brightness and your everyday tools in one place at the top of the screen. |
-| **Calendar** | Browse the month and your upcoming appointments, from Google Calendar or Windows Calendar. Join Google Meet and other video calls in one click. |
+| **Calendar** | Browse the month and your upcoming appointments, from Google Calendar or Windows Calendar. Join Google Meet and other video calls in one click, and get a heads-up with Join shortly before a meeting starts. |
 | **Notifications** | New system notifications appear in the island. |
 | **Gestures** | Open and close the island by scrolling; swipe to change tracks. |
-| **Timer** | Timers, a stopwatch and focused work sessions. |
+| **Timer** | Timers, a stopwatch and focused work sessions. When a timer or a Pomodoro focus or break ends it rings an alarm you can choose, with Stop and +1 min right in the closed island. The stopwatch never rings. |
+| **Focus session** | A Pomodoro that can start a mode and quiet the island while you focus: copies, new songs, downloads and Windows notifications wait until your break, and the companion sits beside the time left. Timers, battery, microphone and AI agent alerts still show. |
+| **Meeting heads-up** | A few minutes before a calendar meeting the closed island shows it with a countdown and a Join button. The Calendar page can also check your microphone and camera first. |
+| **Dev servers** | Local servers you start, like `npm run dev`, appear in the island with **Open**, and a note tells you when a new one is up. **Stop** always asks first and never touches system processes. |
 | **Screen time** | How long you used the PC today and which apps, with an hour-by-hour chart. App names and times stay on your PC. |
 | **Accessory alerts** | See connected accessories and get one warning when a battery drops to 20%. |
 | **Bluetooth** | See your Bluetooth devices and their battery in the island and the tray, turn Bluetooth on or off, and get one alert when a device runs low. |
@@ -195,6 +198,12 @@ key and no account (your own YouTube Data API key is an optional alternative). B
   in memory and never saved; the camera light is on while it checks. **Which apps** can limit closing to the list, add the
   apps of the mode you are in, or cover every app with a window (File Explorer, terminals and anything under “Leave these
   apps alone” are never closed).
+* **Modes that start themselves** (Settings › Quick tools › Start modes automatically) follow rules you make: *when an app
+  opens* or *at a time*, on the days you pick, with an optional time to leave. Windows has no "a program started" event for
+  ordinary apps, so an app rule fires when that app’s window first comes to the front, once per run; background-only programs
+  can’t trigger a rule. New rules ask first (a question in the island with **Start** and **Not now**). A rule never replaces a
+  mode you are already in, only leaves a mode it started itself, and is skipped silently in Away mode, while the PC is locked
+  or while Trayloom runs as administrator. Rules are kept in `%APPDATA%\Trayloom\modes\rules.json`.
 * **Modes** keep their list in `%APPDATA%\Trayloom\modes\modes.json` on your PC. “Save what’s open now” lists what it found
   and saves nothing until you confirm. Switching never closes a window that asks to save something and never closes File
   Explorer or terminals; a mode can only close windows it opened itself. It does not turn on Do not disturb or change per-app
@@ -220,6 +229,10 @@ browser tab.
 * **Permission alerts:** when a Claude Code session waits for your permission, the island pops out to tell you which one.
   This uses a small, optional hook that only reports the event; it is added only when you switch it on (after a backup of
   your settings) and removed when you switch it off.
+* **Limit forecast:** when, at your pace so far in a window, a limit would run out before it resets, the Limits card says
+  "Runs out around 3:40 PM at this pace" and the island can warn you 15, 30 or 60 minutes ahead (on by default; turn it off in
+  Settings › Dynamic Island › AI Agents). It is arithmetic on the readings Trayloom already has, and it stays quiet when the
+  reading is too early or too old to mean anything.
 * **Mascot:** Claude Code’s pixel mascot opens a laptop and types on it in the island while Claude works, as it does in Claude Code, and waves when it needs you.
 * Everything is read from local files and local services. No passwords or login tokens are read.
 
@@ -344,6 +357,14 @@ What to expect:
   Page titles are not read, and private windows are never in that file.
 * **Spotify and YouTube Music (optional).** Nothing is sent until you turn a service on in Settings › Dynamic Island › Content › Now Playing. Spotify sign-in happens on Spotify’s own page in your browser (Trayloom never sees your password); Trayloom asks only to read your playlists, liked and recently played songs and what’s playing, and to control playback, and never changes your library or playlists. The sign-in is stored encrypted for your Windows account in `%APPDATA%\Trayloom\music`; Disconnect deletes it, and spotify.com/account/apps removes access. YouTube Music needs no account and no key: when you press Enter in its search box, Trayloom sends the search text to music.youtube.com’s own web service (the one the YouTube Music website uses), with no cookies and no sign-in, and shows the results in the island. That service is not an official API, so it may stop working if YouTube changes it. If you add your own YouTube Data API key (optional, stored encrypted the same way), searches go to Google’s official YouTube Data API instead. YouTube’s Terms of Service and Google’s Privacy Policy apply to those searches. Results are kept in memory only.
 * **Google Calendar (optional).** Nothing is sent until you add a calendar in Settings › Dynamic Island › Content › Calendar. Trayloom then downloads that calendar’s secret iCal address from calendar.google.com every 15 minutes (you can change this) and shows its events in the island. It is read-only: Trayloom never signs in to Google and never changes your calendar. The address works like a password, so Trayloom stores it, and a copy of the downloaded calendar, encrypted for your Windows account in `%APPDATA%\Trayloom\calendar`; removing the calendar deletes both. Resetting the secret address in Google Calendar cuts off access at once.
+* **Meeting microphone and camera checks.** The Calendar page’s **Check microphone** and **Check camera** open the real devices only
+  when you click them, and release them right away (the microphone check also ends after 15 seconds or when you leave the page).
+  Windows shows its microphone indicator, and the camera light, while they run. Sound is never recorded, stored or sent; only a
+  momentary level for the meter is kept in memory.
+* **Auto modes** read only the program name (such as `Code.exe`) of the window that comes to the front, never its title or
+  contents. Rules store executable file names and times in `rules.json` on your PC.
+* **Dev servers** read only the local list of listening ports and the names of the programs that own them, on this PC. Nothing is
+  sent anywhere, and the log holds counts only.
 * **GitHub while you code** reads the title of the editor or terminal window in front, Claude Code’s session files and the `.git` folders of your projects, all on this PC, to know which repository you are working in. It runs read-only Git commands with optional locks turned off, so it never changes your repository. Only when GitHub is connected does it ask GitHub for that branch’s pull request and checks.
 
 ## Requirements

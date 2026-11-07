@@ -211,6 +211,12 @@ internal static class WhatsNewPage
             Loc.T("Claude Code’s pixel mascot opens a laptop and types on it in the Dynamic Island while Claude works, as it does in Claude Code, and waves when it needs you."),
             Loc.T("Google Calendar in the island: add your calendar’s secret address, see your events and join a Google Meet call in one click."),
             Loc.T("Create and edit Modes right in the Dynamic Island: name, colour and icon, “Use what’s open now”, apps, web pages and folders."),
+            Loc.T("Timer alarm: a timer or a Pomodoro phase that ends now rings a sound you choose, with Stop and +1 min right in the closed island. The stopwatch never rings."),
+            Loc.T("Modes can start by themselves when an app comes to the front or at a time you set, and the active mode shows as a small badge in the closed island."),
+            Loc.T("Focus sessions: a Pomodoro that starts a mode and keeps the island quiet until your break."),
+            Loc.T("Meeting heads-up: your next meeting appears in the closed island with a Join button, and you can check your microphone and camera first."),
+            Loc.T("Dev servers in the island: see the local servers you run, open them, and stop one after a question. System processes are never touched."),
+            Loc.T("Claude limit forecast: the Limits card says when a limit would run out at your pace, and the island can warn you before it does."),
         ]),
         new("Changed",
         [
@@ -220,6 +226,9 @@ internal static class WhatsNewPage
         ]),
         new("Fixed",
         [
+            Loc.T("Away mode with the camera leaves and returns reliably: a restart no longer minimizes your windows, the camera light switches off when you are back, and a dark room never counts as you being away."),
+            Loc.T("Trayloom uses much less memory and keeps the Dynamic Island smoother while an AI agent works."),
+            Loc.T("The music Library opens taller, can be dragged to the height you like, and the source switch sits right above it."),
             Loc.T("The Notch shape works: choosing it attaches the island to the screen edge, Settings explains when it shows as a capsule, and the outline, companion side, previews and other displays follow the notch."),
             Loc.T("A playing song keeps its banner in the closed island while an AI agent works; the agent takes over only when it needs you."),
             Loc.T("The AI Agents page in the Dynamic Island scrolls smoothly: it no longer jumps to the top while an agent works, and its edges fade instead of being cut off."),
@@ -234,7 +243,7 @@ internal static class WhatsNewPage
     {
         var stack = new StackPanel { Margin = new Thickness(2, 2, 2, 0) };
         stack.Children.Add(UiKit.Text(Loc.T("What’s new in this version"), 18, FontWeights.Bold, ThemeKeys.TextPrimary));
-        var version = UiKit.Text($"v{AppInfo.Version} · 2026-11-06", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary);
+        var version = UiKit.Text($"v{AppInfo.Version} · 2026-11-07", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary);
         version.Margin = new Thickness(0, 4, 0, 0);
         stack.Children.Add(version);
         foreach (var section in Notes)

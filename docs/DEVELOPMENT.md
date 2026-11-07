@@ -37,6 +37,11 @@ shortcut defaults, duplicate checks), `--open-onboarding [step]`, `--open-instal
 `--shot-full <png>` (the whole Settings page), `--set-language <code|system>`, `--set-appearance <system|light|dark>`,
 `--install`, `--uninstall [--quiet]`, `--no-onboarding`, `--quit`.
 
+Performance: with `TRAYLOOM_DEV=1` the log gets one `[perf]` line a minute: how late a Background-priority timer fired on the UI
+thread, how busy that thread was, its slowest operation and longest window message, the managed heap, GC counts, process memory
+and the UI operations that took the most time. `TRAYLOOM_AGENT_ARCHIVE=<copy of agent-usage.bin>` makes the Agents harness report
+what the real usage archive costs to load, save and summarise.
+
 Feature dev actions (most only with `TRAYLOOM_DEV=1`): `--action screen-time dump|flush|dev-add-minute|today`,
 `--action github refresh|open-notifications|dump|connect-cli|simulate-notice|log-coding|simulate-checks-finished`
 (the last two are the coding log and a simulated finished-checks notice), `--action bluetooth dump|simulate-connect|simulate-low` (they
@@ -56,6 +61,14 @@ input the camera waits for. Modes: `--action modes dump` (counts only) and `--ac
 browser windows and folders were found, nothing else), both only with `TRAYLOOM_DEV=1`; `--action modes save-current` opens
 Settings at the Modes card and its capture dialog. Mode actions are `mode.<id>` and `leave`. The log holds mode ids and counts,
 never names, paths or addresses.
+
+Island timer, focus and meeting (0.8.0): `--action island dev-timer-5s` (with `TRAYLOOM_DEV=1`) rings the timer alarm after 5
+seconds so the bell strip, **Stop** and **+1 min** can be checked; `--action island dev-meeting` adds an in-memory "Test meeting"
+six minutes ahead with a video link, so the meeting heads-up appears about a minute later at the default 5-minute lead, with no
+real calendar (nothing is stored). `--action island focus` ("Start a focus session") is a normal action that needs no
+`TRAYLOOM_DEV`: it starts a Pomodoro (or joins the running one) and enters the mode chosen in Settings. Modes' auto rules and
+the Port Manager's dev servers add no dev actions of their own: a server started by hand (for example `npx vite`) is enough to
+see the dev servers page and its notice, and an auto rule is tried with a harmless app you start yourself.
 
 With `TRAYLOOM_DEV=1` the island also exposes one action per page. Island placement: `--action island move` enters
 "Move island" mode and `--action island reset-position` puts the island back at the top centre; with `TRAYLOOM_DEV=1` also
