@@ -280,6 +280,9 @@ internal static partial class K
             [PanelControlNotch] = true,
         });
         RegisterMusicDefaults(app);
+        RegisterTimerAlarmDefaults(app);
+        RegisterFocusDefaults(app);
+        RegisterMeetingDefaults(app);
     }
 
     /// <summary>Splits a comma separated list (empty entries dropped).</summary>

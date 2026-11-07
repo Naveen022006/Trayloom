@@ -184,6 +184,12 @@ internal sealed class NoticeSources : IDisposable
 
     private void OnTimerFinished(TimerPhase phase, bool cycle)
     {
+        // The ringing strip says "Time is up" with Stop and +1 min, so the notice would only repeat it.
+        if (_core.Timer.Ringing)
+        {
+            return;
+        }
+
         _core.ShowNotice(new Notice
         {
             Event = NoticeEvents.Timer,

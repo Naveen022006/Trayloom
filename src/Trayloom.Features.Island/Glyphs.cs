@@ -16,6 +16,9 @@ internal static class G
     public const string Tools = "\uE90F";
     public const string Calendar = "\uE787";
     public const string Bell = "\uE7ED";
+
+    /// <summary>A plain ringing bell ("Ringer"); <see cref="Bell"/> is drawn with a slash and reads as muted, so an alarm uses this one.</summary>
+    public const string Ringer = "\uEA8F";
     public const string Timer = "\uE916";
     public const string Video = "\uE714";
     public const string Download = "\uE896";

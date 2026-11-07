@@ -14,6 +14,7 @@ internal static class Program
         SupportChecks.Run(Check);
         UninstallerChecks.Run(Check);
         CleanerChecks.Run(Check);
+        DevServerChecks.Run(Check);
 
         Console.WriteLine($"{s_checks - s_failed}/{s_checks} checks passed");
         return s_failed == 0 ? 0 : 1;

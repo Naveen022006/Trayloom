@@ -514,17 +514,19 @@ internal sealed class KillService
 
     /// <summary>
     /// Kills the targets, escalating once for the ones that need administrator rights. Returns true when no failure remained.
+    /// With <paramref name="interactive"/> false (the island) it never shows a dialog and never escalates: a process that needs
+    /// administrator rights counts as failed.
     /// </summary>
-    public async Task<bool> KillAsync(IReadOnlyList<KillTarget> targets, bool force)
+    public async Task<bool> KillAsync(IReadOnlyList<KillTarget> targets, bool force, bool interactive = true)
     {
         // protected names are refused here too, so no caller can end a Windows process by building a target by hand
         targets = targets.Where(t => t.Pid > 4 && t.Pid != SelfPid && !ProcessSafety.IsProtectedName(t.Name)).ToList();
         var results = await Task.Run(() => targets.Select(t => (Target: t, Result: KillOne(t, force))).ToList()).ConfigureAwait(true);
         var needAdmin = results.Where(r => r.Result == KillResult.NeedsAdmin).Select(r => r.Target).ToList();
         var failed = results.Count(r => r.Result == KillResult.Failed);
-        if (needAdmin.Count > 0 && targets.Count > 1)
+        if (needAdmin.Count > 0 && (targets.Count > 1 || !interactive))
         {
-            // an administrator prompt is for one process the user picked; grouped and tree kills never escalate
+            // an administrator prompt is for one process the user picked; grouped and tree kills never escalate, nor does a silent kill
             failed += needAdmin.Count;
         }
         else if (needAdmin.Count > 0)
@@ -544,7 +546,7 @@ internal sealed class KillService
 
         RemoveLocally(results.Where(r => r.Result is KillResult.Killed or KillResult.AlreadyGone).Select(r => r.Target.Pid));
         _ = Task.Delay(500).ContinueWith(_ => Application.Current?.Dispatcher.BeginInvoke(() => _ = RefreshAsync(true)));
-        if (failed > 0)
+        if (failed > 0 && interactive)
         {
             Dialogs.Alert(Loc.T("Couldn’t Kill Process"), Loc.T("The process may have already exited or require additional privileges."));
         }

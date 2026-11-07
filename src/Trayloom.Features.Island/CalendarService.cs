@@ -528,6 +528,9 @@ internal sealed class CalendarService : IDisposable
             .OrderBy(e => e.AllDay ? 0 : 1).ThenBy(e => e.Start).ThenBy(e => e.Id, StringComparer.Ordinal);
     }
 
+    /// <summary>Timed events that start inside [from, to], in the order the service keeps them (the meeting heads-up picks from these).</summary>
+    public IEnumerable<CalEvent> Upcoming(DateTime from, DateTime to) => _events.Where(e => !e.AllDay && e.Start >= from && e.Start <= to);
+
     public CalEvent? Next(DateTime now) => _events.FirstOrDefault(e => !e.AllDay && e.End > now);
 
     /// <summary>The countdown target (spec 6.5): nearest upcoming event inside its lead, or an ongoing one in its last hour.</summary>

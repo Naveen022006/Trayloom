@@ -83,7 +83,7 @@ internal static class PortList
                 var stable = before.TryGetValue(pid, out var created) && created == after && after != 0;
                 if (!names.TryGetValue(pid, out var name))
                 {
-                    names[pid] = name = NameOf(pid);
+                    names[pid] = name = CachedName(pid, after);
                 }
 
                 var entry = new PortEntry(port, "TCP", address, pid, name, stable ? after : 0);
@@ -96,6 +96,27 @@ internal static class PortList
         {
             return null;
         }
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(int, long), string> NameCache = new();
+
+    /// <summary>
+    /// The process name, looked up once per process: the island polls every few seconds, and a process is the same one while its pid
+    /// and creation time both match. A process whose creation time is unreadable is not cached.
+    /// </summary>
+    private static string CachedName(int pid, long created)
+    {
+        if (created == 0)
+        {
+            return NameOf(pid);
+        }
+
+        if (NameCache.Count > 512)
+        {
+            NameCache.Clear();
+        }
+
+        return NameCache.GetOrAdd((pid, created), _ => NameOf(pid));
     }
 
     private static string NameOf(int pid)
@@ -468,6 +489,7 @@ internal sealed class PortManagerView : StackPanel
 public sealed class PortManagerFeature : IFeature
 {
     private IFeatureContext? _context;
+    private DevServerWatcher? _watcher;
 
     public string Id => "port-manager";
 
@@ -480,11 +502,47 @@ public sealed class PortManagerFeature : IFeature
     {
         _context = context;
         Host.Attach(context);
+        _watcher = new DevServerWatcher(context);
+        context.App.Changed += OnSettingChanged;
+        ApplyWatcher();
     }
 
     public void Stop()
     {
+        if (_context is not null)
+        {
+            _context.App.Changed -= OnSettingChanged;
+        }
+
+        _watcher?.Stop();
+        _watcher = null;
         _context = null;
+    }
+
+    private void OnSettingChanged(string key)
+    {
+        // Raised on any thread; the watcher's timer belongs to the UI thread.
+        if (key == "devServersNotice" && _context is { } context)
+        {
+            context.Ui.BeginInvoke(ApplyWatcher);
+        }
+    }
+
+    private void ApplyWatcher()
+    {
+        if (_context is null || _watcher is null)
+        {
+            return;
+        }
+
+        if (_context.App.Get<bool>("devServersNotice"))
+        {
+            _watcher.Start();
+        }
+        else
+        {
+            _watcher.Stop();
+        }
     }
 }
 
@@ -504,7 +562,18 @@ public sealed class PortManagerSettingsSection : ISettingsSection
     public FrameworkElement CreateView(ISettingsContext c)
     {
         Host.Attach(c);
-        return new PortManagerView(false);
+        var app = c.App;
+
+        // The two dev server switches sit above the port list; the island page and its notice are described in specs/10e-dev-servers.md.
+        var card = new SettingsCard();
+        card.Add(new SettingsRow(null, Loc.T("Tell me when a local server starts"), null, new MacSwitch(app.Get<bool>("devServersNotice"), SwitchSize.Small, on => app.Set("devServersNotice", on))));
+        card.Add(new SettingsRow(null, Loc.T("Show every listening port of your apps"), null, new MacSwitch(app.Get<bool>("devServersShowAll"), SwitchSize.Small, on => app.Set("devServersShowAll", on))));
+        var page = new StackPanel();
+        page.Children.Add(card);
+        var view = new PortManagerView(false);
+        view.Margin = new Thickness(0, 12, 0, 0);
+        page.Children.Add(view);
+        return page;
     }
 }
 

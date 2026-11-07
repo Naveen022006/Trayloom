@@ -2,7 +2,6 @@
 // Trayloom — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
 
 using System.Diagnostics;
-using System.Media;
 using System.Windows.Threading;
 using Trayloom.Core;
 
@@ -30,23 +29,19 @@ internal sealed class TimerService : IDisposable
     private readonly IAppSettings _app;
     private readonly Dispatcher _ui;
     private readonly DispatcherTimer _tick;
-    private readonly DispatcherTimer _alarm;
+    private readonly TimerAlarm _sound;
     private double _anchor;
     private double _anchorValue;
     private int _lastWhole = -1;
-    private DateTime _alarmStart;
 
-    /// <summary>The finished alarm repeats every 2 s for at most this long unless the user acknowledges it.</summary>
-    private const double AlarmSeconds = 30;
-
-    public TimerService(IAppSettings app, Dispatcher ui)
+    public TimerService(IAppSettings app, Dispatcher ui, ILog log)
     {
         _app = app;
         _ui = ui;
         _tick = new DispatcherTimer(DispatcherPriority.Normal, ui) { Interval = TimeSpan.FromMilliseconds(200) };
         _tick.Tick += (_, _) => OnTick();
-        _alarm = new DispatcherTimer(DispatcherPriority.Normal, ui) { Interval = TimeSpan.FromSeconds(2) };
-        _alarm.Tick += (_, _) => PlayAlarm();
+        _sound = new TimerAlarm(ui, log);
+        _sound.Changed += OnSoundEnded;
         Microsoft.Win32.SystemEvents.PowerModeChanged += OnPower;
     }
 
@@ -64,8 +59,11 @@ internal sealed class TimerService : IDisposable
 
     public bool CycleFinished { get; private set; }
 
-    /// <summary>True while the finished alarm is still repeating (any interaction stops it).</summary>
-    public bool Ringing => _alarm.IsEnabled;
+    /// <summary>True while the finished alarm is sounding (any interaction stops it).</summary>
+    public bool Ringing => _sound.IsPlaying;
+
+    /// <summary>Raised on the UI thread when the alarm starts or stops sounding; <see cref="Ringing"/> is already updated.</summary>
+    public event Action? AlarmChanged;
 
     public int CompletedFocuses { get; private set; }
 
@@ -328,34 +326,84 @@ internal sealed class TimerService : IDisposable
         }
 
         _lastWhole = -1;
+
+        // The alarm starts before the events so every listener already sees Ringing (the strip and the Focus session rely on it).
+        if (TimerAlarmRules.ShouldRing(Phase, _app.Get<bool>(K.TimerSound)))
+        {
+            StartAlarm();
+        }
+
         Changed?.Invoke();
         Finished?.Invoke(Phase, CycleFinished);
-        if (_app.Get<bool>(K.TimerSound))
-        {
-            _alarmStart = DateTime.UtcNow;
-            PlayAlarm();
-            _alarm.Start();
-        }
     }
 
-    private void PlayAlarm()
+    private void StartAlarm()
     {
-        if ((DateTime.UtcNow - _alarmStart).TotalSeconds >= AlarmSeconds || !_app.Get<bool>(K.TimerSound))
-        {
-            _alarm.Stop();
-            return;
-        }
-
-        try
-        {
-            SystemSounds.Asterisk.Play();
-        }
-        catch
-        {
-        }
+        var repeat = _app.Get<bool>(K.TimerAlarmRepeat);
+        var sound = _app.Get<string>(K.TimerAlarmSound);
+        var volume = TimerAlarmRules.Volume(_app.Get<int>(K.TimerAlarmVolume));
+        _sound.Play(sound, volume, repeat, TimeSpan.FromSeconds(TimerAlarmRules.MaxRingSeconds));
+        AlarmChanged?.Invoke();
     }
 
-    public void StopAlarm() => _alarm.Stop();
+    /// <summary>Silences the alarm. Does nothing when it is not sounding.</summary>
+    public void StopAlarm() => _sound.Stop();
+
+    /// <summary>The sound ended or was stopped: tell listeners, then let the displays refresh.</summary>
+    private void OnSoundEnded()
+    {
+        AlarmChanged?.Invoke();
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Extends a finished timer or Pomodoro phase by <paramref name="seconds"/> and runs it again. A snoozed focus does not count
+    /// as a completed session until it ends for good. Returns false when there is nothing to snooze.
+    /// </summary>
+    public bool Snooze(int seconds = 60)
+    {
+        if (!HasSession || !TimerAlarmRules.CanSnooze(Mode, Completed))
+        {
+            return false;
+        }
+
+        CompletedFocuses = TimerAlarmRules.FocusesAfterSnooze(CompletedFocuses, Phase);
+        CycleFinished = false;
+        Completed = false;
+        BeginAnchor(Math.Max(1, seconds));
+        Running = true;
+        _lastWhole = -1;
+        _tick.Start();
+
+        // Stopping after the state is set means the Changed it raises already shows the running countdown.
+        _sound.Stop();
+        Changed?.Invoke();
+        return true;
+    }
+
+    /// <summary>Developer aid (TRAYLOOM_DEV=1): a plain timer that ends in a few seconds, without touching the saved length.</summary>
+    internal void StartForTest(int seconds)
+    {
+        if (HasSession)
+        {
+            Cancel();
+        }
+
+        Mode = TimerMode.Timer;
+        Phase = TimerPhase.Timer;
+        Completed = false;
+        CycleFinished = false;
+        CompletedFocuses = 0;
+        TotalSessions = 1;
+        LongInterval = 1;
+        BeginAnchor(Math.Max(1, seconds));
+        HasSession = true;
+        Running = true;
+        _lastWhole = -1;
+        _tick.Start();
+        Started?.Invoke(Phase);
+        Changed?.Invoke();
+    }
 
     private void OnPower(object? sender, Microsoft.Win32.PowerModeChangedEventArgs e)
     {
@@ -369,6 +417,7 @@ internal sealed class TimerService : IDisposable
     {
         Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPower;
         _tick.Stop();
-        _alarm.Stop();
+        _sound.Changed -= OnSoundEnded;
+        _sound.Dispose();
     }
 }

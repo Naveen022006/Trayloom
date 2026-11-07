@@ -34,6 +34,13 @@ public sealed class IslandFeature : IFeature
             var dev = devOn
                 ? IslandCatalog.Modules.Select(m => new FeatureAction("dev-open-" + m.Id, "Island page: " + m.Title, () => _window?.Open(m.Id), G.Controls)).ToList()
                 : [];
+            if (devOn)
+            {
+                // Rings the alarm after five seconds so the strip, Stop and +1 min can be checked by hand.
+                dev.Add(new FeatureAction("dev-timer-5s", "Timer: ring in 5 seconds", () => core.Timer.StartForTest(5), G.Timer));
+                // Adds a test meeting six minutes ahead (in memory only) so the heads-up strip can be checked without a real calendar.
+                dev.Add(new FeatureAction("dev-meeting", "Meeting: heads-up for a test meeting", () => core.Meeting.AddDevEvent(), G.Calendar));
+            }
 
             // Developer aid too: put the island at each preset place (and step through the displays) without dragging, so every edge and display can be checked
             List<FeatureAction> place = devOn
@@ -62,6 +69,7 @@ public sealed class IslandFeature : IFeature
                 new FeatureAction("next", Loc.T("Next track"), () => Transport(core, AmAction.SkipForward, core.Playback.Next), G.Next),
                 new FeatureAction("previous", Loc.T("Previous track"), () => Transport(core, AmAction.SkipBack, core.Playback.Previous), G.Previous),
                 new FeatureAction("timer", Loc.T("Open the island timer"), () => _window?.Open("timer"), G.Timer),
+                new FeatureAction("focus", Loc.T("Start a focus session"), () => core.Focus.Start(), G.Timer),
                 new FeatureAction("calendar", Loc.T("Open the island calendar"), () => _window?.Open("calendar"), G.Calendar),
             ];
         }

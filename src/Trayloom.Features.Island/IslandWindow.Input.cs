@@ -640,7 +640,7 @@ internal sealed partial class IslandWindow
     private void ApplyHiddenAlpha()
     {
         var hideUntil = _core.App.Get<bool>(K.HideUntilHover) && _core.App.Get<bool>(K.OpenOnHover);
-        var showActivity = _core.App.Get<bool>(K.HiddenShowsActivity) && (_core.LiveActivities().Count > 0 || _core.Notices.Current is not null);
+        var showActivity = _core.App.Get<bool>(K.HiddenShowsActivity) && (_core.LiveActivities().Count > 0 || _core.Notices.Current is not null || _core.Timer.Ringing);
         var hidden = hideUntil && _mode == IslandMode.Closed && !_inside && !showActivity && !_placeholder && !MoveMode;
         var target = hidden ? 0 : 1;
         if (Math.Abs(_surface.Alpha - target) > 0.01)
@@ -846,7 +846,7 @@ internal sealed partial class IslandWindow
     /// <summary>The geometry the island has on another display (that display's saved position, the live zoom): what a mirror there is placed by.</summary>
     internal IslandFrame FrameFor(IslandMonitor monitor)
     {
-        // A mirror asks on every decorative tick (30 Hz each): reading the saved position parses its JSON map from the settings, so the frame is kept
+        // A mirror asks on every decorative tick: reading the saved position parses its JSON map from the settings, so the frame is kept
         // until a position or display setting changes (OnSetting bumps the stamp), the zoom changes, or the display list is re-read (new monitor objects).
         var stamp = Volatile.Read(ref _frameStamp);
         if (_mirrorFrames.TryGetValue(monitor.Key, out var hit) && hit.Stamp == stamp && ReferenceEquals(hit.Monitor, monitor) && hit.Zoom == _zoom)

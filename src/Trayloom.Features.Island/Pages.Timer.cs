@@ -220,7 +220,7 @@ internal sealed class TimerPage : IslandPage
         var h = 82.0;
         if (!t.HasSession && _mode == TimerMode.Pomodoro)
         {
-            h = Math.Min(82, Math.Max(56, budget - 36)) + 8 + 28;
+            h = RulerHeight(budget) + 8 + 28 + (ModeRowHeight);
         }
 
         return Math.Min(h, budget);
@@ -277,7 +277,7 @@ internal sealed class TimerPage : IslandPage
             }
 
             _leading.Children.Add(modes);
-            var start = new HoverButton(() => { Core.Timer.Start(_mode); }) { Height = 28, CornerRadius = new CornerRadius(14), Padding = new Thickness(10, 0, 10, 0), Fill = OrangeFill };
+            var start = new HoverButton(() => { StartSession(); }) { Height = 28, CornerRadius = new CornerRadius(14), Padding = new Thickness(10, 0, 10, 0), Fill = OrangeFill };
             var startLabel = D.T(Loc.T("Start"), 12, FontWeights.SemiBold, D.Orange);
             startLabel.VerticalAlignment = VerticalAlignment.Center;
             start.Child = startLabel;
@@ -291,11 +291,25 @@ internal sealed class TimerPage : IslandPage
             col.Children.Add(D.T(headline, 13, FontWeights.SemiBold, D.Orange));
             if (t.Mode == TimerMode.Pomodoro && !t.CycleFinished)
             {
-                col.Children.Add(D.T(Loc.F("Session {0} of {1}", t.SessionNumber, t.TotalSessions), 11, null, D.Secondary));
+                var sub = Loc.F("Session {0} of {1}", t.SessionNumber, t.TotalSessions);
+                if (Core.Focus.Active && Core.Focus.EnteredModeName is { } modeName)
+                {
+                    sub += " · " + modeName;
+                }
+
+                col.Children.Add(D.T(sub, 11, null, D.Secondary));
             }
 
             _leading.Children.Add(col);
             var done = t.Completed;
+            if (TimerAlarmRules.CanSnooze(t.Mode, done))
+            {
+                var snooze = D.PillButton(Loc.T("+1 min"), () => Core.Timer.Snooze(60), false, D.Orange, OrangeFill, 28);
+                snooze.Margin = new Thickness(0, 0, 6, 0);
+                D.Tip(snooze, Loc.T("Snooze for 1 minute"));
+                _trailing.Children.Add(snooze);
+            }
+
             var x = D.IconButton(G.Close, done ? Loc.T("Done") : Loc.T("Cancel"), () => Core.Timer.Cancel(), size: 28, glyphSize: 12);
             _trailing.Children.Add(x);
         }
@@ -351,7 +365,7 @@ internal sealed class TimerPage : IslandPage
         }
         else
         {
-            var rulerH = _mode == TimerMode.Pomodoro ? Math.Min(82, Math.Max(56, budget - 36)) : 82;
+            var rulerH = _mode == TimerMode.Pomodoro ? RulerHeight(budget) : 82;
             var row = new Grid { Height = rulerH };
             if (_mode == TimerMode.Stopwatch)
             {
@@ -378,10 +392,76 @@ internal sealed class TimerPage : IslandPage
             if (_mode == TimerMode.Pomodoro)
             {
                 root.Children.Add(BuildReadouts(width));
+                if (Modes is { } modes)
+                {
+                    root.Children.Add(BuildModeRow(modes));
+                }
             }
         }
 
         _view.Children.Add(root);
+    }
+
+    private IModesService? Modes => Core.Ctx.Services.Get<IModesService>();
+
+    /// <summary>Height of the "Mode" chip row (with its gap); zero while Modes is not installed.</summary>
+    private double ModeRowHeight => Modes is null ? 0 : 8 + 28;
+
+    /// <summary>The ruler gives up height to the readouts and the mode row so the whole page still fits its budget.</summary>
+    private double RulerHeight(double budget) => Math.Min(82, Math.Max(56, budget - 36 - ModeRowHeight));
+
+    /// <summary>Pomodoro starts as a Focus session, so the mode and the quiet notices apply; the other modes start plainly.</summary>
+    private void StartSession()
+    {
+        if (_mode == TimerMode.Pomodoro)
+        {
+            Core.Focus.Start();
+        }
+        else
+        {
+            Core.Timer.Start(_mode);
+        }
+    }
+
+    /// <summary>The "Mode" chip: a menu of "None" and the modes, stored as the mode a focus session enters.</summary>
+    private FrameworkElement BuildModeRow(IModesService modes)
+    {
+        var row = new Grid { Height = 28, Margin = new Thickness(0, 8, 0, 0) };
+        var current = Core.App.Get<string>(K.FocusModeId);
+        var chosen = modes.List.FirstOrDefault(m => m.Id == current);
+        HoverButton? btn = null;
+        btn = new HoverButton(() => IslandMenu.Show(btn!, ModeItems(modes, chosen?.Id), () => HasWindow ? Window.HoldOpen() : null)) { CornerRadius = new CornerRadius(6), Padding = new Thickness(4, 0, 4, 0), Lifts = false, HorizontalAlignment = HorizontalAlignment.Left };
+        var line = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        line.Children.Add(D.T(Loc.T("Mode"), 9.5, FontWeights.Medium, D.Secondary));
+        var value = D.T(chosen?.Name ?? Loc.T("None"), 12, FontWeights.SemiBold, D.Orange, false, TextTrimming.CharacterEllipsis);
+        value.Margin = new Thickness(8, 0, 0, 0);
+        value.MaxWidth = 200;
+        line.Children.Add(value);
+        var chev = D.I(G.ChevronDown, 7, D.Secondary);
+        chev.Margin = new Thickness(3, 1, 0, 0);
+        line.Children.Add(chev);
+        btn.Child = line;
+        row.Children.Add(btn);
+        return row;
+    }
+
+    private IEnumerable<IslandMenu.Item> ModeItems(IModesService modes, string? selected)
+    {
+        yield return new IslandMenu.Item(Loc.T("None"), () => ChooseMode(""), selected is null);
+        foreach (var m in modes.List)
+        {
+            var id = m.Id;
+            yield return new IslandMenu.Item(m.Name, () => ChooseMode(id), id == selected);
+        }
+    }
+
+    private void ChooseMode(string id)
+    {
+        Core.App.Set(K.FocusModeId, id);
+        if (HasWindow)
+        {
+            Window.ReopenPage();
+        }
     }
 
     private static string MinutesText(int m) => m >= 60 ? $"{m / 60}:{m % 60:00}:00" : $"{m:00}:00";

@@ -301,6 +301,12 @@ internal sealed class CameraPage : IslandPage
                 await StopAsync(false);
             }
 
+            if (_running && Core.Meeting.TakeCameraCheck())
+            {
+                // Started from the meeting card's "Check camera": a quick look that lets the camera go by itself after 30 s.
+                ArmCheckLimit();
+            }
+
             if (!_running)
             {
                 TryBuild();
@@ -310,6 +316,20 @@ internal sealed class CameraPage : IslandPage
         {
             _busy = false;
         }
+    }
+
+    private DispatcherTimer? _checkLimit;
+
+    private void ArmCheckLimit()
+    {
+        _checkLimit?.Stop();
+        _checkLimit = new DispatcherTimer(DispatcherPriority.Normal, _view.Dispatcher) { Interval = TimeSpan.FromSeconds(30) };
+        _checkLimit.Tick += (_, _) =>
+        {
+            _checkLimit?.Stop();
+            Guarded.FireAndLog(() => StopAsync(), Core.Ctx.Log, "Camera check limit");
+        };
+        _checkLimit.Start();
     }
 
     private async Task OpenAsync(int generation)
@@ -427,6 +447,7 @@ internal sealed class CameraPage : IslandPage
     private async Task StopAsync(bool rebuild = true)
     {
         _running = false;
+        _checkLimit?.Stop();
         try
         {
             if (_reader is not null)

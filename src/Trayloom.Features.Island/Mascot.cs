@@ -839,7 +839,7 @@ internal sealed class MascotService : IDisposable
         Changed?.Invoke();
     }
 
-    /// <summary>Runs the 1 s timer and the 30 Hz clock only while the companion is on; a disabled companion costs nothing.</summary>
+    /// <summary>Runs the 1 s timer and the decorative clock only while the companion is on; a disabled companion costs nothing.</summary>
     private void SetRunning(bool on)
     {
         if (on == _running)
@@ -965,7 +965,7 @@ internal sealed class MascotService : IDisposable
             _lastActivity = now;
         }
 
-        if (VisitsOn && now >= _nextVisit && !busy && !Tucked)
+        if (VisitsOn && now >= _nextVisit && !busy && !Tucked && !_core.Focus.Quieting)
         {
             Actor.Wake();
             Actor.Play(Random.Shared.Next(3) switch { 0 => "celebrate", 1 => "love", _ => "perk" }, D.ReduceMotion);

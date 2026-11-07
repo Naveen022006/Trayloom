@@ -383,7 +383,8 @@ internal sealed class ContentEditor : Grid
             case "timer":
                 card.Add(SUi.SwitchRow(app, K.HideTimerCountdown, "", Loc.T("Hide timer countdown"), null, enabled: rt.IsAvailable("notch-timer")));
                 card.AddDivider();
-                card.Add(SUi.SwitchRow(app, K.TimerSound, "", Loc.T("Play sound when time is up"), null, enabled: rt.IsAvailable("notch-timer")));
+                TimerAlarmSettings.Add(card, app, rt, _c.RequestRebuild);
+                FocusSettings.Add(card, app, _c);
                 return true;
             case "camera":
                 card.AddCaption(Loc.T("Open a live mirror here. The camera stops when you leave this view."));
@@ -617,6 +618,7 @@ internal sealed class ContentEditor : Grid
         card.Add(new PickerRow<int>("", Loc.T("Time before event"), null, leads, cur, v => app.Set(K.CalendarLead, v), 120));
         card.Add(SUi.SwitchRow(app, K.CalendarTimeLeft, "", Loc.T("Time left in current event"), Loc.T("Show a timed event in progress in the closed island during the hour before it ends. Its title may appear in screen captures.")));
         card.Add(SUi.SwitchRow(app, K.CalendarWeekNumbers, "", Loc.T("Week numbers")));
+        MeetingSettings.Add(card, app, _c.RequestRebuild);
         if (svc is { Access: CalendarAccess.Allowed } || svc is { UsesGoogle: true })
         {
             card.AddDivider();

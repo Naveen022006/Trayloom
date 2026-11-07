@@ -54,6 +54,7 @@ internal sealed class CalendarPage : IslandPage
     public override void Shown()
     {
         Core.Calendar.Changed += OnData;
+        Core.Meeting.Changed += OnData;
         if (Core.Calendar.UsesWindows && Core.Calendar.Access == CalendarAccess.Unknown)
         {
             Guarded.FireAndLog(Core.Calendar.RequestAccessAsync, Core.Ctx.Log, "Calendar access");
@@ -68,7 +69,14 @@ internal sealed class CalendarPage : IslandPage
         RequestRange();
     }
 
-    public override void Hidden() => Core.Calendar.Changed -= OnData;
+    public override void Hidden()
+    {
+        Core.Calendar.Changed -= OnData;
+        Core.Meeting.Changed -= OnData;
+
+        // Leaving the page ends the microphone check, so the device is never held for a page nobody sees.
+        Core.Meeting.Mic.Stop();
+    }
 
     public override bool HasLayers => true;
 
@@ -128,6 +136,24 @@ internal sealed class CalendarPage : IslandPage
             return;
         }
 
+        // While a meeting heads-up is on, its card sits above the calendar and the calendar takes the rest of the room.
+        Panel target = _view;
+        var cardHeight = 0.0;
+        if (Core.Meeting.Current is { } meeting)
+        {
+            // About the card's own height: the short month grid is sized from the page height, so it gives that much back.
+            cardHeight = 104;
+            var outer = new Grid();
+            outer.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            outer.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            outer.Children.Add(new MeetingPrepCard(Core, meeting));
+            var body = new Grid();
+            Grid.SetRow(body, 1);
+            outer.Children.Add(body);
+            _view.Children.Add(outer);
+            target = body;
+        }
+
         if (Tall)
         {
             var grid = new Grid();
@@ -150,11 +176,11 @@ internal sealed class CalendarPage : IslandPage
             agenda.Children.Add(list);
             Grid.SetColumn(agenda, 2);
             grid.Children.Add(agenda);
-            _view.Children.Add(grid);
+            target.Children.Add(grid);
         }
         else if (_monthShort)
         {
-            _view.Children.Add(MonthGrid(tall: false, _w, _h));
+            target.Children.Add(MonthGrid(tall: false, _w, Math.Max(80, _h - cardHeight)));
         }
         else
         {
@@ -166,7 +192,7 @@ internal sealed class CalendarPage : IslandPage
             list.Margin = new Thickness(0, 10, 0, 0);
             Grid.SetRow(list, 1);
             stack.Children.Add(list);
-            _view.Children.Add(stack);
+            target.Children.Add(stack);
         }
     }
 

@@ -153,6 +153,8 @@ internal static class Host
             new("killProcessSortBy", "cpu"),
             new("killProcessSortAscending", false),
             new("panelUtilityPortManager", true),
+            new("devServersNotice", true),
+            new("devServersShowAll", false),
 
             // Media
             new("mediaLastTool", "videoCompressor"),
