@@ -349,6 +349,9 @@ internal sealed class WatchService : IDisposable
         }
 
         Picture = null;
+
+        // The OCR engine holds language models; drop it so a finished Watch frees them (recreated lazily on next use).
+        _ocr = null;
         Changed?.Invoke();
     }
 
@@ -552,8 +555,8 @@ internal sealed class WatchService : IDisposable
     {
         try
         {
-            _ocr ??= OcrEngine.TryCreateFromUserProfileLanguages();
-            if (_ocr is null)
+            var ocr = _ocr ??= OcrEngine.TryCreateFromUserProfileLanguages();
+            if (ocr is null)
             {
                 return ("", []);
             }
@@ -574,7 +577,7 @@ internal sealed class WatchService : IDisposable
             using var stream = ms.AsRandomAccessStream();
             var decoder = Windows.Graphics.Imaging.BitmapDecoder.CreateAsync(stream).AsTask().GetAwaiter().GetResult();
             using var soft = decoder.GetSoftwareBitmapAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied).AsTask().GetAwaiter().GetResult();
-            var result = _ocr.RecognizeAsync(soft).AsTask().GetAwaiter().GetResult();
+            var result = ocr.RecognizeAsync(soft).AsTask().GetAwaiter().GetResult();
             var lines = result.Lines.Select(l => l.Text.Trim()).Where(l => l.Length > 0).ToList();
             return (string.Join("\n", lines), lines);
         }

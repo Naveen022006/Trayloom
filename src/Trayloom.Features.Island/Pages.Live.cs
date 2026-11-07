@@ -842,6 +842,7 @@ internal sealed class CapturesPage : IslandPage
                     bmp.DecodePixelWidth = 300;
                     bmp.UriSource = new Uri(path);
                     bmp.EndInit();
+                    bmp.Freeze();
                     b.Child = new Image { Source = bmp, Stretch = Stretch.UniformToFill };
                 }
             }

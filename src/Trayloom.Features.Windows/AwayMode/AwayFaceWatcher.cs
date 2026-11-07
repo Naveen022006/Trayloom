@@ -382,8 +382,9 @@ internal sealed class AwayFaceWatcher : IDisposable
             var candidate = bitmap;
             if (measure)
             {
-                // Gray8 is accepted by the face detector and is also what the brightness grid needs.
-                if (bitmap.BitmapPixelFormat != BitmapPixelFormat.Gray8)
+                // Gray8 and NV12 are accepted by the face detector as they are, and the first plane of both is the brightness the grid needs,
+                // so only other formats (BGRA) are converted: a conversion is a copy of the whole frame for nothing.
+                if (bitmap.BitmapPixelFormat is not (BitmapPixelFormat.Gray8 or BitmapPixelFormat.Nv12))
                 {
                     converted = SoftwareBitmap.Convert(bitmap, BitmapPixelFormat.Gray8);
                     candidate = converted;
@@ -430,14 +431,19 @@ internal sealed class AwayFaceWatcher : IDisposable
         var height = gray.PixelHeight;
         int start;
         int stride;
+        uint capacity;
         using (var buffer = gray.LockBuffer(BitmapBufferAccessMode.Read))
         {
             var plane = buffer.GetPlaneDescription(0);
             start = plane.StartIndex;
             stride = plane.Stride;
+
+            // An NV12 frame carries its colour plane after the brightness plane, so the copy is as large as the whole frame.
+            using var reference = buffer.CreateReference();
+            capacity = Math.Max(reference.Capacity, (uint)(start + (stride * height)));
         }
 
-        var copy = new Windows.Storage.Streams.Buffer((uint)(start + (stride * height)));
+        var copy = new Windows.Storage.Streams.Buffer(capacity);
         gray.CopyToBuffer(copy);
         var bytes = new byte[copy.Length];
         using (var reader = DataReader.FromBuffer(copy))
@@ -446,13 +452,15 @@ internal sealed class AwayFaceWatcher : IDisposable
         }
 
         var grid = AwayPresenceMath.Grid(bytes, start, width, height, stride);
-        var usable = AwayPresenceMath.Usable(AwayPresenceMath.Stats(grid));
+        var stats = AwayPresenceMath.Stats(grid);
+        var usable = AwayPresenceMath.Usable(stats);
         var now = Environment.TickCount64;
         var previous = _previousGrid;
         var motionKnown = previous is not null && AwayPresenceMath.Comparable(now - _previousGridAt);
-        var motion = motionKnown && AwayPresenceMath.Motion(previous!, grid);
+        var changed = motionKnown ? AwayPresenceMath.ChangedShare(previous!, grid) : 0;
+        var motion = motionKnown && changed >= AwayPresenceMath.MotionShare;
         _previousGrid = grid;
         _previousGridAt = now;
-        return new AwayObservation(face, motion, usable, motionKnown);
+        return new AwayObservation(face, motion, usable, motionKnown, stats.Mean, stats.Spread, changed);
     }
 }

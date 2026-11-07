@@ -7,7 +7,7 @@ namespace Trayloom.Features.WindowTools.AwayMode;
 /// What one camera sample showed. <see cref="Usable"/> is false for a dark or flat frame (a covered lens, a dark room), which never
 /// counts as nobody being there; <see cref="MotionKnown"/> is false for the first sample, which has no earlier frame to compare with.
 /// </summary>
-internal readonly record struct AwayObservation(bool Face, bool Motion, bool Usable, bool MotionKnown);
+internal readonly record struct AwayObservation(bool Face, bool Motion, bool Usable, bool MotionKnown, double Mean = 0, double Spread = 0, double Changed = 0);
 
 /// <summary>
 /// The pure picture maths of the camera-based leaving check: a tiny brightness grid per frame and a frame difference that ignores

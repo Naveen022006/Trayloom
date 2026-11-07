@@ -405,7 +405,11 @@ internal sealed class AppShell : IShell
         }
 
         _panel = new TrayPanel(_s, anchor);
-        _panel.Closed += (_, _) => _panel = null;
+        _panel.Closed += (_, _) =>
+        {
+            _panel = null;
+            Trayloom.Core.Native.MemoryTrimmer.Schedule();
+        };
         _panel.Show();
     }
 
@@ -415,7 +419,11 @@ internal sealed class AppShell : IShell
         if (_settings is null)
         {
             _settings = new SettingsWindow(_s);
-            _settings.Closed += (_, _) => _settings = null;
+            _settings.Closed += (_, _) =>
+            {
+                _settings = null;
+                Trayloom.Core.Native.MemoryTrimmer.Schedule();
+            };
             _settings.Show();
         }
 

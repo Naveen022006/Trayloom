@@ -175,6 +175,7 @@ internal sealed class RadialNowPlayingService
                     var bmp = new BitmapImage();
                     bmp.BeginInit();
                     bmp.CacheOption = BitmapCacheOption.OnLoad;
+                    bmp.DecodePixelWidth = 228;
                     bmp.StreamSource = new MemoryStream(art);
                     bmp.EndInit();
                     bmp.Freeze();

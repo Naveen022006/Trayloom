@@ -12,6 +12,8 @@
     <ServerGarbageCollector>false</ServerGarbageCollector>
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
     <TieredPGO>false</TieredPGO>
+    <!-- Precompiled code cuts JIT time and the JIT's working set; applies to the self-contained win-x64 publish. -->
+    <PublishReadyToRun>true</PublishReadyToRun>
   </PropertyGroup>
   <ItemGroup>
     <!-- App.xaml is a Page, not the ApplicationDefinition: Program.cs is the entry point (the generated Main would load WPF for every start). -->

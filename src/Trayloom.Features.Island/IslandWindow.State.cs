@@ -749,6 +749,7 @@ internal sealed partial class IslandWindow
         ApplyWindow();
         PublishPill();
         _core.SyncSpotifyTimeline();
+        Trayloom.Core.Native.MemoryTrimmer.Schedule();
     }
 
     public void Toggle()

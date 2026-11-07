@@ -117,6 +117,7 @@ internal sealed partial class IslandWindow : OverlayWindow
     public IslandWindow(IslandCore core)
     {
         _core = core;
+        Trayloom.Core.Native.MemoryTrimmer.SkipWhen = () => Expanded;
         Title = Loc.T("Trayloom Island");
         Content = _stage;
         UseLayoutRounding = false;

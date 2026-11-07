@@ -23,6 +23,10 @@ internal sealed partial class AwayController
     private bool _presenceStarting;
     private int _appliedInterval = AwayPresenceClock.FastIntervalMs;
     private string? _pendingNotice;
+    private long _lastLookLog;
+
+    /// <summary>Idle time after which Away mode starts when the camera could only see black.</summary>
+    private const long DarkFallbackIdleMs = 150_000;
 
     /// <summary>The island context of the notice and live strips, captured when the island first asks for them.</summary>
     public IIslandContext? IslandContext { get; set; }
@@ -64,6 +68,17 @@ internal sealed partial class AwayController
                 || AwayPresence.EnergySaverOn());
 
         Apply(_clock.Tick(Environment.TickCount64, idle, allowed, suppressed, LeaveAfterMs));
+
+        // A camera that only sees black (dark room, covered lens) cannot tell whether anybody is there, so the look is given up. The person
+        // who left would then stay in front of open windows until the long idle time, so a shorter idle time stands in for the camera.
+        if (State == AwayState.Present && allowed && !suppressed && _clock.Phase == AwayPresencePhase.GaveUp
+            && _clock.LastReason == "dark" && idle >= DarkFallbackIdleMs)
+        {
+            _log.Info("[away] leave: camera sees only black, idle time stands in");
+            _clock.Reset();
+            GoAway("camera");
+            return;
+        }
 
         if (State != AwayState.Present)
         {
@@ -113,7 +128,22 @@ internal sealed partial class AwayController
             return;
         }
 
-        Apply(_clock.Sample(Environment.TickCount64, observation, LeaveAfterMs));
+        var now = Environment.TickCount64;
+        if (now - _lastLookLog >= 10_000)
+        {
+            // Only five numbers and three flags leave the watcher; this line is how a "never noticed I left" report can be told apart from a bad lens.
+            _lastLookLog = now;
+            _log.Info($"[away] look: face={observation.Face} motion={observation.Motion} usable={observation.Usable} known={observation.MotionKnown} " +
+                $"mean={observation.Mean:0} spread={observation.Spread:0.0} changed={observation.Changed:P1} phase={_clock.Phase}");
+        }
+
+        var before = _clock.Phase;
+        Apply(_clock.Sample(now, observation, LeaveAfterMs));
+        if (before != _clock.Phase)
+        {
+            _log.Info($"[away] look: {before} -> {_clock.Phase} ({_clock.LastReason})");
+        }
+
         if (_clock.IntervalMs != _appliedInterval)
         {
             _appliedInterval = _clock.IntervalMs;

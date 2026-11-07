@@ -226,6 +226,8 @@ internal static class WhatsNewPage
         ]),
         new("Fixed",
         [
+            Loc.T("Away mode no longer waits for the long idle time when the camera can only see black: it steps in after a couple of minutes without input."),
+            Loc.T("Trayloom gives memory back after the island, panel or Settings closes, and the camera check uses less memory."),
             Loc.T("Away mode with the camera leaves and returns reliably: a restart no longer minimizes your windows, the camera light switches off when you are back, and a dark room never counts as you being away."),
             Loc.T("Trayloom uses much less memory and keeps the Dynamic Island smoother while an AI agent works."),
             Loc.T("The music Library opens taller, can be dragged to the height you like, and the source switch sits right above it."),
