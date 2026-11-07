@@ -18,6 +18,7 @@ internal static class Program
         StoreChecks.Run();
         SessionChecks.Run();
         DraftChecks.Run();
+        AutoChecks.Run();
 
         Console.WriteLine($"{s_checks - s_failed}/{s_checks} checks passed");
         return s_failed == 0 ? 0 : 1;

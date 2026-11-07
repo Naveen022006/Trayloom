@@ -531,14 +531,70 @@ internal sealed class ModesIslandView : Border, IIslandLayerHost
     private ModesIslandEditor? _editor;
     private double _lastHeight;
     private bool _relayoutPending;
+    private bool _suggestionShown;
 
     public ModesIslandView(ModesRuntime runtime, IIslandContext context)
     {
         _runtime = runtime;
         _context = context;
         Show();
-        Loaded += (_, _) => ModesIslandState.Attach(_context);
-        Unloaded += (_, _) => ModesIslandState.Detach(_context);
+        Loaded += (_, _) =>
+        {
+            ModesIslandState.Attach(_context);
+            _runtime.Changed -= OnRuntimeChanged;
+            _runtime.Changed += OnRuntimeChanged;
+        };
+        Unloaded += (_, _) =>
+        {
+            _runtime.Changed -= OnRuntimeChanged;
+            ModesIslandState.Detach(_context);
+        };
+    }
+
+    /// <summary>The question of an automatic start appears or goes while the page is open: the page swaps once to add or remove its card.</summary>
+    private void OnRuntimeChanged()
+    {
+        if (ModesIslandState.Draft is null && (_runtime.PendingSuggestion is not null) != _suggestionShown)
+        {
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (ModesIslandState.Draft is null)
+                {
+                    Show();
+                    Relayout();
+                }
+            });
+        }
+    }
+
+    /// <summary>The "{app} opened · Start {mode}?" card with its two answers; null when there is no open question.</summary>
+    private FrameworkElement? SuggestionCard()
+    {
+        if (_runtime.PendingSuggestion is not { } suggestion || _runtime.Modes.All(m => m.Id != suggestion.ModeId))
+        {
+            return null;
+        }
+
+        var modeName = _runtime.Modes.First(m => m.Id == suggestion.ModeId).Name;
+        var text = ModesLook.Text(suggestion.Text, 12, FontWeights.Medium, ModesLook.White(0.95));
+        text.TextWrapping = TextWrapping.Wrap;
+        var yes = ModesLook.TileButton(ModesLook.Text(ModesAutoStrings.StartMode(modeName), 11.5, FontWeights.SemiBold, ModesLook.White(1)), () => _runtime.AcceptSuggestion(), "Modes.Suggestion.Start", ModesAutoStrings.StartMode(modeName), true, 12, new Thickness(12, 5, 12, 5), pill: true, fill: ModesLook.Of(Color.FromRgb(0x0A, 0x84, 0xFF)), fillHover: ModesLook.Of(Color.FromRgb(0x3B, 0x9B, 0xFF)));
+        var no = ModesLook.TileButton(ModesLook.Text(ModesAutoStrings.NotNow, 11.5, FontWeights.Medium, ModesLook.White(0.9)), () => _runtime.DismissSuggestion(), "Modes.Suggestion.NotNow", ModesAutoStrings.NotNow, true, 12, new Thickness(12, 5, 12, 5), pill: true);
+        no.Margin = new Thickness(8, 0, 0, 0);
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+        buttons.Children.Add(yes);
+        buttons.Children.Add(no);
+        var inner = new StackPanel();
+        inner.Children.Add(text);
+        inner.Children.Add(buttons);
+        return new Border
+        {
+            Child = inner,
+            CornerRadius = new CornerRadius(10),
+            Background = ModesLook.White(0.08),
+            Padding = new Thickness(12, 10, 12, 10),
+            Margin = new Thickness(0, 0, 0, 8),
+        };
     }
 
     public bool CanStepBack => ModesIslandState.Draft is not null;
@@ -569,7 +625,7 @@ internal sealed class ModesIslandView : Border, IIslandLayerHost
             return;
         }
 
-        Child = new ModeTilesView(
+        var tiles = new ModeTilesView(
             _runtime,
             island: true,
             pick: id => _runtime.Enter(id, "tile"),
@@ -579,6 +635,20 @@ internal sealed class ModesIslandView : Border, IIslandLayerHost
             resized: TilesResized,
             add: () => StartNew(false),
             edit: StartEdit);
+
+        // An automatic start that wants to know first puts its question above the tiles.
+        var card = SuggestionCard();
+        _suggestionShown = card is not null;
+        if (card is null)
+        {
+            Child = tiles;
+            return;
+        }
+
+        var page = new StackPanel();
+        page.Children.Add(card);
+        page.Children.Add(tiles);
+        Child = page;
     }
 
     /// <summary>A rebuilt tile grid asks for a new measure only when its height really changed (a switch rebuilds it often).</summary>

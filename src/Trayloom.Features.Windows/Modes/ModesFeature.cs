@@ -63,6 +63,7 @@ public sealed class ModesFeature : IFeature
     private readonly Dictionary<string, IDisposable> _bindings = [];
     private IFeatureContext? _context;
     private ModesRuntime? _runtime;
+    private ModesAutoRunner? _auto;
 
     public string Id => ModesKeys.FeatureId;
 
@@ -78,6 +79,14 @@ public sealed class ModesFeature : IFeature
         context.Services.Provide<IAwayWorkspace>(runtime);
         runtime.ModesEdited += SyncShortcuts;
         SyncShortcuts();
+
+        // The cross-project face of Modes (the island's Focus session uses it) and the automatic starts.
+        context.Services.Provide<IModesService>(runtime);
+        ModesAutoKeys.Register(context.App);
+        var auto = new ModesAutoRunner(context, runtime, new ModesRulesStore(context.DataDirectory, context.Log));
+        _auto = auto;
+        context.Services.Provide(auto);
+        auto.Start();
         context.Log.Info($"[modes] started: {runtime.Modes.Count} modes");
     }
 
@@ -90,6 +99,15 @@ public sealed class ModesFeature : IFeature
             return;
         }
 
+        // The automatic starts go first: they unhook and start nothing, and nobody can ask for a mode through a withdrawn service.
+        if (_auto is { } auto)
+        {
+            auto.Stop();
+            context.Services.Withdraw(auto);
+            _auto = null;
+        }
+
+        context.Services.Withdraw<IModesService>(runtime);
         runtime.ModesEdited -= SyncShortcuts;
         context.Services.Withdraw<IAwayWorkspace>(runtime);
         context.Services.Withdraw(runtime);
