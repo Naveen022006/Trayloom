@@ -48,6 +48,9 @@ internal sealed class AwayPresenceClock
     public const long CountdownMs = 10_000;
     public const long UnusableGiveUpMs = 60_000;
 
+    /// <summary>Idle time before the dark-camera fallback warns that Away mode will start.</summary>
+    public const long DarkFallbackIdleMs = 150_000;
+
     /// <summary>A camera that was asked to start but has not produced a single sample for this long (a hung driver) is given up.</summary>
     public const long SilentGiveUpMs = 60_000;
 
@@ -141,6 +144,15 @@ internal sealed class AwayPresenceClock
             }
 
             return stop;
+        }
+
+        // A dark or covered camera cannot establish absence. Use inactivity instead, but give the same cancellable warning as a
+        // camera-detected departure. Camera failures and missing samples do not qualify for this shorter fallback.
+        if (Phase == AwayPresencePhase.GaveUp && LastReason == "dark" && idleMs >= DarkFallbackIdleMs)
+        {
+            Phase = AwayPresencePhase.Countdown;
+            CountdownEndsAt = now + CountdownMs;
+            return AwayPresenceCommand.BeginCountdown;
         }
 
         if (Phase == AwayPresencePhase.Armed && now >= _cooldownUntil)

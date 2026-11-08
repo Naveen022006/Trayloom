@@ -21,6 +21,7 @@ internal static class CoreChecks
         Elevation();
         Processes();
         Atomic();
+        SettingsPersistence();
         Recovery();
         LocalRoot();
     }
@@ -127,6 +128,51 @@ internal static class CoreChecks
             AtomicFile.WriteAllText(Path.Combine(dir, "sub", "b.txt"), "new");
             Check(File.ReadAllText(Path.Combine(dir, "sub", "b.txt")) == "new", "WriteAllText creates a new file and folder");
             Check(Directory.EnumerateFiles(dir, "*.tmp", SearchOption.AllDirectories).Count() == 0, "no .tmp files left");
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    private static void SettingsPersistence()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "trayloom-settings-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "settings.json");
+        var log = new FakeLog();
+        try
+        {
+            using (var store = new SettingsStore(path, log))
+            {
+                var tasks = Enumerable.Range(0, 4).Select(worker => Task.Run(() =>
+                {
+                    var scope = store.GetScope("worker" + worker);
+                    for (var i = 0; i < 25; i++)
+                    {
+                        scope.Set("value", i);
+                        store.Flush();
+                    }
+                })).ToArray();
+                Task.WaitAll(tasks);
+                store.Flush();
+            }
+
+            using (var reloaded = new SettingsStore(path, log))
+            {
+                Check(Enumerable.Range(0, 4).All(i => reloaded.GetScope("worker" + i).Get("value", -1) == 24),
+                    "concurrent flushes persist the latest value from every scope");
+                reloaded.SuspendSaving();
+                reloaded.GetScope("worker0").Set("value", -2);
+                reloaded.Flush();
+            }
+
+            using (var reloaded = new SettingsStore(path, log))
+            {
+                Check(reloaded.GetScope("worker0").Get("value", -1) == 24, "suspended saves leave the existing file unchanged");
+            }
+
+            Check(!log.Lines.Any(l => l.StartsWith("Failed to save settings")), "concurrent settings writes complete without errors");
         }
         finally
         {

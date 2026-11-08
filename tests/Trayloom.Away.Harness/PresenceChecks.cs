@@ -252,6 +252,32 @@ internal static class PresenceChecks
             var (clock, ready) = Watching();
             var t = ready + AwayPresenceClock.WarmupMs;
             clock.Sample(t, Dark, LeaveMs);
+            clock.Sample(t + 60_000, Dark, LeaveMs);
+            Program.Check(clock.Tick(t + 100_000, 149_999, true, false, LeaveMs) == AwayPresenceCommand.None, "dark fallback waits for 150 s idle");
+            Program.Check(clock.Tick(t + 100_001, 150_000, true, false, LeaveMs) == AwayPresenceCommand.BeginCountdown, "dark fallback warns before leaving");
+            Program.Check(clock.Tick(t + 101_001, 1000, true, false, LeaveMs).HasFlag(AwayPresenceCommand.CancelCountdown) && clock.Phase == AwayPresencePhase.Armed, "input cancels the dark fallback warning");
+        }
+
+        {
+            var (clock, ready) = Watching();
+            var t = ready + AwayPresenceClock.WarmupMs;
+            clock.Sample(t, Dark, LeaveMs);
+            clock.Sample(t + 60_000, Dark, LeaveMs);
+            Program.Check(clock.Tick(t + 100_000, 150_000, true, true, LeaveMs) == AwayPresenceCommand.None && clock.Phase == AwayPresencePhase.GaveUp, "suppression prevents dark fallback");
+            Program.Check(clock.Tick(t + 101_000, 151_000, true, false, LeaveMs) == AwayPresenceCommand.BeginCountdown, "dark fallback starts after suppression ends");
+            Program.Check(clock.Tick(t + 111_000, 161_000, true, false, LeaveMs) == AwayPresenceCommand.Leave, "dark fallback leaves only after the notice");
+        }
+
+        {
+            var clock = new AwayPresenceClock();
+            clock.CameraFailed();
+            Program.Check(clock.Tick(Start, 150_000, true, false, LeaveMs) == AwayPresenceCommand.None && clock.Phase == AwayPresencePhase.GaveUp, "camera failure does not use the dark fallback");
+        }
+
+        {
+            var (clock, ready) = Watching();
+            var t = ready + AwayPresenceClock.WarmupMs;
+            clock.Sample(t, Dark, LeaveMs);
             clock.Sample(t + 30_000, Absent, LeaveMs);
             Program.Check(clock.Sample(t + 80_000, Dark, LeaveMs) == AwayPresenceCommand.None, "a usable frame restarts the dark count");
         }

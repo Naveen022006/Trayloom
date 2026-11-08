@@ -135,7 +135,7 @@ internal static class AwayStrings
     public static string Leave60 => Loc.T("1 minute");
     public static string Leave120 => Loc.T("2 minutes");
     public static string Leave300 => Loc.T("5 minutes");
-    public static string LeaveNote => Loc.T("In a dark room, with the camera covered, while another app uses the camera, or with battery saver on, Away mode waits for the usual time without input instead.");
+    public static string LeaveNote => Loc.T("If the camera sees only darkness, it turns off and Away mode gives a 10-second notice after about 2½ minutes without input. While another app uses the camera or battery saver is on, the camera check waits.");
     public static string StatusLooking => Loc.T("Checking that you’re here with the camera");
     public static string StatusClosingIn(int seconds) => Loc.F("Closing your workspace in {0} s", seconds);
     public static string StatusMinimizingIn(int seconds) => Loc.F("Minimizing your windows in {0} s", seconds);

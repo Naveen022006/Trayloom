@@ -227,7 +227,15 @@ public sealed class FeatureRegistry : IActionCatalog, IDisposable
     {
         foreach (var entry in _entries.Where(e => e.Running).Reverse().ToList())
         {
-            StopEntry(entry);
+            try
+            {
+                StopEntry(entry);
+            }
+            catch (Exception ex)
+            {
+                // Continue restoring the other features even if a scope or state-change listener fails.
+                _log.Error($"Could not fully stop feature {entry.Feature.Id}", ex);
+            }
         }
     });
 
@@ -371,12 +379,30 @@ public sealed class FeatureRegistry : IActionCatalog, IDisposable
 
     private static void ReleaseScopes(Entry entry)
     {
-        entry.Hooks?.Dispose();
-        entry.Hotkeys?.Dispose();
-        entry.Shortcuts?.Dispose();
-        entry.Hooks = null;
-        entry.Hotkeys = null;
-        entry.Shortcuts = null;
+        try
+        {
+            entry.Hooks?.Dispose();
+        }
+        finally
+        {
+            try
+            {
+                entry.Hotkeys?.Dispose();
+            }
+            finally
+            {
+                try
+                {
+                    entry.Shortcuts?.Dispose();
+                }
+                finally
+                {
+                    entry.Hooks = null;
+                    entry.Hotkeys = null;
+                    entry.Shortcuts = null;
+                }
+            }
+        }
     }
 
     private Action Guard(IFeature feature, FeatureAction action) => () =>

@@ -121,8 +121,9 @@ internal sealed class AwayPresenceClock
 4. **Suppressed.** If `suppressed`:
    - Watching or Countdown: stop, and cancel the countdown if one is running;
    - set cooldown = now + 30 s and Phase = Armed.
-5. **Armed and cooldown passed:** Phase = Watching, reset `absentSince` and `unusableSince`, `IntervalMs = Fast`, return `StartCamera`.
-6. **Countdown and `now ≥ CountdownEndsAt`:** Phase = Off, return `Leave`.
+5. **GaveUp due to dark frames and idle for 150 s:** Phase = Countdown, set `CountdownEndsAt = now + 10 s`, return `BeginCountdown`. A failed or silent camera does not use this fallback.
+6. **Armed and cooldown passed:** Phase = Watching, reset `absentSince` and `unusableSince`, `IntervalMs = Fast`, return `StartCamera`.
+7. **Countdown and `now ≥ CountdownEndsAt`:** Phase = Off, return `Leave`.
 
 **`Sample`** does nothing unless Phase is Watching or Countdown. It ignores samples taken within `WarmupMs` of `CameraStarted`.
 
@@ -214,7 +215,7 @@ Hooks in the existing file. Each is one or two lines.
   - The sensor itself runs at the device's current format because `SharedReadOnly` cannot change it. That costs roughly 0.5–1.5 W on laptops while the camera is on. This is honest and unavoidable with a webcam.
   - The camera is off while locked, asleep, on battery saver, during calls or media, and in full screen.
 - **Person sitting still or reading.** Face, or any motion above about 1.2 % of the frame, keeps them present. Leaving needs 30 s without input, then N seconds of continuous absence, then a 10 s countdown that any movement in front of the camera or any input cancels.
-- **Low light or a covered lens.** Such frames are unusable and never count as absence. After 60 s of unusable frames the camera turns off until the next input, and the normal idle timer applies.
+- **Low light or a covered lens.** Such frames are unusable and never count as visual evidence of absence. After 60 s of unusable frames the camera turns off; after 150 s without input a cancellable 10 s warning starts before Away mode. Input or suppression cancels the warning. Camera failure or a lack of samples does not use this shorter fallback.
 - **Video call holding the camera.** The watch never starts while another app uses the camera, or the microphone when "skip calls" is on. A shared-read-only open could still interfere with a call that starts while the watch runs; starting a call normally involves input, which closes the camera first. This must be tested manually (see 1.11).
 - **Full-screen video or media playing.** Covered by the existing suppression checks, which now also stop the watch.
 - **Lock screen.** The PC locking resets the clock and stops the camera; Windows also blocks cameras on the lock screen. Locking is still not a leave trigger, as before.
@@ -304,7 +305,7 @@ Add to `AwayKeys` (`AwayModeFeature.cs:10-51`) and register in `Register`:
 - `LeaveCamera` = "Leave when the camera doesn’t see you"
 - `LeaveCameraCaption` = "After 30 seconds without the mouse or keyboard, the camera turns on and checks whether someone is at the PC. If nobody is there for the time below, Away mode starts after a 10-second notice. Pictures are checked on this PC and never saved; the camera light is on while it checks."
 - `LeaveAfter` = "Nobody there for"; `Leave30` = "30 seconds"; `Leave60` = "1 minute"; `Leave120` = "2 minutes"; `Leave300` = "5 minutes"
-- `LeaveNote` = "In a dark room, with the camera covered, while another app uses the camera, or with battery saver on, Away mode waits for the usual time without input instead."
+- `LeaveNote` explains the 150 s dark-camera idle fallback and its 10 s warning, and that the camera check waits while another app uses it or battery saver is on.
 - `StatusLooking` = "Checking that you’re here with the camera"
 - `StatusClosingIn(s)` = `Loc.F("Closing your workspace in {0} s", s)`; `StatusMinimizingIn(s)` = `Loc.F("Minimizing your windows in {0} s", s)`
 - `NoticeClosing` = `Loc.F("Closing your workspace in {0} s. Move to cancel.", 10)`; `NoticeMinimizing` = `Loc.F("Minimizing your windows in {0} s. Move to cancel.", 10)`
@@ -348,7 +349,7 @@ New console project **`tests/Trayloom.Away.Harness`**, not in the solution, same
 - A face or motion during the countdown: `CancelCountdown` and back to Watching.
 - Input during the countdown: `StopCamera | CancelCountdown`.
 - Countdown end: `Leave`.
-- Unusable for 60 s: `StopCamera` and GaveUp. A tick without input stays in GaveUp; input returns to Armed.
+- Unusable for 60 s: `StopCamera` and GaveUp. At 150 s idle the dark fallback starts a cancellable countdown; input returns to Armed. Suppression prevents the fallback; camera failure does not trigger it.
 - Suppression: stop, then no restart for 30 s.
 - Not allowed: `StopCamera` and Off.
 - A face sample sets `IntervalMs` to 3000; an absent sample sets it to 1000.

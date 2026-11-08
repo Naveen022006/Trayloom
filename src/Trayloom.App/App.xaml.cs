@@ -919,7 +919,14 @@ public partial class App : Application
 
         foreach (var window in Windows.OfType<Window>().ToList())
         {
-            window.Close();
+            try
+            {
+                window.Close();
+            }
+            catch (Exception ex)
+            {
+                _host?.Log.Error("Could not close a window during shutdown", ex);
+            }
         }
 
         // Stops every feature (restoring system state), then releases hooks, hotkeys and flushes settings.
@@ -927,7 +934,23 @@ public partial class App : Application
         {
             _host?.Log.Info(Loc.T("Trayloom shutting down"));
             _host?.App.Set(AppKeys.StartupDidNotFinish, false);
+        }
+        catch (Exception ex)
+        {
+            _host?.Log.Error("Could not update shutdown state", ex);
+        }
+
+        try
+        {
             _shell?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            _host?.Log.Error("Could not dispose the shell", ex);
+        }
+
+        try
+        {
             _host?.Dispose();
             if (_shell?.DeleteDataOnExit == true && _host is not null)
             {

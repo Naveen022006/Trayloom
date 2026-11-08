@@ -31,7 +31,7 @@ public sealed class SettingsStore : IDisposable
     private JsonObject _scopesNode;
     private bool _dirty;
     private bool _disposed;
-    private volatile bool _suspended;
+    private bool _suspended;
 
     /// <summary>Opens (or creates) the store at <paramref name="path"/>.</summary>
     public SettingsStore(string path, ILog log)
@@ -64,7 +64,14 @@ public sealed class SettingsStore : IDisposable
     public bool WasReset { get; private set; }
 
     /// <summary>Stops every further write (used right before the settings file is replaced by an import / deleted).</summary>
-    public void SuspendSaving() => _suspended = true;
+    public void SuspendSaving()
+    {
+        // Wait for an in-flight save before the caller replaces or deletes the file.
+        lock (_writeGate)
+        {
+            _suspended = true;
+        }
+    }
 
     /// <inheritdoc />
     public void Dispose()
@@ -193,26 +200,27 @@ public sealed class SettingsStore : IDisposable
 
     private void SaveIfDirty()
     {
-        if (_suspended)
+        lock (_writeGate)
         {
-            return;
-        }
-
-        string json;
-        lock (_gate)
-        {
-            if (!_dirty)
+            if (_suspended)
             {
                 return;
             }
 
-            _dirty = false;
-            var root = new JsonObject { ["scopes"] = _scopesNode.DeepClone() };
-            json = root.ToJsonString(JsonOptions);
-        }
+            string json;
+            lock (_gate)
+            {
+                if (!_dirty)
+                {
+                    return;
+                }
 
-        lock (_writeGate)
-        {
+                // Snapshot in write order: an older snapshot must never replace a newer one.
+                var root = new JsonObject { ["scopes"] = _scopesNode.DeepClone() };
+                json = root.ToJsonString(JsonOptions);
+                _dirty = false;
+            }
+
             try
             {
                 AtomicFile.WriteAllText(_path, json);

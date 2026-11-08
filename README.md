@@ -193,8 +193,9 @@ key and no account (your own YouTube Data API key is an optional alternative). B
   not recognition: any face counts, so it cannot tell you from a colleague. For real protection, switch on **Lock the PC too**.
   **Leave when the camera doesn’t see you** (off by default) turns the camera on only after 30 seconds without the mouse or
   keyboard. If it sees no face and no movement for the time you choose, a 10-second notice appears in the island (or as a
-  toast) and any movement or key press cancels it; then Away mode starts. It never counts a dark room or a covered lens as
-  absence, and it stays off during calls, media, full screen, battery saver and while the PC is locked. Pictures are checked
+  toast) and any movement or key press cancels it; then Away mode starts. If the camera sees only darkness, it turns off and,
+  after about 2½ minutes without input, the same cancellable notice appears before Away mode starts. The camera check stays off
+  during calls, media, full screen, battery saver and while the PC is locked. Pictures are checked
   in memory and never saved; the camera light is on while it checks. **Which apps** can limit closing to the list, add the
   apps of the mode you are in, or cover every app with a window (File Explorer, terminals and anything under “Leave these
   apps alone” are never closed).

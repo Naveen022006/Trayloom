@@ -124,9 +124,28 @@ public sealed class CoreHost : IContributionServices, IDisposable
     /// <summary>Stops all features, then releases hooks, hotkeys and flushes settings.</summary>
     public void Dispose()
     {
-        Features.StopAll();
-        Hotkeys.Dispose();
-        Hooks.Dispose();
-        Store.Dispose();
+        // A failure in one service must not prevent the remaining system resources from being released.
+        try
+        {
+            Features.StopAll();
+        }
+        finally
+        {
+            try
+            {
+                Hotkeys.Dispose();
+            }
+            finally
+            {
+                try
+                {
+                    Hooks.Dispose();
+                }
+                finally
+                {
+                    Store.Dispose();
+                }
+            }
+        }
     }
 }

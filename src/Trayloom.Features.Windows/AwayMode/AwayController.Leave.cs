@@ -25,9 +25,6 @@ internal sealed partial class AwayController
     private string? _pendingNotice;
     private long _lastLookLog;
 
-    /// <summary>Idle time after which Away mode starts when the camera could only see black.</summary>
-    private const long DarkFallbackIdleMs = 150_000;
-
     /// <summary>The island context of the notice and live strips, captured when the island first asks for them.</summary>
     public IIslandContext? IslandContext { get; set; }
 
@@ -68,17 +65,6 @@ internal sealed partial class AwayController
                 || AwayPresence.EnergySaverOn());
 
         Apply(_clock.Tick(Environment.TickCount64, idle, allowed, suppressed, LeaveAfterMs));
-
-        // A camera that only sees black (dark room, covered lens) cannot tell whether anybody is there, so the look is given up. The person
-        // who left would then stay in front of open windows until the long idle time, so a shorter idle time stands in for the camera.
-        if (State == AwayState.Present && allowed && !suppressed && _clock.Phase == AwayPresencePhase.GaveUp
-            && _clock.LastReason == "dark" && idle >= DarkFallbackIdleMs)
-        {
-            _log.Info("[away] leave: camera sees only black, idle time stands in");
-            _clock.Reset();
-            GoAway("camera");
-            return;
-        }
 
         if (State != AwayState.Present)
         {
