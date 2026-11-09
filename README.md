@@ -448,9 +448,11 @@ Settings live in `%APPDATA%\Trayloom\settings.json`; set `TRAYLOOM_DATA` to use 
 
 ## Contributing
 
-Issues and pull requests are welcome. Before larger changes, read [ARCHITECTURE_V2.md](ARCHITECTURE_V2.md) and the relevant
-file in `specs/`. Every tool must clean up after itself in `Stop()`, every visible string goes through the localisation
-helper, and nothing personal (screenshots, logs, settings) belongs in a commit.
+Everyone is welcome to fork Trayloom, report bugs, suggest features, and open pull requests. Read
+[CONTRIBUTING.md](CONTRIBUTING.md) for the Windows development setup, checks, licensing and review process.
+Contributions are reviewed by **Naveen022006** before merging; no separate contributor agreement is required.
+Please follow our [Code of Conduct](CODE_OF_CONDUCT.md) and report vulnerabilities privately through
+[SECURITY.md](SECURITY.md).
 
 ## License
 
