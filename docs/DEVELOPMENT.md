@@ -13,11 +13,12 @@ dotnet run --project src/Trayloom.App
 dotnet publish src/Trayloom.App/Trayloom.App.csproj -c Release -r win-x64 --self-contained true -o dist/Trayloom
 ```
 
-`scripts\package.ps1` publishes the self-contained build, adds `Trayloom-Setup.cmd` and writes `dist\Trayloom-win-x64.zip`.
+`scripts\package.ps1` publishes the self-contained build, portable `dist\Trayloom-win-x64.zip`, and standalone
+`dist\Trayloom-Setup.exe`, which bundles that zip and opens the existing per-user installer. It also retains `Trayloom-Setup.cmd`
+for the portable zip and writes `SHA256SUMS.txt`.
 The publish output (about 175 MB unpacked, 70 MB zipped) is a self-contained folder: feature discovery loads the
 `Trayloom.Features.*.dll` assemblies next to the exe, and NAudio, ZXing.Net and the SQLite natives ship beside them, so keep
-the folder together. A self-extracting `Setup.exe` built with Windows IExpress is silently blocked on a Smart App Control PC,
-so `Trayloom-Setup.cmd` is the setup equivalent.
+the portable folder together. The setup executable is unsigned and may be blocked by Smart App Control.
 
 ## Developer flags
 

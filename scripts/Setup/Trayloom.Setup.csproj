@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <UseWPF>false</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>Trayloom-Setup</AssemblyName>
+    <RootNamespace>Trayloom.Setup</RootNamespace>
+    <ApplicationIcon>..\..\src\Trayloom.App\Assets\trayloom.ico</ApplicationIcon>
+    <ApplicationManifest>..\..\src\Trayloom.App\app.manifest</ApplicationManifest>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(TrayloomPayload)' != ''">
+    <EmbeddedResource Include="$(TrayloomPayload)" LogicalName="Trayloom.Setup.Payload.zip" />
+  </ItemGroup>
+  <Target Name="CheckPayload" BeforeTargets="PrepareForBuild" Condition="'$(TrayloomPayload)' == '' Or !Exists('$(TrayloomPayload)')">
+    <Error Text="Set TrayloomPayload to the full path of the packaged Trayloom zip. Run scripts/package.ps1 to build setup." />
+  </Target>
+</Project>

@@ -336,9 +336,10 @@ public static class ThemeManager
         p[ThemeKeys.Divider] = Brush(light ? "#E3E3E3" : "#4C4C4C");
         p[ThemeKeys.RowHover] = Brush(light ? "#0F000000" : "#0FFFFFFF");
         p[ThemeKeys.TextPrimary] = Brush(light ? "#262626" : "#F2F2F2");
-        p[ThemeKeys.TextSecondary] = Brush(light ? "#77777C" : "#A5A5A5");
-        p[ThemeKeys.TextTertiary] = Brush(light ? "#A3A3A8" : "#636364");
-        p[ThemeKeys.TabIdle] = Brush(light ? "#7A7A7E" : "#8E8E8E");
+        // Captions, hints and inactive navigation need to remain readable on cards as well as the window background.
+        p[ThemeKeys.TextSecondary] = Brush(light ? "#5F5F64" : "#C0C0C0");
+        p[ThemeKeys.TextTertiary] = Brush(light ? "#626267" : "#B7B7B7");
+        p[ThemeKeys.TabIdle] = Brush(light ? "#626267" : "#B7B7B7");
         p[ThemeKeys.Accent] = Brush(accent);
         p[ThemeKeys.AccentFill12] = Brush(Color.FromArgb(0x1F, accent.R, accent.G, accent.B));
         p[ThemeKeys.AccentFill18] = Brush(Color.FromArgb(0x2E, accent.R, accent.G, accent.B));
@@ -365,7 +366,7 @@ public static class ThemeManager
         p[ThemeKeys.SurfaceHover] = Brush(light ? "#EDEDED" : "#3D3D3D");
         p[ThemeKeys.Border] = Brush(light ? "#DCDCDC" : "#454545");
         p[ThemeKeys.Text] = Brush(light ? "#262626" : "#F2F2F2");
-        p[ThemeKeys.TextMuted] = Brush(light ? "#77777C" : "#A5A5A5");
+        p[ThemeKeys.TextMuted] = Brush(light ? "#5F5F64" : "#C0C0C0");
         p[ThemeKeys.AccentText] = Brush("#FFFFFF");
         p[ThemeKeys.SwitchOff] = Brush(light ? "#D4D4D6" : "#4A4A4C");
         p[ThemeKeys.OverlayBackground] = Brush("#F2000000");

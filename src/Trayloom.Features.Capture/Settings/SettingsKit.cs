@@ -34,7 +34,7 @@ internal static class Sk
     }
 
     /// <summary>Toggle (feature shortcut) plus its recorder row and the orange rejection caption.</summary>
-    public static void ShortcutToggle(SettingsCard card, ISettingsContext c, string title, string enabledKey, string roleId, string? caption = null)
+    public static void ShortcutToggle(SettingsCard card, ISettingsContext c, string title, string enabledKey, string roleId, string? caption = null, Action<bool>? changed = null)
     {
         var app = c.App;
         var holder = new StackPanel();
@@ -44,7 +44,11 @@ internal static class Sk
             holder.Children.Add(ShortcutRowOnly(c, roleId, app.Get<bool>(enabledKey)));
         }
 
-        Toggle(card, app, title, enabledKey, caption, _ => Build());
+        Toggle(card, app, title, enabledKey, caption, on =>
+        {
+            Build();
+            changed?.Invoke(on);
+        });
         Build();
         card.Add(holder);
     }

@@ -27,7 +27,7 @@ public sealed class ScreenCaptureHeaderSection : ISettingsSection
         K.RegisterDefaults(c.App);
         ScreenCapturePage.FromAnchor(c.RequestedAnchor, c.Runtime);
         ScreenCapturePage.EnsureAvailable(c.Runtime);
-        var card = new SettingsCard(Strings.ScreenCapture);
+        var card = new SettingsCard(Loc.T("Capture shortcuts"));
         var tools = CaptureTools.Installed(c).ToList();
         var holder = new StackPanel();
         if (tools.Count >= 2)
@@ -47,15 +47,25 @@ public sealed class ScreenCaptureHeaderSection : ISettingsSection
             var inner = new SettingsCard();
             var role = CaptureTools.RoleId(tool);
             var enabledKey = CaptureTools.EnabledKey(tool);
-            Sk.ShortcutToggle(inner, c, CaptureTools.Title(tool), enabledKey, role);
+            SettingsRow? menuRow = null;
+            Sk.ShortcutToggle(inner, c, Loc.F("{0} shortcut", CaptureTools.Title(tool)), enabledKey, role, changed: on =>
+            {
+                if (menuRow is not null)
+                {
+                    menuRow.IsEnabled = on;
+                }
+            });
             inner.AddDivider();
             var menuKey = CaptureTools.ShowMenuKey(tool);
             var shortcutOn = c.App.Get<bool>(enabledKey);
-            Sk.Toggle(inner, c.App, Strings.ShowMenuOnShortcut, menuKey, null, null, enabled: shortcutOn);
+            menuRow = Sk.Toggle(inner, c.App, Strings.ShowMenuOnShortcut, menuKey,
+                Loc.T("Requires the shortcut above to be enabled."));
+            menuRow.IsEnabled = shortcutOn;
             if (c.Runtime.AnyAvailable(["screenshot", "screen-recorder"]))
             {
                 inner.AddDivider();
-                Sk.ShortcutToggle(inner, c, Strings.Screenshot.RecentCaptures, K.RecentShortcutEnabled, "recentCaptures");
+                Sk.ShortcutToggle(inner, c, Strings.Screenshot.RecentCaptures, K.RecentShortcutEnabled, "recentCaptures",
+                    Loc.T("Open the recent captures list with a shortcut."));
             }
 
             // flatten: reuse the rows of the inner card inside the header card

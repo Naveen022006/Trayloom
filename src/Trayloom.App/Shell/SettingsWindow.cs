@@ -70,6 +70,7 @@ internal sealed class SettingsWindow : Window
     private readonly Button _forwardButton;
     private readonly ColumnDefinition _sidebarColumn = new() { Width = new GridLength(210) };
     private readonly Dictionary<string, Border> _rowViews = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Button> _sectionHeaders = new(StringComparer.Ordinal);
     private int _selectedResult;
     private List<SearchEntry> _results = [];
     private bool _sidebarVisible = true;
@@ -347,7 +348,7 @@ internal sealed class SettingsWindow : Window
             return;
         }
 
-        RebuildSidebar(visit);
+        RebuildSidebar(visit, revealSelected: scrollAnchor);
         var offset = keepScroll ? _detailScroll.VerticalOffset : 0;
         var content = PageComposer.Build(_s, visit, _hubState, _router, () => RebuildAll(false, keepScroll: true), out var anchors);
         var wrapper = new Border { Padding = new Thickness(22), Child = new Border { MaxWidth = 760, HorizontalAlignment = HorizontalAlignment.Stretch, Child = content } };
@@ -389,22 +390,24 @@ internal sealed class SettingsWindow : Window
 
     // ------------------------------------------------------------------------------------------------ sidebar
 
-    private void RebuildSidebar(Visit current)
+    private void RebuildSidebar(Visit current, bool revealSelected = false)
     {
         _sidebarList.Children.Clear();
         _rowViews.Clear();
+        _sectionHeaders.Clear();
         var sections = SidebarModel.Visible(_s.Runtime);
         var selectedId = ResolveSelectedRow(sections.SelectMany(s => s.Rows), current)?.Id;
         foreach (var (section, rows) in sections)
         {
             var containsSelected = rows.Any(r => r.Id == selectedId);
-            if (containsSelected)
+            if (containsSelected && revealSelected)
             {
                 _collapsed[section.Title] = false;
             }
 
             var collapsed = _collapsed.GetValueOrDefault(section.Title);
-            var header = BuildSectionHeader(section.Title, collapsed);
+            var header = BuildSectionHeader(section.Title, collapsed, containsSelected);
+            _sectionHeaders[section.Title] = header;
             _sidebarList.Children.Add(header);
             if (collapsed)
             {
@@ -443,19 +446,35 @@ internal sealed class SettingsWindow : Window
 
     private static string? AnchorOf(string destination) => SettingsPages.Split(destination).Anchor;
 
-    private UIElement BuildSectionHeader(string title, bool collapsed)
+    private Button BuildSectionHeader(string title, bool collapsed, bool containsSelected)
     {
-        var grid = new StackPanel { Orientation = Orientation.Horizontal, Background = Brushes.Transparent, Cursor = Cursors.Hand, Margin = new Thickness(6, 12, 0, 3) };
-        grid.Children.Add(UiKit.Icon(collapsed ? Glyphs.ChevronRightSmall : Glyphs.ChevronDownSmall, 8, ThemeKeys.TextSecondary, FontWeights.SemiBold));
-        var text = UiKit.Text(title, 12, FontWeights.SemiBold, ThemeKeys.TextSecondary);
+        var grid = new StackPanel { Orientation = Orientation.Horizontal };
+        grid.Children.Add(UiKit.Icon(collapsed ? Glyphs.ChevronRightSmall : Glyphs.ChevronDownSmall, 9, ThemeKeys.TextSecondary, FontWeights.SemiBold));
+        var label = collapsed && containsSelected ? Loc.F("{0} (current page)", title) : title;
+        var text = UiKit.Text(label, 12.5, FontWeights.SemiBold, ThemeKeys.TextPrimary, trimming: TextTrimming.CharacterEllipsis);
         text.Margin = new Thickness(5, 0, 0, 0);
         grid.Children.Add(text);
-        grid.MouseLeftButtonUp += (_, _) =>
+        var button = new Button
+        {
+            Content = grid,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            Padding = new Thickness(6, 5, 6, 5),
+            Margin = new Thickness(0, 8, 0, 2),
+            ToolTip = collapsed ? Loc.T("Expand section") : Loc.T("Collapse section"),
+        };
+        button.SetResourceReference(StyleProperty, ThemeKeys.ButtonPlain);
+        System.Windows.Automation.AutomationProperties.SetName(button, label);
+        button.Click += (_, _) =>
         {
             _collapsed[title] = !collapsed;
             RebuildSidebar(_router.Current!);
+            if (_sectionHeaders.TryGetValue(title, out var replacement))
+            {
+                replacement.Focus();
+            }
         };
-        return grid;
+        return button;
     }
 
     private Border BuildRow(SidebarRow row, bool selected)

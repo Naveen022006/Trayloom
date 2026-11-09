@@ -20,6 +20,7 @@ internal sealed class BarWindow : GlassWindow
 {
     private const double BarWidth = 560;
     private const double ListCeiling = 452;
+    private double _listCeiling = ListCeiling;
 
     private readonly BarService _svc;
     private readonly TextBox _field;
@@ -266,12 +267,16 @@ internal sealed class BarWindow : GlassWindow
         var area = Screens.UnderCursor().WorkArea;
         Plat.PlaceWindow(this, area.Left + 100, area.Top + 100, BarWidth, 0);
         var dpi = VisualTreeHelper.GetDpi(this).DpiScaleX;
+        // Work areas are physical pixels; the window and its content use device-independent units.
+        var width = Math.Min(BarWidth, Math.Max(1, area.Width / dpi - 32));
+        Width = width;
+        _listCeiling = Math.Min(ListCeiling, Math.Max(80, area.Height / dpi - 220));
         var offset = _svc.Prefs.PositionOffset ?? (0, 0);
-        var left = area.Left + (area.Width - BarWidth * dpi) / 2 + offset.Dx * dpi;
+        var left = area.Left + (area.Width - width * dpi) / 2 + offset.Dx * dpi;
         var top = area.Top + area.Height * 0.28 + offset.Dy * dpi;
-        left = Math.Clamp(left, area.Left + 16 * dpi, Math.Max(area.Left + 16 * dpi, area.Right - BarWidth * dpi - 16 * dpi));
-        top = Math.Clamp(top, area.Top + 16 * dpi, Math.Max(area.Top + 16 * dpi, area.Bottom - 120 * dpi));
-        Plat.PlaceWindow(this, left, top, BarWidth, 0);
+        left = Math.Clamp(left, area.Left + 16 * dpi, Math.Max(area.Left + 16 * dpi, area.Right - width * dpi - 16 * dpi));
+        top = Math.Clamp(top, area.Top + 16 * dpi, Math.Max(area.Top + 16 * dpi, area.Bottom - (_listCeiling + 200) * dpi));
+        Plat.PlaceWindow(this, left, top, width, 0);
     }
 
     private void OnMarkDown(object sender, MouseButtonEventArgs e)
@@ -842,9 +847,9 @@ internal sealed class BarWindow : GlassWindow
 
     private FrameworkElement ChipRow(IReadOnlyList<string> chips)
     {
-        var scroll = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        var scroll = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled };
         var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(16, 9, 16, 9) };
-        row.Children.Add(Chip(null, "All"));
+        row.Children.Add(Chip(null, Loc.T("All")));
         foreach (var raw in chips)
         {
             row.Children.Add(Chip(raw, BarSource.CategoryTitle(raw) is var t && raw == "menus" ? Loc.T("Menu commands") : t));
@@ -877,6 +882,11 @@ internal sealed class BarWindow : GlassWindow
             BorderThickness = new Thickness(1),
             BorderBrush = active ? AccentAlpha(0.45) : Brushes.Transparent,
         };
+        if (active && raw is not null)
+        {
+            chip.Loaded += (_, _) => chip.BringIntoView();
+        }
+
         chip.MouseLeftButtonUp += (_, _) => _svc.SetCategory(raw);
         return chip;
     }
@@ -958,10 +968,10 @@ internal sealed class BarWindow : GlassWindow
             index++;
         }
 
-        var scroll = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, MaxHeight = ListCeiling };
+        var scroll = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, MaxHeight = _listCeiling };
         if (_svc.Rows.Count > 14)
         {
-            scroll.Height = ListCeiling;
+            scroll.Height = _listCeiling;
         }
 
         _scroll = scroll;
@@ -1255,41 +1265,29 @@ internal sealed class BarWindow : GlassWindow
 
     private FrameworkElement Footer(bool search)
     {
-        var grid = new Grid { Margin = new Thickness(16, 8, 16, 8) };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var left = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        left.Children.Add(UiKit.Icon("", 8.5, ThemeKeys.TextTertiary));
-        var shortcut = Label(ShortcutText.Configured(_svc.Ctx, "commandBar"), 9, ThemeKeys.TextTertiary, FontWeights.SemiBold, true);
-        shortcut.Margin = new Thickness(5, 0, 0, 0);
-        left.Children.Add(shortcut);
-        grid.Children.Add(left);
-
-        var right = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        void Hint(string text, bool rounded = true, double margin = 8)
+        // Wrap whole hints so long translations and narrow screens do not overlap the configured shortcut.
+        var hints = new WrapPanel { Margin = new Thickness(16, 6, 16, 6) };
+        void Hint(string text, bool rounded = true, double margin = 12)
         {
-            var tb = Label(text, 9, ThemeKeys.TextTertiary, rounded ? FontWeights.SemiBold : null, rounded);
-            tb.Margin = new Thickness(0, 0, margin, 0);
-            right.Children.Add(tb);
+            var tb = Label(text, 10.5, ThemeKeys.TextSecondary, rounded ? FontWeights.SemiBold : null, rounded);
+            tb.Margin = new Thickness(0, 2, margin, 2);
+            hints.Children.Add(tb);
         }
 
+        Hint(ShortcutText.Configured(_svc.Ctx, "commandBar"));
         if (search && _svc.CanOpenActions)
         {
-            Hint("Ctrl+K");
-            Hint(BarStrings.ActionsTitle, false, 8);
+            Hint("Ctrl+K " + BarStrings.ActionsTitle, false);
         }
 
         Hint(_svc.CategoryChips().Count > 0 ? Loc.T("Ctrl+P Ctrl+N ↑↓ ←→") : Loc.T("Ctrl+P Ctrl+N ↑↓"));
         if (search && _svc.CanTabComplete)
         {
-            Hint("⇥");
-            Hint(BarStrings.Continue, false, 8);
+            Hint("⇥ " + BarStrings.Continue, false);
         }
 
         Hint("↵ Esc", true, 0);
-        Grid.SetColumn(right, 1);
-        grid.Children.Add(right);
-        return grid;
+        return hints;
     }
 
     /// <summary>Lets the dialog code know the window must stay open (the capture card suspends hotkeys).</summary>

@@ -88,6 +88,7 @@ internal sealed class TrayPanel : Window
     private bool _keepOpen;
     private double _arrowCenterX = PanelWidth / 2;
     private bool _editing;
+    private Button? _selectedTabButton;
 
     public TrayPanel(ShellServices services, Point anchorPhysical)
     {
@@ -291,6 +292,7 @@ internal sealed class TrayPanel : Window
 
     private UIElement TabBar(IReadOnlyList<PanelTabInfo> tabs)
     {
+        _selectedTabButton = null;
         var bar = new Border { CornerRadius = new CornerRadius(12), Padding = new Thickness(4), BorderThickness = new Thickness(0.7) };
         bar.SetResourceReference(Border.BackgroundProperty, ThemeKeys.CardFill);
         bar.SetResourceReference(Border.BorderBrushProperty, ThemeKeys.CardBorder);
@@ -300,30 +302,39 @@ internal sealed class TrayPanel : Window
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             var tab = tabs[i];
             var selected = tab.Id == s_selectedTab;
-            var cell = new Border
+            var cell = new Button
             {
                 Height = 30,
-                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(0),
                 Margin = new Thickness(i == 0 ? 0 : 2, 0, 0, 0),
-                Background = Brushes.Transparent,
-                Cursor = Cursors.Hand,
                 ToolTip = tab.Title,
-                Child = UiKit.Icon(tab.Glyph, 13.5, selected ? ThemeKeys.Accent : ThemeKeys.TabIdle, FontWeights.SemiBold),
+                Content = UiKit.Icon(tab.Glyph, 13.5, selected ? ThemeKeys.Accent : ThemeKeys.TabIdle, FontWeights.SemiBold),
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
             };
+            cell.SetResourceReference(FrameworkElement.StyleProperty, ThemeKeys.ButtonPlain);
+            cell.SetResourceReference(FrameworkElement.FocusVisualStyleProperty, ThemeKeys.FocusRing);
             System.Windows.Automation.AutomationProperties.SetName(cell, tab.Title);
+            if (selected)
+            {
+                System.Windows.Automation.AutomationProperties.SetItemStatus(cell, Loc.T("Selected"));
+            }
             ToolTipService.SetInitialShowDelay(cell, 250);
             ToolTipService.SetPlacement(cell, System.Windows.Controls.Primitives.PlacementMode.Top);
             if (selected)
             {
-                cell.SetResourceReference(Border.BackgroundProperty, ThemeKeys.TabSelectedFill);
-            }
-            else
-            {
-                cell.MouseEnter += (_, _) => cell.SetResourceReference(Border.BackgroundProperty, ThemeKeys.RowHover);
-                cell.MouseLeave += (_, _) => cell.Background = Brushes.Transparent;
+                cell.SetResourceReference(Control.BackgroundProperty, ThemeKeys.TabSelectedFill);
+                _selectedTabButton = cell;
             }
 
-            cell.MouseLeftButtonUp += (_, _) => SelectTab(tab.Id);
+            cell.Click += (_, _) =>
+            {
+                var hadKeyboardFocus = cell.IsKeyboardFocused;
+                SelectTab(tab.Id);
+                if (hadKeyboardFocus)
+                {
+                    _selectedTabButton?.Focus();
+                }
+            };
             Grid.SetColumn(cell, i);
             grid.Children.Add(cell);
         }

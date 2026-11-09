@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Threading;
 using Trayloom.Core;
 using Trayloom.Core.Ui;
 
@@ -15,6 +16,11 @@ namespace Trayloom.App;
 internal sealed class FeaturesPageState
 {
     public int Tab { get; set; }
+
+    /// <summary>Show all, installed, or not installed features.</summary>
+    public int Filter { get; set; }
+
+    public Action<int>? FocusFilter { get; set; }
 
     /// <summary>The router request whose <c>features#permissions</c> anchor was already applied to <see cref="Tab"/>.</summary>
     public Guid AppliedRequest { get; set; }
@@ -64,6 +70,7 @@ internal static class FeaturesPage
         var rows = new Dictionary<string, FrameworkElement>(StringComparer.Ordinal);
         if (router.PendingFeatureTarget is { } target)
         {
+            state.Filter = 0;
             state.PendingReveal = FeatureCatalog.Resolve(target);
             router.PendingFeatureTarget = null;
             state.Tab = 0;
@@ -112,11 +119,22 @@ internal static class FeaturesPage
             stack.AddSpaced(never, 20);
         }
 
-        stack.AddSpaced(IslandCard(s, state, rebuild, rows), 20);
+        if (FeatureCatalog.IslandExtensions.Concat([FeatureCatalog.Get("notch")!]).Any(e => MatchesFilter(s.Runtime, state, e)))
+        {
+            stack.AddSpaced(IslandCard(s, state, rebuild, rows), 20);
+        }
         stack.AddSpaced(BundlesCard(s, state, rebuild), 20);
         foreach (var group in GroupOrder)
         {
-            stack.AddSpaced(GroupCard(s, state, rebuild, group, rows), 20);
+            if (FeatureCatalog.InGroup(group).Any(e => MatchesFilter(s.Runtime, state, e)))
+            {
+                stack.AddSpaced(GroupCard(s, state, rebuild, group, rows), 20);
+            }
+        }
+
+        if (!FeatureCatalog.All.Any(e => MatchesFilter(rt, state, e)))
+        {
+            stack.AddSpaced(UiKit.Text(Loc.T("No features match this filter."), 13, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true), 20);
         }
 
         var foot = new StackPanel();
@@ -165,6 +183,26 @@ internal static class FeaturesPage
             card.AddDivider();
             card.Add(TallyRow(rt));
             card.Add(new UsageBar((double)rt.AvailableCount / Math.Max(1, rt.InstallableCount), ThemeKeys.Accent, 5));
+            var filter = new SegmentedControl([Loc.T("All"), Loc.T("Installed"), Loc.T("Not installed")], state.Filter, false, 13);
+            filter.Margin = new Thickness(0, 14, 0, 0);
+            state.FocusFilter = index =>
+            {
+                if (filter.Child is Grid grid && index >= 0 && index < grid.Children.Count && grid.Children[index] is Border cell)
+                {
+                    cell.Focus();
+                }
+            };
+            filter.SelectionChanged += i =>
+            {
+                var restoreFocus = filter.IsKeyboardFocusWithin;
+                state.Filter = i;
+                rebuild();
+                if (restoreFocus)
+                {
+                    filter.Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => state.FocusFilter?.Invoke(i));
+                }
+            };
+            card.Add(filter);
         }
 
         _ = rt;
@@ -350,6 +388,13 @@ internal static class FeaturesPage
 
     // ------------------------------------------------------------------------------------------------ groups
 
+    private static bool MatchesFilter(FeatureRuntime runtime, FeaturesPageState state, FeatureCatalogEntry entry) => state.Filter switch
+    {
+        1 => runtime.IsAvailable(entry.Id),
+        2 => !runtime.IsAvailable(entry.Id),
+        _ => true,
+    };
+
     private static UIElement IslandCard(ShellServices s, FeaturesPageState state, Action rebuild, Dictionary<string, FrameworkElement> rows)
     {
         var rt = s.Runtime;
@@ -358,7 +403,11 @@ internal static class FeaturesPage
         var card = new SettingsCard();
         card.Add(GroupHeader(FeatureGroup.Island, Loc.T("Dynamic Island"), ext.Concat([notch]).Count(e => rt.IsAvailable(e.Id)), ext.Count + 1, collapsible: false, collapsed: false, _ => { }));
         card.AddDivider();
-        card.Add(FeatureRow(s, notch, rows, rebuild));
+        if (MatchesFilter(rt, state, notch))
+        {
+            card.Add(FeatureRow(s, notch, rows, rebuild));
+        }
+        ext = ext.Where(e => MatchesFilter(rt, state, e)).ToList();
         var inner = new StackPanel();
         for (var i = 0; i < ext.Count; i++)
         {
@@ -370,22 +419,26 @@ internal static class FeaturesPage
             inner.Children.Add(FeatureRow(s, ext[i], rows, rebuild));
         }
 
-        card.Add(Disclosure(Loc.T("What appears"), state.IslandModulesCollapsed, collapsed =>
+        if (ext.Count > 0)
         {
-            state.IslandModulesCollapsed = collapsed;
-            rebuild();
-        }, inner, headline: false));
+            card.Add(Disclosure(Loc.T("What appears"), state.IslandModulesCollapsed, collapsed =>
+            {
+                state.IslandModulesCollapsed = collapsed;
+                rebuild();
+            }, inner, headline: false));
+        }
         return card;
     }
 
     private static UIElement GroupCard(ShellServices s, FeaturesPageState state, Action rebuild, FeatureGroup group, Dictionary<string, FrameworkElement> rows)
     {
         var rt = s.Runtime;
-        var entries = FeatureCatalog.InGroup(group).ToList();
+        var allEntries = FeatureCatalog.InGroup(group).ToList();
+        var entries = allEntries.Where(e => MatchesFilter(rt, state, e)).ToList();
         var key = group.ToString();
         var collapsed = state.CollapsedGroups.Contains(key);
         var card = new SettingsCard();
-        card.Add(GroupHeader(group, group.DisplayName(), entries.Count(e => rt.IsAvailable(e.Id)), entries.Count(e => e.CanInstall || rt.IsAvailable(e.Id)), true, collapsed, c =>
+        card.Add(GroupHeader(group, group.DisplayName(), allEntries.Count(e => rt.IsAvailable(e.Id)), allEntries.Count(e => e.CanInstall || rt.IsAvailable(e.Id)), true, collapsed, c =>
         {
             if (c)
             {
@@ -515,7 +568,7 @@ internal static class FeaturesPage
 
         var text = new StackPanel { Margin = new Thickness(14, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
         var titleRow = new WrapPanel { Orientation = Orientation.Horizontal };
-        var name = UiKit.Text(entry.Title, 15, FontWeights.Normal, installed ? ThemeKeys.TextPrimary : ThemeKeys.TextSecondary);
+        var name = UiKit.Text(entry.Title, 15, FontWeights.SemiBold, ThemeKeys.TextPrimary);
         name.VerticalAlignment = VerticalAlignment.Center;
         titleRow.Children.Add(name);
         if (entry.IsExperimental)
@@ -531,12 +584,10 @@ internal static class FeaturesPage
         var info = new InfoPopoverButton(() => MetadataPopover(entry), MetadataTooltip(entry));
         info.Margin = new Thickness(4, 0, 0, 0);
         titleRow.Children.Add(info);
-        titleRow.Children.Add(Margined(EnergyPill(entry), 4, 0));
         text.Children.Add(titleRow);
         // A feature Windows cannot offer explains why instead of repeating the macOS wording of its description.
         var descriptionText = unavailable && !installed && blocked is { Length: > 0 } ? blocked : entry.Description;
-        var desc = UiKit.Text(descriptionText, 12.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
-        desc.Opacity = installed ? 1 : 0.7;
+        var desc = UiKit.Text(descriptionText, 13, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
         desc.Margin = new Thickness(0, 2, 0, 0);
         text.Children.Add(desc);
         Grid.SetColumn(text, 1);
@@ -593,7 +644,6 @@ internal static class FeaturesPage
         root.Child = grid;
         if (unavailable && !installed)
         {
-            root.Opacity = 0.4;
             root.ToolTip = blocked;
         }
 

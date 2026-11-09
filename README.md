@@ -253,9 +253,10 @@ browser tab.
 
 ## Install
 
-1. Get `Trayloom-win-x64.zip` from the [Releases](https://github.com/Naveen022006/Trayloom/releases) page (or
-   [build it yourself](#build-from-source)), unzip it anywhere and run `Trayloom.exe`. Setting it up on another PC, or
-   Windows warns about it? [docs/INSTALL.md](docs/INSTALL.md) walks through every step.
+1. Get `Trayloom-Setup.exe` from the [Releases](https://github.com/Naveen022006/Trayloom/releases) page when available (or
+   [build it yourself](#build-from-source)) and run it. Quit Trayloom first if it is already running. Older releases provide
+   `Trayloom-win-x64.zip`: extract it to its own folder and run `Trayloom.exe`. The zip also works as a portable copy. Setting
+   it up on another PC, or Windows warns about it? [docs/INSTALL.md](docs/INSTALL.md) walks through every step.
 2. Choose **Install Trayloom**. It installs for your account only, so no administrator password is needed:
    * the app goes to `%LOCALAPPDATA%\Programs\Trayloom`,
    * a Start menu shortcut is added, plus an optional Desktop shortcut and an optional *start when I sign in* entry,
@@ -404,7 +405,7 @@ dotnet build Trayloom.sln -c Release
 dotnet run --project src/Trayloom.App
 ```
 
-Create the self-contained release folder, zip and setup script in `dist\`:
+Create the standalone setup executable, self-contained release folder and portable zip in `dist\`:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\package.ps1

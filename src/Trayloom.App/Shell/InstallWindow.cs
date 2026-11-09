@@ -93,7 +93,7 @@ internal sealed class InstallWindow : Window
         var update = _installedVersion is not null;
         var intro = update
             ? Loc.F("Trayloom {0} is already installed for your account. This updates it to {1}, keeping your settings.", _installedVersion, AppInfo.Version)
-            : Loc.T("Trayloom is running straight from the folder you unzipped it to. Install it to find it in the Start menu and to keep it if you delete the download. It is installed for your account only, so Windows will not ask for an administrator password.");
+            : Loc.T("Install Trayloom for your Windows account to add it to the Start menu and keep it after you delete the download. Windows will not ask for an administrator password.");
         _body.Children.Add(UiParts.Paragraph(intro, 13, ThemeKeys.TextPrimary, 6));
         _body.Children.Add(UiParts.Paragraph(Loc.F("Installs to {0}", InstallManager.InstallRoot), 11.5, ThemeKeys.TextTertiary, 14));
 

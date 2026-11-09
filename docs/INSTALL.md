@@ -19,16 +19,20 @@ Nothing else needs to be installed first: the .NET runtime is inside the downloa
 
 Use **one** of these:
 
-* **From GitHub Releases** (easiest for other people): open
-  [github.com/Naveen022006/Trayloom/releases](https://github.com/Naveen022006/Trayloom/releases) and download
-  `Trayloom-win-x64.zip` (about 75 MB). If the page is empty, no release has been published yet; see
-  [Publishing a release](#publishing-a-release-for-the-maintainer) below.
-* **Shared directly:** copy `Trayloom-win-x64.zip` and `Trayloom-Setup.cmd` from the `dist` folder of a PC that built it
-  (USB drive, Google Drive, OneDrive…). Keep both files in the same folder.
+* **From GitHub Releases**: open [Trayloom releases](https://github.com/Naveen022006/Trayloom/releases) and download
+  `Trayloom-Setup.exe` when available. For a portable copy, download `Trayloom-win-x64.zip` instead. Older releases may
+  only provide the zip and setup script.
+* **Shared directly:** copy `Trayloom-Setup.exe` from the `dist` folder of a PC that built it (USB drive, Google Drive,
+  OneDrive…). It contains the installation files and does not need the zip beside it.
 * **Build it on that laptop:** see [Build from source](../README.md#build-from-source). A build made on the laptop itself is
   not blocked by Smart App Control.
 
-## 3. Unblock and unzip
+## 3. Open the download
+
+For the standalone installer, quit Trayloom if it is already running, then double-click `Trayloom-Setup.exe`. It prepares
+the files and opens the Trayloom installation window. Run it normally, without administrator rights. Continue at step 4.
+
+For the portable zip, extract it first:
 
 Windows marks files downloaded from the internet. Removing that mark first avoids a warning for every file:
 
@@ -38,8 +42,8 @@ Windows marks files downloaded from the internet. Removing that mark first avoid
 
 ## 4. Start the installer
 
-1. Open the extracted folder and double-click **`Trayloom.exe`**. (Or double-click `Trayloom-Setup.cmd` next to the zip: it
-   unzips and starts the installer for you.)
+1. If you downloaded the zip, open the extracted folder and double-click **`Trayloom.exe`**. (Or double-click
+   `Trayloom-Setup.cmd` next to the zip.) If you opened `Trayloom-Setup.exe`, the installer is already starting.
 2. If a blue **"Windows protected your PC"** window appears: click **More info** > **Run anyway**. Trayloom is not
    code-signed yet, so Windows does not recognise the publisher.
 3. If Windows says it **blocked** the app and offers no *Run anyway*, Smart App Control is on. Trayloom shows a short
@@ -158,7 +162,7 @@ It also asks whether to **delete my data** (default: no): `%APPDATA%\Trayloom` (
 ## Does Trayloom run as administrator?
 
 No, and it does not offer to. Work that needs administrator rights (cleaning system caches, removing a program for all users)
-goes through one Windows permission prompt for that task alone. If you start it as administrator yourself it keeps running but ignores developer flags and never offers elevation. `Trayloom-Setup.cmd` refuses to run as administrator. Programs that run as administrator ignore Trayloom's window
+goes through one Windows permission prompt for that task alone. If you start it as administrator yourself it keeps running but ignores developer flags and never offers elevation. The setup executable and script refuse to run as administrator. Programs that run as administrator ignore Trayloom's window
 and input tools. Cleaning system caches can also be done in Windows Settings > System > Storage.
 
 ## Checking your download
@@ -166,7 +170,7 @@ and input tools. Cleaning system caches can also be done in Windows Settings > S
 Releases list the SHA-256 of each file in `SHA256SUMS.txt`. In PowerShell, from the folder with the download:
 
 ```powershell
-Get-FileHash .\Trayloom-win-x64.zip -Algorithm SHA256
+Get-FileHash .\Trayloom-Setup.exe -Algorithm SHA256
 ```
 
 The long value must match the line for that file in `SHA256SUMS.txt` (compare it with the copy on the release page, not one
@@ -190,16 +194,16 @@ Do this once per version so other people can download Trayloom from GitHub:
    powershell -ExecutionPolicy Bypass -File scripts\package.ps1
    ```
 
-   It writes `dist\Trayloom-win-x64.zip`, `dist\Trayloom-Setup.cmd` and `dist\SHA256SUMS.txt`.
+   It writes `dist\Trayloom-Setup.exe`, `dist\Trayloom-win-x64.zip`, `dist\Trayloom-Setup.cmd` and `dist\SHA256SUMS.txt`.
 2. On GitHub, open the repository > **Releases** > **Draft a new release**.
 3. **Choose a tag** > type the version from `Directory.Build.props` with a `v` in front (for example `v0.2.0`) > *Create new
    tag*.
 4. Title it, for example *Trayloom 0.2.0*, and add a few lines about what changed.
-5. Drag `Trayloom-win-x64.zip`, `Trayloom-Setup.cmd` and `SHA256SUMS.txt` into the *Attach binaries* box and wait for both uploads.
+5. Attach `Trayloom-Setup.exe`, `Trayloom-win-x64.zip`, `Trayloom-Setup.cmd` and `SHA256SUMS.txt`, then wait for the uploads.
 6. Click **Publish release**. The download link in the README now works.
 
 With the GitHub CLI signed in (`gh auth login`), steps 2 to 6 are one command:
 
 ```bash
-gh release create v0.2.0 dist/Trayloom-win-x64.zip dist/Trayloom-Setup.cmd dist/SHA256SUMS.txt --title "Trayloom 0.2.0" --notes "First public build"
+gh release create v0.2.0 dist/Trayloom-Setup.exe dist/Trayloom-win-x64.zip dist/Trayloom-Setup.cmd dist/SHA256SUMS.txt --title "Trayloom 0.2.0" --notes "First public build"
 ```

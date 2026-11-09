@@ -394,6 +394,10 @@ public partial class App : Application
                 case InstallChoice.Installed:
                     LaunchInstalledCopy(window);
                     return;
+                case InstallChoice.Closed when Environment.GetEnvironmentVariable("TRAYLOOM_SETUP_LAUNCH") == "1":
+                    // Closing the standalone setup is a cancellation, not a request to leave a temporary tray copy running.
+                    Dispatcher.BeginInvoke(ShutdownAfterFinish);
+                    return;
                 case InstallChoice.JustRun:
                     if (window.DontAskAgain)
                     {

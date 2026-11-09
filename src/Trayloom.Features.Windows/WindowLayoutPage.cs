@@ -28,7 +28,9 @@ internal static class SnapConflict
     }
 
     /// <summary>Warning + "Open Multitasking settings" block, re-evaluated when the app becomes active.</summary>
-    public static FrameworkElement Build(IAppSettings app)
+    public static FrameworkElement Build(IAppSettings app) => Build(app, out _);
+
+    public static FrameworkElement Build(IAppSettings app, out Action refresh)
     {
         var host = new StackPanel();
         void Refresh()
@@ -64,12 +66,24 @@ internal static class SnapConflict
             host.Children.Add(open);
         }
 
+        refresh = Refresh;
+        Window? owner = null;
+        EventHandler activated = (_, _) => Refresh();
         host.Loaded += (_, _) =>
         {
             Refresh();
-            if (Window.GetWindow(host) is { } window)
+            owner = Window.GetWindow(host);
+            if (owner is not null)
             {
-                window.Activated += (_, _) => Refresh();
+                owner.Activated += activated;
+            }
+        };
+        host.Unloaded += (_, _) =>
+        {
+            if (owner is not null)
+            {
+                owner.Activated -= activated;
+                owner = null;
             }
         };
         Refresh();
@@ -259,22 +273,24 @@ public sealed class WindowLayoutSettingsSection : ISettingsSection
         var stack = new StackPanel();
         var zonePicker = new EdgeSnapZonePicker(app);
         zonePicker.Margin = new Thickness(0, 13, 0, 0);
+        var zoneHint = Caption(Loc.T("Turn on edge snapping to edit these zones."), 8);
+        var conflict = SnapConflict.Build(app, out var refreshConflict);
+        conflict.Margin = new Thickness(0, 13, 0, 0);
         void Enable(bool on)
         {
             zonePicker.IsEnabled = on;
-            zonePicker.Opacity = on ? 1 : 0.45;
+            // Keep the preview legible while it is inactive, without allowing changes until enabled.
+            zonePicker.Opacity = on ? 1 : 0.8;
+            zoneHint.Visibility = on ? Visibility.Collapsed : Visibility.Visible;
+            conflict.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+            refreshConflict();
         }
 
         stack.Children.Add(FormUi.Toggle(app, Keys.EdgeSnapEnabled, null, Strings.EdgeSnap, null, Enable));
         stack.Children.Add(Caption(Strings.EdgeSnapCaption, 8));
         Enable(app.Get<bool>(Keys.EdgeSnapEnabled));
         stack.Children.Add(zonePicker);
-        var conflict = SnapConflict.Build(app);
-        if (conflict is FrameworkElement fe)
-        {
-            fe.Margin = new Thickness(0, 13, 0, 0);
-        }
-
+        stack.Children.Add(zoneHint);
         stack.Children.Add(conflict);
 
         var gestureBlock = new StackPanel { Margin = new Thickness(0, 13, 0, 0) };
