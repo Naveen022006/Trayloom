@@ -166,6 +166,21 @@ internal static class PresenceChecks
         return (clock, now);
     }
 
+    /// <summary>Feeds one observation per <paramref name="stepMs"/> from <paramref name="from"/> to <paramref name="to"/> (both included); stops at the first command.</summary>
+    private static AwayPresenceCommand Feed(AwayPresenceClock clock, AwayObservation observation, long from, long to, long stepMs = 1000)
+    {
+        for (var now = from; now <= to; now += stepMs)
+        {
+            var command = clock.Sample(now, observation, LeaveMs);
+            if (command != AwayPresenceCommand.None)
+            {
+                return command;
+            }
+        }
+
+        return AwayPresenceCommand.None;
+    }
+
     public static void Clock()
     {
         AwayPresenceClock.ArmIdleMs = 30_000;
@@ -240,8 +255,7 @@ internal static class PresenceChecks
         {
             var (clock, ready) = Watching();
             var t = ready + AwayPresenceClock.WarmupMs;
-            clock.Sample(t, Dark, LeaveMs);
-            Program.Check(clock.Sample(t + 59_000, Dark, LeaveMs) == AwayPresenceCommand.None, "59 s of dark frames: still watching, never absence");
+            Program.Check(Feed(clock, Dark, t, t + 59_000) == AwayPresenceCommand.None, "59 s of dark frames: still watching, never absence");
             Program.Check(clock.Phase == AwayPresencePhase.Watching, "dark frames never start a countdown");
             Program.Check(clock.Sample(t + 60_000, Dark, LeaveMs) == AwayPresenceCommand.StopCamera && clock.Phase == AwayPresencePhase.GaveUp, "unusable for 60 s: StopCamera, GaveUp");
             Program.Check(clock.Tick(t + 61_000, 120_000, true, false, LeaveMs) == AwayPresenceCommand.None && clock.Phase == AwayPresencePhase.GaveUp, "a tick without input stays in GaveUp");
@@ -251,8 +265,7 @@ internal static class PresenceChecks
         {
             var (clock, ready) = Watching();
             var t = ready + AwayPresenceClock.WarmupMs;
-            clock.Sample(t, Dark, LeaveMs);
-            clock.Sample(t + 60_000, Dark, LeaveMs);
+            Feed(clock, Dark, t, t + 60_000);
             Program.Check(clock.Tick(t + 100_000, 149_999, true, false, LeaveMs) == AwayPresenceCommand.None, "dark fallback waits for 150 s idle");
             Program.Check(clock.Tick(t + 100_001, 150_000, true, false, LeaveMs) == AwayPresenceCommand.BeginCountdown, "dark fallback warns before leaving");
             Program.Check(clock.Tick(t + 101_001, 1000, true, false, LeaveMs).HasFlag(AwayPresenceCommand.CancelCountdown) && clock.Phase == AwayPresencePhase.Armed, "input cancels the dark fallback warning");
@@ -261,8 +274,7 @@ internal static class PresenceChecks
         {
             var (clock, ready) = Watching();
             var t = ready + AwayPresenceClock.WarmupMs;
-            clock.Sample(t, Dark, LeaveMs);
-            clock.Sample(t + 60_000, Dark, LeaveMs);
+            Feed(clock, Dark, t, t + 60_000);
             Program.Check(clock.Tick(t + 100_000, 150_000, true, true, LeaveMs) == AwayPresenceCommand.None && clock.Phase == AwayPresencePhase.GaveUp, "suppression prevents dark fallback");
             Program.Check(clock.Tick(t + 101_000, 151_000, true, false, LeaveMs) == AwayPresenceCommand.BeginCountdown, "dark fallback starts after suppression ends");
             Program.Check(clock.Tick(t + 111_000, 161_000, true, false, LeaveMs) == AwayPresenceCommand.Leave, "dark fallback leaves only after the notice");
@@ -336,8 +348,7 @@ internal static class PresenceChecks
             var noisyDark = new AwayObservation(false, true, false, true);
             var (clock, ready) = Watching();
             var t = ready + AwayPresenceClock.WarmupMs;
-            clock.Sample(t, noisyDark, LeaveMs);
-            Program.Check(clock.Sample(t + 59_000, noisyDark, LeaveMs) == AwayPresenceCommand.None && clock.Phase == AwayPresencePhase.Watching, "noisy dark frames: no countdown");
+            Program.Check(Feed(clock, noisyDark, t, t + 59_000) == AwayPresenceCommand.None && clock.Phase == AwayPresencePhase.Watching, "noisy dark frames: no countdown");
             Program.Check(clock.Sample(t + 60_000, noisyDark, LeaveMs) == AwayPresenceCommand.StopCamera && clock.Phase == AwayPresencePhase.GaveUp, "noisy dark frames for 60 s: StopCamera, GaveUp");
         }
 
@@ -395,5 +406,112 @@ internal static class PresenceChecks
             Program.Check(clock.Tick(Start, 5000, true, false, LeaveMs) == AwayPresenceCommand.StartCamera, "ArmIdleMs override: the camera starts after 5 s");
             AwayPresenceClock.ArmIdleMs = 30_000;
         }
+    }
+
+    // ------------------------------------------------------------------------------------------ lit room, stalls, switches
+
+    /// <summary>The lit-room log (frames usable but without a comparison), a stalled camera, the frame comparison and the camera switches.</summary>
+    public static void Camera()
+    {
+        var unknown = new AwayObservation(false, false, true, false);
+
+        {
+            // A dark sample, bright samples without a comparison, then a dark one a minute later: the lens works, so no give-up.
+            var (clock, ready) = Watching();
+            var t = ready + AwayPresenceClock.WarmupMs;
+            clock.Sample(t, Dark, LeaveMs);
+            var middle = Feed(clock, unknown, t + 1000, t + 59_000);
+            var last = clock.Sample(t + 60_000, Dark, LeaveMs);
+            Program.Check(middle == AwayPresenceCommand.None && last == AwayPresenceCommand.None && clock.Phase == AwayPresencePhase.Watching, "dark, bright unknown samples, dark 60 s later: still watching");
+        }
+
+        {
+            var (clock, ready) = Watching();
+            var t = ready + AwayPresenceClock.WarmupMs;
+            clock.Sample(t, Dark, LeaveMs);
+            Program.Check(clock.Sample(t + 60_000, Dark, LeaveMs) == AwayPresenceCommand.None && clock.Phase == AwayPresencePhase.Watching, "two dark samples 60 s apart: no give-up");
+        }
+
+        {
+            var (clock, ready) = Watching();
+            var t = ready + AwayPresenceClock.WarmupMs;
+            var command = Feed(clock, Dark, t, t + 60_000, 12_000);
+            Program.Check(command == AwayPresenceCommand.StopCamera && clock.Phase == AwayPresencePhase.GaveUp && clock.LastReason == "dark", "six dark samples over 60 s: StopCamera, GaveUp (dark)");
+        }
+
+        {
+            // A stalled camera: off until input, then the same inactivity fallback as a dark lens.
+            var (clock, ready) = Watching();
+            var t = ready + AwayPresenceClock.WarmupMs;
+            clock.Sample(t, Face, LeaveMs);
+            var stalled = clock.CameraStalled();
+            Program.Check(stalled == AwayPresenceCommand.StopCamera && clock.Phase == AwayPresencePhase.GaveUp && clock.LastReason == "stalled", "CameraStalled: StopCamera, GaveUp (stalled)");
+            Program.Check(clock.Tick(t + 100_000, 149_999, true, false, LeaveMs) == AwayPresenceCommand.None, "stalled fallback waits for 150 s idle");
+            Program.Check(clock.Tick(t + 100_001, 150_000, true, false, LeaveMs) == AwayPresenceCommand.BeginCountdown && clock.Phase == AwayPresencePhase.Countdown, "stalled camera, 150 s idle: the notice begins");
+            Program.Check(clock.Tick(clock.CountdownEndsAt, 160_000, true, false, LeaveMs) == AwayPresenceCommand.Leave, "stalled fallback leaves after the notice");
+        }
+
+        {
+            var (clock, ready) = Watching();
+            clock.CameraStalled();
+            Program.Check(clock.Tick(ready + 10_000, 1000, true, false, LeaveMs) == AwayPresenceCommand.None && clock.Phase == AwayPresencePhase.Armed, "input clears a stall");
+        }
+
+        {
+            var clock = new AwayPresenceClock();
+            clock.CameraFailed();
+            Program.Check(clock.Tick(Start, 200_000, true, false, LeaveMs) == AwayPresenceCommand.None, "after CameraFailed the fallback gives nothing");
+        }
+
+        {
+            var (clock, now) = Counting();
+            Program.Check(clock.LastReason == "absent", "the countdown of a camera departure has the reason absent");
+        }
+
+        {
+            var random = new Random(3);
+            var scene = new byte[3072];
+            for (var i = 0; i < scene.Length; i++)
+            {
+                scene[i] = (byte)random.Next(60, 140);
+            }
+
+            var darkThenBright = AwayPresenceMath.Compare(scene, false, 1000, scene, true);
+            Program.Check(!darkThenBright.Known, "a dark previous frame and a bright current one: movement is not known");
+            Program.Check(!AwayPresenceMath.Compare(scene, true, 1000, scene, false).Known, "a bright previous frame and a dark current one: movement is not known");
+            var both = AwayPresenceMath.Compare(scene, true, 1000, scene.ToArray(), true);
+            Program.Check(both.Known && both.Changed == 0, "both frames usable 1 s apart: known, nothing changed");
+            Program.Check(AwayPresenceMath.Compare(scene, true, AwayPresenceMath.MaxGridAgeMs, scene, true).Known, "a previous frame 4500 ms old is still compared");
+            Program.Check(!AwayPresenceMath.Compare(scene, true, 4501, scene, true).Known, "a previous frame 4501 ms old is not compared");
+            Program.Check(!AwayPresenceMath.Compare(null, true, 1000, scene, true).Known, "no previous frame: not known");
+        }
+
+        {
+            // The in-place read of a frame (IMemoryBufferByteAccess) on bitmaps made in memory; no camera is involved.
+            var gray = new byte[640 * 480];
+            Array.Fill(gray, (byte)100);
+            using var gray8 = new Windows.Graphics.Imaging.SoftwareBitmap(Windows.Graphics.Imaging.BitmapPixelFormat.Gray8, 640, 480);
+            gray8.CopyFromBuffer(System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions.AsBuffer(gray));
+            var grayGrid = AwayFaceWatcher.ReadGrid(gray8);
+            Program.Check(grayGrid.Length == 3072 && grayGrid.All(v => v == 100), "in-place read of a Gray8 bitmap gives its brightness grid");
+
+            var nv12 = new byte[640 * 480 * 3 / 2];
+            Array.Fill(nv12, (byte)100, 0, 640 * 480);
+            Array.Fill(nv12, (byte)255, 640 * 480, 640 * 480 / 2);
+            using var nv12Bitmap = new Windows.Graphics.Imaging.SoftwareBitmap(Windows.Graphics.Imaging.BitmapPixelFormat.Nv12, 640, 480);
+            nv12Bitmap.CopyFromBuffer(System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions.AsBuffer(nv12));
+            Program.Check(AwayFaceWatcher.ReadGrid(nv12Bitmap).All(v => v == 100), "in-place read of an NV12 bitmap uses the brightness plane only");
+        }
+
+        // The "Use the camera" switch: existing users keep their behaviour, a fresh install has the camera off.
+        Program.Check(!AwayKeys.MigratedUseCamera(false, false, false, false), "migration: a fresh install has the camera off");
+        Program.Check(AwayKeys.MigratedUseCamera(false, true, false, false), "migration: face detection on turns the camera switch on");
+        Program.Check(AwayKeys.MigratedUseCamera(false, false, true, false), "migration: leaving by camera on turns the camera switch on");
+        Program.Check(!AwayKeys.MigratedUseCamera(true, true, true, false), "migration: a saved off stays off");
+        Program.Check(AwayKeys.MigratedUseCamera(true, false, false, true), "migration: a saved on stays on");
+        Program.Check(!AwayKeys.FaceWanted(false, true, false), "the camera switch off: no face watch");
+        Program.Check(!AwayKeys.FaceWanted(true, true, true), "the PC lock on: no face watch");
+        Program.Check(AwayKeys.FaceWanted(true, true, false), "camera on, face on, no lock: face watch");
+        Program.Check(!AwayKeys.FaceWanted(true, false, false), "face off: no face watch");
     }
 }

@@ -6,8 +6,9 @@ namespace Trayloom.Features.WindowTools.AwayMode;
 /// <summary>
 /// What one camera sample showed. <see cref="Usable"/> is false for a dark or flat frame (a covered lens, a dark room), which never
 /// counts as nobody being there; <see cref="MotionKnown"/> is false for the first sample, which has no earlier frame to compare with.
+/// <see cref="Fps"/> (frames delivered per second since the last sample) and <see cref="CheckMs"/> (time of the check) are for the log only.
 /// </summary>
-internal readonly record struct AwayObservation(bool Face, bool Motion, bool Usable, bool MotionKnown, double Mean = 0, double Spread = 0, double Changed = 0);
+internal readonly record struct AwayObservation(bool Face, bool Motion, bool Usable, bool MotionKnown, double Mean = 0, double Spread = 0, double Changed = 0, double Fps = 0, int CheckMs = 0);
 
 /// <summary>
 /// The pure picture maths of the camera-based leaving check: a tiny brightness grid per frame and a frame difference that ignores
@@ -38,6 +39,20 @@ internal static class AwayPresenceMath
 
     /// <summary>True when a grid taken <paramref name="ageMs"/> ago can still show movement.</summary>
     public static bool Comparable(long ageMs) => ageMs >= 0 && ageMs <= MaxGridAgeMs;
+
+    /// <summary>
+    /// Compares a grid with the previous one. Movement is only known when both frames were usable (a dark frame next to a bright one is an
+    /// exposure step, not a person) and the earlier grid is recent enough.
+    /// </summary>
+    public static (bool Known, double Changed) Compare(byte[]? previous, bool previousUsable, long ageMs, byte[] grid, bool usable)
+    {
+        if (previous is null || !previousUsable || !usable || !Comparable(ageMs))
+        {
+            return (false, 0);
+        }
+
+        return (true, ChangedShare(previous, grid));
+    }
 
     /// <summary>
     /// Block means of an 8-bit gray frame. The frame may have a stride larger than its width; blocks at the right and bottom edge

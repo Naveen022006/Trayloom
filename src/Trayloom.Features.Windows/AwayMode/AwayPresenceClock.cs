@@ -48,6 +48,9 @@ internal sealed class AwayPresenceClock
     public const long CountdownMs = 10_000;
     public const long UnusableGiveUpMs = 60_000;
 
+    /// <summary>Giving up on a dark lens also needs this many unusable samples in a row, so two stray dark frames a minute apart are not enough.</summary>
+    public const int MinUnusableSamples = 5;
+
     /// <summary>Idle time before the dark-camera fallback warns that Away mode will start.</summary>
     public const long DarkFallbackIdleMs = 150_000;
 
@@ -60,6 +63,7 @@ internal sealed class AwayPresenceClock
 
     private long? _absentSince;
     private long? _unusableSince;
+    private int _unusableCount;
     private long _cooldownUntil;
     private long _cameraStartedAt;
     private bool _cameraReady;
@@ -72,7 +76,7 @@ internal sealed class AwayPresenceClock
 
     public int IntervalMs { get; private set; } = FastIntervalMs;
 
-    /// <summary>Why the last command happened: input, face, motion, suppressed, dark, failed or disabled. For the log only.</summary>
+    /// <summary>Why the last command happened: input, face, motion, absent, suppressed, dark, stalled, failed or disabled. For the log only.</summary>
     public string LastReason { get; private set; } = string.Empty;
 
     /// <summary>
@@ -146,10 +150,11 @@ internal sealed class AwayPresenceClock
             return stop;
         }
 
-        // A dark or covered camera cannot establish absence. Use inactivity instead, but give the same cancellable warning as a
-        // camera-detected departure. Camera failures and missing samples do not qualify for this shorter fallback.
-        if (Phase == AwayPresencePhase.GaveUp && LastReason == "dark" && idleMs >= DarkFallbackIdleMs)
+        // A dark or covered camera, or one that stopped delivering frames, cannot establish absence. Use inactivity instead, but give
+        // the same cancellable warning as a camera-detected departure. Camera failures and missing samples at the start do not qualify.
+        if (Phase == AwayPresencePhase.GaveUp && LastReason is "dark" or "stalled" && idleMs >= DarkFallbackIdleMs)
         {
+            LastReason = LastReason == "dark" ? "dark fallback" : "stalled fallback";
             Phase = AwayPresencePhase.Countdown;
             CountdownEndsAt = now + CountdownMs;
             return AwayPresenceCommand.BeginCountdown;
@@ -218,12 +223,21 @@ internal sealed class AwayPresenceClock
         // and counting it would keep the camera light on all night instead of giving up.
         var present = o.Face || (o.Usable && o.MotionKnown && o.Motion);
 
+        // Any usable frame proves the lens sees something, so an earlier dark spell must not count towards giving up (a lit room whose
+        // frames were dark once, then had no comparison, would otherwise give up on the next dark frame a minute later).
+        if (o.Usable)
+        {
+            _unusableSince = null;
+            _unusableCount = 0;
+        }
+
         // Without a face, a dark or flat frame says nothing about the chair.
         if (!present && !o.Usable)
         {
             _absentSince = null;
             _unusableSince ??= now;
-            if (now - _unusableSince.Value >= UnusableGiveUpMs)
+            _unusableCount++;
+            if (now - _unusableSince.Value >= UnusableGiveUpMs && _unusableCount >= MinUnusableSamples)
             {
                 Phase = AwayPresencePhase.GaveUp;
                 LastReason = "dark";
@@ -242,6 +256,7 @@ internal sealed class AwayPresenceClock
         }
 
         _unusableSince = null;
+        _unusableCount = 0;
         if (present)
         {
             _absentSince = null;
@@ -253,6 +268,7 @@ internal sealed class AwayPresenceClock
         _absentSince ??= now;
         if (now - _absentSince.Value >= leaveAfterMs)
         {
+            LastReason = "absent";
             Phase = AwayPresencePhase.Countdown;
             CountdownEndsAt = now + CountdownMs;
             return AwayPresenceCommand.BeginCountdown;
@@ -277,6 +293,18 @@ internal sealed class AwayPresenceClock
         return AwayPresenceCommand.StopCamera;
     }
 
+    /// <summary>
+    /// The camera stopped delivering frames after it had worked (the reader starved or the driver hung). Like a dark lens it cannot
+    /// establish absence, so it stays off until input and the inactivity fallback applies.
+    /// </summary>
+    public AwayPresenceCommand CameraStalled()
+    {
+        ClearRun();
+        Phase = AwayPresencePhase.GaveUp;
+        LastReason = "stalled";
+        return AwayPresenceCommand.StopCamera;
+    }
+
     /// <summary>Back to Off (the person returned, the PC locked or slept, the feature stopped).</summary>
     public void Reset()
     {
@@ -290,6 +318,7 @@ internal sealed class AwayPresenceClock
     {
         _absentSince = null;
         _unusableSince = null;
+        _unusableCount = 0;
         _cameraReady = false;
     }
 }

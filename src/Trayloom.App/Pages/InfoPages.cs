@@ -226,6 +226,7 @@ internal static class WhatsNewPage
         ]),
         new("Fixed",
         [
+            Loc.T("Away mode notices when you leave: the camera kept every frame it read, ran out of buffers and slowed to a frame every few seconds. A new “Use the camera” switch in Away mode and the tray panel turns the camera off completely."),
             Loc.T("Away mode no longer waits for the long idle time when the camera can only see black: it steps in after a couple of minutes without input."),
             Loc.T("Trayloom gives memory back after the island, panel or Settings closes, and the camera check uses less memory."),
             Loc.T("Away mode with the camera leaves and returns reliably: a restart no longer minimizes your windows, the camera light switches off when you are back, and a dark room never counts as you being away."),
@@ -245,7 +246,7 @@ internal static class WhatsNewPage
     {
         var stack = new StackPanel { Margin = new Thickness(2, 2, 2, 0) };
         stack.Children.Add(UiKit.Text(Loc.T("What’s new in this version"), 18, FontWeights.Bold, ThemeKeys.TextPrimary));
-        var version = UiKit.Text($"v{AppInfo.Version} · 2026-11-07", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary);
+        var version = UiKit.Text($"v{AppInfo.Version} · 2026-11-15", 11.5, FontWeights.Normal, ThemeKeys.TextSecondary);
         version.Margin = new Thickness(0, 4, 0, 0);
         stack.Children.Add(version);
         foreach (var section in Notes)

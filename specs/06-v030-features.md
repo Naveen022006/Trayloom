@@ -834,7 +834,8 @@ First install switches `awayModeEnabled` on (catalog rule) with the camera off a
 | `awayModeIdleMinutes` | int | 10 | 2, 5, 10, 15, 30, 60 | Minutes without input before the person counts as away. |
 | `awayModeLockPc` | bool | false | | After minimizing, lock the PC (`LockWorkStation`). Return = unlock. |
 | `awayModeCover` | bool | false | | Show a dark cover on every display while away. |
-| `awayModeFace` | bool | false | | Use the camera to notice the person's return (not with `awayModeLockPc`). |
+| `awayModeUseCamera` | bool | false | | Master switch for every use of the camera by Away mode (return by face, leave by camera). Existing users with `awayModeFace` or `awayModeLeaveCamera` on get it on once at the first start after the update. Turning it off stops the camera at once. |
+| `awayModeFace` | bool | false | | Use the camera to notice the person's return (not with `awayModeLockPc`; only while `awayModeUseCamera` is on). |
 | `awayModeCameraId` | string | "" | device id | Camera for face detection; "" = front camera, else the first. |
 | `awayModeFaceStopMinutes` | int | 120 | 30, 60, 120, 240, 0 (= never) | Turn the camera off after this long away; then input brings the windows back. |
 | `awayModeSkipMedia` | bool | true | | Not away while a media session plays. |
@@ -1010,7 +1011,8 @@ Cleaning Mode 80), `FeatureId = "away-mode"`, `Keywords = ["privacy", "idle", "f
 | `SettingsRow("\uE72E", …)` | `MacSwitch` → `awayModeLockPc` | "Lock the PC too" / "Your windows come back when you unlock. This is the only way to keep others out." |
 | `SettingsRow("\uE7F4", …)` | `MacSwitch` → `awayModeCover` (disabled while lock is on) | "Cover the screens" / "Shows a dark screen with the time while you are away." |
 | divider | | |
-| `SettingsRow("\uE714", …)` | `MacSwitch` → `awayModeFace` (disabled while lock is on, or unsupported) | "Come back when the camera sees a face" / "The camera light stays on while you are away and Trayloom looks for you. Pictures are checked on this PC and never saved. Any face brings your windows back: this is face detection, not recognition." When lock is on: "Not needed while “Lock the PC too” is on: unlocking brings your windows back." When unsupported: "Face detection is not available on this PC." |
+| `SettingsRow("\uE714", …)` | `MacSwitch` → `awayModeUseCamera` (`AwayMode.UseCamera`, disabled when face detection is unsupported; rebuilds the card) | "Use the camera" / on: "Away mode can use the camera to notice when you leave and when you come back. Pictures are checked on this PC and never saved." off: "The camera never turns on for Away mode. Away mode starts after the idle time you chose, and the mouse or keyboard brings your windows back." unsupported: "Face detection is not available on this PC." While off, the rows below down to the camera lines (face, camera picker, stop time, leave by camera, access and failure lines) are hidden; while on they are shown inset, without their own glyph. |
+| `SettingsRow(null, …)` (inset) | `MacSwitch` → `awayModeFace` (disabled while lock is on) | "Come back when the camera sees a face" / "The camera light stays on while you are away and Trayloom looks for you. Pictures are checked on this PC and never saved. Any face brings your windows back: this is face detection, not recognition." When lock is on: "Not needed while “Lock the PC too” is on: unlocking brings your windows back." When unsupported: "Face detection is not available on this PC." |
 | `PickerRow<string>` (inset, only with 2+ cameras and face on) | → `awayModeCameraId` | "Camera" / device names |
 | `PickerRow<int>` (inset, face on) | → `awayModeFaceStopMinutes` | "Stop looking after" / "30 minutes", "1 hour", "2 hours", "4 hours", "Never" |
 | permission line (inset, orange, when camera access is denied) | bordered button "Open camera settings" (`ms-settings:privacy-webcam`) | "Camera access is off for desktop apps." |

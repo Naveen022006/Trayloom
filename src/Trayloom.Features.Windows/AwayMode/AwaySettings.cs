@@ -24,7 +24,7 @@ public sealed class AwaySettingsSection : ISettingsSection
 
     public string? Title => AwayStrings.Title;
 
-    public IReadOnlyList<string> Keywords => ["privacy", "idle", "face", "camera", "minimize", "lock", "presence", "close", "browser", "tabs", "reopen"];
+    public IReadOnlyList<string> Keywords => ["privacy", "idle", "face", "camera", "camera off", "minimize", "lock", "presence", "close", "browser", "tabs", "reopen"];
 
     public int Order => 90;
 
@@ -36,7 +36,9 @@ public sealed class AwaySettingsSection : ISettingsSection
         var lockOn = app.Get<bool>(AwayKeys.LockPc);
         var faceOn = app.Get<bool>(AwayKeys.Face);
         var faceSupported = AwayFaceWatcher.IsSupported;
-        var leaveOn = app.Get<bool>(AwayKeys.LeaveCamera) && faceSupported;
+        var useCamera = app.Get<bool>(AwayKeys.UseCamera);
+        var cameraOn = useCamera && faceSupported;
+        var leaveOn = app.Get<bool>(AwayKeys.LeaveCamera);
         var card = new SettingsCard(AwayStrings.Title);
 
         if (controller is { RecoveryCount: > 0 } recovering && !controller.IsAway)
@@ -67,51 +69,57 @@ public sealed class AwaySettingsSection : ISettingsSection
         card.Add(cover);
 
         card.AddDivider();
-        var faceCaption = lockOn ? AwayStrings.FaceNotNeeded : !faceSupported ? AwayStrings.FaceUnsupported : AwayStrings.FaceCaption;
-        var face = Switch("", AwayStrings.Face, faceCaption, AwayKeys.Face, "AwayMode.Face", app, onToggled: _ => c.RequestRebuild());
-        face.IsEnabled = !lockOn && faceSupported;
-        card.Add(face);
+        // One master switch for every use of the camera; the two blocks below only exist while it is on.
+        var useCaption = !faceSupported ? AwayStrings.FaceUnsupported : useCamera ? AwayStrings.UseCameraCaption : AwayStrings.CameraOffCaption;
+        var master = Switch("\uE714", AwayStrings.UseCamera, useCaption, AwayKeys.UseCamera, "AwayMode.UseCamera", app, onToggled: _ => c.RequestRebuild());
+        master.IsEnabled = faceSupported;
+        card.Add(master);
 
-        var cameraShown = false;
-        if (faceOn && !lockOn)
+        if (cameraOn)
         {
-            AddCameraPicker(card, app, c.Log);
-            cameraShown = true;
+            var faceCaption = lockOn ? AwayStrings.FaceNotNeeded : AwayStrings.FaceCaption;
+            var face = Switch(null, AwayStrings.Face, faceCaption, AwayKeys.Face, "AwayMode.Face", app, onToggled: _ => c.RequestRebuild());
+            face.IsEnabled = !lockOn;
+            card.Add(Inset(face));
 
-            var stop = new PickerRow<int>(null, AwayStrings.StopLooking, null,
-            [
-                (30, AwayStrings.Stop30), (60, AwayStrings.Stop60), (120, AwayStrings.Stop120), (240, AwayStrings.Stop240), (0, AwayStrings.StopNever),
-            ], app.Get<int>(AwayKeys.FaceStopMinutes), value => app.Set(AwayKeys.FaceStopMinutes, value), 160);
-            Identify(stop, "AwayMode.FaceStop", AwayStrings.StopLooking);
-            stop.Margin = new Thickness(SettingsRow.TextInset, 0, 0, 0);
-            card.Add(stop);
-            AddCameraProblems(card, app);
-        }
-
-        // The camera also looks while the person is still here, to notice when nobody is: independent of "Lock the PC too".
-        card.AddDivider();
-        var leaveCaption = !faceSupported ? AwayStrings.FaceUnsupported : AwayStrings.LeaveCameraCaption;
-        var leave = Switch("\uE714", AwayStrings.LeaveCamera, leaveCaption, AwayKeys.LeaveCamera, "AwayMode.LeaveCamera", app, onToggled: _ => c.RequestRebuild());
-        leave.IsEnabled = faceSupported;
-        card.Add(leave);
-        if (leaveOn)
-        {
-            var leaveAfter = new PickerRow<int>(null, AwayStrings.LeaveAfter, null,
-            [
-                (30, AwayStrings.Leave30), (60, AwayStrings.Leave60), (120, AwayStrings.Leave120), (300, AwayStrings.Leave300),
-            ], app.Get<int>(AwayKeys.LeaveCameraSeconds), value => app.Set(AwayKeys.LeaveCameraSeconds, value), 230);
-            Identify(leaveAfter, "AwayMode.LeaveAfter", AwayStrings.LeaveAfter);
-            leaveAfter.Margin = new Thickness(SettingsRow.TextInset, 0, 0, 0);
-            card.Add(leaveAfter);
-
-            var leaveNote = UiKit.Text(AwayStrings.LeaveNote, 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
-            leaveNote.Margin = new Thickness(SettingsRow.TextInset, 0, 0, 0);
-            card.Add(leaveNote);
-
-            if (!cameraShown)
+            var cameraShown = false;
+            if (faceOn && !lockOn)
             {
                 AddCameraPicker(card, app, c.Log);
+                cameraShown = true;
+
+                var stop = new PickerRow<int>(null, AwayStrings.StopLooking, null,
+                [
+                    (30, AwayStrings.Stop30), (60, AwayStrings.Stop60), (120, AwayStrings.Stop120), (240, AwayStrings.Stop240), (0, AwayStrings.StopNever),
+                ], app.Get<int>(AwayKeys.FaceStopMinutes), value => app.Set(AwayKeys.FaceStopMinutes, value), 160);
+                Identify(stop, "AwayMode.FaceStop", AwayStrings.StopLooking);
+                stop.Margin = new Thickness(SettingsRow.TextInset, 0, 0, 0);
+                card.Add(stop);
                 AddCameraProblems(card, app);
+            }
+
+            // The camera also looks while the person is still here, to notice when nobody is: independent of "Lock the PC too".
+            var leave = Switch(null, AwayStrings.LeaveCamera, AwayStrings.LeaveCameraCaption, AwayKeys.LeaveCamera, "AwayMode.LeaveCamera", app, onToggled: _ => c.RequestRebuild());
+            card.Add(Inset(leave));
+            if (leaveOn)
+            {
+                var leaveAfter = new PickerRow<int>(null, AwayStrings.LeaveAfter, null,
+                [
+                    (30, AwayStrings.Leave30), (60, AwayStrings.Leave60), (120, AwayStrings.Leave120), (300, AwayStrings.Leave300),
+                ], app.Get<int>(AwayKeys.LeaveCameraSeconds), value => app.Set(AwayKeys.LeaveCameraSeconds, value), 230);
+                Identify(leaveAfter, "AwayMode.LeaveAfter", AwayStrings.LeaveAfter);
+                leaveAfter.Margin = new Thickness(SettingsRow.TextInset, 0, 0, 0);
+                card.Add(leaveAfter);
+
+                var leaveNote = UiKit.Text(AwayStrings.LeaveNote, 11.5, FontWeights.Normal, ThemeKeys.TextSecondary, wrap: true);
+                leaveNote.Margin = new Thickness(SettingsRow.TextInset, 0, 0, 0);
+                card.Add(leaveNote);
+
+                if (!cameraShown)
+                {
+                    AddCameraPicker(card, app, c.Log);
+                    AddCameraProblems(card, app);
+                }
             }
         }
 
@@ -156,7 +164,7 @@ public sealed class AwaySettingsSection : ISettingsSection
         AutomationProperties.SetName(now, now.Content as string ?? AwayStrings.GoAwayNow);
         card.Add(now);
         var closing = app.Get<bool>(AwayKeys.CloseApps) && app.Get<int>(AwayKeys.CloseAfterMinutes) == 0 && !(controller?.Elevated ?? false);
-        var lookingNow = faceOn && !lockOn;
+        var lookingNow = useCamera && faceOn && !lockOn;
         card.AddCaption(closing
             ? (lookingNow ? AwayStrings.NowCaptionCloseFace : AwayStrings.NowCaptionClose)
             : (lookingNow ? AwayStrings.NowCaptionFace : AwayStrings.NowCaption));

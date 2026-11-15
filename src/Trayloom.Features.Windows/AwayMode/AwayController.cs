@@ -280,7 +280,7 @@ internal sealed partial class AwayController
         var devRestricted = AwayDevFilter.Load() is not null;
         var lockPc = _app.Get<bool>("awayModeLockPc") && !devRestricted;
         var cover = !lockPc && _app.Get<bool>("awayModeCover");
-        var face = !lockPc && _app.Get<bool>("awayModeFace");
+        var face = !lockPc && AwayKeys.FaceWanted(_app);
         State = AwayState.Away;
         _log.Info($"[away] away ({_awayLabel}): {_records.Count} windows minimized, {skipped} skipped, lock={(lockPc ? "yes" : "no")}, cover={(cover ? "yes" : "no")}, face={(face ? "yes" : "no")}");
 
@@ -531,8 +531,27 @@ internal sealed partial class AwayController
     private void OnCameraFailed(string reason)
     {
         _log.Info("[away] camera: " + reason);
-        _app.Set("awayModeCameraFailed", true);
         _quickUntil = 0;
+        if (reason == "no frames" && _presenceCamera)
+        {
+            // The camera worked and then stopped delivering frames: not a broken camera, so the "could not start" note stays off. The
+            // first time in a watch it is opened again; the second time the watch gives up like a dark lens (the inactivity fallback).
+            if (_stallRestarts == 0)
+            {
+                _stallRestarts++;
+                _log.Info("[away] camera: stalled, restarting");
+                StartPresenceCamera();
+            }
+            else
+            {
+                Apply(_clock.CameraStalled());
+            }
+
+            Changed?.Invoke();
+            return;
+        }
+
+        _app.Set("awayModeCameraFailed", true);
         if (_presenceCamera)
         {
             Apply(_clock.CameraFailed());
@@ -544,9 +563,9 @@ internal sealed partial class AwayController
     /// <summary>Developer action: one positive sample, as if the camera had seen a face (works without a camera).</summary>
     public void SimulateFace()
     {
-        if (State != AwayState.Away || !_app.Get<bool>("awayModeFace"))
+        if (State != AwayState.Away || !AwayKeys.FaceWanted(_app))
         {
-            _log.Info("[away] simulate-face ignored: not away or face detection is off");
+            _log.Info("[away] simulate-face ignored: not away or the camera is off for Away mode");
             return;
         }
 
@@ -919,8 +938,41 @@ internal sealed partial class AwayController
 
     // ------------------------------------------------------------------------------------------ events
 
+    /// <summary>
+    /// A camera switch changed (UI thread). Turning one off takes effect at once: the presence watch is re-evaluated (it stops the camera
+    /// and the notice when it is no longer allowed) and a camera that was looking for the return is switched off, so the light goes out.
+    /// </summary>
+    private void ApplyCameraSwitches()
+    {
+        if (State == AwayState.Present)
+        {
+            PresenceTick();
+        }
+
+        if (State == AwayState.Away && _faceWanted && !AwayKeys.FaceWanted(_app))
+        {
+            _faceWanted = false;
+            _quickUntil = 0;
+            Task.Run(() => _watcher.Stop("disabled"));
+            if (_covers.Count > 0)
+            {
+                // The covers said that the camera is looking; they are shown again without it.
+                ShowCovers(false);
+            }
+        }
+
+        IslandContext?.Invalidate();
+        Changed?.Invoke();
+    }
+
     private void OnSettingChanged(string key)
     {
+        if (key is AwayKeys.UseCamera or AwayKeys.Face or AwayKeys.LeaveCamera)
+        {
+            _ctx.Ui.BeginInvoke(() => Safe(ApplyCameraSwitches));
+            return;
+        }
+
         if (key == "awayModeEnabled")
         {
             _ctx.Ui.BeginInvoke(() => Safe(() =>
@@ -1008,7 +1060,7 @@ internal sealed partial class AwayController
             closeJob = CloseJobState.ToString().ToLowerInvariant(),
             apps = (_closeJob?.AllApps() ?? []).Select(a => new { kind = a.Kind.ToString().ToLowerInvariant(), how = a.How, state = a.State.ToString().ToLowerInvariant(), reason = a.Reason.ToString().ToLowerInvariant(), windows = a.Windows.Count }).ToList(),
             recovery = RecoveryCount,
-            camera = new { running = _watcher.IsRunning, supported = AwayFaceWatcher.IsSupported, access = AwayFaceWatcher.Access.ToString(), failed = _app.Get<bool>("awayModeCameraFailed") },
+            camera = new { useCamera = _app.Get<bool>(AwayKeys.UseCamera), running = _watcher.IsRunning, supported = AwayFaceWatcher.IsSupported, access = AwayFaceWatcher.Access.ToString(), failed = _app.Get<bool>("awayModeCameraFailed") },
         };
         try
         {

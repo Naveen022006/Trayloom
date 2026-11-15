@@ -67,7 +67,17 @@ public sealed class AwayPanelSection : IPanelSection
             }, 200);
         }, showCaption: rowCaption is not null);
 
-        var group = new PanelRowGroup().Add(Landmark(toggle, "AwayMode.PanelToggle", AwayStrings.Title)).Add(Landmark(action, "AwayMode.PanelNow", title));
+        var group = new PanelRowGroup().Add(Landmark(toggle, "AwayMode.PanelToggle", AwayStrings.Title));
+        if (enabled && AwayFaceWatcher.IsSupported)
+        {
+            // The same master switch as in the settings: the camera is the part of Away mode people most often want to turn off quickly.
+            var useCamera = app.Get<bool>(AwayKeys.UseCamera);
+            var camera = new PanelToggleRow("", AwayStrings.UseCamera, useCamera ? AwayStrings.PanelCameraOn : AwayStrings.PanelCameraOff, useCamera,
+                on => app.Set(AwayKeys.UseCamera, on), showCaption: true);
+            group.Add(Landmark(camera, "AwayMode.PanelCamera", AwayStrings.UseCamera));
+        }
+
+        group.Add(Landmark(action, "AwayMode.PanelNow", title));
         if (controller is { RecoveryCount: > 0 } && !away && reopening == 0)
         {
             var open = new PanelActionRow("", AwayStrings.PanelOpenClosed(controller.RecoveryCount), AwayStrings.PanelClosedWhileAway,

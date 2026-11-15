@@ -415,7 +415,8 @@ internal sealed class CameraPage : IslandPage
     private void OnFrameCore(MediaFrameReader sender)
     {
         using var frame = sender.TryAcquireLatestFrame();
-        var sb = frame?.VideoMediaFrame?.SoftwareBitmap;
+        // The bitmap is a buffer of the reader's pool: disposing it returns the buffer, otherwise the pool starves until finalization.
+        using var sb = frame?.VideoMediaFrame?.SoftwareBitmap;
         if (sb is null)
         {
             return;

@@ -37,8 +37,27 @@ internal static class AwayKeys
     public const string LeaveCamera = "awayModeLeaveCamera";
     public const string LeaveCameraSeconds = "awayModeLeaveCameraSeconds";
 
+    /// <summary>
+    /// The master switch of every camera use in Away mode (the return by face and the leave by camera). Off by default; people who
+    /// already had either camera switch on keep it on (see <see cref="MigratedUseCamera"/>).
+    /// </summary>
+    public const string UseCamera = "awayModeUseCamera";
+
+    /// <summary>The value the master switch gets: a saved choice stays as it is, otherwise it is on for anyone who used a camera feature before.</summary>
+    public static bool MigratedUseCamera(bool isSet, bool face, bool leave, bool current) => isSet ? current : face || leave;
+
+    /// <summary>True when the camera may look for a return: the master switch, the face switch and no PC lock (unlocking is the return then).</summary>
+    public static bool FaceWanted(IAppSettings app) => FaceWanted(app.Get<bool>(UseCamera), app.Get<bool>(Face), app.Get<bool>(LockPc));
+
+    /// <summary>The pure form of <see cref="FaceWanted(IAppSettings)"/>, for the harness.</summary>
+    public static bool FaceWanted(bool useCamera, bool face, bool lockPc) => useCamera && face && !lockPc;
+
+    /// <summary>True when the camera may watch for the person leaving: the master switch and the leave switch.</summary>
+    public static bool LeaveWanted(IAppSettings app) => app.Get<bool>(UseCamera) && app.Get<bool>(LeaveCamera);
+
     public static void Register(IAppSettings app)
     {
+        app.Register(UseCamera, false);
         app.Register(LeaveCamera, false);
         app.Register(LeaveCameraSeconds, 60);
         app.Register(CloseScope, "list");
@@ -58,6 +77,14 @@ internal static class AwayKeys
         app.Register(CloseList, new List<string>());
         app.Register(CloseListSeeded, false);
         app.Register(CloseAfterMinutes, 0);
+
+        // Before the master switch existed the two camera switches worked alone: whoever had one on keeps the behaviour.
+        var isSet = app.IsSet(UseCamera);
+        var migrated = MigratedUseCamera(isSet, app.Get<bool>(Face), app.Get<bool>(LeaveCamera), app.Get<bool>(UseCamera));
+        if (!isSet && migrated)
+        {
+            app.Set(UseCamera, true);
+        }
     }
 }
 

@@ -678,7 +678,8 @@ public sealed class CameraPreviewFeature : ToolsFeatureBase
         try
         {
             using var reference = sender.TryAcquireLatestFrame();
-            var bitmap = reference?.VideoMediaFrame?.SoftwareBitmap;
+            // The bitmap is a buffer of the reader's pool: disposing it returns the buffer, otherwise the pool starves until finalization.
+            using var bitmap = reference?.VideoMediaFrame?.SoftwareBitmap;
             if (bitmap is null)
             {
                 Volatile.Write(ref _frameBusy, 0);

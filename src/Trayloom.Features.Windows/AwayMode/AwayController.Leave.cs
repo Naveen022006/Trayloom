@@ -25,6 +25,9 @@ internal sealed partial class AwayController
     private string? _pendingNotice;
     private long _lastLookLog;
 
+    /// <summary>How often the camera stalled during the current watch; reset when input brings the clock back to Armed.</summary>
+    private int _stallRestarts;
+
     /// <summary>The island context of the notice and live strips, captured when the island first asks for them.</summary>
     public IIslandContext? IslandContext { get; set; }
 
@@ -65,6 +68,10 @@ internal sealed partial class AwayController
                 || AwayPresence.EnergySaverOn());
 
         Apply(_clock.Tick(Environment.TickCount64, idle, allowed, suppressed, LeaveAfterMs));
+        if (_clock.Phase == AwayPresencePhase.Armed)
+        {
+            _stallRestarts = 0;
+        }
 
         if (State != AwayState.Present)
         {
@@ -87,7 +94,7 @@ internal sealed partial class AwayController
     /// <summary>Whether the camera may be used at all right now: the switches, a local session, a camera that works.</summary>
     private bool PresenceAllowed()
     {
-        if (!_app.Get<bool>(AwayKeys.Enabled) || !_app.Get<bool>(AwayKeys.LeaveCamera))
+        if (!_app.Get<bool>(AwayKeys.Enabled) || !AwayKeys.LeaveWanted(_app))
         {
             return false;
         }
@@ -120,7 +127,8 @@ internal sealed partial class AwayController
             // Only five numbers and three flags leave the watcher; this line is how a "never noticed I left" report can be told apart from a bad lens.
             _lastLookLog = now;
             _log.Info($"[away] look: face={observation.Face} motion={observation.Motion} usable={observation.Usable} known={observation.MotionKnown} " +
-                $"mean={observation.Mean:0} spread={observation.Spread:0.0} changed={observation.Changed:P1} phase={_clock.Phase}");
+                $"mean={observation.Mean:0} spread={observation.Spread:0.0} changed={observation.Changed:P1} phase={_clock.Phase} " +
+                $"fps={observation.Fps:0.0} check={observation.CheckMs}ms");
         }
 
         var before = _clock.Phase;

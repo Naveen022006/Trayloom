@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Trayloom — Windows port of Vorssaint (https://github.com/vorssaint/vorssaint-utils)
 
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Trayloom.Core;
+using WinRT;
 using Windows.Devices.Enumeration;
 using Windows.Graphics.Imaging;
 using Windows.Media.Capture;
@@ -50,7 +53,13 @@ internal sealed class AwayFaceWatcher : IDisposable
     private int _busy;
     private bool _running;
     private byte[]? _previousGrid;
+    private bool _previousUsable;
     private long _previousGridAt;
+
+    /// <summary>Frames the reader delivered since the start, and the count and time of the last sample: the log line shows the rate between samples.</summary>
+    private long _frames;
+    private long _fpsFrames;
+    private long _fpsAt;
 
     public AwayFaceWatcher(ILog log)
     {
@@ -120,8 +129,8 @@ internal sealed class AwayFaceWatcher : IDisposable
         return [.. devices.OrderBy(d => d.EnclosureLocation?.Panel == Windows.Devices.Enumeration.Panel.Front ? 0 : 1).Select(d => (d.Id, d.Name))];
     }
 
-    /// <summary>The camera to use: the chosen one, else the front camera, else the first whose name has no "IR", else the first.</summary>
-    private static async Task<string?> ChooseAsync(string preferredId)
+    /// <summary>The camera to use (id and name): the chosen one, else the front camera, else the first whose name has no "IR", else the first.</summary>
+    private static async Task<(string Id, string Name)?> ChooseAsync(string preferredId)
     {
         var devices = await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture).AsTask();
         if (devices.Count == 0)
@@ -129,10 +138,11 @@ internal sealed class AwayFaceWatcher : IDisposable
             return null;
         }
 
-        return devices.FirstOrDefault(d => d.Id == preferredId && preferredId.Length > 0)?.Id
-            ?? devices.FirstOrDefault(d => d.EnclosureLocation?.Panel == Windows.Devices.Enumeration.Panel.Front)?.Id
-            ?? devices.FirstOrDefault(d => !d.Name.Contains("IR", StringComparison.Ordinal))?.Id
-            ?? devices[0].Id;
+        var device = devices.FirstOrDefault(d => d.Id == preferredId && preferredId.Length > 0)
+            ?? devices.FirstOrDefault(d => d.EnclosureLocation?.Panel == Windows.Devices.Enumeration.Panel.Front)
+            ?? devices.FirstOrDefault(d => !d.Name.Contains("IR", StringComparison.Ordinal))
+            ?? devices[0];
+        return (device.Id, device.Name);
     }
 
     /// <summary>
@@ -179,11 +189,13 @@ internal sealed class AwayFaceWatcher : IDisposable
                 return "access denied";
             }
 
-            var id = await ChooseAsync(cameraId);
-            if (id is null)
+            var chosen = await ChooseAsync(cameraId);
+            if (chosen is null)
             {
                 return "no camera";
             }
+
+            var (id, name) = chosen.Value;
 
             _detector ??= await FaceDetector.CreateAsync().AsTask();
             var capture = new MediaCapture();
@@ -217,6 +229,9 @@ internal sealed class AwayFaceWatcher : IDisposable
                 _reader = reader;
                 _lastFrame = Environment.TickCount64;
                 _due = 0;
+                _frames = 0;
+                _fpsFrames = 0;
+                _fpsAt = 0;
 
                 // Created with the capture so every teardown, including the one of a cancelled start, disposes it too.
                 _watchdog = new Timer(_ => CheckFrames(), null, 2000, 2000);
@@ -238,7 +253,7 @@ internal sealed class AwayFaceWatcher : IDisposable
 
             _running = true;
             var format = source.CurrentFormat;
-            _log.Info($"[away] camera: started ({(subtype ?? format.Subtype)} {format.VideoFormat?.Width}x{format.VideoFormat?.Height})");
+            _log.Info($"[away] camera: started ({(subtype ?? format.Subtype)} {format.VideoFormat?.Width}x{format.VideoFormat?.Height}, \"{name}\")");
             return null;
         }
         catch (UnauthorizedAccessException)
@@ -307,6 +322,7 @@ internal sealed class AwayFaceWatcher : IDisposable
 
             // The brightness thumbnail of the last sample goes with the camera.
             _previousGrid = null;
+            _previousUsable = false;
             _previousGridAt = 0;
         }
 
@@ -348,6 +364,7 @@ internal sealed class AwayFaceWatcher : IDisposable
         }
 
         Interlocked.Exchange(ref _lastFrame, Environment.TickCount64);
+        Interlocked.Increment(ref _frames);
         var now = Environment.TickCount64;
         if (now < Interlocked.Read(ref _due) || Interlocked.CompareExchange(ref _busy, 1, 0) != 0)
         {
@@ -355,19 +372,36 @@ internal sealed class AwayFaceWatcher : IDisposable
         }
 
         Interlocked.Exchange(ref _due, now + (_quick ? QuickIntervalMs : _normalMs));
-        var bitmap = reference.VideoMediaFrame?.SoftwareBitmap;
-        if (bitmap is null)
+        var source = reference.VideoMediaFrame?.SoftwareBitmap;
+        if (source is null)
         {
             Interlocked.Exchange(ref _busy, 0);
             return;
         }
 
-        // The bitmap belongs to the frame, which is disposed when this handler returns: copy it for the asynchronous check.
-        var copy = SoftwareBitmap.Copy(bitmap);
-        AwayGuard.FireAndLog(() => CheckAsync(copy), _log, "face check");
+        // The bitmap is a buffer of the reader's pool: it is copied for the asynchronous check and disposed here at once, because a pool
+        // whose buffers are held until finalization runs dry and the camera then delivers a frame only every few seconds.
+        SoftwareBitmap copy;
+        var started = Stopwatch.GetTimestamp();
+        try
+        {
+            copy = SoftwareBitmap.Copy(source);
+        }
+        catch (Exception ex)
+        {
+            Interlocked.Exchange(ref _busy, 0);
+            _log.Info($"[away] camera: frame copy {ex.GetType().Name} 0x{ex.HResult:X8}");
+            return;
+        }
+        finally
+        {
+            source.Dispose();
+        }
+
+        AwayGuard.FireAndLog(() => CheckAsync(copy, started), _log, "face check");
     }
 
-    private async Task CheckAsync(SoftwareBitmap bitmap)
+    private async Task CheckAsync(SoftwareBitmap bitmap, long started)
     {
         SoftwareBitmap? converted = null;
         try
@@ -380,19 +414,15 @@ internal sealed class AwayFaceWatcher : IDisposable
 
             var measure = MeasureMotion;
             var candidate = bitmap;
-            if (measure)
+
+            // A format the face detector accepts is used as it is (a conversion is a copy of the whole frame for nothing). The brightness
+            // grid reads the first plane, which is the brightness only for Gray8 and NV12, so a measuring check converts every other format.
+            var format = bitmap.BitmapPixelFormat;
+            var needsGray = !FaceDetector.IsBitmapPixelFormatSupported(format)
+                || (measure && format is not (BitmapPixelFormat.Gray8 or BitmapPixelFormat.Nv12));
+            if (needsGray)
             {
-                // Gray8 and NV12 are accepted by the face detector as they are, and the first plane of both is the brightness the grid needs,
-                // so only other formats (BGRA) are converted: a conversion is a copy of the whole frame for nothing.
-                if (bitmap.BitmapPixelFormat is not (BitmapPixelFormat.Gray8 or BitmapPixelFormat.Nv12))
-                {
-                    converted = SoftwareBitmap.Convert(bitmap, BitmapPixelFormat.Gray8);
-                    candidate = converted;
-                }
-            }
-            else if (!FaceDetector.IsBitmapPixelFormatSupported(candidate.BitmapPixelFormat))
-            {
-                converted = SoftwareBitmap.Convert(candidate, BitmapPixelFormat.Gray8);
+                converted = SoftwareBitmap.Convert(bitmap, BitmapPixelFormat.Gray8);
                 candidate = converted;
             }
 
@@ -411,7 +441,7 @@ internal sealed class AwayFaceWatcher : IDisposable
                 return;
             }
 
-            Observed?.Invoke(Observe(candidate, positive));
+            Observed?.Invoke(Observe(candidate, positive) with { CheckMs = (int)Stopwatch.GetElapsedTime(started).TotalMilliseconds });
         }
         finally
         {
@@ -422,45 +452,57 @@ internal sealed class AwayFaceWatcher : IDisposable
     }
 
     /// <summary>
-    /// Reduces a gray frame to a 64 x 48 brightness grid, compares it with the previous one (when that is recent enough) and keeps only
-    /// the new grid. The grid is 3 KB of block averages; it is never written, logged or sent.
+    /// Reduces a gray frame to a 64 x 48 brightness grid, compares it with the previous one (when that is recent enough and both are
+    /// usable) and keeps only the new grid. The first plane is read in place, without a copy of the frame. The grid is 3 KB of block
+    /// averages; it is never written, logged or sent.
     /// </summary>
     private AwayObservation Observe(SoftwareBitmap gray, bool face)
     {
-        var width = gray.PixelWidth;
-        var height = gray.PixelHeight;
-        int start;
-        int stride;
-        uint capacity;
-        using (var buffer = gray.LockBuffer(BitmapBufferAccessMode.Read))
-        {
-            var plane = buffer.GetPlaneDescription(0);
-            start = plane.StartIndex;
-            stride = plane.Stride;
-
-            // An NV12 frame carries its colour plane after the brightness plane, so the copy is as large as the whole frame.
-            using var reference = buffer.CreateReference();
-            capacity = Math.Max(reference.Capacity, (uint)(start + (stride * height)));
-        }
-
-        var copy = new Windows.Storage.Streams.Buffer(capacity);
-        gray.CopyToBuffer(copy);
-        var bytes = new byte[copy.Length];
-        using (var reader = DataReader.FromBuffer(copy))
-        {
-            reader.ReadBytes(bytes);
-        }
-
-        var grid = AwayPresenceMath.Grid(bytes, start, width, height, stride);
+        var grid = ReadGrid(gray);
         var stats = AwayPresenceMath.Stats(grid);
         var usable = AwayPresenceMath.Usable(stats);
         var now = Environment.TickCount64;
-        var previous = _previousGrid;
-        var motionKnown = previous is not null && AwayPresenceMath.Comparable(now - _previousGridAt);
-        var changed = motionKnown ? AwayPresenceMath.ChangedShare(previous!, grid) : 0;
-        var motion = motionKnown && changed >= AwayPresenceMath.MotionShare;
+        var (known, changed) = AwayPresenceMath.Compare(_previousGrid, _previousUsable, now - _previousGridAt, grid, usable);
+        var motion = known && changed >= AwayPresenceMath.MotionShare;
         _previousGrid = grid;
+        _previousUsable = usable;
         _previousGridAt = now;
-        return new AwayObservation(face, motion, usable, motionKnown, stats.Mean, stats.Spread, changed);
+
+        // Frames delivered per second since the last sample: a starved frame pool shows up here as a rate far below the camera's.
+        var frames = Interlocked.Read(ref _frames);
+        var fps = _fpsAt != 0 && now > _fpsAt ? (frames - _fpsFrames) * 1000.0 / (now - _fpsAt) : 0;
+        _fpsFrames = frames;
+        _fpsAt = now;
+        return new AwayObservation(face, motion, usable, known, stats.Mean, stats.Spread, changed, fps);
+    }
+
+    /// <summary>The brightness grid of the first plane of a Gray8 or NV12 bitmap, read where it lies in memory (no copy of the frame).</summary>
+    internal static unsafe byte[] ReadGrid(SoftwareBitmap gray)
+    {
+        var width = gray.PixelWidth;
+        var height = gray.PixelHeight;
+        using var buffer = gray.LockBuffer(BitmapBufferAccessMode.Read);
+        using var reference = buffer.CreateReference();
+        var plane = buffer.GetPlaneDescription(0);
+        var access = reference.As<IMemoryBufferByteAccess>();
+        access.GetBuffer(out var data, out var capacity);
+
+        // The last row of the plane ends after its width, not after a whole stride.
+        var needed = plane.StartIndex + (plane.Stride * Math.Max(height - 1, 0)) + width;
+        if (data == null || capacity < needed)
+        {
+            throw new InvalidOperationException("frame buffer is smaller than its plane");
+        }
+
+        return AwayPresenceMath.Grid(new ReadOnlySpan<byte>(data, (int)capacity), plane.StartIndex, width, height, plane.Stride);
+    }
+
+    /// <summary>The COM interface that gives direct access to the bytes behind an <c>IMemoryBufferReference</c>.</summary>
+    [ComImport]
+    [Guid("5B0D3235-4DBA-4D44-865E-8F1D0E4FD04D")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private unsafe interface IMemoryBufferByteAccess
+    {
+        void GetBuffer(out byte* buffer, out uint capacity);
     }
 }

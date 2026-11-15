@@ -36,6 +36,12 @@ internal static class AwayStrings
     public static string Cover => Loc.T("Cover the screens");
     public static string CoverCaption => Loc.T("Shows a dark screen with the time while you are away.");
 
+    public static string UseCamera => Loc.T("Use the camera");
+    public static string UseCameraCaption => Loc.T("Away mode can use the camera to notice when you leave and when you come back. Pictures are checked on this PC and never saved.");
+    public static string CameraOffCaption => Loc.T("The camera never turns on for Away mode. Away mode starts after the idle time you chose, and the mouse or keyboard brings your windows back.");
+    public static string PanelCameraOn => Loc.T("Notices when you leave or come back");
+    public static string PanelCameraOff => Loc.T("Off");
+
     public static string Face => Loc.T("Come back when the camera sees a face");
     public static string FaceCaption => Loc.T("The camera light stays on while you are away and Trayloom looks for you. Pictures are checked on this PC and never saved. Any face brings your windows back: this is face detection, not recognition.");
     public static string FaceNotNeeded => Loc.T("Not needed while “Lock the PC too” is on: unlocking brings your windows back.");

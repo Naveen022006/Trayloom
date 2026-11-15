@@ -274,7 +274,12 @@ Away's own reopen remains the only thing that brings apps back. Modes only updat
 Add to `AwayKeys` (`AwayModeFeature.cs:10-51`) and register in `Register`:
 - `LeaveCamera = "awayModeLeaveCamera"`, default false;
 - `LeaveCameraSeconds = "awayModeLeaveCameraSeconds"`, default 60, values 30, 60, 120, 300;
-- `CloseScope = "awayModeCloseScope"`, default "list".
+- `CloseScope = "awayModeCloseScope"`, default "list";
+- `UseCamera = "awayModeUseCamera"`, default false: the master switch of every camera use. `Register` sets it to true once when it was never saved and `Face` or `LeaveCamera` is on (`MigratedUseCamera`). `FaceWanted = UseCamera && Face && !LockPc`; `LeaveWanted = UseCamera && LeaveCamera`. The controller reacts to a change of `UseCamera`, `Face` or `LeaveCamera` on the UI thread at once: `PresenceTick` (stops the camera and the notice when not allowed) and, while away with the face watch no longer wanted, the camera stops (`stopped (disabled)`) and the covers show without "looking".
+- Settings card: a master row `SettingsRow("", "Use the camera", …)` (`AwayMode.UseCamera`) above the face and leave blocks; while off those blocks, the camera picker and the camera problem lines are hidden; while on they are shown inset. Captions: `FaceUnsupported` / `UseCameraCaption` / `CameraOffCaption`.
+- Tray card: with Away mode on and face detection supported, a toggle row "Use the camera" (`AwayMode.PanelCamera`) with the caption `PanelCameraOn` ("Notices when you leave or come back") or "Off".
+- Strings: `UseCamera` = "Use the camera"; `UseCameraCaption` = "Away mode can use the camera to notice when you leave and when you come back. Pictures are checked on this PC and never saved."; `CameraOffCaption` = "The camera never turns on for Away mode. Away mode starts after the idle time you chose, and the mouse or keyboard brings your windows back."; `PanelCameraOn` = "Notices when you leave or come back".
+- Camera robustness (lit-room fix): a frame's bitmap is disposed right after it is copied (an undisposed one starves the reader's frame pool); the brightness plane is read in place; movement is known only when both frames are usable; a dark spell is cleared by any usable sample and needs 5 unusable samples as well as 60 s; a camera without frames for 10 s is restarted once per watch and then treated like a dark lens (`CameraStalled`, reason "stalled", the 150 s inactivity fallback). The `[away] look:` line also shows `fps` and `check` (ms).
 
 **Settings card** (`AwaySettings.cs`):
 - After the face block (`:105`) and before `AddCloseBlock`, add a divider and a switch "Leave when the camera doesn't see you":

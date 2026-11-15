@@ -2,6 +2,8 @@
   <PropertyGroup>
     <OutputType>Library</OutputType>
     <RootNamespace>Trayloom.Features.WindowTools</RootNamespace>
+    <!-- the camera check reads a frame's brightness plane in place (IMemoryBufferByteAccess) -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Trayloom.Core\Trayloom.Core.csproj" />
