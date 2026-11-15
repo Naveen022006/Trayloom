@@ -93,6 +93,7 @@ internal sealed class AppleMusicService : IDisposable
         Keeper.ClosedWhilePlaying += OnClosedWhilePlaying;
         core.Playback.Changed += OnPlaybackChanged;
         core.Playback.AppleMusicSeek = Seek;
+        core.Playback.AppleMusicToggle = () => Transport(AmAction.PlayPause);
         _driver = new Lazy<AppleMusicDriver>(() => new AppleMusicDriver(line => _core.Ctx.Log.Info("AppleMusic " + line), Keeper));
         _noteTimer = new DispatcherTimer(DispatcherPriority.Normal, core.Ui);
         _noteTimer.Tick += (_, _) =>
@@ -1104,6 +1105,7 @@ internal sealed class AppleMusicService : IDisposable
         _noteTimer.Stop();
         _watchTimer.Stop();
         _core.Playback.AppleMusicSeek = null;
+        _core.Playback.AppleMusicToggle = null;
         _core.Playback.Changed -= OnPlaybackChanged;
         Keeper.ClosedWhilePlaying -= OnClosedWhilePlaying;
         if (_driver.IsValueCreated)

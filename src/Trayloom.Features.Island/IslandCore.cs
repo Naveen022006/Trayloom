@@ -137,6 +137,7 @@ internal sealed class IslandCore : IDisposable
         Lyrics = new LyricsService(this);
         AppleMusic = new AppleMusicService(this);
         Music = new MusicServices(this);
+        YouTubePlayer = new YouTubePlayerHost(this);
         MicUse = new MicUseService(Ui, ctx.Log);
         Sources = new NoticeSources(this);
         Current = this;
@@ -189,6 +190,9 @@ internal sealed class IslandCore : IDisposable
     /// <summary>Spotify and YouTube Music (off until the user turns them on and sets them up in Settings).</summary>
     public MusicServices Music { get; }
 
+    /// <summary>Trayloom's own YouTube Music player window (songs chosen in the island play there, not in a browser).</summary>
+    public YouTubePlayerHost YouTubePlayer { get; }
+
     public NoticeSources Sources { get; }
 
     /// <summary>Apps capturing from the microphone (runs while "Show when an app uses the microphone" is on).</summary>
@@ -214,6 +218,12 @@ internal sealed class IslandCore : IDisposable
     public void Start()
     {
         Playback.IncludeOthers = () => App.Get<bool>(K.IncludeOtherPlayers);
+        Playback.OnlyThree = () => App.Get<bool>(K.MusicOnlyThreeApps);
+        Playback.PausedByIsland += OnPausedByIsland;
+        PlaybackService.InstalledLoaded += OnInstalledLoaded;
+
+        // The Start menu is read once, in the background: nothing on the UI thread ever waits for it.
+        Guarded.FireAndLog(PlaybackService.InstalledPlayersAsync, Ctx.Log, "Installed music apps");
         Playback.Start();
         Clipboard.Start();
         Downloads.Start();
@@ -236,6 +246,49 @@ internal sealed class IslandCore : IDisposable
         StartSpotifyTimeline();
         var dir = Ctx.DataDirectory;
         _ = dir;
+    }
+
+    /// <summary>The list of installed music apps arrived (any thread): sessions the filter ignored before may belong to YouTube Music now.</summary>
+    private void OnInstalledLoaded() => Ui.BeginInvoke(() =>
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        Playback.Resync();
+        Playback.NotifyChanged();
+    });
+
+    private DispatcherTimer? _lingerTimer;
+
+    /// <summary>The closed music strip is hovered (the pause button under the pointer keeps it from going away).</summary>
+    public bool MusicStripHovered { get; set; }
+
+    /// <summary>The person paused from the island: the strip stays a few seconds, then the closed island is drawn again without it.</summary>
+    private void OnPausedByIsland()
+    {
+        _lingerTimer ??= new DispatcherTimer(DispatcherPriority.Normal, Ui);
+        _lingerTimer.Stop();
+        _lingerTimer.Interval = TimeSpan.FromSeconds(MusicActivity.LingerSeconds + 0.1);
+        _lingerTimer.Tick -= OnLingerEnded;
+        _lingerTimer.Tick += OnLingerEnded;
+        _lingerTimer.Start();
+    }
+
+    private void OnLingerEnded(object? sender, EventArgs e)
+    {
+        _lingerTimer?.Stop();
+        if (_disposed)
+        {
+            return;
+        }
+
+        // still under the pointer: the strip asks for the redraw itself when the pointer leaves
+        if (!MusicStripHovered)
+        {
+            Window?.RefreshClosed();
+        }
     }
 
     /// <summary>
@@ -287,6 +340,11 @@ internal sealed class IslandCore : IDisposable
                 if (key is K.MicInUse)
                 {
                     SyncMicUse();
+                }
+
+                if (key is K.MusicOnlyThreeApps)
+                {
+                    Playback.Resync();
                 }
 
                 if (key is K.Accessories)
@@ -581,7 +639,8 @@ internal sealed class IslandCore : IDisposable
     /// The "At rest" choice (even "Nothing") only says what shows when nothing is going on, so it no longer hides a playing song.
     /// </summary>
     public bool ShowsMusicActivity =>
-        Playback.Current is { IsPlaying: true }
+        Playback.Current is { HasTrack: true } current
+        && MusicActivity.Shows(current.IsPlaying, Playback.PausedByIslandAt, DateTime.UtcNow, MusicStripHovered)
         && App.Get<bool>(K.ShowPlayingMusic)
         && ModuleVisible("music");
 
@@ -805,6 +864,10 @@ internal sealed class IslandCore : IDisposable
     public void Dispose()
     {
         _disposed = true;
+        _lingerTimer?.Stop();
+        Playback.PausedByIsland -= OnPausedByIsland;
+        PlaybackService.InstalledLoaded -= OnInstalledLoaded;
+        YouTubePlayer.Dispose();
         Playback.Changed -= SyncSpotifyTimeline;
         Music.Changed -= SyncSpotifyTimeline;
         Music.Spotify.TimelineChanged -= OnSpotifyTimeline;

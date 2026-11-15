@@ -1062,7 +1062,8 @@ internal sealed class StreamPanel : Grid, IMusicBrowserPanel
         }
         else
         {
-            var open = ActionPill(G.OpenApp, StreamUiStrings.Open, () => _svc.OpenExternally(container), false);
+            // a YouTube Music playlist plays in the island's own player window
+            var open = ActionPill(G.Play, LibStrings.Play, () => _svc.Play(container, null), false);
             Grid.SetColumn(open, 2);
             grid.Children.Add(open);
         }
@@ -1238,8 +1239,14 @@ internal sealed class StreamPanel : Grid, IMusicBrowserPanel
     /// <summary>Spotify is not set up or not signed in: say so, and offer Settings and the zero-setup search in Spotify itself.</summary>
     private FrameworkElement ConnectView()
     {
-        var message = _svc.Connection == StreamConnection.NeedsReconnect ? StreamStrings.Message(StreamStatus.Revoked, StreamKind.Spotify) : StreamStrings.ConnectSpotifyToSearch;
-        var connect = D.PillButton(StreamStrings.ConnectInSettings, OpenSettings, true);
+        // With the Spotify app on this PC nothing needs signing in: its media session drives the controls and a search is handed to the
+        // app. The Web API sign-in in Settings stays on offer as an optional extra (results in the island).
+        var app = _svc is SpotifyService { AppInstalled: true };
+        var reconnect = _svc.Connection == StreamConnection.NeedsReconnect;
+        var message = reconnect
+            ? StreamStrings.Message(StreamStatus.Revoked, StreamKind.Spotify)
+            : app ? StreamStrings.SpotifyAutomatic : StreamStrings.Message(StreamStatus.AppMissing, StreamKind.Spotify);
+        var connect = D.PillButton(StreamStrings.ConnectInSettings, OpenSettings, reconnect);
         AutomationProperties.SetAutomationId(connect, "Island.Stream.Connect");
         var external = D.PillButton(StreamStrings.SearchInSpotify, () =>
         {
@@ -1248,12 +1255,32 @@ internal sealed class StreamPanel : Grid, IMusicBrowserPanel
             {
                 _svc.OpenSearchExternally(text);
             }
-        });
-        external.Margin = new Thickness(6, 0, 0, 0);
+        }, app && !reconnect);
         external.IsEnabled = _search.Text.Trim().Length > 0;
         AutomationProperties.SetAutomationId(external, "Island.Stream.SearchExternal");
         _externalSearch = external;
-        return D.EmptyView(G.Music, message, connect, external);
+        var pills = new List<UIElement>();
+        if (app)
+        {
+            pills.Add(external);
+            connect.Margin = new Thickness(6, 0, 0, 0);
+            pills.Add(connect);
+        }
+        else
+        {
+            pills.Add(connect);
+            external.Margin = new Thickness(6, 0, 0, 0);
+            pills.Add(external);
+            if (_svc is SpotifyService spotify)
+            {
+                // the web player only ever opens from this explicit click
+                var web = D.PillButton(StreamStrings.OpenInBrowser, spotify.OpenWebPlayer);
+                web.Margin = new Thickness(6, 0, 0, 0);
+                pills.Add(web);
+            }
+        }
+
+        return D.EmptyView(G.Music, message, [.. pills]);
     }
 
     private void OpenSettings()
@@ -1481,8 +1508,8 @@ internal sealed class StreamPanel : Grid, IMusicBrowserPanel
         }
 
         var playlistId = item.Kind == StreamItemKind.Video && Container is { Kind: StreamItemKind.Playlist } list ? list.Id : null;
-        yield return new IslandMenu.Item(StreamStrings.OpenInYouTubeMusic, () => OpenYouTube(item, true, playlistId), Glyph: G.OpenApp);
-        yield return new IslandMenu.Item(StreamStrings.OpenInYouTube, () => OpenYouTube(item, false, playlistId), Glyph: G.Video);
+        yield return new IslandMenu.Item(LibStrings.Play, () => PlayYouTube(item, playlistId), Glyph: G.Play);
+        yield return new IslandMenu.Item(StreamStrings.OpenInBrowser, () => OpenYouTube(item, true, playlistId), Glyph: G.OpenApp);
         yield return IslandMenu.Sep();
         yield return new IslandMenu.Item(StreamStrings.CopyLink, () => CopyLink(item), Glyph: G.Copy);
     }
@@ -1496,7 +1523,16 @@ internal sealed class StreamPanel : Grid, IMusicBrowserPanel
         return new StreamItem(StreamItemKind.Artist, track.ArtistId!, first, StreamUiStrings.Artist) { Uri = SpotifyUri.Build("artist", track.ArtistId!) };
     }
 
-    /// <summary>Opens one video or playlist in YouTube Music or in YouTube, whatever "Open songs in" says.</summary>
+    /// <summary>Plays one video or playlist in the island's own YouTube Music player.</summary>
+    private void PlayYouTube(StreamItem item, string? playlistId)
+    {
+        if (_svc is YouTubeService youTube)
+        {
+            youTube.PlayHere(item, playlistId);
+        }
+    }
+
+    /// <summary>The explicit "Open in browser": one video or playlist in YouTube Music's page in the default browser.</summary>
     private void OpenYouTube(StreamItem item, bool music, string? playlistId)
     {
         var url = item.Kind == StreamItemKind.Playlist ? YouTubeLinks.Playlist(item.Id, music) : YouTubeLinks.Watch(item.Id, music, playlistId);
@@ -1600,6 +1636,14 @@ internal sealed class StreamPanel : Grid, IMusicBrowserPanel
         glyph.Margin = new Thickness(0, 0, 7, 0);
         row.Children.Add(glyph);
         row.Children.Add(D.T(note.Text, 12, FontWeights.Medium, note.Error ? D.Orange : D.Text, false, TextTrimming.CharacterEllipsis));
+        if (note.ActionText is { } actionText && note.Action is { } action)
+        {
+            // an explicit choice offered with the note (for example "Open in browser")
+            var pill = D.PillButton(actionText, action, false, null, D.White(0.1), 22);
+            pill.Margin = new Thickness(10, 0, 0, 0);
+            row.Children.Add(pill);
+        }
+
         _noteHost.Background = new SolidColorBrush(Color.FromRgb(0x26, 0x26, 0x29));
         _noteHost.BorderBrush = D.White(0.14);
         _noteHost.BorderThickness = new Thickness(1);

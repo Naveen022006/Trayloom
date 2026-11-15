@@ -132,17 +132,19 @@ public sealed class AgentStripView : StackPanel
         var focus = settings.Focus();
         var now = DateTime.UtcNow;
         var info = AgentSettings.Strip(snapshot, _readout, used, focus, now);
+        var sessions = snapshotOverride is null ? _runtime.Sessions.Current.Where(s => s.State != AgentSessionState.Idle).ToList() : [];
         if (snapshotOverride is null)
         {
-            var sessions = _runtime.Sessions.Current.Where(s => s.State != AgentSessionState.Idle).ToList();
+            // With several sessions the words say how many; one session keeps its own clock.
+            var lead = AgentSessionSummary.StripLead(sessions);
             if (sessions.Any(s => s.IsWaiting))
             {
-                info = new StripText(Loc.T("Needs you"), null, null, null);
+                info = new StripText(lead ?? Loc.T("Needs you"), null, null, null);
             }
             else if (snapshot.Live.Count == 0 && sessions.Count > 0)
             {
                 // Sessions found from their files have no token counts yet: the clock is the one reading they can give, and the limit of the agent that works.
-                var clock = AgentFormat.Clock((now - sessions.Min(s => s.Since)).TotalSeconds);
+                var clock = lead ?? AgentFormat.Clock((now - sessions.Min(s => s.Since)).TotalSeconds);
                 info = new StripText(clock, null, null, null);
                 if (_readout is AgentReadout.Limit or AgentReadout.TimeAndLimit)
                 {
@@ -155,6 +157,11 @@ public sealed class AgentStripView : StackPanel
                         }
                     }
                 }
+            }
+            else if (lead is not null)
+            {
+                // Usage readings exist, but the count of sessions still leads; the readout follows it.
+                info = AgentSessionSummary.Compose(lead, info);
             }
         }
 
@@ -193,10 +200,13 @@ public sealed class AgentStripView : StackPanel
             _reading.Foreground = AgentColors.Of(AgentColors.Orange);
         }
 
+        // One line per session that works or waits says which project does what; the agents' names stand in when there is none.
+        var lines = string.Join("\n", sessions.Select(s => (s.Project.Length == 0 ? s.Provider.DisplayName() : s.Project) + " — " + s.Activity));
+        var heading = lines.Length > 0 ? lines : _names;
         var tip = info.Window is { } w
-            ? _names + "\n" + AgentLimitPlan.Name(w) + ": " + AgentSettings.LimitShare(w, used) + (w.UsedPercent >= 100 ? " · " + AgentStrings.LimitReached : "")
+            ? heading + "\n" + AgentLimitPlan.Name(w) + ": " + AgentSettings.LimitShare(w, used) + (w.UsedPercent >= 100 ? " · " + AgentStrings.LimitReached : "")
               + (AgentLimitSupport.DisplayedReset(w, now) is not null ? "\n" + Loc.T("resets") + " " + LimitPresenter.ResetText(w, now, false) : "")
-            : _names;
+            : heading;
         if (tip != _tip)
         {
             _tip = tip;
@@ -374,7 +384,7 @@ public sealed class AgentsLiveStrip : IIslandStrip
     /// for long stretches, and the song's banner would otherwise never show while someone codes with an agent.
     /// </summary>
     public bool OutranksMusic(IIslandContext context) =>
-        context.Services.Get<AgentsRuntime>() is { } runtime && runtime.Sessions.Current.Any(s => s.IsWaiting);
+        context.Services.Get<AgentsRuntime>() is { } runtime && AgentSessionSummary.OutranksMusic(runtime.Sessions.Current);
 }
 
 /// <summary>"Claude needs your permission": shown the moment a session starts waiting for the person; a click brings its window forward.</summary>

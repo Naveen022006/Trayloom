@@ -12,20 +12,103 @@ namespace Trayloom.Features.Island;
 
 internal static class MusicUi
 {
-    /// <summary>Nothing is playing and the player to use is Apple Music: drive it in the background (started hidden when closed).</summary>
-    public static bool HiddenApple(IslandCore core, string? preferred) =>
-        core.AppleMusic.Available && (preferred is null || preferred.Contains("AppleMusic", StringComparison.OrdinalIgnoreCase));
+    /// <summary>The app the idle cover and buttons act on (the setting, else the app that played last, else the only one installed, else the person is asked).</summary>
+    public static IdleTarget Target(IslandCore core) =>
+        core.Playback.ResolveIdle(core.App.Get<string>(K.PreferredPlayer), core.AppleMusic.Available);
 
-    /// <summary>What an idle transport button does: Apple Music's own button without showing its window, or open the preferred player.</summary>
-    public static Action IdleAction(IslandCore core, string? preferred, AmAction action, TransportOrigin origin = TransportOrigin.Island) =>
-        HiddenApple(core, preferred) ? () => core.AppleMusic.Transport(action, origin) : () => PlaybackService.OpenPlayer(preferred);
+    /// <summary>Nothing is playing and the target is Apple Music: drive it in the background (started hidden when closed).</summary>
+    public static bool HiddenApple(IslandCore core, IdleTarget target) =>
+        core.AppleMusic.Available && target == IdleTarget.Apple;
 
-    /// <summary>The idle subtitle / tooltip: "Play Apple Music" when it is driven in the background, else "Open &lt;player&gt;".</summary>
-    public static string IdleLabel(IslandCore core, string? preferred) =>
-        HiddenApple(core, preferred) ? Loc.T("Play Apple Music") : "Open " + PlaybackService.NameOf(preferred ?? "");
+    /// <summary>
+    /// What an idle transport button does: Apple Music's own button without showing its window; the Spotify app opened (never a browser
+    /// and never a global media key); the YouTube Music search; or, with no app chosen, a menu of the apps to pick from.
+    /// </summary>
+    public static Action IdleAction(IslandCore core, IdleTarget target, AmAction action, TransportOrigin origin = TransportOrigin.Island) =>
+        () => RunIdle(core, target, action, origin);
 
-    /// <summary>Compact transport (previous, play/pause, next) used by the Controls card; the idle form plays Apple Music in the background or opens the preferred player.</summary>
-    public static FrameworkElement Transport(IslandCore core, double side, double play, double height, double spacing, string? openApp)
+    private static void RunIdle(IslandCore core, IdleTarget target, AmAction action, TransportOrigin origin)
+    {
+        switch (target)
+        {
+            case IdleTarget.Apple:
+                core.AppleMusic.Transport(action, origin);
+                break;
+            case IdleTarget.Spotify:
+                if (!MusicInstalled.OpenSpotify())
+                {
+                    Say(core, Loc.T("No music app found. Install Apple Music, Spotify or YouTube Music."));
+                }
+
+                break;
+            case IdleTarget.YouTube:
+                OpenYouTubeSearch(core);
+                break;
+            default:
+                // a shortcut has no pointer to anchor a menu to: it only opens the music page, where the choice is made
+                if (origin == TransportOrigin.Shortcut || Mouse.DirectlyOver is not FrameworkElement anchor)
+                {
+                    core.Open("music");
+                    break;
+                }
+
+                IslandMenu.Show(anchor, ChooseItems(core, action, origin), () => core.Window?.HoldOpen(), atPointer: true);
+                break;
+        }
+    }
+
+    private static IEnumerable<IslandMenu.Item> ChooseItems(IslandCore core, AmAction action, TransportOrigin origin)
+    {
+        yield return new IslandMenu.Item(Loc.T("Choose a music app"), null, Enabled: false);
+        yield return IslandMenu.Sep();
+        if (core.AppleMusic.Available)
+        {
+            yield return new IslandMenu.Item(MusicSources.Brand(MusicSource.Apple), () => Pick(core, IdleTarget.Apple, action, origin));
+        }
+
+        if (MusicInstalled.SpotifyAumid() is not null)
+        {
+            yield return new IslandMenu.Item(MusicSources.Brand(MusicSource.Spotify), () => Pick(core, IdleTarget.Spotify, action, origin));
+        }
+
+        yield return new IslandMenu.Item(MusicSources.Brand(MusicSource.YouTube), () => Pick(core, IdleTarget.YouTube, action, origin));
+    }
+
+    /// <summary>The person chose an app from the menu: it is remembered as the idle app and started the way an idle press would.</summary>
+    private static void Pick(IslandCore core, IdleTarget target, AmAction action, TransportOrigin origin)
+    {
+        core.App.Set(K.PreferredPlayer, IdleTargets.Name(target));
+        RunIdle(core, target, action, origin);
+    }
+
+    /// <summary>Opens the island's YouTube Music search (turning YouTube Music on in the island when it is off).</summary>
+    public static void OpenYouTubeSearch(IslandCore core)
+    {
+        if (!core.App.Get<bool>(K.MusicYouTube))
+        {
+            core.App.Set(K.MusicYouTube, true);
+        }
+
+        MusicSources.Choose(core, MusicSource.YouTube);
+        LibraryNav.Focus.RequestFocus(LibraryNav.Now);
+        MusicPage.OpenLibrary(core);
+    }
+
+    /// <summary>A short message on the closed island.</summary>
+    public static void Say(IslandCore core, string text) =>
+        core.ShowNotice(new Notice { Event = NoticeEvents.AppleMusic, Glyph = G.Music, Title = text });
+
+    /// <summary>The idle subtitle / tooltip for the app the idle buttons act on.</summary>
+    public static string IdleLabel(IslandCore core, IdleTarget target) => target switch
+    {
+        IdleTarget.Apple => Loc.T("Play Apple Music"),
+        IdleTarget.Spotify => Loc.F("Open {0}", MusicSources.Brand(MusicSource.Spotify)),
+        IdleTarget.YouTube => StreamStrings.SearchYouTubeMusic,
+        _ => Loc.T("Choose a music app"),
+    };
+
+    /// <summary>Compact transport (previous, play/pause, next) used by the Controls card; the idle form acts on the idle app (see <see cref="IdleAction"/>).</summary>
+    public static FrameworkElement Transport(IslandCore core, double side, double play, double height, double spacing, IdleTarget? openApp)
     {
         var p = core.Playback.Current;
         var row = new StackPanel { Orientation = Orientation.Horizontal, Height = height };
@@ -44,12 +127,12 @@ internal static class MusicUi
             return b;
         }
 
-        if (openApp is not null)
+        if (openApp is { } idleTarget)
         {
-            var tip = IdleLabel(core, openApp);
-            var working = HiddenApple(core, openApp) && core.AppleMusic.Busy;
-            row.Children.Add(Btn(G.Previous, side, IdleAction(core, openApp, AmAction.SkipBack), !working, tip));
-            var idlePlay = Btn(G.Play, play, IdleAction(core, openApp, AmAction.PlayPause), !working, tip);
+            var tip = IdleLabel(core, idleTarget);
+            var working = HiddenApple(core, idleTarget) && core.AppleMusic.Busy;
+            row.Children.Add(Btn(G.Previous, side, IdleAction(core, idleTarget, AmAction.SkipBack), !working, tip));
+            var idlePlay = Btn(G.Play, play, IdleAction(core, idleTarget, AmAction.PlayPause), !working, tip);
             if (working)
             {
                 var spinner = PageUi.Spinner(play);
@@ -59,7 +142,7 @@ internal static class MusicUi
             }
 
             row.Children.Add(idlePlay);
-            row.Children.Add(Btn(G.Next, side, IdleAction(core, openApp, AmAction.SkipForward), !working, tip));
+            row.Children.Add(Btn(G.Next, side, IdleAction(core, idleTarget, AmAction.SkipForward), !working, tip));
             return row;
         }
 
@@ -78,7 +161,10 @@ internal sealed class MusicTimeline : Grid
     private readonly TextBlock _right = D.Digits("−0:00", 10, FontWeights.Medium, D.Secondary);
     private readonly LevelSlider _slider;
     private readonly Meter _meter = new(0, null, 6);
-    private readonly DispatcherTimer _tick = new(DispatcherPriority.Normal) { Interval = TimeSpan.FromSeconds(1) };
+    // ticks four times a second so the second changes close to when it really does; the labels are written only when the whole second changes
+    private readonly DispatcherTimer _tick = new(DispatcherPriority.Normal) { Interval = TimeSpan.FromMilliseconds(250) };
+    private int _shownSecond = -1;
+    private int _shownRemaining = -1;
     private double? _released;
     private DateTime _releasedAt;
     private readonly bool _appleMusic;
@@ -111,9 +197,10 @@ internal sealed class MusicTimeline : Grid
             Grid.SetColumn(_slider, 1);
             Children.Add(_slider);
             D.Tip(_slider, Strings.PlaybackPosition);
-            _slider.ValueChanged += v => { _left.Text = D.TrackTime(v); _right.Text = "−" + D.TrackTime(_core.Playback.Current.Duration - v); };
+            _slider.ValueChanged += v => { _left.Text = D.TrackTime(v); _right.Text = "−" + D.TrackTime(_core.Playback.Current.Duration - v); _shownSecond = -1; };
             _slider.ValueCommitted += v =>
             {
+                _shownSecond = -1;
                 _released = v;
                 _releasedAt = DateTime.UtcNow;
                 _core.Playback.Seek(v);
@@ -143,6 +230,7 @@ internal sealed class MusicTimeline : Grid
     private void OnSeekFailed()
     {
         _released = null;
+        _shownSecond = -1;
         Update();
     }
 
@@ -193,8 +281,17 @@ internal sealed class MusicTimeline : Grid
             }
         }
 
-        _left.Text = D.TrackTime(pos);
-        _right.Text = "−" + D.TrackTime(p.Duration - pos);
+        // the text changes once a second (on the second itself), the bar glides at the tick rate
+        var second = (int)pos;
+        var remaining = (int)Math.Max(0, p.Duration - pos);
+        if (second != _shownSecond || remaining != _shownRemaining)
+        {
+            _shownSecond = second;
+            _shownRemaining = remaining;
+            _left.Text = D.TrackTime(pos);
+            _right.Text = "−" + D.TrackTime(p.Duration - pos);
+        }
+
         _slider.Value = pos;
         _meter.Value = p.Duration > 0 ? pos / p.Duration : 0;
     }
@@ -215,7 +312,6 @@ internal sealed class MusicPage : IslandPage
     private FrameworkElement? _extraView;
     private double _width = 344;
     private readonly StackPanel _trailing = new() { Orientation = Orientation.Horizontal };
-    private readonly DispatcherTimer _poll = new(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(250) };
     private LyricsView? _lyrics;
     private IMusicBrowserPanel? _library;
     private double _extraHeight = 216;
@@ -470,7 +566,6 @@ internal sealed class MusicPage : IslandPage
         Core.AppleMusic.Keeper.Changed += OnKeeper;
         Core.AppleMusic.Changed += OnAppleMusic;
         _active = true;
-        _poll.Start();
         if (HasWindow && !IsPreview)
         {
             Window.PreviewTextInput -= OnWindowText;
@@ -494,7 +589,6 @@ internal sealed class MusicPage : IslandPage
         Core.AppleMusic.Changed -= OnAppleMusic;
         _active = false;
         _settle.Stop();
-        _poll.Stop();
         if (HasWindow)
         {
             Window.PreviewTextInput -= OnWindowText;
@@ -600,8 +694,9 @@ internal sealed class MusicPage : IslandPage
     /// <summary>Something the page shows changed in a way that needs the page built again: another song, the timeline appearing or going, idle / track, the failure line, a new cover.</summary>
     private bool NeedsRebuild(Playback p) =>
         SongOf(p) != _song || (p.Duration > 0) != _hadTimeline || !p.HasTrack != _idle || Core.Playback.CommandFailed != _commandFailed
-        || (p.Duration > 0 && p.CanSeek != _canSeek) || !ReferenceEquals(p.Artwork, _artwork)
-        || (p.HasTrack && (p.CanShuffle != _canShuffle || p.CanRepeat != _canRepeat));
+        || (p.Duration > 0 && p.CanSeek != _canSeek)
+        || (p.HasTrack && (p.CanShuffle != _canShuffle || p.CanRepeat != _canRepeat))
+        || (!p.HasTrack && MusicUi.Target(Core) != _idleTarget);
 
     /// <summary>The song as the page shows it: the length is left out (it arrives after the title and must not rebuild the page).</summary>
     private static string SongOf(Playback p) => $"{p.Aumid}|{p.Title}|{p.Artist}|{p.Album}";
@@ -620,6 +715,14 @@ internal sealed class MusicPage : IslandPage
         {
             _shownDuration = (int)p.Duration;
             _timeline.RefreshDuration();
+        }
+
+        // a cover (or its tint) that arrived after the page was built is set on the cover that is on screen: the page is not rebuilt for it
+        if (_cover is not null && (!ReferenceEquals(p.Artwork, _artwork) || p.Tint != _tint))
+        {
+            _artwork = p.Artwork;
+            _tint = p.Tint;
+            _cover.Set(p, Core.Playback.Sources.FirstOrDefault(s => s.Aumid == p.Aumid)?.Icon);
         }
 
         // shuffle / repeat turned on or off (here or in the player): only the two buttons change
@@ -697,7 +800,9 @@ internal sealed class MusicPage : IslandPage
     private bool _wasPlaying;
     private bool _commandFailed;
     private TextBlock? _playGlyph;
-    private FrameworkElement? _cover;
+    private Cover? _cover;
+    private Color? _tint;
+    private IdleTarget _idleTarget;
     private EqBars? _bars;
 
     private void ApplyPlaying(Playback p)
@@ -769,6 +874,7 @@ internal sealed class MusicPage : IslandPage
         _song = SongOf(p);
         _canSeek = p.CanSeek;
         _artwork = p.Artwork;
+        _tint = p.Tint;
         _shownDuration = (int)p.Duration;
         _timeline = null;
         _wasPlaying = p.IsPlaying;
@@ -787,7 +893,8 @@ internal sealed class MusicPage : IslandPage
         _amBusy = Core.AppleMusic.Busy;
         _amNote = Core.AppleMusic.Note;
         var awaiting = idle && Core.Playback.AwaitingPlayback;
-        var preferred = PlaybackService.ResolvePreferredPlayer(Core.App.Get<string>(K.PreferredPlayer), Core.Playback);
+        var preferred = MusicUi.Target(Core);
+        _idleTarget = preferred;
         var stack = new StackPanel { Width = _width, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top };
         stack.Children.Add(BuildHead(p, idle, awaiting, preferred));
         if (p.Duration > 0)
@@ -1039,7 +1146,7 @@ internal sealed class MusicPage : IslandPage
         Reopen();
     }
 
-    private FrameworkElement BuildHead(Playback p, bool idle, bool awaiting, string? preferred)
+    private FrameworkElement BuildHead(Playback p, bool idle, bool awaiting, IdleTarget preferred)
     {
         var head = new Grid { Height = 56 };
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -1064,17 +1171,22 @@ internal sealed class MusicPage : IslandPage
                     SetExtra(MusicExtra.Library);
                 }
             }
+            else if (p.Aumid == PlaybackService.YouTubePlayerAumid)
+            {
+                // Trayloom's own player: its window comes forward
+                Core.YouTubePlayer.Show();
+            }
             else
             {
                 PlaybackService.OpenPlayer(p.Aumid);
             }
-        }) { Width = 56, Height = 56, CornerRadius = new CornerRadius(10.64), Lifts = false, IsEnabled = (!idle || preferred is not null || MusicUi.HiddenApple(Core, preferred)) && !(idle && MusicUi.HiddenApple(Core, preferred) && Core.AppleMusic.Busy) };
+        }) { Width = 56, Height = 56, CornerRadius = new CornerRadius(10.64), Lifts = false, IsEnabled = !(idle && MusicUi.HiddenApple(Core, preferred) && Core.AppleMusic.Busy) };
         var cover = Cover.For(p, 56, false, icon);
         cover.RenderTransformOrigin = new Point(0.5, 0.5);
         cover.RenderTransform = new ScaleTransform(p.IsPlaying || idle ? 1 : 0.94, p.IsPlaying || idle ? 1 : 0.94);
         coverBtn.Child = cover;
         _cover = cover;
-        D.Tip(coverBtn, idle && (preferred is not null || MusicUi.HiddenApple(Core, preferred)) ? MusicUi.IdleLabel(Core, preferred) : appleLibrary ? LibStrings.Library : Strings.MediaNowPlaying);
+        D.Tip(coverBtn, idle ? MusicUi.IdleLabel(Core, preferred) : appleLibrary ? LibStrings.Library : Strings.MediaNowPlaying);
         head.Children.Add(coverBtn);
 
         var titles = new StackPanel { Margin = new Thickness(14, 0, 8, 0), VerticalAlignment = VerticalAlignment.Bottom, Height = 38 };
@@ -1100,7 +1212,7 @@ internal sealed class MusicPage : IslandPage
             {
                 titles.Children.Add(D.T(failed.Text, 13, null, D.Orange, false, TextTrimming.CharacterEllipsis));
             }
-            else if (preferred is not null || MusicUi.HiddenApple(Core, preferred))
+            else
             {
                 titles.Children.Add(D.T(MusicUi.IdleLabel(Core, preferred), 13, null, D.Secondary, false, TextTrimming.CharacterEllipsis));
             }
@@ -1296,7 +1408,7 @@ internal sealed class MusicPage : IslandPage
         }
     }
 
-    private FrameworkElement BuildTransport(Playback p, bool idle, string? preferred)
+    private FrameworkElement BuildTransport(Playback p, bool idle, IdleTarget preferred)
     {
         var grid = new Grid { Height = 44 };
         for (var i = 0; i < 5; i++)
@@ -1347,30 +1459,18 @@ internal sealed class MusicPage : IslandPage
 
         if (idle)
         {
-            if (preferred is not null || MusicUi.HiddenApple(Core, preferred))
+            var tip = MusicUi.IdleLabel(Core, preferred);
+            // while the island's request works in Apple Music the buttons wait (a second press would only restart it) and Play shows a spinner
+            var working = MusicUi.HiddenApple(Core, preferred) && Core.AppleMusic.Busy;
+            Btn(1, G.Previous, 19, MusicUi.IdleAction(Core, preferred, AmAction.SkipBack), !working, tip);
+            var idlePlay = Btn(2, G.Play, 28, MusicUi.IdleAction(Core, preferred, AmAction.PlayPause), !working, tip);
+            Btn(3, G.Next, 19, MusicUi.IdleAction(Core, preferred, AmAction.SkipForward), !working, tip);
+            if (working)
             {
-                var tip = MusicUi.IdleLabel(Core, preferred);
-                // while the island's request works in Apple Music the buttons wait (a second press would only restart it) and Play shows a spinner
-                var working = MusicUi.HiddenApple(Core, preferred) && Core.AppleMusic.Busy;
-                Btn(1, G.Previous, 19, MusicUi.IdleAction(Core, preferred, AmAction.SkipBack), !working, tip);
-                var idlePlay = Btn(2, G.Play, 28, MusicUi.IdleAction(Core, preferred, AmAction.PlayPause), !working, tip);
-                Btn(3, G.Next, 19, MusicUi.IdleAction(Core, preferred, AmAction.SkipForward), !working, tip);
-                if (working)
-                {
-                    var spinner = PageUi.Spinner(22);
-                    spinner.HorizontalAlignment = HorizontalAlignment.Center;
-                    spinner.VerticalAlignment = VerticalAlignment.Center;
-                    idlePlay.Child = spinner;
-                }
-            }
-            else
-            {
-                var hint = D.T(Strings.MusicHint, 12, null, D.Secondary, true);
-                hint.TextAlignment = TextAlignment.Center;
-                hint.MaxHeight = 32;
-                hint.VerticalAlignment = VerticalAlignment.Center;
-                Grid.SetColumnSpan(hint, 5);
-                grid.Children.Add(hint);
+                var spinner = PageUi.Spinner(22);
+                spinner.HorizontalAlignment = HorizontalAlignment.Center;
+                spinner.VerticalAlignment = VerticalAlignment.Center;
+                idlePlay.Child = spinner;
             }
         }
         else
@@ -1424,7 +1524,7 @@ internal sealed class MusicPage : IslandPage
         }
     }
 
-    private FrameworkElement BuildQueue(string? preferred)
+    private FrameworkElement BuildQueue(IdleTarget preferred)
     {
         if (Core.AppleMusic.Available && Core.Playback.Current.Aumid.Contains("AppleMusic", StringComparison.OrdinalIgnoreCase))
         {
@@ -1441,21 +1541,26 @@ internal sealed class MusicPage : IslandPage
         grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         var header = new Grid { Height = 24 };
         header.Children.Add(D.T(Strings.Queue, 13, FontWeights.SemiBold, D.Text));
-        var refresh = D.IconButton(G.Refresh, Strings.Refresh, () => { }, size: 24, glyphSize: 11);
-        refresh.HorizontalAlignment = HorizontalAlignment.Right;
-        header.Children.Add(refresh);
         grid.Children.Add(header);
-        var target = preferred ?? Core.Playback.Current.Aumid;
+        var target = Core.Playback.Current.Aumid;
         var empty = D.EmptyView(G.List, Strings.QueueUnavailable, D.PillButton(Strings.OpenPlayer, () =>
         {
             // never open Apple Music itself (its window would show): the island's Library is the way in
-            if (Core.AppleMusic.Available && target.Contains("AppleMusic", StringComparison.OrdinalIgnoreCase))
+            if (target == PlaybackService.YouTubePlayerAumid)
+            {
+                Core.YouTubePlayer.Show();
+            }
+            else if (Core.AppleMusic.Available && target.Contains("AppleMusic", StringComparison.OrdinalIgnoreCase))
             {
                 SetExtra(MusicExtra.Library);
             }
-            else
+            else if (target.Length > 0)
             {
                 PlaybackService.OpenPlayer(target);
+            }
+            else
+            {
+                MusicUi.IdleAction(Core, preferred, AmAction.PlayPause)();
             }
         }, true));
         Grid.SetRow(empty, 1);

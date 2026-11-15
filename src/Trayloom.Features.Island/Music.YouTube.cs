@@ -13,8 +13,8 @@ namespace Trayloom.Features.Island;
 /// <summary>
 /// YouTube Music in the island's Library. With no key it searches through YouTube Music's own web service (<see cref="InnerTubeClient"/>:
 /// unofficial, no account, no cookies); with a saved YouTube Data API v3 key of the user's own it uses Google's official API instead.
-/// It cannot play (<see cref="CanPlayHere"/> is false): songs open in the browser, and the island's controls then follow the browser's
-/// media session. Used from the UI thread only; <see cref="Changed"/> is raised on it.
+/// Songs play in Trayloom's own YouTube Music window (<see cref="YouTubePlayerHost"/>, WebView2): no browser and no sign-in. Without the
+/// WebView2 runtime a note offers the browser as an explicit choice. Used from the UI thread only; <see cref="Changed"/> is raised on it.
 /// </summary>
 internal sealed class YouTubeService : IMusicService
 {
@@ -104,7 +104,7 @@ internal sealed class YouTubeService : IMusicService
     public bool CanQueue => false;
 
     /// <inheritdoc />
-    public bool? CanPlayHere => false;
+    public bool? CanPlayHere => _core.YouTubePlayer.RuntimeAvailable;
 
     /// <inheritdoc />
     public StreamNote? Note => _note;
@@ -146,7 +146,7 @@ internal sealed class YouTubeService : IMusicService
         }
         else
         {
-            Open(link.Url);
+            PlayInWindow(link.Url);
         }
     }
 
@@ -200,7 +200,7 @@ internal sealed class YouTubeService : IMusicService
     public void Play(StreamItem item, StreamItem? context, IReadOnlyList<StreamItem>? siblings = null)
     {
         var playlist = context is { Kind: StreamItemKind.Playlist } ? context.Id : null;
-        OpenItem(item, playlist);
+        PlayItem(item, playlist);
     }
 
     /// <inheritdoc />
@@ -211,6 +211,11 @@ internal sealed class YouTubeService : IMusicService
 
     /// <inheritdoc />
     public void OpenExternally(StreamItem item) => OpenItem(item, null);
+
+    /// <summary>Plays <paramref name="item"/> in the player window (the menu's "Play").</summary>
+    /// <param name="item">A song or a playlist.</param>
+    /// <param name="playlistId">The playlist the song is listed in, if any.</param>
+    public void PlayHere(StreamItem item, string? playlistId) => PlayItem(item, playlistId);
 
     /// <inheritdoc />
     public void OpenSearchExternally(string query)
@@ -373,12 +378,51 @@ internal sealed class YouTubeService : IMusicService
         _rateUntilUtc = DateTime.MinValue;
     }
 
+    /// <summary>Opens the item in the browser, as the "Open in browser" choice (the "Open songs in" setting picks YouTube Music or YouTube).</summary>
     private void OpenItem(StreamItem item, string? playlistId)
     {
         var url = item.Kind == StreamItemKind.Playlist
             ? YouTubeLinks.Playlist(item.Id, OpenInMusic)
             : YouTubeLinks.Watch(item.Id, OpenInMusic, playlistId);
         Open(url);
+    }
+
+    /// <summary>Plays the item in Trayloom's YouTube Music window; a playlist starts from its first song.</summary>
+    private void PlayItem(StreamItem item, string? playlistId)
+    {
+        var url = item.Kind == StreamItemKind.Playlist && YouTubeIds.IsPlaylist(item.Id)
+            ? "https://music.youtube.com/watch?list=" + Uri.EscapeDataString(item.Id)
+            : YouTubeLinks.Watch(item.Id, true, playlistId);
+        PlayInWindow(url);
+    }
+
+    /// <summary>
+    /// Loads a YouTube Music address in the player window. Without the WebView2 runtime an installed YouTube Music web app is started
+    /// instead; with neither, a note says what is missing and offers the browser as an explicit choice (it is never opened on its own).
+    /// </summary>
+    private void PlayInWindow(string url)
+    {
+        if (url.Length == 0)
+        {
+            return;
+        }
+
+        if (_core.YouTubePlayer.Open(url))
+        {
+            return;
+        }
+
+        if (_pwaAumid is not null)
+        {
+            PlaybackService.OpenPlayer(_pwaAumid);
+            return;
+        }
+
+        _note = new StreamNote(StreamStrings.YouTubeNeedsWebView, true, StreamStrings.OpenInBrowser, () => Open(url));
+        _noteTimer.Stop();
+        _noteTimer.Interval = TimeSpan.FromSeconds(15);
+        _noteTimer.Start();
+        Raise();
     }
 
     private void Open(string url)
@@ -390,6 +434,7 @@ internal sealed class YouTubeService : IMusicService
 
         _note = new StreamNote(Loc.T("Couldn’t open your browser."), true);
         _noteTimer.Stop();
+        _noteTimer.Interval = TimeSpan.FromSeconds(4);
         _noteTimer.Start();
         Raise();
     }

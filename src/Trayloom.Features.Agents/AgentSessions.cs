@@ -32,6 +32,9 @@ public enum WaitingBasis
     Heuristic,
 }
 
+/// <summary>One subagent running for a session: what kind it is, what it was asked to do and what it does now.</summary>
+public sealed record AgentSubagent(string Id, string Type, string Description, string Activity, DateTime Since);
+
 /// <summary>One live agent session: what it is, what it is doing and whether it waits for the person.</summary>
 public sealed class AgentSession
 {
@@ -66,8 +69,11 @@ public sealed class AgentSession
 
     public DateTime LastActivity { get; set; }
 
-    /// <summary>Subagents working for this session right now.</summary>
-    public int Agents { get; set; }
+    /// <summary>Subagents running for this session right now, newest first; always empty while the session is idle.</summary>
+    public List<AgentSubagent> Subagents { get; set; } = [];
+
+    /// <summary>How many subagents run for this session right now.</summary>
+    public int Agents => Subagents.Count;
 
     public bool IsWaiting => State == AgentSessionState.Waiting;
 }
@@ -117,6 +123,21 @@ public sealed class AgentSessionPaths
 /// Finds the agent sessions that are live right now and what each is doing, from files the agents write themselves: Claude Code's
 /// <c>sessions\*.json</c> records (kept while a process runs) and transcript tails, Codex's rollout logs, plus the events of the
 /// optional Claude Code hook. Read-only; transcript text is looked at only for its structure and never kept.
+/// <para>
+/// Identity and counting rules:
+/// <list type="bullet">
+/// <item>A Claude session is keyed <c>claude:</c> + sessionId. Only an alive <c>sessions\&lt;pid&gt;.json</c> record (pid and process start) creates one;
+/// records that share a sessionId collapse to the newest <c>updatedAt</c>.</item>
+/// <item>The transcript fallback runs only when the config folder has no <c>sessions</c> folder. Then the file name must parse as a Guid, its id must be
+/// no record's at all (dead or alive), and the tail must have a newest user/assistant timestamp within 20 seconds and not be ended. The file's own time is
+/// never evidence: Claude Code appends timestamp-less metadata lines to old transcripts.</item>
+/// <item>Never a session: <c>agent-*</c> files, anything under <c>subagents\</c>, sidechain lines, and Codex rollouts whose source is a subagent or internal.</item>
+/// <item>A subagent runs when its tail is not ended and either its meta's toolUseId is still pending in the parent's tail or its file was written less than
+/// 60 seconds ago. An idle parent has no subagents; Codex subagents attach to the root session whose payload id they name.</item>
+/// <item>The displayed count is Working plus Waiting. Idle sessions are listed only while their last activity is at most <see cref="IdleShown"/> old; older ones are
+/// summarised as a number.</item>
+/// </list>
+/// </para>
 /// </summary>
 public sealed class AgentSessionMonitor : IDisposable
 {
@@ -129,12 +150,19 @@ public sealed class AgentSessionMonitor : IDisposable
     /// <summary>An idle session that has not moved for this long drops off the list (its process may well still run).</summary>
     public static readonly TimeSpan IdleKeep = TimeSpan.FromHours(8);
 
+    /// <summary>An idle session is listed while it moved this recently; older ones only count in a summary.</summary>
+    public static readonly TimeSpan IdleShown = TimeSpan.FromMinutes(30);
+
+    /// <summary>A subagent whose tool call the parent still waits for runs even when its file is quiet; without that, it must have been written this recently.</summary>
+    private static readonly TimeSpan SubagentRecent = TimeSpan.FromSeconds(60);
+
     private readonly object _gate = new();
     private readonly AgentSessionPaths _paths;
     private readonly Func<DateTime> _clock;
     private readonly Dictionary<string, TailInfo> _tails = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, (long Length, DateTime Time)> _tailKeys = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, string> _codexProjects = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, CodexMeta> _codexMeta = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _touched = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _waitingSince = new();
     private readonly Dictionary<string, int> _pendingSeen = new();
     private readonly Dictionary<string, (DateTime At, string? Tool)> _raised = new();
@@ -152,6 +180,18 @@ public sealed class AgentSessionMonitor : IDisposable
 
     /// <summary>The latest scan: waiting sessions first, then working, then idle by recency.</summary>
     public IReadOnlyList<AgentSession> Current { get; private set; } = [];
+
+    /// <summary>How many transcript tails are cached; a harness checks that files that vanished are forgotten.</summary>
+    internal int CachedTails
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _tails.Count;
+            }
+        }
+    }
 
     /// <summary>Whether this provider's sessions are looked for.</summary>
     public bool ClaudeEnabled { get; set; } = true;
@@ -184,6 +224,8 @@ public sealed class AgentSessionMonitor : IDisposable
         {
             _tails.Clear();
             _tailKeys.Clear();
+            _codexMeta.Clear();
+            _touched.Clear();
             _waitingSince.Clear();
             _pendingSeen.Clear();
             _raised.Clear();
@@ -234,6 +276,7 @@ public sealed class AgentSessionMonitor : IDisposable
         {
             var hooks = AgentHooks.ReadEvents(_paths.EventsDir, now);
             var all = AgentProcesses.All();
+            _touched.Clear();
             sessions = [];
             if (ClaudeEnabled)
             {
@@ -249,9 +292,10 @@ public sealed class AgentSessionMonitor : IDisposable
                 .ThenByDescending(s => s.State == AgentSessionState.Idle ? s.LastActivity : s.Since).ToList();
             ApplyWaiting(sessions, now, raised);
             DropStale(sessions);
+            PruneCaches();
         }
 
-        var signature = string.Join("|", sessions.Select(s => $"{s.Key}:{s.State}:{s.Activity}:{s.Agents}:{s.Project}"));
+        var signature = string.Join("|", sessions.Select(s => $"{s.Key}:{s.State}:{s.Activity}:{s.Agents}:{s.Subagents.FirstOrDefault()?.Description}:{s.Project}"));
         Current = sessions;
         foreach (var a in raised)
         {
@@ -326,9 +370,30 @@ public sealed class AgentSessionMonitor : IDisposable
         sessions.RemoveAll(s => s.State == AgentSessionState.Idle && _clock() - s.LastActivity > IdleKeep);
     }
 
+    /// <summary>Forgets cached tails and rollout headers of files this pass did not look at, so the caches follow the files on disk.</summary>
+    private void PruneCaches()
+    {
+        foreach (var key in _tails.Keys.Where(k => !_touched.Contains(k)).ToList())
+        {
+            _tails.Remove(key);
+        }
+
+        foreach (var key in _tailKeys.Keys.Where(k => !_touched.Contains(k)).ToList())
+        {
+            _tailKeys.Remove(key);
+        }
+
+        foreach (var key in _codexMeta.Keys.Where(k => !_touched.Contains(k)).ToList())
+        {
+            _codexMeta.Remove(key);
+        }
+
+        _touched.Clear();
+    }
+
     // ------------------------------------------------------------------------------------------ Claude Code
 
-    private sealed record ClaudeRecord(int Pid, string Id, string Cwd, string Entrypoint, string? Name, string? Status, DateTime? StatusAt, DateTime? UpdatedAt, DateTime? Started, long? ProcStart, string Config);
+    private sealed record ClaudeRecord(int Pid, string Id, string Cwd, string Entrypoint, string? Name, string? Status, DateTime? StatusAt, DateTime? UpdatedAt, DateTime? Started, long? ProcStart, string Config, string? WaitingFor);
 
     private IEnumerable<AgentSession> ScanClaude(DateTime now, List<AgentProcess> all, Dictionary<string, HookEvent> hooks)
     {
@@ -339,6 +404,9 @@ public sealed class AgentSessionMonitor : IDisposable
         }
 
         var records = new List<ClaudeRecord>();
+
+        // Every id a record names, dead or alive: a transcript of a process that just ended must not come back as a session.
+        var allIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var config in configs)
         {
             var folder = Path.Combine(config, "sessions");
@@ -359,6 +427,7 @@ public sealed class AgentSessionMonitor : IDisposable
                     continue;
                 }
 
+                allIds.Add(record.Id);
                 var alive = _paths.IsAlive is { } custom ? custom(record.Pid, record.ProcStart) : AgentProcesses.IsSameProcess(record.Pid, record.ProcStart);
                 if (alive)
                 {
@@ -367,10 +436,8 @@ public sealed class AgentSessionMonitor : IDisposable
             }
         }
 
-        var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var record in records.GroupBy(r => r.Id).Select(g => g.OrderByDescending(r => r.UpdatedAt ?? DateTime.MinValue).First()))
+        foreach (var record in records.GroupBy(r => r.Id, StringComparer.OrdinalIgnoreCase).Select(g => g.OrderByDescending(r => r.UpdatedAt ?? DateTime.MinValue).First()))
         {
-            known.Add(record.Id);
             if (AppOnly && record.Entrypoint != "claude-desktop")
             {
                 continue;
@@ -382,11 +449,12 @@ public sealed class AgentSessionMonitor : IDisposable
             }
         }
 
-        // Claude Code too old to keep records, or a config folder this app was not told of: a log written in the last moments is a session.
+        // Claude Code too old to keep records: with no sessions folder at all, a transcript whose newest user or assistant line is from the
+        // last moments and left a turn open is a session. A folder that has the records is trusted alone; nothing else may add sessions to it.
         foreach (var config in configs)
         {
             var projects = Path.Combine(config, "projects");
-            if (!Directory.Exists(projects))
+            if (Directory.Exists(Path.Combine(config, "sessions")) || !Directory.Exists(projects))
             {
                 continue;
             }
@@ -403,7 +471,15 @@ public sealed class AgentSessionMonitor : IDisposable
 
             foreach (var file in files)
             {
+                // Session transcripts are named by their Guid; agent-*.jsonl (older subagent logs) and anything else never is one.
                 var id = Path.GetFileNameWithoutExtension(file);
+                if (!Guid.TryParse(id, out _) || allIds.Contains(id))
+                {
+                    continue;
+                }
+
+                // Only a cheap pre-filter for the tail reads below: a line stamped in the last 20 seconds means the file was written about then.
+                // The file's time is not evidence by itself, since metadata lines without timestamps are appended to old transcripts.
                 DateTime written;
                 try
                 {
@@ -414,12 +490,17 @@ public sealed class AgentSessionMonitor : IDisposable
                     continue;
                 }
 
-                if (known.Contains(id) || now - written > TimeSpan.FromSeconds(20))
+                if (now - written > TimeSpan.FromMinutes(2))
                 {
                     continue;
                 }
 
                 var tail = Tail(file, false);
+                if (tail.LastTime is not { } stamped || now - stamped > TimeSpan.FromSeconds(20) || tail.Ended)
+                {
+                    continue;
+                }
+
                 if (AppOnly && tail.Entrypoint != "claude-desktop")
                 {
                     continue;
@@ -428,7 +509,7 @@ public sealed class AgentSessionMonitor : IDisposable
                 yield return new AgentSession
                 {
                     Key = "claude:" + id, Provider = AgentProvider.Claude, Id = id, Project = tail.Project ?? ProjectOf(Path.GetFileName(Path.GetDirectoryName(file)) ?? ""),
-                    Origin = tail.Entrypoint == "claude-desktop" ? "Claude app" : "Claude Code", State = AgentSessionState.Working, Activity = Activity(tail, null), Since = tail.TurnStart ?? written, LastActivity = written,
+                    Origin = tail.Entrypoint == "claude-desktop" ? "Claude app" : "Claude Code", State = AgentSessionState.Working, Activity = Activity(tail), Since = tail.TurnStart ?? stamped, LastActivity = stamped,
                 };
             }
         }
@@ -458,7 +539,7 @@ public sealed class AgentSessionMonitor : IDisposable
 
             long? procStart = long.TryParse(root.Str("procStart"), out var ps) ? ps : null;
             return new ClaudeRecord((int)Math.Min(pid, int.MaxValue), id, root.Str("cwd") ?? "", root.Str("entrypoint") ?? "", root.Str("name"), root.Str("status"),
-                root.Prop("statusUpdatedAt").Seconds(), root.Prop("updatedAt").Seconds(), root.Prop("startedAt").Seconds(), procStart, config);
+                root.Prop("statusUpdatedAt").Seconds(), root.Prop("updatedAt").Seconds(), root.Prop("startedAt").Seconds(), procStart, config, root.Str("waitingFor"));
         }
         catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
         {
@@ -483,7 +564,7 @@ public sealed class AgentSessionMonitor : IDisposable
         {
         }
 
-        var agents = file is null ? [] : Subagents(Path.Combine(Path.GetDirectoryName(file)!, record.Id, "subagents"), now);
+        var agents = file is null ? [] : Subagents(Path.Combine(Path.GetDirectoryName(file)!, record.Id, "subagents"), now, tail);
         var lastWrite = new[] { written, agents.Count > 0 ? agents.Max(a => a.Written) : DateTime.MinValue }.Max();
         var statusAt = record.StatusAt ?? record.UpdatedAt ?? record.Started ?? now;
         var last = lastWrite > statusAt ? lastWrite : statusAt;
@@ -499,7 +580,7 @@ public sealed class AgentSessionMonitor : IDisposable
             Pid = record.Pid,
             LastActivity = last,
             Since = tail.TurnStart ?? statusAt,
-            Agents = agents.Count(a => !a.Ended),
+            Subagents = agents.Select(a => a.Info).ToList(),
         };
 
         // 1. A hook said so (opt-in, reliable) and nothing has been written since.
@@ -523,7 +604,7 @@ public sealed class AgentSessionMonitor : IDisposable
         {
             session.State = AgentSessionState.Waiting;
             session.Basis = WaitingBasis.Status;
-            session.Tool = tail.Pending.Values.FirstOrDefault()?.Display;
+            session.Tool = tail.Pending.Values.FirstOrDefault()?.Display ?? (record.WaitingFor is { Length: > 0 } waitingFor ? waitingFor : null);
             session.Since = statusAt;
             session.Activity = "Waiting for you" + (session.Tool is { } t ? ": " + t : "");
             return session;
@@ -532,8 +613,8 @@ public sealed class AgentSessionMonitor : IDisposable
         var quiet = now - lastWrite;
         // 3. A tool call without a result, nothing running for it and nothing written: probably a permission prompt.
         var pending = tail.Pending.Values.OrderBy(p => p.At).FirstOrDefault();
-        var waitingAgent = agents.Where(a => !a.Ended && a.Pending is not null && now - a.Written >= PendingAfter).OrderBy(a => a.Written).FirstOrDefault();
-        var busyAgents = agents.Any(a => !a.Ended && (a.Pending is null || now - a.Written < PendingAfter));
+        var waitingAgent = agents.Where(a => a.Pending is not null && now - a.Written >= PendingAfter).OrderBy(a => a.Written).FirstOrDefault();
+        var busyAgents = agents.Any(a => a.Pending is null || now - a.Written < PendingAfter);
         if (status != "idle" && (pending is not null || waitingAgent is not null))
         {
             var candidate = waitingAgent?.Pending ?? (busyAgents ? null : pending);
@@ -555,7 +636,7 @@ public sealed class AgentSessionMonitor : IDisposable
         if (working)
         {
             session.State = AgentSessionState.Working;
-            session.Activity = Activity(tail, agents);
+            session.Activity = Activity(tail);
             if (tail.TurnStart is null)
             {
                 session.Since = statusAt;
@@ -566,6 +647,9 @@ public sealed class AgentSessionMonitor : IDisposable
             session.State = AgentSessionState.Idle;
             session.Activity = Loc.T("Idle");
             session.Since = last;
+
+            // Nothing runs for a session at rest, whatever its subagent files say.
+            session.Subagents = [];
         }
 
         return session;
@@ -582,16 +666,17 @@ public sealed class AgentSessionMonitor : IDisposable
         return AgentProcesses.ChildrenStartedSince(all, pid, tool.At).Any(p => !p.Name.Equals("conhost.exe", StringComparison.OrdinalIgnoreCase));
     }
 
-    private static string Activity(TailInfo tail, List<SubagentInfo>? agents)
+    /// <summary>What the session itself is doing; its subagents are listed apart and never replace this.</summary>
+    private static string Activity(TailInfo tail)
     {
-        if (agents is { Count: > 0 } && agents.Where(a => !a.Ended).OrderByDescending(a => a.Written).FirstOrDefault() is { } agent)
+        if (tail.Pending.Count > 0)
         {
-            return "Agent: " + (agent.Pending is { } p ? p.Activity : agent.Kind);
-        }
+            if (tail.Pending.Values.All(p => p.IsAgentCall))
+            {
+                return tail.Pending.Count == 1 ? Loc.T("Running an agent") : Loc.F("Running {0} agents", tail.Pending.Count);
+            }
 
-        if (tail.Pending.Values.OrderByDescending(p => p.At).FirstOrDefault() is { } pending)
-        {
-            return pending.Activity;
+            return tail.Pending.Values.Where(p => !p.IsAgentCall).OrderByDescending(p => p.At).First().Activity;
         }
 
         return tail.LastKind switch
@@ -645,12 +730,17 @@ public sealed class AgentSessionMonitor : IDisposable
         return name.Length > 0 ? name : cwdOrFolder;
     }
 
-    private sealed record SubagentInfo(string Path, DateTime Written, bool Ended, PendingTool? Pending, string Kind);
+    /// <summary>A running subagent as shown (<see cref="Info"/>) plus what the waiting heuristic needs: when its file was written and its oldest open tool call.</summary>
+    private sealed record SubagentScan(AgentSubagent Info, DateTime Written, PendingTool? Pending);
 
-    /// <summary>Subagent logs written in the last moments: these are the "+N agents" of a session.</summary>
-    private List<SubagentInfo> Subagents(string folder, DateTime now)
+    /// <summary>
+    /// The subagents running for a session: <c>agent-*.jsonl</c> logs whose tail has not ended and whose task the parent still waits for
+    /// (the meta file's toolUseId is pending in the parent's tail) or that were written in the last minute. A quiet agent that is thinking
+    /// or on a long tool call therefore stays listed, and a finished one drops off at once. Newest first.
+    /// </summary>
+    private List<SubagentScan> Subagents(string folder, DateTime now, TailInfo parent)
     {
-        var result = new List<SubagentInfo>();
+        var result = new List<SubagentScan>();
         try
         {
             if (!Directory.Exists(folder))
@@ -661,21 +751,59 @@ public sealed class AgentSessionMonitor : IDisposable
             foreach (var file in Directory.EnumerateFiles(folder, "agent-*.jsonl", SearchOption.AllDirectories))
             {
                 var written = File.GetLastWriteTimeUtc(file);
-                if (now - written > TimeSpan.FromSeconds(90))
+
+                // Older than a day is never running; this only spares reading the logs of a long session's many finished agents.
+                if (now - written > TimeSpan.FromHours(24))
                 {
                     continue;
                 }
 
                 var tail = Tail(file, true);
-                var kind = "working";
-                result.Add(new SubagentInfo(file, written, tail.Ended && now - written > TimeSpan.FromSeconds(3), tail.Pending.Values.OrderBy(p => p.At).FirstOrDefault(), kind));
+                if (tail.Ended)
+                {
+                    continue;
+                }
+
+                var (type, description, toolUseId) = ReadSubagentMeta(Path.ChangeExtension(file, ".meta.json"));
+                var awaited = toolUseId.Length > 0 && parent.Pending.ContainsKey(toolUseId);
+                if (!awaited && now - written >= SubagentRecent)
+                {
+                    continue;
+                }
+
+                var name = Path.GetFileNameWithoutExtension(file);
+                var id = name.StartsWith("agent-", StringComparison.OrdinalIgnoreCase) ? name[6..] : name;
+                var pending = tail.Pending.Values.OrderByDescending(p => p.At).FirstOrDefault();
+                var info = new AgentSubagent(id, type, description, pending?.Activity ?? Loc.T("Working"), tail.TurnStart ?? tail.LastTime ?? written);
+                result.Add(new SubagentScan(info, written, tail.Pending.Values.OrderBy(p => p.At).FirstOrDefault()));
             }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
         }
 
-        return result;
+        return result.OrderByDescending(a => a.Info.Since).ToList();
+    }
+
+    /// <summary>The kind, the task description and the parent's tool call of a subagent, from the small file Claude Code writes beside its log.</summary>
+    private static (string Type, string Description, string ToolUseId) ReadSubagentMeta(string path)
+    {
+        try
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            if (stream.Length >= 1 << 16)
+            {
+                return ("Agent", "", "");
+            }
+
+            using var doc = JsonDocument.Parse(stream);
+            var root = doc.RootElement;
+            return (root.Str("agentType") is { Length: > 0 } type ? type : "Agent", root.Str("description") ?? "", root.Str("toolUseId") ?? "");
+        }
+        catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
+        {
+            return ("Agent", "", "");
+        }
     }
 
     // ------------------------------------------------------------------------------------------ transcripts
@@ -704,6 +832,7 @@ public sealed class AgentSessionMonitor : IDisposable
     /// <summary>Analyses the end of a transcript, once per change of the file.</summary>
     private TailInfo Tail(string path, bool sidechain)
     {
+        _touched.Add(path);
         try
         {
             var info = new FileInfo(path);
@@ -988,12 +1117,16 @@ public sealed class AgentSessionMonitor : IDisposable
 
     // ------------------------------------------------------------------------------------------ Codex
 
-    private IEnumerable<AgentSession> ScanCodex(DateTime now, List<AgentProcess> all)
+    /// <summary>What the first <c>session_meta</c> line of a rollout says: the project, whether it is a subagent or internal thread, its own id and the root it serves.</summary>
+    private sealed record CodexMeta(string Project, bool Subagent, string Id, string Root, string Type);
+
+    private List<AgentSession> ScanCodex(DateTime now, List<AgentProcess> all)
     {
+        var result = new List<AgentSession>();
         var root = Path.Combine(_paths.CodexDir, "sessions");
         if (!Directory.Exists(root))
         {
-            yield break;
+            return result;
         }
 
         var running = _paths.CodexRunning is { } custom ? custom() : all.Any(p => p.Name.Equals("codex.exe", StringComparison.OrdinalIgnoreCase));
@@ -1003,6 +1136,8 @@ public sealed class AgentSessionMonitor : IDisposable
             dirs.Add(Path.Combine(root, day.Year.ToString("0000"), day.Month.ToString("00"), day.Day.ToString("00")));
         }
 
+        var rootIds = new Dictionary<string, AgentSession>(StringComparer.OrdinalIgnoreCase);
+        var children = new List<(CodexMeta Meta, AgentSession Built)>();
         foreach (var dir in dirs.Where(Directory.Exists))
         {
             string[] files;
@@ -1033,24 +1168,64 @@ public sealed class AgentSessionMonitor : IDisposable
                     continue;
                 }
 
-                if (BuildCodex(file, written, now, running) is { } session)
+                var meta = MetaOf(file);
+                if (BuildCodex(file, meta.Project, written, now, running) is not { } session)
                 {
-                    yield return session;
+                    continue;
+                }
+
+                if (meta.Subagent)
+                {
+                    // A subagent or internal thread is never a session of its own: it belongs to the root that spawned it.
+                    children.Add((meta, session));
+                    continue;
+                }
+
+                result.Add(session);
+                if (meta.Id.Length > 0)
+                {
+                    rootIds[meta.Id] = session;
                 }
             }
         }
+
+        foreach (var (meta, built) in children)
+        {
+            if (built.State != AgentSessionState.Idle && meta.Root.Length > 0 && rootIds.TryGetValue(meta.Root, out var parent) && parent.State != AgentSessionState.Idle)
+            {
+                parent.Subagents.Add(new AgentSubagent(built.Id, meta.Type, "", built.Activity, built.Since));
+            }
+        }
+
+        foreach (var parent in rootIds.Values)
+        {
+            parent.Subagents = parent.Subagents.OrderByDescending(a => a.Since).ToList();
+        }
+
+        return result;
     }
 
-    private AgentSession? BuildCodex(string file, DateTime written, DateTime now, bool running)
+    private CodexMeta MetaOf(string file)
+    {
+        _touched.Add(file);
+        if (!_codexMeta.TryGetValue(file, out var meta))
+        {
+            meta = CodexProject(file);
+            if (meta is null)
+            {
+                return new CodexMeta("", false, "", "", "Agent");
+            }
+
+            _codexMeta[file] = meta;
+        }
+
+        return meta;
+    }
+
+    private AgentSession? BuildCodex(string file, string project, DateTime written, DateTime now, bool running)
     {
         var state = CodexTail(file);
         var id = Path.GetFileNameWithoutExtension(file);
-        if (!_codexProjects.TryGetValue(file, out var project))
-        {
-            project = CodexProject(file) ?? "";
-            _codexProjects[file] = project;
-        }
-
         var quiet = now - written;
         var session = new AgentSession
         {
@@ -1211,7 +1386,8 @@ public sealed class AgentSessionMonitor : IDisposable
         return state;
     }
 
-    private static string? CodexProject(string path)
+    /// <summary>Reads the first line of a rollout; null while it cannot be read yet, so a later look tries again.</summary>
+    private static CodexMeta? CodexProject(string path)
     {
         try
         {
@@ -1225,7 +1401,14 @@ public sealed class AgentSessionMonitor : IDisposable
             }
 
             using var doc = JsonDocument.Parse(buffer.AsMemory(0, end));
-            return doc.RootElement.Prop("payload").Str("cwd") is { Length: > 0 } cwd ? ProjectOf(cwd) : null;
+            var payload = doc.RootElement.Prop("payload");
+            var source = payload.Prop("source");
+            var subagent = source.Prop("subagent") is not null || source.Prop("internal") is not null;
+            var spawn = source.Prop("subagent").Prop("thread_spawn");
+            var id = payload.Str("id") ?? "";
+            var parent = payload.Str("session_id") ?? payload.Str("parent_thread_id") ?? spawn.Str("parent_thread_id") ?? "";
+            var type = source.Prop("subagent").Str() ?? spawn.Str("agent_role") ?? spawn.Str("agent_nickname") ?? "Agent";
+            return new CodexMeta(payload.Str("cwd") is { Length: > 0 } cwd ? ProjectOf(cwd) : "", subagent, id, subagent && parent != id ? parent : "", type.Length > 0 ? type : "Agent");
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
         {

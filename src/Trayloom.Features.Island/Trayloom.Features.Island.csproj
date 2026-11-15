@@ -9,6 +9,8 @@
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.22" />
+    <!-- Hosts the YouTube Music player window (the island plays YouTube Music itself instead of opening a browser). -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
   </ItemGroup>
   <ItemGroup>
     <!-- the console harness under tests/ exercises the pure decisions of the Apple Music service -->

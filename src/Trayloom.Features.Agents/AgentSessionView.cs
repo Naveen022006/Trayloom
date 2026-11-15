@@ -16,30 +16,48 @@ internal static class AgentSessionCard
     public const int MaxRows = 4;
     private const double RowHeight = 34;
 
-    public static List<AgentSession> Visible(AgentCardContext c) =>
+    /// <summary>A row that also shows its subagents has a third line.</summary>
+    private const double TallRowHeight = 46;
+
+    /// <summary>Every session of the providers the card shows, idle ones of any age included.</summary>
+    private static List<AgentSession> Providered(AgentCardContext c) =>
         c.Runtime.Sessions.Current.Where(s => c.Providers.Contains(s.Provider)).ToList();
+
+    /// <summary>The sessions the card lists: all that work or wait, and idle ones only while they moved recently.</summary>
+    public static List<AgentSession> Visible(AgentCardContext c) => AgentSessionSummary.Visible(Providered(c), c.Now);
+
+    private static double HeightOf(AgentSession session) => session.Agents > 0 ? TallRowHeight : RowHeight;
+
+    /// <summary>How many idle sessions are left out of the list because they have been quiet for a while.</summary>
+    private static int HiddenIdle(AgentCardContext c) => Providered(c).Count - Visible(c).Count;
 
     /// <summary>Card height for the rows it will show.</summary>
     public static double Height(AgentCardContext c)
     {
         var sessions = Visible(c);
-        var rows = Math.Min(MaxRows, Math.Max(1, sessions.Count));
-        return 20 + 17 + 7 + rows * (RowHeight + 5) + (sessions.Count > MaxRows ? 16 : 0);
+        var rows = sessions.Take(MaxRows).Sum(s => HeightOf(s) + 5);
+        if (sessions.Count == 0)
+        {
+            rows = RowHeight + 5;
+        }
+
+        return 20 + 17 + 7 + rows + (sessions.Count > MaxRows ? 16 : 0) + (HiddenIdle(c) > 0 ? 16 : 0);
     }
 
     public static FrameworkElement Build(AgentCardContext c)
     {
         var sessions = Visible(c);
+        var hiddenIdle = HiddenIdle(c);
         var waiting = sessions.Count(s => s.IsWaiting);
         var working = sessions.Count(s => s.State == AgentSessionState.Working);
         var accessory = new StackPanel { Orientation = Orientation.Horizontal };
         if (waiting > 0)
         {
-            accessory.Children.Add(AU.Chip(waiting == 1 ? Loc.T("Waiting for you") : waiting + " waiting for you", AgentColors.Orange));
+            accessory.Children.Add(AU.Chip(waiting == 1 ? Loc.T("Waiting for you") : Loc.F("{0} waiting for you", waiting), AgentColors.Orange));
         }
         else if (working > 0)
         {
-            accessory.Children.Add(AU.Chip(working == 1 ? Loc.T("1 working") : working + " working", AgentColors.Green));
+            accessory.Children.Add(AU.Chip(working == 1 ? Loc.T("1 working") : Loc.F("{0} working", working), AgentColors.Green));
         }
 
         if (sessions.Count > 0)
@@ -82,10 +100,17 @@ internal static class AgentSessionCard
 
             if (sessions.Count > MaxRows)
             {
-                var more = AU.Text("+" + (sessions.Count - MaxRows) + " more", 9.5, null, AgentColors.Tertiary);
+                var more = AU.Text(Loc.F("+{0} more", sessions.Count - MaxRows), 9.5, null, AgentColors.Tertiary);
                 more.Margin = new Thickness(22, 4, 0, 0);
                 rows.Children.Add(more);
             }
+        }
+
+        if (hiddenIdle > 0)
+        {
+            var idle = AU.Text(Loc.F("{0} idle", hiddenIdle), 9.5, null, AgentColors.Tertiary);
+            idle.Margin = new Thickness(22, 4, 0, 0);
+            rows.Children.Add(idle);
         }
 
         body.Children.Add(rows);
@@ -112,7 +137,7 @@ internal static class AgentSessionCard
     private static FrameworkElement Empty(AgentCardContext c)
     {
         var line = c.Providers.Select(p => c.Snapshot.LastActivity.TryGetValue(p, out var d) ? p.DisplayName() + " " + AgentFormat.Relative(d, c.Now, false) : null).Where(s => s is not null);
-        var text = "No live sessions" + (line.Any() ? " · last active: " + string.Join(", ", line) : "");
+        var text = line.Any() ? Loc.F("No live sessions · last active: {0}", string.Join(", ", line)) : Loc.T("No live sessions");
         var t = AU.Text(text, 10.5, null, AgentColors.Secondary, TextTrimming.CharacterEllipsis);
         t.Height = RowHeight - 6;
         return t;
@@ -121,7 +146,7 @@ internal static class AgentSessionCard
     private static FrameworkElement Row(AgentCardContext c, AgentSession session, List<(TextBlock, DateTime, string)> clocks)
     {
         var amber = AgentColors.Of(AgentColors.Orange);
-        var grid = new Grid { Height = RowHeight, Background = Brushes.Transparent };
+        var grid = new Grid { Height = HeightOf(session), Background = Brushes.Transparent };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(22) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -136,17 +161,15 @@ internal static class AgentSessionCard
         var name = AU.Text(session.Project.Length == 0 ? session.Provider.DisplayName() : session.Project, 11, FontWeights.SemiBold, AgentColors.Primary, TextTrimming.CharacterEllipsis);
         name.MaxWidth = 190;
         top.Children.Add(name);
-        if (session.Agents > 0)
-        {
-            var chip = AU.Chip("+" + session.Agents + (session.Agents == 1 ? " agent" : " agents"), Colors.White);
-            chip.Margin = new Thickness(6, 0, 0, 0);
-            AU.Tip(chip, Loc.T("Subagents working for this session right now"));
-            top.Children.Add(chip);
-        }
-
         text.Children.Add(top);
         var detail = session.Activity + (session.Origin.Length > 0 && session.State != AgentSessionState.Idle ? " · " + session.Origin : "");
         text.Children.Add(AU.Text(detail, 9.5, null, session.IsWaiting ? amber : AgentColors.Secondary, TextTrimming.CharacterEllipsis));
+        if (session.Agents > 0)
+        {
+            var agents = AU.Text(AgentSessionSummary.SubagentLine(session), 9, null, AgentColors.Tertiary, TextTrimming.CharacterEllipsis);
+            AU.Tip(agents, Loc.T("Subagents working for this session right now"));
+            text.Children.Add(agents);
+        }
         Grid.SetColumn(text, 1);
         grid.Children.Add(text);
 

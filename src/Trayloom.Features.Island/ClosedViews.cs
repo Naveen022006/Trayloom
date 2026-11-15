@@ -371,6 +371,20 @@ internal static class ClosedViews
                 e.Handled = true;
             };
             D.Tip(this, p.Display);
+            _shownSong = SongOf(p);
+            _shownArt = p.Artwork;
+
+            // a pause from the strip leaves it up for a few seconds, and while the pointer is on it
+            MouseEnter += (_, _) => _core.MusicStripHovered = true;
+            MouseLeave += (_, _) =>
+            {
+                _core.MusicStripHovered = false;
+                if (!_core.Playback.Current.IsPlaying)
+                {
+                    _core.Window?.RefreshClosed();
+                }
+            };
+            Unloaded += (_, _) => _core.MusicStripHovered = false;
             if ((DateTime.UtcNow - win.TrackSince).TotalSeconds < 4)
             {
                 _namedByTrack = true;
@@ -414,11 +428,22 @@ internal static class ClosedViews
             }
 
             _title.Text = p.Display;
-            if (p.Artwork is not null)
+
+            // the cover follows every new song, and the artwork when it arrives a moment later; a song without art shows the app's icon
+            // (never an empty cover that flashes between two songs)
+            var song = SongOf(p);
+            if (song != _shownSong || !ReferenceEquals(p.Artwork, _shownArt))
             {
-                _cover.Set(p);
+                _shownSong = song;
+                _shownArt = p.Artwork;
+                _cover.Set(p, _core.Playback.Sources.FirstOrDefault(s => s.Aumid == p.Aumid)?.Icon);
             }
         }
+
+        private string _shownSong = "";
+        private System.Windows.Media.ImageSource? _shownArt;
+
+        private static string SongOf(Playback p) => $"{p.Aumid}|{p.Title}|{p.Artist}|{p.Album}";
     }
 
     // ---------------------------------------------------------------- timer strip

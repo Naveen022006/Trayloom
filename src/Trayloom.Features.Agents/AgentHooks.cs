@@ -150,9 +150,11 @@ public static class AgentHooks
             var message = root.Str("message") ?? "";
             var type = root.Str("notification_type") ?? "";
             var ev = root.Str("event") ?? "";
+            // idle_prompt is Claude Code saying a finished turn has waited a while for the next prompt: nobody is blocked, so it must not
+            // mark the session as waiting (that would also take the closed island over from the music).
             var kind = ev == "PermissionRequest" || type == "permission_prompt" || message.Contains("permission", StringComparison.OrdinalIgnoreCase)
                 ? HookKind.Permission
-                : type == "idle_prompt" || message.Contains("waiting for your input", StringComparison.OrdinalIgnoreCase) ? HookKind.Input : HookKind.Other;
+                : type == "elicitation_dialog" || (type != "idle_prompt" && message.Contains("waiting for your input", StringComparison.OrdinalIgnoreCase)) ? HookKind.Input : HookKind.Other;
             var tool = root.Str("tool_name") is { Length: > 0 } t ? (root.Str("tool_hint") is { Length: > 0 } hint ? t + " " + hint : t) : null;
             return new HookEvent(id, at, tool, message, kind, root.Str("cwd"));
         }

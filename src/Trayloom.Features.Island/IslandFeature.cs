@@ -105,18 +105,15 @@ public sealed class IslandFeature : IFeature
 
     /// <summary>
     /// A transport shortcut: with nothing playing it does what the island's idle buttons do (Apple Music is started in the background and
-    /// played, or the preferred player is opened), because there is no media session to command; otherwise it commands the current one.
+    /// played, the Spotify app is opened, or the YouTube Music search is shown), because there is no media session to command. With no app
+    /// chosen it only opens the music page, where the choice is made. Otherwise it commands the current session.
     /// </summary>
     private static void Transport(IslandCore core, AmAction action, Action current)
     {
         if (!core.Playback.Current.HasTrack)
         {
-            var preferred = PlaybackService.ResolvePreferredPlayer(core.App.Get<string>(K.PreferredPlayer), core.Playback);
-            if (preferred is not null || MusicUi.HiddenApple(core, preferred))
-            {
-                MusicUi.IdleAction(core, preferred, action, TransportOrigin.Shortcut)();
-                return;
-            }
+            MusicUi.IdleAction(core, MusicUi.Target(core), action, TransportOrigin.Shortcut)();
+            return;
         }
 
         current();

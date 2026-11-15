@@ -40,6 +40,7 @@ internal static class Program
         MusicCoreChecks.Run(Check);
         SpotifyChecks.Run(Check);
         YouTubeChecks.Run(Check);
+        MusicFilterChecks.Run(Check);
         StreamListChecks.Run(Check);
         GoogleCalendarChecks.Run(Check);
         SafetyChecks.Run(Check);

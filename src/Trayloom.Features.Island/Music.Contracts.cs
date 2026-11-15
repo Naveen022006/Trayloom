@@ -136,7 +136,7 @@ internal sealed record StreamPage(IReadOnlyList<StreamSection> Sections, int? Ne
 internal sealed record StreamLoad(StreamLoadState State, StreamPage? Page, StreamStatus Status, string Message = "", TimeSpan? RetryIn = null);
 
 /// <summary>A short line shown under the list (an error when <see cref="Error"/>).</summary>
-internal sealed record StreamNote(string Text, bool Error);
+internal sealed record StreamNote(string Text, bool Error, string? ActionText = null, Action? Action = null);
 
 /// <summary>A link pill offered while a service cannot list anything.</summary>
 internal sealed record StreamLink(string Title, string Url);
@@ -229,6 +229,9 @@ internal static class StreamStrings
     public static string CopyLink => Loc.T("Copy link");
     public static string SearchInSpotify => Loc.T("Search in Spotify");
     public static string ConnectInSettings => Loc.T("Connect in Settings");
+    public static string OpenInBrowser => Loc.T("Open in browser");
+    public static string SpotifyAutomatic => Loc.T("Spotify connects automatically. A search opens in the Spotify app; connect in Settings to see results here too.");
+    public static string YouTubeNeedsWebView => Loc.T("YouTube Music needs the Microsoft Edge WebView2 runtime.");
     public static string NoLikedSongs => Loc.T("No liked songs");
     public static string NothingPlayedRecently => Loc.T("Nothing played recently");
     public static string NotAvailableInCountry => Loc.T("Not available in your country");
@@ -271,7 +274,7 @@ internal static class StreamStrings
             case StreamStatus.NoDevice:
                 return Loc.T("Open Spotify on this PC, your phone or a speaker, then try again.");
             case StreamStatus.AppMissing:
-                return Loc.T("Spotify isn’t installed. Opened the web player.");
+                return Loc.T("Install the Spotify app to play here.");
             case StreamStatus.NotAllowlisted:
                 return Loc.T("This Spotify account isn’t added to the app. In the Spotify Dashboard open User Management and add it, or use your own Client ID.");
             case StreamStatus.Revoked:

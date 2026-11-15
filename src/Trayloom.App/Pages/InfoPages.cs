@@ -226,6 +226,10 @@ internal static class WhatsNewPage
         ]),
         new("Fixed",
         [
+            Loc.T("Music in the island follows only Apple Music, Spotify and YouTube Music. With nothing playing, Play lets you choose one of them and never opens Windows Media Player."),
+            Loc.T("Play and pause respond at once, a double click no longer toggles twice, covers no longer flicker, and pausing from the closed island keeps the banner so you can resume."),
+            Loc.T("YouTube Music results play in a small Trayloom window instead of the browser, and Spotify searches open in the Spotify app without signing in."),
+            Loc.T("The AI Agents count shows only sessions that are working or waiting: background file updates and long-idle sessions no longer add phantom sessions. Subagents show as one line under their session instead of counting as sessions."),
             Loc.T("Away mode notices when you leave: the camera kept every frame it read, ran out of buffers and slowed to a frame every few seconds. A new “Use the camera” switch in Away mode and the tray panel turns the camera off completely."),
             Loc.T("Away mode no longer waits for the long idle time when the camera can only see black: it steps in after a couple of minutes without input."),
             Loc.T("Trayloom gives memory back after the island, panel or Settings closes, and the camera check uses less memory."),

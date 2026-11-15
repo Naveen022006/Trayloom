@@ -142,6 +142,7 @@ internal sealed class AudioService : IDisposable
     /// </summary>
     private void DevicesTick()
     {
+        _outputs = null;
         try
         {
             _devicesSettle.Change(DevicesSettleMs, Timeout.Infinite);
@@ -304,7 +305,13 @@ internal sealed class AudioService : IDisposable
 
     // ---------------------------------------------------------------- devices
 
-    public List<AudioEndpointInfo> Outputs() => List(DataFlow.Render);
+    private volatile List<AudioEndpointInfo>? _outputs;
+
+    /// <summary>
+    /// The active output devices. Listing them costs COM calls, so the list is kept until a device or default change notification arrives
+    /// (the music page asks for it at every build).
+    /// </summary>
+    public List<AudioEndpointInfo> Outputs() => [.. _outputs ??= List(DataFlow.Render)];
 
     public List<AudioEndpointInfo> Inputs() => List(DataFlow.Capture);
 

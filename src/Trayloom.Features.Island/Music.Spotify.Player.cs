@@ -187,8 +187,7 @@ internal sealed partial class SpotifyService
                 return false;
 
             default:
-                // Neither a device nor the app: the web player is the way left.
-                MusicLinks.Open("https://open.spotify.com", _log);
+                // Neither a device nor the app: nothing is opened (the web player is never started on its own).
                 SetNote(StreamStrings.Message(StreamStatus.AppMissing, StreamKind.Spotify), error: true);
                 return false;
         }
@@ -307,14 +306,23 @@ internal sealed partial class SpotifyService
     {
         var type = SpotifyUri.TypeOf(item.Kind);
         var uri = SpotifyUri.Build(type, item.Id);
-        var link = SpotifyUri.LinkFor(type, item.Id);
         if (uri.Length == 0)
         {
             return;
         }
 
         Guarded.FireAndLog(
-            async () => MusicLinks.Open(await IsAppInstalledAsync() ? uri : link, _log),
+            async () =>
+            {
+                if (await IsAppInstalledAsync())
+                {
+                    MusicLinks.Open(uri, _log);
+                }
+                else
+                {
+                    SetNote(StreamStrings.Message(StreamStatus.AppMissing, StreamKind.Spotify), error: true);
+                }
+            },
             _log,
             "Spotify open");
     }
@@ -322,23 +330,34 @@ internal sealed partial class SpotifyService
     /// <inheritdoc />
     public void OpenSearchExternally(string query)
     {
-        var text = query.Trim();
-        if (text.Length == 0)
+        // The Spotify app searches by itself (<c>spotify:search:…</c>): no sign-in and no browser.
+        var uri = SpotifySearchUri.Build(query);
+        if (uri.Length == 0)
         {
             return;
         }
 
-        if (text.Length > 200)
-        {
-            text = text[..200];
-        }
-
-        var escaped = Uri.EscapeDataString(text);
         Guarded.FireAndLog(
-            async () => MusicLinks.Open(await IsAppInstalledAsync() ? "spotify:search:" + escaped : "https://open.spotify.com/search/" + escaped, _log),
+            async () =>
+            {
+                if (await IsAppInstalledAsync())
+                {
+                    MusicLinks.Open(uri, _log);
+                }
+                else
+                {
+                    SetNote(StreamStrings.Message(StreamStatus.AppMissing, StreamKind.Spotify), error: true);
+                }
+            },
             _log,
             "Spotify search");
     }
+
+    /// <summary>Opens Spotify's web player in the browser: only ever from an explicit "Open in browser" click.</summary>
+    public void OpenWebPlayer() => MusicLinks.Open("https://open.spotify.com", _log);
+
+    /// <summary>The Spotify app is installed (it controls itself through its media session, with no sign-in).</summary>
+    public bool AppInstalled => MusicInstalled.SpotifyAumid() is not null;
 
     /// <summary>True when the Spotify desktop app answers <c>spotify:</c> links (registry), else when a Start-menu app named Spotify exists (listed off the UI thread).</summary>
     private static async Task<bool> IsAppInstalledAsync()

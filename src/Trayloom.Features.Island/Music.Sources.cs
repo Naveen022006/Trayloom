@@ -89,25 +89,44 @@ internal static class MusicSources
     };
 
     /// <summary>The source a player belongs to (by its app id); null for any other player.</summary>
-    public static MusicSource? FromPlayer(string? aumid)
+    public static MusicSource? FromPlayer(string? aumid) => FromPlayer(aumid, NoApps);
+
+    private static readonly IReadOnlySet<string> NoApps = new HashSet<string>();
+
+    /// <summary>
+    /// The source a player belongs to. The id is compared without case, dashes, underscores, dots and spaces ("com.github.th-ch.youtube-music"
+    /// is YouTube Music); an id in <paramref name="ytmAppIds"/> (Start menu apps named "YouTube Music", such as the Chrome or Edge web app)
+    /// is YouTube Music too. Anything else (Media Player, browsers, video players) is null: the island does not follow it.
+    /// </summary>
+    public static MusicSource? FromPlayer(string? aumid, IReadOnlySet<string> ytmAppIds)
     {
-        if (string.IsNullOrEmpty(aumid))
+        if (string.IsNullOrWhiteSpace(aumid))
         {
             return null;
         }
 
-        if (aumid.Contains("AppleMusic", StringComparison.OrdinalIgnoreCase))
+        var id = Normalize(aumid);
+        if (id.Contains("applemusic", StringComparison.Ordinal))
         {
             return MusicSource.Apple;
         }
 
-        if (aumid.Contains("spotify", StringComparison.OrdinalIgnoreCase))
+        if (id.Contains("spotify", StringComparison.Ordinal))
         {
             return MusicSource.Spotify;
         }
 
-        return aumid.Contains("youtubemusic", StringComparison.OrdinalIgnoreCase) ? MusicSource.YouTube : null;
+        if (id.Contains("youtubemusic", StringComparison.Ordinal))
+        {
+            return MusicSource.YouTube;
+        }
+
+        return ytmAppIds.Contains(aumid) || ytmAppIds.Any(i => string.Equals(i, aumid, StringComparison.OrdinalIgnoreCase)) ? MusicSource.YouTube : null;
     }
+
+    /// <summary>Lower case without the separators players put in their ids.</summary>
+    internal static string Normalize(string id) =>
+        string.Concat(id.Where(c => c is not ('-' or '_' or '.' or ' ')).Select(char.ToLowerInvariant));
 
     /// <summary>
     /// The segment the Music page's source switch shows as selected: the source the browser resolved (<paramref name="current"/>), else the

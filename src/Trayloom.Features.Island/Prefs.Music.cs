@@ -26,6 +26,12 @@ internal static partial class K
     /// <summary>The height the person dragged the Library in the music page to.</summary>
     public const string MusicLibraryHeight = "notchMusicLibraryHeight";
 
+    /// <summary>Follow only Apple Music, Spotify and YouTube Music; other players, videos and browser tabs are ignored.</summary>
+    public const string MusicOnlyThreeApps = "notchMusicOnlyThreeApps";
+
+    /// <summary>"left,top,width,height" (device-independent pixels) of the YouTube Music player window; empty until it was moved or resized.</summary>
+    public const string YouTubePlayerBounds = "notchYouTubePlayerBounds";
+
     /// <summary>Registers the defaults of the music services (off, nothing sent until the user sets one up).</summary>
     private static void RegisterMusicDefaults(IAppSettings app)
     {
@@ -37,6 +43,8 @@ internal static partial class K
             [SpotifyClientId] = "",
             [YouTubeOpenIn] = "music",
             [MusicLibraryHeight] = IslandSizes.DefaultLibraryHeight,
+            [MusicOnlyThreeApps] = true,
+            [YouTubePlayerBounds] = "",
         });
     }
 }

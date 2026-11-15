@@ -24,6 +24,20 @@ internal sealed class PlayerSource
     public int Order { get; set; }
 }
 
+/// <summary>A player Trayloom hosts itself (the YouTube Music window): commanded directly, not through the system media controls.</summary>
+internal interface IVirtualPlayer
+{
+    void Play();
+
+    void Pause();
+
+    void Next();
+
+    void Previous();
+
+    void Seek(double seconds);
+}
+
 /// <summary>A media session's repeat mode.</summary>
 internal enum RepeatKind
 {
@@ -138,13 +152,30 @@ internal sealed class Playback
 /// </summary>
 internal sealed class PlaybackService : IDisposable
 {
-    private static readonly string[] MusicApps = ["spotify", "applemusic", "itunes", "zunemusic", "musicbee", "foobar", "aimp", "winamp", "tidal", "deezer", "amazonmusic", "youtubemusic", "mediaplayer", "groove", "vlc"];
+    /// <summary>The apps the island follows and offers (Windows Media Player and the like are never launched or listed).</summary>
+    private static readonly string[] MusicApps = ["spotify", "applemusic", "youtubemusic"];
 
     private sealed class Entry
     {
-        public required GlobalSystemMediaTransportControlsSession Session { get; init; }
+        /// <summary>The system media session; null for Trayloom's own YouTube Music player (<see cref="Virtual"/>).</summary>
+        public GlobalSystemMediaTransportControlsSession? Session { get; init; }
+
+        /// <summary>Set for Trayloom's own YouTube Music player: it has no system session and is commanded directly.</summary>
+        public IVirtualPlayer? Virtual { get; set; }
+
+        /// <summary>The handlers added to <see cref="Session"/>, so they can be detached again.</summary>
+        public Action? Unsubscribe { get; set; }
 
         public string Aumid { get; init; } = "";
+
+        // a press of play / pause the island shows at once; the session's own state replaces it when it agrees or after 1.5 s
+        public bool? WantPlaying;
+        public DateTime WantAt;
+        public double WantPos;
+
+        // the cover of the previous song stays until the new one is loaded (or 600 ms), so the cover does not flash empty
+        public bool ArtStale;
+        public string ArtUrl = "";
 
         public string Title = "";
         public string Artist = "";
@@ -195,6 +226,20 @@ internal sealed class PlaybackService : IDisposable
         _ui = ui;
         _log = log;
     }
+
+    /// <summary>The app id Trayloom's own YouTube Music player has as a source (it belongs to <see cref="MusicSource.YouTube"/>).</summary>
+    public const string YouTubePlayerAumid = "Trayloom.YouTubeMusic";
+
+    /// <summary>When the person last paused from the island (a strip or a button); null until then. The closed strip stays a few seconds after it.</summary>
+    public DateTime? PausedByIslandAt { get; private set; }
+
+    /// <summary>Raised when the person paused from the island, so the closed island can take the strip away after its grace time.</summary>
+    public event Action? PausedByIsland;
+
+    private DateTime _lastToggle = DateTime.MinValue;
+
+    /// <summary>Asks Apple Music's own transport to play or pause when its media session ignored a press (set by the Apple Music service).</summary>
+    public Action? AppleMusicToggle { get; set; }
 
     public Playback Current => _current;
 
@@ -272,18 +317,135 @@ internal sealed class PlaybackService : IDisposable
 
     public void Reevaluate() => Recompute();
 
+    /// <summary>Tells the pages something outside the sessions changed (the list of installed apps).</summary>
+    public void NotifyChanged() => Changed?.Invoke();
+
     // ---------------------------------------------------------------- commands
 
-    public void TogglePlayPause() => Command(s => s.TryTogglePlayPauseAsync());
+    /// <summary>
+    /// Plays or pauses the current player. The island shows the new state at once (the wanted state stands until the session agrees, or
+    /// 1.5 s) and a second press within 200 ms is ignored, so a double click does not toggle twice before the player has answered.
+    /// </summary>
+    public void TogglePlayPause()
+    {
+        var entry = CurrentEntry();
+        if (entry is null)
+        {
+            return;
+        }
 
-    public void Next() => Command(s => s.TrySkipNextAsync());
+        var now = DateTime.UtcNow;
+        if ((now - _lastToggle).TotalMilliseconds < 200)
+        {
+            return;
+        }
 
-    public void Previous() => Command(s => s.TrySkipPreviousAsync());
+        _lastToggle = now;
+        var target = !entry.Playing;
+
+        // the position stops or restarts from where it is now
+        entry.BasePos = PositionNow(entry, now);
+        entry.Stamp = now;
+        entry.WantPos = entry.BasePos;
+        entry.WantPlaying = target;
+        entry.WantAt = now;
+        entry.Playing = target;
+        if (!target)
+        {
+            PausedByIslandAt = now;
+            PausedByIsland?.Invoke();
+        }
+
+        Recompute();
+        Command(s => s.TryTogglePlayPauseAsync(), v =>
+        {
+            if (target)
+            {
+                v.Play();
+            }
+            else
+            {
+                v.Pause();
+            }
+        });
+        Guarded.FireAndLog(
+            async () =>
+            {
+                await Task.Delay((int)OptimisticPlay.TimeoutMs + 50);
+                CheckWanted(entry);
+            },
+            _log,
+            "Play state check");
+    }
+
+    public void Next() => Command(s => s.TrySkipNextAsync(), v => v.Next());
+
+    public void Previous() => Command(s => s.TrySkipPreviousAsync(), v => v.Previous());
+
+    private static double PositionNow(Entry e, DateTime now)
+    {
+        var p = e.BasePos + (e.Playing ? Math.Max(0, (now - e.Stamp).TotalSeconds) * e.Rate : 0);
+        return Math.Clamp(p, 0, e.Duration > 0 ? e.Duration : double.MaxValue);
+    }
+
+    /// <summary>
+    /// The wanted play state did not arrive within the time allowed: the shown state goes back to the player's, the failure line shows,
+    /// and Apple Music is asked through its own transport once.
+    /// </summary>
+    private void CheckWanted(Entry e)
+    {
+        if (_disposed || e.WantPlaying is null)
+        {
+            return;
+        }
+
+        if (e.Virtual is null)
+        {
+            ReadState(e);
+        }
+
+        if (e.WantPlaying is null)
+        {
+            Recompute();
+            return;
+        }
+
+        // ReadState keeps the wanted state only inside the time allowed, so by now it has reverted (or the session agreed)
+        var wanted = e.WantPlaying;
+        e.WantPlaying = null;
+        if (e.Virtual is not null)
+        {
+            // the hosted player reports itself; its next reading is the truth
+            Recompute();
+            return;
+        }
+
+        if (wanted is { } w && e.Playing != w)
+        {
+            _commandFailed = true;
+            _log.Warn("[island] media: play/pause was not taken in time, reverted");
+            if (IsAppleMusic(e) && AppleMusicToggle is { } toggle)
+            {
+                toggle();
+            }
+        }
+
+        Recompute();
+    }
 
     public void Seek(double seconds)
     {
         if (CurrentEntry() is { } e)
         {
+            if (e.Virtual is { } hosted)
+            {
+                e.BasePos = Math.Clamp(seconds, 0, e.Duration > 0 ? e.Duration : double.MaxValue);
+                e.Stamp = DateTime.UtcNow;
+                hosted.Seek(seconds);
+                Recompute();
+                return;
+            }
+
             if (IsAppleMusic(e) && AppleMusicSeek is { } appleSeek)
             {
                 // Apple Music accepts the media session's seek request and ignores it: its own scrubber is set instead
@@ -308,11 +470,13 @@ internal sealed class PlaybackService : IDisposable
         if (CurrentEntry() is { Shuffle: { } on } e)
         {
             Command(s => s.TryChangeShuffleActiveAsync(!on));
-            _ = e;
             _ui.BeginInvoke(async () =>
             {
                 await Task.Delay(1500);
-                RefreshEntry(e.Session);
+                if (e.Session is { } session)
+                {
+                    RefreshEntry(session);
+                }
             });
         }
     }
@@ -328,7 +492,10 @@ internal sealed class PlaybackService : IDisposable
             {
                 // players answer late: read the mode again after a moment
                 await Task.Delay(1500);
-                RefreshEntry(e.Session);
+                if (e.Session is { } session)
+                {
+                    RefreshEntry(session);
+                }
             });
         }
     }
@@ -373,6 +540,95 @@ internal sealed class PlaybackService : IDisposable
         Recompute();
     }
 
+    /// <summary>
+    /// Trayloom's own YouTube Music player reports what it plays (UI thread), or null when it has closed. It appears as a player of its own
+    /// (<see cref="YouTubePlayerAumid"/>, source YouTube Music) next to the system sessions, with the same pages and strip.
+    /// </summary>
+    public void SetHostedPlayer(IVirtualPlayer? player, HostedReading? reading)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        var id = YouTubePlayerAumid;
+        if (player is null || reading is null)
+        {
+            if (_entries.Remove(id))
+            {
+                _log.Info("[island] YouTube Music player: no longer playing");
+                Recompute();
+            }
+
+            return;
+        }
+
+        if (!_entries.TryGetValue(id, out var e))
+        {
+            e = new Entry { Aumid = id, HasProps = true, CanPlay = true };
+            _entries[id] = e;
+            if (!_sources.ContainsKey(id))
+            {
+                _sources[id] = new PlayerSource { Aumid = id, Name = MusicSources.Brand(MusicSource.YouTube), IsMusicApp = true, Order = _order++ };
+            }
+        }
+
+        e.Virtual = player;
+        var now = DateTime.UtcNow;
+        var key = $"{reading.Title}|{reading.Artist}";
+        if (key != e.ArtKey || reading.ArtworkUrl != e.ArtUrl)
+        {
+            e.ArtKey = key;
+            e.ArtUrl = reading.ArtworkUrl;
+            e.ArtStale = e.Art is not null;
+            if (reading.ArtworkUrl.Length == 0)
+            {
+                e.Art = null;
+                e.Tint = null;
+                e.ArtStale = false;
+            }
+            else
+            {
+                var url = reading.ArtworkUrl;
+                StreamArt.Load(url, image =>
+                {
+                    if (!_disposed && e.ArtUrl == url && image is BitmapSource bitmap)
+                    {
+                        e.Art = bitmap;
+                        e.Tint = ArtworkTint(bitmap);
+                        e.ArtStale = false;
+                        Recompute();
+                    }
+                });
+            }
+        }
+
+        e.Title = reading.Title;
+        e.Artist = reading.Artist;
+        e.Album = "";
+        e.Duration = Math.Clamp(reading.Duration, 0, 604800);
+        e.CanSeek = e.Duration > 0;
+        e.CanPrev = reading.CanPrevious;
+        e.CanNext = reading.CanNext;
+        e.Rate = 1;
+        e.BasePos = Math.Clamp(reading.Position, 0, e.Duration > 0 ? e.Duration : double.MaxValue);
+        e.Stamp = now;
+        var playing = !reading.Paused;
+        if (e.WantPlaying is { } want && playing == want)
+        {
+            e.WantPlaying = null;
+        }
+
+        e.Playing = OptimisticPlay.Shown(playing, e.WantPlaying, e.WantAt, now);
+        if (e.WantPlaying is not null && e.Playing != playing)
+        {
+            e.BasePos = e.WantPos;
+            e.Stamp = e.WantAt;
+        }
+
+        Recompute();
+    }
+
     /// <summary>An Apple Music seek failed (UI thread): nothing is overridden and the timeline stops holding the released position.</summary>
     public void NoteSeekFailed() => SeekFailed?.Invoke();
 
@@ -408,10 +664,31 @@ internal sealed class PlaybackService : IDisposable
 
     private Entry? CurrentEntry() => _effective is not null && _entries.TryGetValue(_effective, out var e) ? e : null;
 
-    private async void Command(Func<GlobalSystemMediaTransportControlsSession, Windows.Foundation.IAsyncOperation<bool>> run)
+    private async void Command(Func<GlobalSystemMediaTransportControlsSession, Windows.Foundation.IAsyncOperation<bool>> run, Action<IVirtualPlayer>? hosted = null)
     {
         var entry = CurrentEntry();
         if (entry is null)
+        {
+            return;
+        }
+
+        if (entry.Virtual is { } virtualPlayer)
+        {
+            // Trayloom's own player: no system session, the window runs the script
+            try
+            {
+                hosted?.Invoke(virtualPlayer);
+            }
+            catch (Exception ex)
+            {
+                _commandFailed = true;
+                _log.Warn($"[island] YouTube Music command failed: {ex.Message}");
+            }
+
+            return;
+        }
+
+        if (entry.Session is not { } session)
         {
             return;
         }
@@ -434,13 +711,22 @@ internal sealed class PlaybackService : IDisposable
 
         try
         {
-            var ok = await run(entry.Session);
+            var ok = await run(session);
             _commandFailed = !ok;
+            if (!ok && entry.WantPlaying is not null)
+            {
+                // the player refused the press: show its state again at once
+                entry.WantPlaying = null;
+                ReadState(entry);
+                Recompute();
+            }
+
             guard?.Restore();
         }
         catch (Exception ex)
         {
             _commandFailed = true;
+            entry.WantPlaying = null;
             _log.Warn($"Media command failed: {ex.Message}");
         }
         finally
@@ -479,6 +765,21 @@ internal sealed class PlaybackService : IDisposable
                 continue;
             }
 
+            var source = MusicSources.FromPlayer(id, YtmAppIds);
+            if (IsOwnPlayer(id))
+            {
+                // the media session of Trayloom's own web view: the hosted YouTube Music player reports itself
+                LogSessionOnce(id, "ignored (Trayloom's own player)");
+                continue;
+            }
+
+            if (source is null && OnlyThreeApps())
+            {
+                LogSessionOnce(id, "ignored");
+                continue;
+            }
+
+            LogSessionOnce(id, source is { } known ? MusicSources.Brand(known) : "other");
             seen.Add(id);
             if (_entries.ContainsKey(id))
             {
@@ -494,19 +795,21 @@ internal sealed class PlaybackService : IDisposable
             _entries[id] = entry;
             if (!_sources.TryGetValue(id, out var src))
             {
-                src = new PlayerSource { Aumid = id, Name = PrettyName(id), IsMusicApp = IsMusic(id), Order = _order++ };
+                src = new PlayerSource { Aumid = id, Name = source is { } brand ? MusicSources.Brand(brand) : PrettyName(id), IsMusicApp = IsMusic(id), Order = _order++ };
                 _sources[id] = src;
                 Guarded.FireAndLog(() => LoadIconAsync(src), _log, "Player icon");
             }
 
-            s.MediaPropertiesChanged += (_, _) => _ui.BeginInvoke(() => RefreshEntry(s));
-            s.PlaybackInfoChanged += (_, _) => _ui.BeginInvoke(() => RefreshEntry(s));
+            Windows.Foundation.TypedEventHandler<GlobalSystemMediaTransportControlsSession, MediaPropertiesChangedEventArgs> onProperties = (_, _) => _ui.BeginInvoke(() => RefreshEntry(s));
+            Windows.Foundation.TypedEventHandler<GlobalSystemMediaTransportControlsSession, PlaybackInfoChangedEventArgs> onInfo = (_, _) => _ui.BeginInvoke(() => RefreshEntry(s));
+            s.MediaPropertiesChanged += onProperties;
+            s.PlaybackInfoChanged += onInfo;
 
             // Players report their timeline about once a second while they play. That only moves the position, so it re-reads the
             // state without asking for the song's properties (one more cross-process round trip each time), and a run of reports
             // that arrives before the UI thread gets to it is read once.
             var timelineQueued = 0;
-            s.TimelinePropertiesChanged += (_, _) =>
+            Windows.Foundation.TypedEventHandler<GlobalSystemMediaTransportControlsSession, TimelinePropertiesChangedEventArgs> onTimeline = (_, _) =>
             {
                 if (Interlocked.Exchange(ref timelineQueued, 1) == 0)
                 {
@@ -517,10 +820,24 @@ internal sealed class PlaybackService : IDisposable
                     });
                 }
             };
+            s.TimelinePropertiesChanged += onTimeline;
+            entry.Unsubscribe = () =>
+            {
+                try
+                {
+                    s.MediaPropertiesChanged -= onProperties;
+                    s.PlaybackInfoChanged -= onInfo;
+                    s.TimelinePropertiesChanged -= onTimeline;
+                }
+                catch
+                {
+                    // the session is gone already
+                }
+            };
             RefreshEntry(s);
         }
 
-        foreach (var gone in _entries.Keys.Where(k => !seen.Contains(k)).ToList())
+        foreach (var gone in _entries.Keys.Where(k => !seen.Contains(k) && _entries[k].Virtual is null).ToList())
         {
             if (_entries[gone] is { Playing: true } playing && IsAppleMusic(playing))
             {
@@ -534,7 +851,44 @@ internal sealed class PlaybackService : IDisposable
         Recompute();
     }
 
-    private static void Unhook(Entry e) => e.Paused = true;
+    /// <summary>Only Apple Music, Spotify and YouTube Music are followed (the "Only Apple Music, Spotify and YouTube Music" setting).</summary>
+    private bool OnlyThreeApps() => _onlyThree();
+
+    private Func<bool> _onlyThree = () => true;
+
+    /// <summary>Whether sessions of other players are ignored (set by the island core from its settings).</summary>
+    public Func<bool> OnlyThree
+    {
+        get => _onlyThree;
+        set => _onlyThree = value;
+    }
+
+    /// <summary>Reads the session list again (the setting changed, or the list of installed apps arrived).</summary>
+    public void Resync() => SyncSessions();
+
+    private readonly HashSet<string> _loggedSessions = [];
+
+    private void LogSessionOnce(string aumid, string verdict)
+    {
+        if (_loggedSessions.Add(aumid))
+        {
+            _log.Info($"[island] media session: {aumid} -> {verdict}");
+        }
+    }
+
+    /// <summary>The id of a media session Trayloom's own web view publishes (the YouTube Music player window).</summary>
+    private static bool IsOwnPlayer(string aumid)
+    {
+        var id = MusicSources.Normalize(aumid);
+        return id.Contains("trayloom", StringComparison.Ordinal) || id.Contains("msedgewebview2", StringComparison.Ordinal);
+    }
+
+    private static void Unhook(Entry e)
+    {
+        e.Paused = true;
+        e.Unsubscribe?.Invoke();
+        e.Unsubscribe = null;
+    }
 
     /// <summary>A timeline report: position, length, state and controls, read without the song's properties.</summary>
     private void RefreshTimeline(GlobalSystemMediaTransportControlsSession session)
@@ -584,12 +938,31 @@ internal sealed class PlaybackService : IDisposable
             e.Album = props.AlbumTitle ?? "";
             e.HasProps = true;
             var key = $"{e.Title}|{e.Artist}|{e.Album}";
-            if (key != e.ArtKey)
+            var songChanged = key != e.ArtKey;
+            if (songChanged)
             {
+                // The previous cover stays until the new one is loaded (or 600 ms): an empty cover between two songs is a flash.
                 e.ArtKey = key;
-                e.Art = null;
-                e.Tint = null;
+                e.ArtStale = e.Art is not null;
                 e.SeekAt = null;
+                if (e.ArtStale)
+                {
+                    var stale = key;
+                    Guarded.FireAndLog(
+                        async () =>
+                        {
+                            await Task.Delay(600);
+                            if (!_disposed && e.ArtStale && e.ArtKey == stale)
+                            {
+                                e.Art = null;
+                                e.Tint = null;
+                                e.ArtStale = false;
+                                Recompute();
+                            }
+                        },
+                        _log,
+                        "Cover timer");
+                }
             }
 
             var wasPlaying = e.Playing;
@@ -599,14 +972,17 @@ internal sealed class PlaybackService : IDisposable
                 _appleStoppedAt = DateTime.UtcNow;
             }
 
+            // a state change the player itself reported is a reading: the failure line of an earlier press goes away
+            _commandFailed = false;
             Recompute();
-            if (e.Art is null && props.Thumbnail is not null)
+            if (props.Thumbnail is not null && (e.Art is null || e.ArtStale))
             {
                 var art = await LoadArtworkAsync(props.Thumbnail);
                 if (rev == e.Rev && art is not null)
                 {
                     e.Art = art;
                     e.Tint = ArtworkTint(art);
+                    e.ArtStale = false;
                     Recompute();
                 }
             }
@@ -619,11 +995,23 @@ internal sealed class PlaybackService : IDisposable
 
     private static void ReadState(Entry e)
     {
+        if (e.Session is not { } session)
+        {
+            return;
+        }
+
         try
         {
-            var info = e.Session.GetPlaybackInfo();
-            var tl = e.Session.GetTimelineProperties();
-            e.Playing = info.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
+            var info = session.GetPlaybackInfo();
+            var tl = session.GetTimelineProperties();
+            var sessionPlaying = info.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
+            var now = DateTime.UtcNow;
+            if (e.WantPlaying is { } want && sessionPlaying == want)
+            {
+                e.WantPlaying = null;
+            }
+
+            e.Playing = OptimisticPlay.Shown(sessionPlaying, e.WantPlaying, e.WantAt, now);
             var c = info.Controls;
             e.CanPrev = c.IsPreviousEnabled;
             e.CanNext = c.IsNextEnabled;
@@ -652,6 +1040,13 @@ internal sealed class PlaybackService : IDisposable
                     e.SeekAt = null;
                 }
             }
+
+            if (e.WantPlaying is not null && e.Playing != sessionPlaying)
+            {
+                // the state shown is the wanted one: the position carries on from the press, not from the session's older stamp
+                e.BasePos = e.WantPos;
+                e.Stamp = e.WantAt;
+            }
         }
         catch
         {
@@ -674,6 +1069,18 @@ internal sealed class PlaybackService : IDisposable
         if (playingMusic is not null)
         {
             return playingMusic.Aumid;
+        }
+
+        if (OnlyThreeApps())
+        {
+            // Only the three apps are listed, so there are no other players to fall back to: the music app that played last stays
+            // (paused), else the first one there is.
+            if (_lastMusic is not null && _entries.ContainsKey(_lastMusic))
+            {
+                return _lastMusic;
+            }
+
+            return order.FirstOrDefault(IsMusicId)?.Aumid;
         }
 
         if (_includeOthers())
@@ -807,17 +1214,25 @@ internal sealed class PlaybackService : IDisposable
 
         _held = next;
         _current = next;
-        _commandFailed = _commandFailed && false;
         Changed?.Invoke();
     }
 
     // ---------------------------------------------------------------- names, icons, tint
 
-    private static bool IsMusic(string aumid)
+    /// <summary>The player counts as a music app: one of the three, or (when other players are followed too) one of the older well-known ones.</summary>
+    private bool IsMusic(string aumid)
     {
+        if (MusicSources.FromPlayer(aumid, YtmAppIds) is not null)
+        {
+            return true;
+        }
+
         var id = aumid.ToLowerInvariant();
-        return MusicApps.Any(id.Contains);
+        return !OnlyThreeApps() && OtherMusicApps.Any(id.Contains);
     }
+
+    /// <summary>Other music players that are still recognised as music while the island also follows players beyond the three (Media Player is not among them).</summary>
+    private static readonly string[] OtherMusicApps = ["itunes", "musicbee", "foobar", "aimp", "winamp", "tidal", "deezer", "amazonmusic", "vlc"];
 
     internal static string NameOf(string appId)
     {
@@ -1005,33 +1420,36 @@ internal sealed class PlaybackService : IDisposable
 
     // ---------------------------------------------------------------- preferred player
 
-    public static string? ResolvePreferredPlayer(string chosen, PlaybackService? playback)
-    {
-        if (!string.IsNullOrEmpty(chosen))
-        {
-            return chosen;
-        }
+    /// <summary>The app id of this session's last music source (what automatic idle behaviour follows); null before any.</summary>
+    public string? LastMusic => _lastMusic;
 
-        if (playback?._lastMusic is { } last)
-        {
-            return last;
-        }
-
-        return InstalledPlayers().FirstOrDefault(p => p.Name.Contains("Spotify", StringComparison.OrdinalIgnoreCase)).Aumid
-            ?? InstalledPlayers().FirstOrDefault().Aumid;
-    }
+    /// <summary>The idle target of the settings and the apps found right now (see <see cref="IdleTargets.Resolve"/>).</summary>
+    public IdleTarget ResolveIdle(string saved, bool apple) =>
+        IdleTargets.Resolve(saved, _lastMusic, apple, MusicInstalled.SpotifyAumid(), MusicInstalled.YouTubeMusicAumid());
 
     private static List<(string Name, string Aumid)>? _installed;
+    private static Task<List<(string Name, string Aumid)>>? _installedTask;
+    private static HashSet<string> s_ytmAppIds = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Installed music apps (Start menu apps matching the known list).</summary>
-    public static List<(string Name, string Aumid)> InstalledPlayers()
+    /// <summary>Start menu apps named "YouTube Music" (the Chrome or Edge web app); their media sessions belong to YouTube Music.</summary>
+    internal static IReadOnlySet<string> YtmAppIds => s_ytmAppIds;
+
+    /// <summary>Raised (on a pool thread) once the Start menu has been read: the list of installed apps is complete from then on.</summary>
+    public static event Action? InstalledLoaded;
+
+    /// <summary>
+    /// Installed music apps (Start menu apps that are Apple Music, Spotify or YouTube Music) as read so far. Never waits: the list is empty until
+    /// <see cref="InstalledPlayersAsync"/> has finished, which the island starts at launch.
+    /// </summary>
+    public static List<(string Name, string Aumid)> InstalledPlayers() => _installed ?? [];
+
+    /// <summary>Reads the Start menu once (off the UI thread, bounded), keeps the result and raises <see cref="InstalledLoaded"/>; later calls get the same result.</summary>
+    public static Task<List<(string Name, string Aumid)>> InstalledPlayersAsync() => _installedTask ??= Task.Run(LoadInstalledAsync);
+
+    private static async Task<List<(string Name, string Aumid)>> LoadInstalledAsync()
     {
-        if (_installed is not null)
-        {
-            return _installed;
-        }
-
-        var list = new List<(string, string)>();
+        var list = new List<(string Name, string Aumid)>();
+        var ytm = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         try
         {
             var psi = new ProcessStartInfo("powershell.exe", "-NoProfile -Command \"Get-StartApps | ForEach-Object { $_.Name + '|' + $_.AppID }\"")
@@ -1043,27 +1461,60 @@ internal sealed class PlaybackService : IDisposable
             using var p = Process.Start(psi);
             if (p is not null)
             {
-                var text = p.StandardOutput.ReadToEnd();
-                p.WaitForExit(4000);
-                foreach (var line in text.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                var read = p.StandardOutput.ReadToEndAsync();
+                if (await Task.WhenAny(read, Task.Delay(8000)) != read)
                 {
-                    var parts = line.Trim().Split('|', 2);
-                    if (parts.Length == 2 && MusicApps.Take(MusicApps.Length - 1).Any(m => parts[1].ToLowerInvariant().Contains(m) || parts[0].ToLowerInvariant().Replace(" ", "").Contains(m)))
+                    try
                     {
-                        list.Add((parts[0], parts[1]));
+                        p.Kill(true);
+                    }
+                    catch
+                    {
+                        // already gone
+                    }
+                }
+                else
+                {
+                    foreach (var line in (await read).Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        var parts = line.Trim().Split('|', 2);
+                        if (parts.Length != 2)
+                        {
+                            continue;
+                        }
+
+                        var name = MusicSources.Normalize(parts[0]);
+                        if (name.Contains("youtubemusic", StringComparison.Ordinal))
+                        {
+                            ytm.Add(parts[1]);
+                        }
+
+                        if (MusicApps.Any(m => MusicSources.Normalize(parts[1]).Contains(m, StringComparison.Ordinal) || name.Contains(m, StringComparison.Ordinal)))
+                        {
+                            list.Add((parts[0], parts[1]));
+                        }
                     }
                 }
             }
         }
         catch
         {
+            // no list: the apps are found from their media sessions instead
         }
 
+        s_ytmAppIds = ytm;
         _installed = list;
+        try
+        {
+            InstalledLoaded?.Invoke();
+        }
+        catch
+        {
+            // a listener's failure is not the list's
+        }
+
         return list;
     }
-
-    public static async Task<List<(string Name, string Aumid)>> InstalledPlayersAsync() => await Task.Run(InstalledPlayers);
 
     /// <summary>Opens a player by AUMID or exe path without starting playback.</summary>
     public static void OpenPlayer(string? aumid)

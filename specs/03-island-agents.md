@@ -627,7 +627,7 @@ Activity sources:
 - downloads: `routes(.download)` and a download that is active and not completed.
 - agents: `notchAgentsLiveActivity` on and any live agent.
 - calendar: countdown enabled (all timed events, or those the user chose with the context menu) and inside the lead window; or an ongoing event with `notchCalendarTimeLeft` inside the last hour.
-- music: `showsMusicActivity` = playing && Music section visible && idle content != none (or companion on) && `notchShowPlayingMusic`.
+- music: `showsMusicActivity` = (playing, or paused from the island's own strip or button less than 5 s ago, or paused that way and the pointer is on the strip) && Music section visible && idle content != none (or companion on) && `notchShowPlayingMusic`.
 - keep-awake: `notchKeepAwakeActivity` on and a Keep Awake session running.
 A user choice sticks while its activity exists (`NotchActivitySelection`), survives short gaps (song change), and clears when nothing is live.
 Pairs ("Combine", companion on the camera's left): timer + {downloads, agents (running), calendar (running), music (running)}; calendar + {downloads, agents, music}. Picker shows a "Combine" menu listing `Companion + Primary` titles.
@@ -936,9 +936,10 @@ Per-section option cards (moduleOptions)
 - **Controls**: four primary toggle cards (Now Playing, Volume, Brightness, Keyboard light) in a row; heading **"Controls and shortcuts"**; a reorderable adaptive grid (min 116) of toggle cards for the remaining items (all non-level, non-music items: Volume mixer, Keep awake, Timer, Calendar, Mute microphone, Screenshot, Screen recording, Speed test, Open app panel, Command Bar, Scratchpad); a card shows the item's glyph (20 pt), title (11 pt medium, 2 lines, 28 high) and a badge button (check = shown, plus = hidden, minus.circle = unavailable, arrow.up.right.circle = unavailable with a fix); an unavailable item shows an explanation (3 lines, caption2) that is also its tooltip and, if fixable, is accent coloured and opens Features / the setting / the Content tab. Divider, then **Show "Keep awake" in the closed island** switch (`notchKeepAwakeActivity`, default off) with hint "A running session appears beside the camera with the time it has left, or ∞ when it has no end." (feature-bound row).
 - **Now Playing**: 
   - "Show music while playing" (music.note) `notchShowPlayingMusic` true
-  - "Automatically include videos and other apps" (play.rectangle) `notchIncludeOtherPlayers` true
+  - (Win) "Only Apple Music, Spotify and YouTube Music" + hint "Other players, videos and browser tabs are ignored." `notchMusicOnlyThreeApps` true
+  - "Automatically include videos and other apps" (play.rectangle) `notchIncludeOtherPlayers` true (Win: shown only while "Only Apple Music, Spotify and YouTube Music" is off)
   - "Show volume in the player" (speaker.wave.2, Mixer feature row) `notchMusicShowVolume` false
-  - Picker "Open when nothing is playing" (arrow.up.forward.app) `notchPreferredPlayer` ("" = automatic) + hint "The cover and the playback buttons open this app. Automatic opens the music app that played last, then Spotify or Apple Music." (Win: "...then Spotify."); first option "Automatic", then installed players.
+  - Picker "Open when nothing is playing" (arrow.up.forward.app) `notchPreferredPlayer` ("" = automatic) + hint "The cover and the playback buttons open this app. Automatic opens the music app that played last, then Spotify or Apple Music." (Win: "The cover and the playback buttons start this app. Automatic uses the music app that played last, or asks which one."); first option "Automatic", then Apple Music, Spotify (installed) and YouTube Music only (never Windows Media Player); with Automatic and no history the idle cover and buttons open a "Choose a music app" menu.
   - "Show lyrics" (text.quote, feature row) `notchLyricsEnabled` true; when on: indented "Find lyrics online" (globe) `notchLyricsOnline` false + hint "While lyrics are open, send the song title, artist, album and duration to lrclib.net. Imported lyrics stay on this Mac. Song titles, artist names and albums may also be checked with musicbrainz.org." (Win: "...stay on this PC...")
   - "Find covers for Firefox and Zen" (photo) `notchBrowserCovers` false + hint "When Firefox, Zen or another Firefox-based browser plays without a sharp cover, read its saved session on this Mac to find the song's YouTube tab and load its thumbnail from i.ytimg.com. If no tab shows the song but a YouTube Music tab is open, send the song title, artist and region to itunes.apple.com and load the album art from mzstatic.com."
   - "Show upcoming songs" (list.bullet) `notchQueueEnabled` true + "See the actual upcoming songs shared by your player."
@@ -1368,6 +1369,8 @@ Setting `notchMusicShowVolume` (default false, requires mixer feature): under th
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | notchShowPlayingMusic | bool | true | "Show music while playing": closed island shows the music strip while a song plays (also requires idleContent != none, or mascot companion) |
+| notchMusicOnlyThreeApps | bool | true | (Win) only Apple Music, Spotify and YouTube Music sessions are followed |
+| notchYouTubePlayerBounds | string | "" | (Win) place of the YouTube Music window, "left,top,width,height" in DIPs |
 | notchIncludeOtherPlayers | bool | true | "Automatically include videos and other apps": automatic source also follows non-music apps |
 | notchMusicShowVolume | bool | false | "Show volume in the player" |
 | notchPreferredPlayer | string | "" (Automatic) | App id opened when nothing plays; max 256 bytes; "" = Automatic |

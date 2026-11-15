@@ -322,19 +322,37 @@ internal sealed class ContentEditor : Grid
             case "music":
                 card.Add(SUi.SwitchRow(app, K.ShowPlayingMusic, G.Music, Loc.T("Show music while playing")));
                 card.AddDivider();
-                card.Add(SUi.SwitchRow(app, K.IncludeOtherPlayers, "", Loc.T("Automatically include videos and other apps")));
+                card.Add(SUi.SwitchRow(app, K.MusicOnlyThreeApps, "", Loc.T("Only Apple Music, Spotify and YouTube Music"), Loc.T("Other players, videos and browser tabs are ignored."), _ => _c.RequestRebuild()));
+                if (!app.Get<bool>(K.MusicOnlyThreeApps))
+                {
+                    // the broader mode: videos and other players are followed too
+                    card.AddDivider();
+                    card.Add(SUi.SwitchRow(app, K.IncludeOtherPlayers,"", Loc.T("Automatically include videos and other apps")));
+                }
                 card.AddDivider();
                 card.Add(new FeatureSwitchRow(rt, _c.Shell, "mixer", G.Speaker, Loc.T("Show volume in the player"), null, app.Get<bool>(K.MusicShowVolume), on => app.Set(K.MusicShowVolume, on), Loc.T("Enable “Volume mixer” in Features.")));
                 card.AddDivider();
+                // only the three apps can be the idle app; YouTube Music is always there (the island plays it in its own window)
                 var players = new List<(string Value, string Label)> { ("", Loc.T("Automatic")) };
-                players.AddRange((PlaybackService.InstalledPlayers()).Select(p => (p.Aumid, p.Name)));
-                var saved = app.Get<string>(K.PreferredPlayer);
-                if (!string.IsNullOrEmpty(saved) && players.All(p => p.Value != saved))
+                if (IslandCore.Current?.AppleMusic.Available ?? false)
                 {
-                    players.Add((saved, PlaybackService.PrettyName(saved)));
+                    players.Add((IdleTargets.Name(IdleTarget.Apple), MusicSources.Brand(MusicSource.Apple)));
                 }
 
-                card.Add(new PickerRow<string>("", Loc.T("Open when nothing is playing"), Loc.T("The cover and the playback buttons open this app. Automatic opens the music app that played last, then Spotify."), players, saved, v => app.Set(K.PreferredPlayer, v), 180));
+                if (MusicInstalled.SpotifyAumid() is not null)
+                {
+                    players.Add((IdleTargets.Name(IdleTarget.Spotify), MusicSources.Brand(MusicSource.Spotify)));
+                }
+
+                players.Add((IdleTargets.Name(IdleTarget.YouTube), MusicSources.Brand(MusicSource.YouTube)));
+                var saved = app.Get<string>(K.PreferredPlayer);
+                if (players.All(p => p.Value != saved))
+                {
+                    // an app id an older version saved (Media Player, for one) means Automatic now
+                    saved = "";
+                }
+
+                card.Add(new PickerRow<string>("", Loc.T("Open when nothing is playing"), Loc.T("The cover and the playback buttons start this app. Automatic uses the music app that played last, or asks which one."), players, saved, v => app.Set(K.PreferredPlayer, v), 180));
                 card.AddDivider();
                 card.Add(new FeatureSwitchRow(rt, _c.Shell, "notch-lyrics", "", Loc.T("Show lyrics"), null, app.Get<bool>(K.LyricsEnabled), on => { app.Set(K.LyricsEnabled, on); _c.RequestRebuild(); }, Loc.T("Enable “Lyrics” in Features.")));
                 if (app.Get<bool>(K.LyricsEnabled) && rt.IsAvailable("notch-lyrics"))
